@@ -51,7 +51,17 @@
 <body>
   <div class="wrap">
     <h1>CI-TEC Knowledge Platform</h1>
-    <p class="sub">PR-01 · 포트 8572(web)/8573(api) · 지식 raw 등록 완료. 검색/RAG는 이후 PR.</p>
+    <p class="sub">포트 8572(web)/8573(api) · raw 5,007 docs 등록 · <a href="/docs/">설계·구현 문서</a></p>
+
+    <div class="card">
+      <strong>문서</strong>
+      <p class="hint" style="margin-top:8px">
+        <a href="/docs/design.html">시스템 설계서</a> ·
+        <a href="/docs/implementation-plan.html">구현 계획</a> ·
+        <a href="/docs/query-catalog-analysis.html">질문 100 분석</a> ·
+        <a href="/docs/">전체 목록</a>
+      </p>
+    </div>
 
     <div class="card">
       <div class="row"><span>API</span><span id="api-badge" class="badge na">…</span></div>
@@ -62,7 +72,7 @@
         <button id="btn-health" type="button">Refresh health</button>
         <button id="btn-llm" type="button">Probe OpenRouter / GLM</button>
       </div>
-      <p class="hint">API docs: <a href="/docs" target="_blank">/docs</a> · raw: <code>/v1/health</code></p>
+      <p class="hint">설계 문서: <a href="/docs/">/docs/</a> · API Swagger: <a href="/api/docs" target="_blank">/api/docs</a> · <code>/v1/health</code></p>
     </div>
 
     <div class="card">

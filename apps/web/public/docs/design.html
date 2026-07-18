@@ -1,0 +1,2440 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CI-TEC 지식기반 검색 플랫폼 설계서 v2</title>
+<style>
+  :root {
+    --bg: #f6f8fb;
+    --bg-elevated: #ffffff;
+    --bg-soft: #f0f3f9;
+    --bg-code: #f4f6fa;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --primary: #1d4ed8;
+    --primary-soft: #dbeafe;
+    --primary-dark: #1e3a8a;
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+    --warn: #b45309;
+    --warn-soft: #fef3c7;
+    --danger: #b91c1c;
+    --danger-soft: #fee2e2;
+    --success: #047857;
+    --success-soft: #d1fae5;
+    --purple: #6d28d9;
+    --purple-soft: #ede9fe;
+    --shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.06);
+    --shadow-lg: 0 4px 6px rgba(15,23,42,.04), 0 20px 40px rgba(15,23,42,.08);
+    --radius: 14px;
+    --radius-sm: 10px;
+    --font: "Pretendard", "Noto Sans KR", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "SF Mono", "Consolas", ui-monospace, monospace;
+    --max: 1140px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: var(--font);
+    color: var(--text);
+    background:
+      radial-gradient(1100px 520px at 8% -8%, #e0eaff 0%, transparent 55%),
+      radial-gradient(800px 420px at 100% 0%, #ccfbf1 0%, transparent 48%),
+      var(--bg);
+    line-height: 1.65;
+    font-size: 15.5px;
+  }
+  a { color: var(--primary); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .page { display: grid; grid-template-columns: 268px 1fr; min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    background: rgba(255,255,255,.9); backdrop-filter: blur(12px);
+    border-right: 1px solid var(--border);
+    padding: 26px 16px 40px;
+  }
+  .main { padding: 32px 36px 80px; max-width: calc(var(--max) + 72px); }
+  .brand {
+    font-size: 11px; font-weight: 800; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--primary); margin-bottom: 6px;
+  }
+  .sidebar h1 { font-size: 14.5px; margin: 0 0 16px; line-height: 1.35; }
+  .nav-section {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--text-muted);
+    margin: 16px 0 6px; padding: 0 8px;
+  }
+  .nav a {
+    display: block; padding: 6px 10px; border-radius: 8px;
+    color: var(--text-secondary); font-size: 13px; text-decoration: none; margin-bottom: 1px;
+  }
+  .nav a:hover { background: var(--primary-soft); color: var(--primary-dark); text-decoration: none; }
+  .hero {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: 20px; box-shadow: var(--shadow-lg);
+    padding: 32px 36px; margin-bottom: 24px; position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0 auto 0 0; width: 6px;
+    background: linear-gradient(180deg, var(--primary), var(--accent));
+  }
+  .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 700; padding: 4px 10px;
+    border-radius: 999px; border: 1px solid var(--border);
+    background: var(--bg-soft); color: var(--text-secondary);
+  }
+  .badge.blue { background: var(--primary-soft); color: var(--primary-dark); border-color: #bfdbfe; }
+  .badge.green { background: var(--success-soft); color: var(--success); border-color: #a7f3d0; }
+  .badge.teal { background: var(--accent-soft); color: var(--accent); border-color: #99f6e4; }
+  .badge.amber { background: var(--warn-soft); color: var(--warn); border-color: #fde68a; }
+  .badge.purple { background: var(--purple-soft); color: var(--purple); border-color: #ddd6fe; }
+  .badge.red { background: var(--danger-soft); color: var(--danger); border-color: #fecaca; }
+  .hero h1 { margin: 0 0 10px; font-size: 28px; line-height: 1.25; letter-spacing: -.02em; }
+  .hero .lead { margin: 0 0 18px; font-size: 16px; color: var(--text-secondary); max-width: 920px; }
+  .meta-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .meta-card {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 11px 12px;
+  }
+  .meta-card .label { font-size: 10.5px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+  .meta-card .value { font-size: 13.5px; font-weight: 700; margin-top: 3px; }
+  section { margin-bottom: 28px; scroll-margin-top: 20px; }
+  .section-card {
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); padding: 26px 28px;
+  }
+  h2 {
+    margin: 0 0 4px; font-size: 21px; letter-spacing: -.015em;
+    display: flex; align-items: center; gap: 10px;
+  }
+  h2 .num {
+    display: inline-flex; width: 28px; height: 28px; border-radius: 8px;
+    align-items: center; justify-content: center;
+    background: var(--primary); color: #fff; font-size: 12px; font-weight: 800;
+  }
+  .section-sub { color: var(--text-muted); margin: 0 0 18px; font-size: 13.5px; }
+  h3 { margin: 22px 0 8px; font-size: 16.5px; color: var(--primary-dark); }
+  h4 { margin: 14px 0 6px; font-size: 14px; }
+  p { margin: 0 0 11px; color: var(--text-secondary); }
+  ul, ol { margin: 0 0 12px; padding-left: 1.25em; color: var(--text-secondary); }
+  li { margin-bottom: 5px; }
+  strong { color: var(--text); }
+  .table-wrap { overflow-x: auto; margin: 10px 0 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.2px; }
+  th {
+    text-align: left; background: var(--bg-soft); color: var(--text);
+    font-weight: 800; padding: 9px 11px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  td { padding: 9px 11px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbff; }
+  .callout {
+    border-radius: var(--radius-sm); padding: 13px 15px; margin: 12px 0;
+    border: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr; gap: 11px;
+  }
+  .callout .icon {
+    width: 26px; height: 26px; border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff;
+  }
+  .callout.info { background: #eff6ff; border-color: #bfdbfe; }
+  .callout.info .icon { background: var(--primary); }
+  .callout.ok { background: var(--success-soft); border-color: #a7f3d0; }
+  .callout.ok .icon { background: var(--success); }
+  .callout.warn { background: var(--warn-soft); border-color: #fde68a; }
+  .callout.warn .icon { background: var(--warn); }
+  .callout.risk { background: var(--danger-soft); border-color: #fecaca; }
+  .callout.risk .icon { background: var(--danger); }
+  .callout.insight { background: var(--purple-soft); border-color: #ddd6fe; }
+  .callout.insight .icon { background: var(--purple); }
+  .callout .title { font-weight: 800; color: var(--text); margin-bottom: 2px; font-size: 13.5px; }
+  .callout .body { font-size: 13.5px; color: var(--text-secondary); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .card {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px;
+  }
+  .card h4 { margin: 0 0 6px; font-size: 13.5px; }
+  .card p, .card li { font-size: 12.8px; }
+  .card .kicker {
+    font-size: 10.5px; font-weight: 800; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--primary); margin-bottom: 5px;
+  }
+  .layers { display: grid; gap: 7px; margin: 14px 0; }
+  .layer { display: grid; grid-template-columns: 128px 1fr; gap: 10px; }
+  .layer-label {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11.5px; font-weight: 800; border-radius: 10px; color: #fff; text-align: center; padding: 8px;
+  }
+  .layer-body {
+    display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+    background: var(--bg-soft); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px;
+  }
+  .chip {
+    font-size: 11.5px; font-weight: 700; padding: 4px 9px;
+    border-radius: 8px; background: #fff; border: 1px solid var(--border); color: var(--text);
+  }
+  .bar-stack {
+    display: flex; height: 34px; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border); margin: 10px 0 6px;
+  }
+  .bar-seg { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10.5px; font-weight: 800; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .dot { width: 10px; height: 10px; border-radius: 3px; }
+  .timeline { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px; }
+  .phase {
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: #fff; padding: 13px; border-top-width: 3px;
+  }
+  .phase .ph { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--primary); }
+  .phase h4 { margin: 4px 0 6px; font-size: 13.5px; }
+  .phase ul { margin: 0; padding-left: 1.1em; font-size: 12.2px; }
+  .phase.p0 { border-top-color: #64748b; }
+  .phase.p1 { border-top-color: var(--primary); }
+  .phase.p2 { border-top-color: var(--accent); }
+  .phase.p3 { border-top-color: var(--purple); }
+  .decision {
+    border-left: 4px solid var(--primary); background: #f8fafc;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 11px 13px; margin: 8px 0;
+  }
+  .decision .q { font-weight: 800; color: var(--text); font-size: 13.5px; }
+  .decision .a { font-size: 13.5px; color: var(--text-secondary); margin-top: 3px; }
+  .decision .why { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+  pre {
+    background: var(--bg-code); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 14px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12px; line-height: 1.55; color: #1e293b; margin: 8px 0 14px;
+  }
+  code {
+    font-family: var(--mono); font-size: .88em; background: var(--bg-code);
+    padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border);
+  }
+  pre code { background: none; border: none; padding: 0; }
+  .flywheel { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 14px 0; }
+  .fw-step {
+    text-align: center; padding: 12px 8px; background: #fff;
+    border: 1px solid var(--border); border-radius: 12px;
+  }
+  .fw-step .n {
+    width: 24px; height: 24px; border-radius: 50%; margin: 0 auto 6px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--primary); color: #fff; font-size: 11px; font-weight: 800;
+  }
+  .fw-step .t { font-size: 12px; font-weight: 800; }
+  .fw-step .s { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .sev {
+    display: inline-block; font-size: 10.5px; font-weight: 800;
+    padding: 2px 7px; border-radius: 999px;
+  }
+  .sev.high { background: var(--danger-soft); color: var(--danger); }
+  .sev.med { background: var(--warn-soft); color: var(--warn); }
+  .sev.low { background: var(--success-soft); color: var(--success); }
+  .verdict { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 14px 0; }
+  .verdict-card { border-radius: var(--radius-sm); padding: 14px; border: 1px solid var(--border); }
+  .verdict-card.yes { background: linear-gradient(180deg, #ecfdf5, #fff); border-color: #a7f3d0; }
+  .verdict-card.cond { background: linear-gradient(180deg, #fffbeb, #fff); border-color: #fde68a; }
+  .verdict-card .v { font-size: 18px; font-weight: 900; margin-bottom: 3px; }
+  .verdict-card.yes .v { color: var(--success); }
+  .verdict-card.cond .v { color: var(--warn); }
+  .verdict-card .d { font-size: 12.8px; color: var(--text-secondary); }
+  .stat-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 12px 0; }
+  .stat {
+    background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px; text-align: center;
+  }
+  .stat .n { font-size: 20px; font-weight: 900; color: var(--primary-dark); letter-spacing: -.02em; }
+  .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .trust-ladder {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0;
+  }
+  .trust-step {
+    border-radius: 12px; padding: 12px; border: 1px solid var(--border); background: #fff;
+    border-top: 4px solid var(--border-strong);
+  }
+  .trust-step.t1 { border-top-color: #22c55e; }
+  .trust-step.t2 { border-top-color: #84cc16; }
+  .trust-step.t3 { border-top-color: #eab308; }
+  .trust-step.t4 { border-top-color: #ef4444; }
+  .trust-step .lv { font-size: 11px; font-weight: 900; letter-spacing: .04em; }
+  .trust-step h4 { margin: 4px 0 6px; font-size: 13px; }
+  .trust-step p { margin: 0; font-size: 12px; }
+  .compose-box {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 12px 0;
+  }
+  .cnode {
+    background: #fff; border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 12px 10px; text-align: center;
+  }
+  .cnode.core { border-color: #93c5fd; background: #eff6ff; }
+  .cnode.data { border-color: #c4b5fd; background: #f5f3ff; }
+  .cnode.ai { border-color: #fcd34d; background: #fffbeb; }
+  .cnode.ext { border-color: #86efac; background: #f0fdf4; border-style: dashed; }
+  .cnode .t { font-size: 12.5px; font-weight: 800; }
+  .cnode .s { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .cnode .m { font-size: 10.5px; color: var(--accent); font-weight: 700; margin-top: 6px; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  .compare .bad { border-color: #fecaca; background: #fef2f2; }
+  .compare .good { border-color: #a7f3d0; background: #ecfdf5; }
+  footer {
+    margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-muted);
+  }
+  .rev-banner {
+    background: linear-gradient(90deg, #eff6ff, #f0fdfa);
+    border: 1px solid #bfdbfe; border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 16px; font-size: 13px; color: var(--text-secondary);
+  }
+  .rev-banner strong { color: var(--primary-dark); }
+  @media (max-width: 1100px) {
+    .page { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; }
+    .meta-grid, .grid-4, .timeline, .flywheel, .stat-row, .verdict, .trust-ladder, .compose-box { grid-template-columns: 1fr 1fr; }
+    .grid-3, .compare { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 640px) {
+    .meta-grid, .grid-2, .timeline, .flywheel, .stat-row, .verdict, .trust-ladder, .compose-box { grid-template-columns: 1fr; }
+    .layer { grid-template-columns: 1fr; }
+  }
+  @media print {
+    .sidebar { display: none; }
+    .page { display: block; }
+    body { background: #fff; }
+    .section-card, .hero { box-shadow: none; break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC · Design Spec v2.3</div>
+    <h1>신뢰 우선 지식검색 플랫폼<br/>(경량 Docker)</h1>
+    <nav class="nav">
+      <div class="nav-section">개요</div>
+      <a href="#s0">0. 한 장 요약</a>
+      <a href="#s1">1. 부서 맥락·문제</a>
+      <a href="#s2">2. 목표 / 비목표 / SLA</a>
+      <a href="#s3">3. 현황 데이터</a>
+      <a href="#s3b">3B. 코퍼스 심층분석</a>
+      <a href="#s3c">3C. 예시 질의 실현성</a>
+      <a href="#s3d">3D. 갭 보완 설계</a>
+      <a href="#s3e">3E. 질문 100 테스트</a>
+      <a href="#s3f">3F. 100% 답변 설계</a>
+      <a href="#s3g">3G. 그룹장 유사장애 질의</a>
+
+      <div class="nav-section">이상 설계</div>
+      <a href="#s4">4. 설계 원칙 (Trust-First)</a>
+      <a href="#s5">5. 신뢰도 통찰</a>
+      <a href="#s6">6. 도메인 지식 모델</a>
+      <a href="#s7">7. 경량 아키텍처</a>
+      <a href="#s8">8. Docker 구성</a>
+      <a href="#s9">9. 검색·답변 파이프라인</a>
+      <a href="#s10">10. 130k · GLM 운용</a>
+      <a href="#s11">11. 지식 환류</a>
+
+      <div class="nav-section">검증·실행</div>
+      <a href="#s12">12. 구현 가능성</a>
+      <a href="#s13">13. 제약·극복</a>
+      <a href="#s14">14. 로드맵·PR</a>
+      <a href="#s15">15. 결론·권고</a>
+      <a href="#s16">16. v1→v2 변경</a>
+    </nav>
+  </aside>
+
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Design Document v2.3</span>
+        <span class="badge green">Trust-First · 경량 Docker</span>
+        <span class="badge teal">50–100 users</span>
+        <span class="badge purple">GLM 5.2 AWQ 4bit · 130k</span>
+        <span class="badge amber">CSP · MSP · On-Prem</span>
+        <span class="badge red">Precision &gt; Coverage</span>
+      </div>
+      <h1>CI-TEC 신뢰 우선 지식기반 검색 플랫폼<br/>이상 설계 및 실현 가능성 검토</h1>
+      <p class="lead">
+        CSP·MSP·레거시 온프레미스 기술지원 전문 부서를 위한 시스템.
+        <strong>틀린 답 한 건이 장애 확대로 이어질 수 있으므로</strong>, 화려한 생성보다
+        <strong>정확한 검색·근거 투명성·근거 부족 시 침묵(abstention)</strong>을 최우선으로 한다.
+        Docker 4–5 컨테이너로 가볍게 운영하고, 승인된 인사이트만 지식으로 환류한다.
+      </p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">조직</div><div class="value">CI-TEC 기술지원</div></div>
+        <div class="meta-card"><div class="label">환경</div><div class="value">폐쇄망 · Docker</div></div>
+        <div class="meta-card"><div class="label">규모</div><div class="value">50–100 사용자</div></div>
+        <div class="meta-card"><div class="label">LLM</div><div class="value">GLM 5.2 · 130k</div></div>
+        <div class="meta-card"><div class="label">운영 철학</div><div class="value">Precision &gt; Recall</div></div>
+      </div>
+    </header>
+
+    <div class="rev-banner">
+      <strong>v2.3: 그룹장 ‘유사장애·해결적용성’ 파이프라인. v2.2: 역할별 예상질문 100 · 코퍼스 테스트 · Analytics/Capacity/Bundle 보완. v2.1: raw 코퍼스 전수 분석 기반 질의 실현성 검증 · 엔티티/이슈프레임/질의플래너 보완. v2 요지:</strong> (1) 경량 Docker 스택으로 축소 · (2) 50–100명 동시성 현실화 ·
+      (3) <em>신뢰도 표시에 대한 설계 통찰</em> 전면 반영 · (4) CSP/MSP/On-Prem 도메인 택소노미 ·
+      (5) “정확·신뢰”를 위한 검색 품질 게이트·기권 정책 강화 · (6) 무거운 컴포넌트(OpenSearch 클러스터, 별도 Qdrant 필수화 등) 제거.
+    </div>
+
+    <!-- 0 -->
+    <section id="s0">
+      <div class="section-card">
+        <h2><span class="num">0</span> 한 장 요약</h2>
+        <p class="section-sub">의사결정용 Executive Brief</p>
+
+        <div class="verdict">
+          <div class="verdict-card yes">
+            <div class="v">GO</div>
+            <div class="d"><strong>구현 가능·권고.</strong> 50–100명·5k→수만 문서 규모는 경량 스택으로 충분. 사내 LLM·raw 데이터 이미 존재.</div>
+          </div>
+          <div class="verdict-card cond">
+            <div class="v">조건</div>
+            <div class="d">임베딩 모델 반입, GLM API 확인, gold 평가셋, “근거 없으면 말하지 않음” 제품 원칙 합의.</div>
+          </div>
+          <div class="verdict-card yes">
+            <div class="v">신뢰도?</div>
+            <div class="d"><strong>단일 % 점수는 위험.</strong> 다차원 Trust Badge + 근거 등급 + 기권. 아래 §5 통찰 참조.</div>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="card">
+            <div class="kicker">제품 한 줄</div>
+            <h4>전문가의 “두 번째 뇌”, 자동 해결사가 아님</h4>
+            <p>과거 사례·기술문서·점검항목을 수 초 내 찾아주고, 근거와 함께 해석을 돕는다. 최종 판단·조치 책임은 엔지니어.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">런타임</div>
+            <h4>Docker Compose 4–5 서비스</h4>
+            <p><code>web</code> · <code>api</code> · <code>worker</code> · <code>postgres</code> · <code>redis</code>. LLM/임베딩은 사내 공용 또는 얇은 사이드카. Kafka/ES 클러스터 불필요.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">품질 계약</div>
+            <h4>Precision-first Retrieval Contract</h4>
+            <p>상위 결과의 정확도가 생명. 애매하면 결과 축소·“근거 부족” 선언. 커버리지보다 오탐 최소화가 목표.</p>
+          </div>
+        </div>
+
+        <div class="callout insight">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">이상적 시스템의 본질 (통찰)</div>
+            <div class="body">
+              기술지원 조직에서 지식시스템의 가치는 “똑똑한 문장”이 아니라
+              <strong>(1) 맞는 사례를 빠르게 표면화</strong>하고
+              <strong>(2) 그 사례가 현재 환경(CSP/MSP/온프레, 버전, 구성)에 적용 가능한지</strong>를 가르며
+              <strong>(3) 틀릴 가능성을 숨기지 않는 것</strong>이다.
+              이상적 설계 = <em>검색 엔진의 정밀도</em> + <em>증거 등급 체계</em> + <em>환경 축(environment axis)</em> + <em>사람 검수 환류</em>.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 1 -->
+    <section id="s1">
+      <div class="section-card">
+        <h2><span class="num">1</span> 부서 맥락과 문제 정의</h2>
+        <p class="section-sub">CI-TEC = CSP · MSP · Legacy On-Prem 종합 기술지원 전문가 집단</p>
+
+        <h3>1.1 업무 특성 (설계를 지배하는 사실)</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>의사결정의 대가</h4>
+            <p>잘못된 커널 파라미터·네트워크 MTU·DB failover 판단은 고객 장애로 직결된다. 따라서 시스템은 <strong>확신을 연출하면 안 되고</strong>, 근거와 한계를 드러내야 한다.</p>
+          </div>
+          <div class="card">
+            <h4>환경 이질성</h4>
+            <p>동일 증상(“IO 편차”, “heartbeat loss”)도 <strong>CSP 가상화 / MSP 운영대행 / 레거시 베어메탈</strong>에서 원인·조치가 다르다. 검색·답변은 반드시 <em>환경 축</em>을 인식해야 한다.</p>
+          </div>
+          <div class="card">
+            <h4>지식 형태</h4>
+            <p>정형 runbook보다 <strong>사례(티켓) + 원리(테크리포) + 점검(PISA) + 심층분석(tuning_ai)</strong>의 조합이 실무 답이다. 단일 문서 FAQ 봇이 아님.</p>
+          </div>
+          <div class="card">
+            <h4>사용자</h4>
+            <p>초급~시니어 혼재 50–100명. 시니어는 “키워드·티켓키 정확 검색”, 주니어는 “증상 서술 QA”를 더 쓴다. 두 모드 모두 1급 시민.</p>
+          </div>
+        </div>
+
+        <h3>1.2 As-Is Pain</h3>
+        <ul>
+          <li>Jira 지원이력 · Confluence 테크리포 · PISA 점검 · AI 분석물이 <code>raw/</code>에 쌓이지만 <strong>교차 검색·환경 필터·신뢰 등급이 없음</strong>.</li>
+          <li>“예전에 풀었던 그 장애”를 찾기 위해 시스템·사람 의존 탐색 → 응답 시간·품질 편차.</li>
+          <li>인사이트가 개인 메모에 머물고 조직 지식으로 환류되지 않음.</li>
+          <li>인터넷 없는 폐쇄망 → 외부 SaaS RAG 불가.</li>
+        </ul>
+
+        <h3>1.3 To-Be</h3>
+        <p>
+          엔지니어가 증상·환경·제품을 입력하면,
+          <strong>검증된 근거 문서만</strong> 순위화하여 보여주고,
+          필요 시 GLM이 <strong>근거 범위 안에서</strong> 해석·비교 인사이트를 생성하며,
+          시니어가 승인한 패턴만 다시 검색 가능한 지식으로 축적되는 플랫폼.
+        </p>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section id="s2">
+      <div class="section-card">
+        <h2><span class="num">2</span> 목표 · 비목표 · 품질 SLA</h2>
+        <p class="section-sub">“모든 검색결과가 정확하고 신뢰도 높아야 한다”를 측정 가능한 계약으로 번역</p>
+
+        <div class="grid-2">
+          <div>
+            <h3>Goals</h3>
+            <ol>
+              <li><strong>고정밀 통합 검색</strong> — 티켓키·파라미터·제품명 정확 매칭 + 의미 검색.</li>
+              <li><strong>환경 인식 필터</strong> — CSP / MSP / On-Prem · 제품 영역 · 지원유형.</li>
+              <li><strong>근거 기반 답변</strong> — citation 없는 단정 금지, 기권 가능.</li>
+              <li><strong>신뢰 신호</strong> — 단일 %가 아닌 다차원 Trust UI (§5).</li>
+              <li><strong>경량 Docker 운영</strong> — 5 컨테이너 전후, 부서 단독 호스팅 가능.</li>
+              <li><strong>지식 환류</strong> — 승인된 인사이트만 색인.</li>
+              <li><strong>폐쇄망</strong> — 외부 egress 0, 사내 GLM 5.2 130k.</li>
+            </ol>
+          </div>
+          <div>
+            <h3>Non-Goals</h3>
+            <ol>
+              <li>자동 원격 조치 / 스크립트 실행 오케스트레이션.</li>
+              <li>전사 ACL 실시간 미러 (초기 부서 단일 테넌트).</li>
+              <li>Kafka·ES 클러스터·GPU 임베딩 상시 전용 노드 필수화.</li>
+              <li>LLM 파인튜닝 파이프라인 (안정화 이후).</li>
+              <li>이미지 OCR·로그 스트림 실시간 분석 플랫폼 대체.</li>
+            </ol>
+          </div>
+        </div>
+
+        <h3>품질 SLA (Precision-first Contract)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>지표</th><th>목표</th><th>의미</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Precision@3</strong> (검색)</td>
+                <td>≥ <strong>0.90</strong></td>
+                <td>상위 3건 중 관련 문서 비율. “정확한 결과”의 1차 정의.</td>
+              </tr>
+              <tr>
+                <td>nDCG@5</td>
+                <td>≥ 0.85</td>
+                <td>순위 품질. gold set 100질의 기준.</td>
+              </tr>
+              <tr>
+                <td><strong>Abstention precision</strong></td>
+                <td>≥ 0.95</td>
+                <td>“근거 부족”이라고 한 경우 실제로 근거가 없었던 비율.</td>
+              </tr>
+              <tr>
+                <td><strong>Answer groundedness</strong></td>
+                <td>≥ 0.95 문장</td>
+                <td>생성 문장이 citation 청크에 매핑되는 비율.</td>
+              </tr>
+              <tr>
+                <td>Critical false advice rate</td>
+                <td>≈ <strong>0</strong> (샘플 감사)</td>
+                <td>조치 명령을 틀리게 단정한 비율. 발생 시 즉시 롤백 검토.</td>
+              </tr>
+              <tr>
+                <td>검색 p95</td>
+                <td>≤ 700ms</td>
+                <td>리랭크 포함 시 ≤ 2.0s (100명 피크 가정).</td>
+              </tr>
+              <tr>
+                <td>Fast QA p95 / TTFT</td>
+                <td>≤ 12s / ≤ 2.5s</td>
+                <td>기본 프로필(근거 8–20k 토큰).</td>
+              </tr>
+              <tr>
+                <td>가용성</td>
+                <td>업무시간 99%</td>
+                <td>부서 내부 도구 수준. 다중 DC 불필요.</td>
+              </tr>
+              <tr>
+                <td><strong>List Completeness</strong> (exhaustive 질의)</td>
+                <td>≥ 0.98</td>
+                <td>“모두 찾아줘” 유형에서 필터 집합 대비 누락률. top-k RAG 금지 지표 (§3D.7)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout warn">
+          <div class="icon">!</div>
+          <div>
+            <div class="title">“모든 결과가 정확”의 공학적 해석</div>
+            <div class="body">
+              정보검색에서 recall 100% + precision 100%는 불가능에 가깝다.
+              본 설계는 <strong>사용자에게 보이는 상위 결과의 precision</strong>과
+              <strong>생성 답변의 groundedness</strong>를 극단적으로 올리고,
+              확신이 없으면 <strong>결과를 줄이거나 기권</strong>한다.
+              “많이 보여주기”가 아니라 “틀리지 않게 보여주기”가 계약이다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="s3">
+      <div class="section-card">
+        <h2><span class="num">3</span> 현황 데이터</h2>
+        <p class="section-sub"><code>raw/</code> 코퍼스 — 설계 입력</p>
+
+        <div class="stat-row">
+          <div class="stat"><div class="n">~5,007</div><div class="l">파일</div></div>
+          <div class="stat"><div class="n">63 MB</div><div class="l">용량</div></div>
+          <div class="stat"><div class="n">2.2k</div><div class="l">지원 티켓</div></div>
+          <div class="stat"><div class="n">2.7k</div><div class="l">Tech-Repo</div></div>
+          <div class="stat"><div class="n">4.4k</div><div class="l">PISA 항목</div></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>소스</th><th>성격</th><th>증거 등급(초기)</th><th>설계 포인트</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>support_history (Jira)</td>
+                <td>실전 사례 · 증상/조치</td>
+                <td><strong>A</strong> (Status=닫힘/Resolved) · B (진행/기타)</td>
+                <td>티켓키 BM25 필수. 해결 완료 가중치↑</td>
+              </tr>
+              <tr>
+                <td>tech_repo (Confluence)</td>
+                <td>원리·절차·파라미터</td>
+                <td><strong>A</strong> (최근 수정·공식 공간) · B</td>
+                <td>디렉토리 path = 분야 필터 자산</td>
+              </tr>
+              <tr>
+                <td>checkitems (PISA)</td>
+                <td>점검 기준·개선</td>
+                <td><strong>A</strong> (공식 기준서)</td>
+                <td>레코드 단위 인덱싱, 필드 검색</td>
+              </tr>
+              <tr>
+                <td>tuning_ai</td>
+                <td>구조화 심층 분석</td>
+                <td><strong>A−</strong> (모델 분석, 사람 검수 전제)</td>
+                <td>인사이트 템플릿 seed</td>
+              </tr>
+              <tr>
+                <td>insight (시스템 생성)</td>
+                <td>다중 사례 합성</td>
+                <td>draft 비검색 / <strong>A</strong> only if approved</td>
+                <td>오염 방지 게이트</td>
+              </tr>
+              <tr>
+                <td>incident / vendor (예비)</td>
+                <td>장애보고 · 벤더문서</td>
+                <td>정의 후 편입</td>
+                <td>어댑터 슬롯 예약</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>샘플 500건 기준 Jira Component는 “기술지원/장애지원” 비중이 절대적 → 메타만으로는 분야 분리가 부족. <strong>본문·경로·제품 사전 기반 분야 태깅</strong>이 필요 (§6).</p>
+      </div>
+    </section>
+
+
+    <!-- 3B Corpus deep analysis -->
+    <section id="s3b">
+      <div class="section-card">
+        <h2><span class="num">3B</span> 코퍼스 심층 분석 (Evidence-based)</h2>
+        <p class="section-sub">설계·도메인·검색 전략은 추측이 아니라 <code>raw/</code> 실측 결과에 기반한다. 분석일: 2026-07-18</p>
+
+        <h3>3B.1 규모와 소스 품질</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">2,278</div><div class="l">Jira 티켓 MD</div></div>
+          <div class="stat"><div class="n">2,709</div><div class="l">Tech-Repo MD</div></div>
+          <div class="stat"><div class="n">4,434</div><div class="l">PISA 항목</div></div>
+          <div class="stat"><div class="n">98%</div><div class="l">티켓 Status=닫힘</div></div>
+          <div class="stat"><div class="n">22–26</div><div class="l">티켓 연도 분포</div></div>
+        </div>
+        <ul>
+          <li>지원 티켓 Component는 <strong>업무유형</strong> 중심: 기술지원 1,395 · 장애지원 216 · 추진과제 215 · 수명 164 … — <em>기술 분야(네트워크/DB)가 아님</em>.</li>
+          <li>원인/조치 서술 존재율(800건 샘플): 원인 약 32%, 조치 약 31% — 상당수 티켓은 비정형 로그 덤프 위주. <strong>구조화 추출이 필수</strong>.</li>
+          <li>Tech-Repo는 단일 공간 <code>[CI-TEC] 테크리포</code>, 디렉토리 depth 3–6. 핵심 축: 분야별 기술 자료(OS/DB/스토리지/미들웨어/클라우드/네트워크/GPU), SOP, Hang 대응, SCP/DRCC, PISA/PIXEL, PRB 패치.</li>
+          <li>PISA Area는 65+ 제품군(Oracle 286, VMware 206, Linux 180, HANA 101, SKE_K8S 61, Redis 34 …) — <strong>공식 기술 택소노미 원천</strong>.</li>
+        </ul>
+
+        <h3>3B.2 키워드/도메인 실측 (support_history)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>시그널</th><th>문서 수</th><th>설계 함의</th></tr></thead>
+            <tbody>
+              <tr><td>SCP/클라우드 관련</td><td>~1,003</td><td>CSP(SCP) 환경이 코퍼스 최대 축. environment=csp 기본 후보 다수</td></tr>
+              <tr><td>DB 계열</td><td>~657</td><td>Oracle/HANA/MySQL/Tibero 등 PISA Area와 조인 필요</td></tr>
+              <tr><td>네트워크</td><td>~639</td><td>MTU, NIC, offload, LB 사례 풍부</td></tr>
+              <tr><td>스토리지</td><td>~600</td><td>NetApp, latency, NAS, multipath</td></tr>
+              <tr><td>VMware</td><td>~423</td><td>온프레/가상화 혼재</td></tr>
+              <tr><td>Linux/커널</td><td>~370</td><td>sysctl, hang, IO wait</td></tr>
+              <tr><td><strong>모니모/monimo</strong></td><td><strong>77</strong></td><td>고객 시스템 엔티티로 충분 규모. 별칭: 삼성카드, 원앱, 디채, vpfm/ppfm, 금융풀</td></tr>
+              <tr><td>filesystem 서술</td><td>~144</td><td>티켓+PISA 조회로 체크리스트 질의 가능</td></tr>
+              <tr><td><strong>GRO(엄격)</strong></td><td><strong>2</strong> (+tech 보조)</td><td>희소 키워드. exact+동의어 사전 없으면 누락. 내용 품질은 매우 높음</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3B.3 모니모 이력 — 실측 카테고리 (제목 규칙 기반)</h3>
+        <p>77건 중 원인 서술 49 · 조치 39 · 결과 61. 평균 분량 ~6KB. 제목 규칙 분류(다중 라벨 가능):</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>카테고리</th><th>건수(제목)</th><th>대표 이슈</th></tr></thead>
+            <tbody>
+              <tr><td>DB/SQL/성능·지연</td><td>24</td><td>응답지연, heavy SQL, disk latency, 아침 06시 지연</td></tr>
+              <tr><td>장애/안정화/FRB</td><td>14</td><td>접속불가, 장애 후속, Edge 증설 중 장애</td></tr>
+              <tr><td>네트워크/통신/SSL</td><td>14</td><td>Redis 통신, 로그인 실패, 인증서, timeout</td></tr>
+              <tr><td>K8s/WAS/Pod/Edge</td><td>14</td><td>워커노드 hang, IO wait, 원앱 Edge</td></tr>
+              <tr><td>인프라/증설/구성·행사</td><td>11</td><td>성능테스트 3천만 MAU, 부스, 스펙</td></tr>
+              <tr><td>스토리지/NAS/스냅샷</td><td>10</td><td>NAS 통신, 스냅샷 영역, NetApp 모니터링</td></tr>
+              <tr><td>관계사 연동</td><td>5</td><td>생명/증권 API·SSL</td></tr>
+              <tr><td>Redis/캐시 (명시)</td><td>3+</td><td>Timeout, Cluster 재구성 (본문 포함 시 더 많음)</td></tr>
+              <tr><td>기타/미분류</td><td>15</td><td>제목만으로 분야 불명 → NER·본문 태깅 필요</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <div class="icon">!</div>
+          <div>
+            <div class="title">발견: “시스템 엔티티” 메타데이터가 없다</div>
+            <div class="body">
+              Jira Component는 “기술지원”일 뿐 “모니모”가 아니다. 모니모는 제목/본문 문자열로만 존재.
+              이상적 검색을 위해서는 <strong>system_entity / customer / alias</strong> 를 추출·정규화해 1급 필터로 올려야 한다.
+              별칭 예: 모니모 ≡ 삼성카드 모니모 ≡ 디채 ≡ 원앱(문맥) ≡ host prefix <code>vpfm*</code>/<code>ppfm*</code>/<code>ske-ppfm*</code>.
+            </div>
+          </div>
+        </div>
+
+        <h3>3B.4 Tech-Repo 실제 계층 (도메인 원천)</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>L2 주요 축 (문서 수)</h4>
+            <ul>
+              <li>분야별 기술 자료 ~1,139</li>
+              <li>이중화 테스트 시나리오 ~536</li>
+              <li>표준 장애대응 SOP ~280</li>
+              <li>Hang 대응 ~137</li>
+              <li>SCP 기술 자료 · DRCC · PRB · MRB · PIXEL</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>분야별 기술 자료 L3</h4>
+            <ul>
+              <li>운영체제 ~388 · 데이터베이스 ~335</li>
+              <li>스토리지 ~200 · 미들웨어 ~101</li>
+              <li>클라우드 ~77 · 네트워크 ~33 · GPU ~5</li>
+            </ul>
+            <p>→ 환경 축(SCP/DRCC)과 기술 축(OS/DB/…)이 이미 문서 경로에 존재. <strong>path taxonomy 인덱싱</strong>이 곧 도메인 필터.</p>
+          </div>
+        </div>
+
+        <h3>3B.5 PISA Linux 파일시스템 관련 항목 (실목록)</h3>
+        <p>질의 “리눅스 파일시스템 진단 체크리스트”에 대응 가능한 공식 항목(Area=Linux, 파일/디스크/마운트 관련, 16–17건 핵심):</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>분류</th><th>Subject</th></tr></thead>
+            <tbody>
+              <tr><td>PISAOLNX_01.01.01</td><td>구성/부트</td><td>부팅 시 파일 시스템 체크 설정</td></tr>
+              <tr><td>PISAOLNX_01.01.03</td><td>구성/부트</td><td>부팅 시 파일 시스템 옵션(nofail)</td></tr>
+              <tr><td>PISAOLNX_01.01.04</td><td>구성/부트</td><td>부팅 시 파일 시스템 옵션(_netdev)</td></tr>
+              <tr><td>PISAOLNX_01.04.07</td><td>구성/OS</td><td>Filesystem protected_regular 비활성 여부</td></tr>
+              <tr><td>PISAOLNX_01.05.16</td><td>구성/네트워크</td><td>NFS mount 옵션(noresvport)</td></tr>
+              <tr><td>PISAOLNX_01.06.01</td><td>구성/디스크</td><td>외장 스토리지 Multipath I/O</td></tr>
+              <tr><td>PISAOLNX_01.06.02</td><td>구성/디스크</td><td>OS와 애플리케이션/데이터 볼륨 분리</td></tr>
+              <tr><td>PISAOLNX_01.06.05</td><td>구성/디스크</td><td>I/O Scheduler</td></tr>
+              <tr><td>PISAOLNX_02.01.03</td><td>결함/로그</td><td>디스크/파일 시스템 Error 메시지</td></tr>
+              <tr><td>PISAOLNX_03.02.43/88</td><td>가용성/Cluster</td><td>클러스터 FS 마운트 · OCF_CHECK_LEVEL</td></tr>
+              <tr><td>PISAOLNX_04.04.02</td><td>성능/디스크</td><td>루트(/) 파일 시스템 사용률</td></tr>
+              <tr><td>PISAOLNX_04.04.03</td><td>성능/디스크</td><td>파일 시스템 inode 사용률</td></tr>
+              <tr><td>PISAOLNX_04.04.01/04</td><td>성능/디스크</td><td>외장 스토리지 I/O · FD 사용률</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>JSON 필드: 점검방법 · 점검기준 · 취약시 문제점 · 개선방안 — <strong>체크리스트 질의는 레코드 검색으로 완전 답변 가능</strong> (청킹보다 필드 조회가 정답).</p>
+
+        <h3>3B.6 GRO offload — 실측 증거</h3>
+        <ul>
+          <li><strong>CITECTS-2171</strong> 산호세 SRA 파일 전송: Broadcom bnxt_en + VXLAN 환경에서 GRO HW offload가 Pod throughput 저하. 조치: <code>ethtool -K &lt;dev&gt; rx-gro-hw off</code>, 펌웨어 업그레이드 권고.</li>
+          <li><strong>CITECTS-2557</strong> 네이버웍스 VM timeout: HPE 호스트 rx-gro-hw=on 성능 저하. 동일 패턴 인용(2171). 조치: off + Live migration.</li>
+          <li>tech_repo는 TCP offload 일반(<code>ethtool -k/-K … gro on</code>) 튜닝 문서 존재 — 장애 사례와 구분 필요.</li>
+        </ul>
+        <p>→ “모든 GRO 이슈 종합” 질의는 <strong>엄격 토큰 매칭 + 동의어(rx-gro-hw, hardware GRO, generic receive offload)</strong> 와 교차 인용 그래프로 답 가능. 문서 수는 적으나 품질·재현성이 높아 Trust HIGH 가능.</p>
+      </div>
+    </section>
+
+    <!-- 3C Feasibility -->
+    <section id="s3c">
+      <div class="section-card">
+        <h2><span class="num">3C</span> 예시 질의 실현성 판정</h2>
+        <p class="section-sub">설계 아키텍처(Hybrid RAG + Trust + 130k)로 현재 코퍼스만 사용 시 답 가능한가?</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>예시 질의</th>
+                <th>필요 능력</th>
+                <th>현재 데이터</th>
+                <th>v2 아키텍처만</th>
+                <th>v2.1 보완 후</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Q-A.</strong> 모니모 기술지원 이력 카테고리화 + 카테고리별 예방 가이드</td>
+                <td>엔티티 검색 · 군집/분류 · 교차 소스(예방= PISA/SOP/Tech) · 집계 답변</td>
+                <td>77건 이력 풍부. 예방 전용 “모니모 가이드” 문서는 거의 없음(tech 3건 수준). 카테고리 메타 없음</td>
+                <td><span class="sev med">부분</span> 키워드 검색으로 목록은 가능. 안정적 카테고리·예방 매핑은 환각/누락 위험</td>
+                <td><span class="sev low">가능</span> system_entity+이슈프레임+클러스터+예방 링크 규칙+Insight 템플릿</td>
+              </tr>
+              <tr>
+                <td><strong>Q-B.</strong> 리눅스 파일시스템 진단 체크리스트 항목은?</td>
+                <td>구조화 필터(Area=Linux) · 서브토픽 매핑 · 필드 반환</td>
+                <td>PISA 16+ 항목 명확. 점검방법/기준/개선 완비</td>
+                <td><span class="sev med">가능에 가까움</span> 단, 통짜 청킹 시 항목 누락·혼합 위험</td>
+                <td><span class="sev low">완전 가능</span> checkitem 전용 인덱스·필터 질의 플래너</td>
+              </tr>
+              <tr>
+                <td><strong>Q-C.</strong> GRO offload 관련 지원건 전부 + 종합 원인·해결</td>
+                <td>희소 키워드 recall · 동의어 · multi-doc 합성 · 인용</td>
+                <td>핵심 2티켓 + tech 보조. 원인/조치 서술 우수</td>
+                <td><span class="sev med">부분~가능</span> BM25 없으면 벡터가 “offload” 노이즈에 휩쓸릴 수 있음</td>
+                <td><span class="sev low">가능·HIGH</span> exact lexicon + 이슈프레임 합성 + 130k Deep</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>판정 요약</h3>
+        <div class="verdict">
+          <div class="verdict-card cond">
+            <div class="v">Q-A 부분</div>
+            <div class="d">이력 검색은 되나 “카테고리화+예방 가이드”는 메타·교차링크·집계 질의 플래너 없이 신뢰 불가.</div>
+          </div>
+          <div class="verdict-card yes">
+            <div class="v">Q-B 가능</div>
+            <div class="d">PISA 구조화 데이터로 완전 답변 가능. 전용 검색 경로만 있으면 됨.</div>
+          </div>
+          <div class="verdict-card yes">
+            <div class="v">Q-C 가능</div>
+            <div class="d">문서 수 적어도 고품질. 동의어·exact 검색+종합 합성으로 Trust HIGH.</div>
+          </div>
+        </div>
+
+        <div class="callout risk">
+          <div class="icon">!</div>
+          <div>
+            <div class="title">공통 실패 모드 (v2만으로 부족)</div>
+            <div class="body">
+              (1) 시스템/고객 엔티티 미추출 → “모니모” 누락·과다(동명이인 문장).<br/>
+              (2) 티켓 Component≠기술분야 → 분야 필터 오작동.<br/>
+              (3) 예방 가이드가 티켓에 없고 PISA/SOP에 흩어짐 → multi-hop 없이 답 불가.<br/>
+              (4) 희소 기술어(GRO) 동의어 미등록 → recall 실패.<br/>
+              (5) 집계형 질의(“모두 찾고 카테고리화”)를 단순 top-k RAG로 처리 → 목록 불완전.<br/>
+              (6) checkitem을 긴 문서처럼 청킹 → 코드 단위 정답 붕괴.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3D Gap remediation -->
+    <section id="s3d">
+      <div class="section-card">
+        <h2><span class="num">3D</span> 갭 완전 보완 설계 (v2.1 핵심 추가)</h2>
+        <p class="section-sub">위 실패 모드를 제거하기 위해 아키텍처에 반드시 추가할 모듈</p>
+
+        <h3>3D.1 목표 보강 아키텍처</h3>
+        <div class="layers">
+          <div class="layer">
+            <div class="layer-label" style="background:#1e3a8a">Query Planner</div>
+            <div class="layer-body">
+              <span class="chip">질의 유형 분류</span>
+              <span class="chip">lookup / list / aggregate / checklist / synthesize</span>
+              <span class="chip">엔티티·필터 슬롯 필링</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#0f766e">Enrichment</div>
+            <div class="layer-body">
+              <span class="chip">Entity linker</span>
+              <span class="chip">Alias dict</span>
+              <span class="chip">Issue frame 추출</span>
+              <span class="chip">Path taxonomy</span>
+              <span class="chip">PISA field index</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#6d28d9">Retrieve+</div>
+            <div class="layer-body">
+              <span class="chip">Hybrid</span>
+              <span class="chip">Exact lexicon</span>
+              <span class="chip">Exhaustive mode (list-all)</span>
+              <span class="chip">Cross-source hop</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#b45309">Synthesize</div>
+            <div class="layer-body">
+              <span class="chip">Category bucket</span>
+              <span class="chip">Prevention linker</span>
+              <span class="chip">GLM 130k</span>
+              <span class="chip">Trust gate</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>3D.2 Query Planner — 질의 유형</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>유형</th><th>예시</th><th>검색 전략</th><th>생성</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>entity_aggregate</code></td>
+                <td>모니모 이력 카테고리화</td>
+                <td><strong>Exhaustive retrieve</strong> (entity filter, 상한 N=200) → 클러스터/라벨 집계. top-k 금지</td>
+                <td>표+카운트+대표 citation. 누락 시 “N건 중 표시” 명시</td>
+              </tr>
+              <tr>
+                <td><code>checklist</code></td>
+                <td>리눅스 FS 진단 항목</td>
+                <td>checkitems 전용 인덱스, Area/Subcategory/키워드 필터, <strong>전 필드 반환</strong></td>
+                <td>목록 포맷. LLM 요약 최소(임의 항목 추가 금지)</td>
+              </tr>
+              <tr>
+                <td><code>technical_synthesize</code></td>
+                <td>GRO 원인·해결 종합</td>
+                <td>lexicon exact + hybrid, parent expand, 관련 교차 인용 follow</td>
+                <td>Deep QA 40–80k, 이슈프레임 merge, Trust</td>
+              </tr>
+              <tr>
+                <td><code>prevention_map</code></td>
+                <td>카테고리별 예방 가이드</td>
+                <td>1) 사례 집계 2) hop: 동 domain PISA + SOP + tech_repo path</td>
+                <td>사례→예방 매핑 표. 매핑 근거 없으면 “가이드 부재” 명시</td>
+              </tr>
+              <tr>
+                <td><code>factoid</code></td>
+                <td>특정 티켓 조치 명령</td>
+                <td>exact issue key + hybrid</td>
+                <td>Fast QA, citation 필수</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3D.3 엔티티 · 별칭 · 고객 시스템 그래프</h3>
+<pre><code>Entity {
+  id: "sys:monimo",
+  canonical_name: "모니모",
+  type: "business_system",
+  customer: "삼성카드",
+  environment_hints: ["csp", "scp", "k8s"],
+  aliases: ["monimo", "모니모", "디채", "모니모 원앱", "삼성카드 모니모"],
+  host_patterns: ["vpfm*", "ppfm*", "ske-ppfm*", "ske-vpfm*"],
+  related: ["SCP금융풀", "Redis", "SKE"]
+}
+
+# 인덱싱 시 documents.metadata.entities[] 에 연결
+# 검색 시 질의 "모니모" → expand(aliases+host_patterns) OR entity_id filter
+</code></pre>
+        <ul>
+          <li>시드: 제목 괄호 엔티티·고빈도 고유명 자동 후보 + 부서 사전(수동 50–100 핵심 시스템).</li>
+          <li>모니모는 실측 77건으로 시드 확정 가능.</li>
+          <li>호스트명 패턴은 티켓 본문에 반복 출현(<code>vpfm</code>, <code>ppfm</code>) — 규칙 추출 가능.</li>
+        </ul>
+
+        <h3>3D.4 Issue Frame 추출 (티켓 구조화)</h3>
+        <p>비정형 티켓을 검색·종합 가능한 슬롯으로 정규화. 배치(GLM 또는 규칙)로 수행, 실패 시 null.</p>
+<pre><code>IssueFrame {
+  doc_id, entity_ids[],
+  symptom, root_cause, resolution, workaround,
+  components: ["redis","k8s","nic","storage",...],  # tech tags
+  environment: "csp|onprem|hybrid|unknown",
+  severity_hint, commands[],  # ethtool -K ... 등
+  quality: 0-1  # 원인+조치 동시 존재 시 상승
+}
+</code></pre>
+        <ul>
+          <li>GRO 사례처럼 원인/조치가 분명한 티켓 → frame.quality 높음 → 합성 시 가중.</li>
+          <li>로그 덤프만 있는 티켓 → 검색은 하되 종합 답변 근거 우선순위에서 강등.</li>
+          <li>예방 매핑: <code>components ∩ PISA.Area/Subcategory</code> + tech_repo path 매칭.</li>
+        </ul>
+
+        <h3>3D.5 Checkitem 전용 검색 경로</h3>
+        <ul>
+          <li>청킹 금지(또는 1 item = 1 chunk 고정). 검색 키: Code, Subject, Area, Category_1, Subcategory, 점검기준 전문.</li>
+          <li>질의 라우팅: “체크리스트|점검항목|PISA|진단 항목” → <code>checklist</code> 플래너.</li>
+          <li>Linux + (파일 시스템|inode|fstab|마운트|디스크) 쿼리 확장 사전 내장.</li>
+          <li>응답 스키마 고정: 코드 / 항목명 / 점검방법 / 기준 / 개선방안 테이블. LLM이 항목을 “창작”하지 못하게 system 제약.</li>
+        </ul>
+
+        <h3>3D.6 Exact Lexicon · 희소 기술어</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>대표어</th><th>동의어/변형 (코퍼스 실측)</th><th>검색 처리</th></tr></thead>
+            <tbody>
+              <tr><td>GRO offload</td><td>rx-gro-hw, hardware GRO, GRO hardware offloading, generic receive offload, ethtool -K … gro</td><td>phrase OR + 필수 토큰 가산점</td></tr>
+              <tr><td>모니모</td><td>monimo, 삼성카드 모니모, 디채, 원앱(문맥), vpfm/ppfm host</td><td>entity expand</td></tr>
+              <tr><td>SCP</td><td>삼성클라우드플랫폼, 금융풀, SKE, PaaS</td><td>env=csp soft boost</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>“offload” 단독 매칭은 tech_repo 튜닝 문서 노이즈 → <strong>GRO 문맥 토큰 동반</strong> 또는 issue_frame.components 포함 시에만 장애 사례로 승격.</p>
+
+        <h3>3D.7 Exhaustive / List-all 모드 (정확 목록의 핵심)</h3>
+        <div class="callout insight">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">통찰: top-k RAG는 “모두 찾아줘”에 구조적으로 부적합</div>
+            <div class="body">
+              “GRO 관련 지원건을 모두”, “모니모 이력을 카테고리화”는 recall 100%에 가까운 집합 연산이다.
+              이상적 시스템은 이런 질의를 감지하면 k=5 검색이 아니라
+              <strong>필터 스캔(entity_id 또는 lexicon) → 전량 수집(상한·페이지) → 구조화 집계 → (선택) LLM 요약</strong> 파이프라인으로 분기한다.
+              이 분기가 없으면 어떤 LLM·130k도 “정확한 전부”를 보장할 수 없다.
+            </div>
+          </div>
+        </div>
+<pre><code># Exhaustive mode pseudo
+docs = db.query(entities @> monimo OR text_lexicon_match(GRO_LEX))
+assert len(docs) <= HARD_CAP  # e.g. 300; else ask refine
+frames = load_issue_frames(docs)
+buckets = cluster_by(frames.components or title_rules)
+prevention = hop_link(buckets, pisa, tech_repo_sop)
+answer = render_tables(buckets, prevention, citations=docs)
+# LLM only polishes wording; must not add uncited cases
+</code></pre>
+
+        <h3>3D.8 Prevention Linker (사례 → 예방 가이드)</h3>
+        <p>모니모 예방 전용 문서가 부족한 현실 보완:</p>
+        <ol>
+          <li>각 카테고리의 dominant component 태그(예: redis, k8s, storage, nic).</li>
+          <li>PISA Area 매핑: Redis→Redis 항목, Linux disk→FS 항목, SKE_K8S→K8s 항목.</li>
+          <li>Tech-Repo path: 분야별 자료 / SOP / Hang 대응 / SCP 자료에서 동 토픽 top 문서.</li>
+          <li>매핑 점수 임계 미달 시 <strong>“연계 공식 가이드 없음 — 아래 사례 기반 점검 제안(초안)”</strong> 라벨 + Trust MEDIUM + 승인 시 insight로 승격.</li>
+        </ol>
+
+        <h3>3D.9 예시 질의 End-to-End (보완 후)</h3>
+        <div class="grid-3">
+          <div class="card">
+            <div class="kicker">Q-A 모니모</div>
+            <h4>entity_aggregate + prevention_map</h4>
+            <p>entity=모니모 → 77건 exhaustive → 카테고리 버킷(성능/K8s/Redis/스토리지/…) → 카테고리별 PISA·SOP hop → 표 응답. 가이드 없으면 부재 명시 + 사례 기반 예방 초안(draft insight).</p>
+          </div>
+          <div class="card">
+            <div class="kicker">Q-B FS 체크리스트</div>
+            <h4>checklist</h4>
+            <p>Area=Linux AND (파일 시스템|inode|fstab|디스크|마운트) → 16건 필드 테이블. LLM 창작 금지. 코드 클릭 시 점검방법 전문.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">Q-C GRO</div>
+            <h4>technical_synthesize</h4>
+            <p>lexicon exact → 2+ 티켓 + 교차 인용 → issue frames merge → 공통 원인( HW GRO + 가상화/VXLAN ) · 해결(rx-gro-hw off, FW) · 예방(호스트 NIC 표준) · Trust HIGH.</p>
+          </div>
+        </div>
+
+        <h3>3D.10 데이터 모델 추가 필드</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>테이블</th><th>추가</th><th>용도</th></tr></thead>
+            <tbody>
+              <tr><td><code>entities</code></td><td>canonical, aliases[], patterns[], customer, env_hints</td><td>시스템/고객 정규화</td></tr>
+              <tr><td><code>document_entities</code></td><td>doc_id, entity_id, conf</td><td>엔티티 필터</td></tr>
+              <tr><td><code>issue_frames</code></td><td>symptom, cause, resolution, components[], commands[]</td><td>종합·예방 매핑</td></tr>
+              <tr><td><code>lexicon_terms</code></td><td>canonical, variants[], priority</td><td>GRO 등 희소어</td></tr>
+              <tr><td><code>checkitems</code></td><td>정규 테이블(JSON 분해)</td><td>체크리스트 질의</td></tr>
+              <tr><td><code>documents.metadata</code></td><td>path_l2, path_l3, pisa_area, work_type</td><td>실측 택소노미</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3D.11 PR Plan 추가 (v2.1)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PR</th><th>내용</th><th>의존</th></tr></thead>
+            <tbody>
+              <tr><td>PR-15</td><td>feat(entity): entities + alias seed(모니모 등) + linker job</td><td>PR-03</td></tr>
+              <tr><td>PR-16</td><td>feat(frame): issue frame extraction batch + quality score</td><td>PR-03, LLM</td></tr>
+              <tr><td>PR-17</td><td>feat(checkitem): normalized table + checklist search API</td><td>PR-02</td></tr>
+              <tr><td>PR-18</td><td>feat(planner): query type router + exhaustive mode</td><td>PR-05,15,17</td></tr>
+              <tr><td>PR-19</td><td>feat(lexicon): technical synonym dict + GRO seed</td><td>PR-05</td></tr>
+              <tr><td>PR-20</td><td>feat(prevent): prevention linker pisa/tech hop</td><td>PR-16,17</td></tr>
+              <tr><td>PR-21</td><td>test(eval): gold queries Q-A/B/C + list completeness metric</td><td>PR-18</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout ok">
+          <div class="icon">✓</div>
+          <div>
+            <div class="title">보완 후 최종 실현성</div>
+            <div class="body">
+              세 가지 예시 질의 모두 <strong>정확한 검색·신뢰 가능 답변</strong> 범위에 들어온다.
+              전제: exhaustive 모드의 목록 완전성, checkitem 필드 검색, 엔티티/별칭, 이슈프레임, 예방 hop, Trust 기권.
+              예방 가이드 “원문이 코퍼스에 없는” 경우에도 시스템을 속이지 않고 부재를 선언한 뒤 사례 기반 초안만 draft로 제공한다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- 3E 100 questions -->
+    <section id="s3e">
+      <div class="section-card">
+        <h2><span class="num">3E</span> 역할별 예상 질문 100 · 코퍼스 테스트</h2>
+        <p class="section-sub">전문가 · 임원/부서장 · 장애관리 담당 관점. 상세 목록: <code>design/query_catalog_100.md</code> · 분석: <code>design/Query_Catalog_100_Analysis.md</code></p>
+
+        <h3>3E.1 페르소나 × 질문 의도 (통찰)</h3>
+        <div class="grid-3">
+          <div class="card">
+            <div class="kicker">기술지원 전문가 · 40문</div>
+            <h4>“이 증상, 이 환경, 무엇부터?”</h4>
+            <p>사례·파라미터·PISA·예방. 오진 비용 큼 → Precision·citation·기권.</p>
+            <p style="font-size:12px;margin-top:8px">예: GRO 전량 종합, 모니모 카테고리, FS 체크리스트, HANA failover, anti-affinity…</p>
+          </div>
+          <div class="card">
+            <div class="kicker">임원/부서장 · 30문 + 그룹장 SI</div>
+            <h4>“여력·숫자” + “지금 유사장애?”</h4>
+            <p>평시: 대수·M/M·비중. <strong>장애 시: 유사 과거·해결·이번 적용성</strong> (§3G). 표·집계 + similar_incident.</p>
+            <p style="font-size:12px;margin-top:8px">예: 0.25M/M, SCP 비중 / G01–G10 유사장애 브리핑…</p>
+          </div>
+          <div class="card">
+            <div class="kicker">장애관리 담당 · 30문</div>
+            <h4>“지금 비슷한 장애 · 당장 할 일”</h4>
+            <p>FRB 패턴, SOP/Hang, 재발방지, 긴급 체크 번들. <strong>속도 + 유사도</strong>.</p>
+            <p style="font-size:12px;margin-top:8px">예: Edge hang, 인증서 만료, heartbeat+failover, 코어덤프 수집…</p>
+          </div>
+        </div>
+
+        <h3>3E.2 테스트 결과 요약</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">100</div><div class="l">예상 질문</div></div>
+          <div class="stat"><div class="n">94</div><div class="l">키워드 strong(≥5)</div></div>
+          <div class="stat"><div class="n">6</div><div class="l">weak (희소·고품질)</div></div>
+          <div class="stat"><div class="n">0</div><div class="l">none (근거 0)</div></div>
+          <div class="stat"><div class="n">76→100</div><div class="l">경로 보완 시 완전답</div></div>
+        </div>
+
+        <div class="callout insight">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">핵심 통찰</div>
+            <div class="body">
+              <strong>문서 공백이 아니라 실행 경로 공백</strong>이다. 100문 모두 코퍼스에 근거 시그널이 있다(none=0).
+              그러나 “완벽 답변”은 76문은 검색/RAG/checkitem으로, 나머지 24문은
+              <strong>Planner(전량) · Capacity 규칙 계산 · Analytics 집계</strong> 없이는 구조적으로 실패한다.
+              키워드 94% strong을 “시스템 완성”으로 오해하면 안 된다.
+            </div>
+          </div>
+        </div>
+
+        <h3>3E.3 완전 답변 등급 (재분류)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>등급</th><th>건수</th><th>의미</th><th>필요 경로</th><th>v2.1 기본만</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>A</strong> factoid</td><td>30</td><td>소수 문서 직접 답</td><td>Hybrid + cite</td><td>가능</td></tr>
+              <tr><td><strong>A+</strong> checklist</td><td>3</td><td>PISA 필드 목록</td><td>checkitem 전용</td><td>경로 추가 시</td></tr>
+              <tr><td><strong>B</strong> synthesize</td><td>43</td><td>다중 문서 종합</td><td>RAG + Trust</td><td>가능</td></tr>
+              <tr><td><strong>C</strong> exhaustive/hop</td><td>9</td><td>전량·엔티티·예방</td><td>Planner + exhaustive</td><td>부분</td></tr>
+              <tr><td><strong>D</strong> analytics</td><td>7</td><td>건수·비중·추이</td><td>SQL Analytics</td><td>불가*</td></tr>
+              <tr><td><strong>E</strong> capacity</td><td>8</td><td>대수·M/M·단가</td><td>Rules + calc</td><td>부분</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted)">* LLM이 숫자를 세는 방식은 금지. 반드시 메타데이터 집계 API.</p>
+
+        <h3>3E.4 페르소나별 준비도</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>페르소나</th><th>검색/RAG로 충분</th><th>추가 모듈 필수</th><th>대표 실패 질문</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>전문가</td><td>~35/40</td><td>C·E·D 소수</td>
+                <td>모니모 카테고리화, GRO 전량, 2주 대수, Oracle 항목 수</td>
+              </tr>
+              <tr>
+                <td><strong>관리자</strong></td>
+                <td>~16/30</td>
+                <td><strong>E 7 + D 5</strong> (설계 부담 최대)</td>
+                <td>분야별 대수/M/M/단가, 연도별 추이, Component 비중</td>
+              </tr>
+              <tr>
+                <td>장애관리</td><td>~25/30</td><td>C·D + Bundle UX</td>
+                <td>재발방지 전량, 긴급 체크 번들, 제목 패턴 통계</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3E.5 weak 6문 — 희소하나 답 가능</h3>
+        <ul>
+          <li><strong>E02 GRO</strong> — 티켓 2+건, 내용 최고 품질 → exhaustive+lexicon</li>
+          <li><strong>M02/M19/M25 capacity·계약</strong> — FAQ 단일 문서 표 → table extract + rules</li>
+          <li><strong>M06/M08</strong> — 소수 티켓·FAQ → factoid + citation으로 충분, 일반화 금지</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 3F perfect answer design -->
+    <section id="s3f">
+      <div class="section-card">
+        <h2><span class="num">3F</span> 100문 완벽 답변을 위한 설계 보완</h2>
+        <p class="section-sub">76% → 100% 경로. 신규 모듈은 여전히 경량 Docker 원칙 유지</p>
+
+        <h3>3F.1 확장 라우팅 아키텍처</h3>
+        <div class="layers">
+          <div class="layer">
+            <div class="layer-label" style="background:#1e3a8a">Persona UI</div>
+            <div class="layer-body">
+              <span class="chip">전문가 모드</span>
+              <span class="chip">관리자 모드</span>
+              <span class="chip">장애(War-room) 모드</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#0f766e">Router</div>
+            <div class="layer-body">
+              <span class="chip">factoid</span><span class="chip">synthesize</span>
+              <span class="chip">checklist</span><span class="chip">exhaustive</span>
+              <span class="chip">capacity</span><span class="chip">analytics</span>
+              <span class="chip">incident_bundle</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#6d28d9">Handlers</div>
+            <div class="layer-body">
+              <span class="chip">Search/RAG</span>
+              <span class="chip">Checkitem SQL</span>
+              <span class="chip">Entity scan</span>
+              <span class="chip">Rules calc</span>
+              <span class="chip">Meta aggregate</span>
+              <span class="chip">Bundle pack</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>3F.2 Analytics API (D등급 7문 해소)</h3>
+        <p>LLM 계수 금지. Postgres 메타 집계만 숫자를 만든다.</p>
+<pre><code>GET /analytics/tickets?group_by=year|component|entity
+GET /analytics/title_tokens?component=장애지원&amp;top_k=20
+GET /analytics/entity_share?entity=monimo   # 77/2278 등
+
+# 응답 숫자를 프롬프트에 "확정 사실"로 주입 후 문장만 생성
+# Trust: HIGH if SQL; ABSTAIN if filter empty
+</code></pre>
+        <p>해소: M03 연도별 추이 · M04 Component 비중 · M16 모니모 비중 · M23 SCP 시그널 · I23 제목 패턴 · E26 Oracle 항목 수(checkitems COUNT).</p>
+
+        <h3>3F.3 Capacity Rules + Calculator (E등급 8문 해소)</h3>
+<pre><code># seed from QRB_품질_인프라구축검증_PISA_FAQ.md
+capacity_rules:
+  - basis: "1안"
+    period_days: 7
+    fields:
+      AIX: 20; HP-UX: 20; Solaris: 20; Linux: 20; Windows: 20
+      Web_WAS: 5; DBMS: 5; Virtualization: 5; Storage: 5; Network: 10
+    mm_per_field_week: 0.25
+  - pricing: {server: 100, db_mw_instance: 500, storage: 180, nw: 50}
+
+# query: 2주 분야별 대수
+→ scale = 14/7 = 2; units *= 2; label "1주 표준×2 환산 (원문 2주 표 없음)"
+</code></pre>
+        <p>해소: E11, M01, M02, M13, M18, M25, M30, M06(사례 citation 병행).</p>
+
+        <h3>3F.4 Incident Bundle Packs (장애 mid-incident)</h3>
+        <div class="grid-2">
+          <div class="card">
+            <h4>pack:linux-hang</h4>
+            <p>Hang 대응 Tech-Repo + 최근 hang 티켓 top5 + 관련 PISA + 수집 명령 요약. War-room 원클릭.</p>
+          </div>
+          <div class="card">
+            <h4>pack:network-timeout</h4>
+            <p>GRO/offload 사례 + ethtool 런북 + MTU/LB 관련 티켓. I09·E02 연결.</p>
+          </div>
+        </div>
+        <p>해소: I01, I21 및 장애 페르소나 UX 전반. 번들은 정적 시드+주기 재생성(주 1회 job).</p>
+
+        <h3>3F.5 Persona UI 프리셋 (경량, 별도 백엔드 최소)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>모드</th><th>기본 검색</th><th>기본 생성</th><th>강조 UI</th></tr></thead>
+            <tbody>
+              <tr><td>전문가</td><td>Hybrid+필터</td><td>Deep 가능</td><td>citation, 환경 태그, 명령 복사</td></tr>
+              <tr><td>관리자</td><td>FAQ/진단컨설팅 boost</td><td>표 우선, 짧은 문장</td><td>capacity 표, analytics 차트</td></tr>
+              <tr><td>장애 War-room</td><td>유사장애+SOP boost</td><td>Fast only</td><td>Bundle, 체크리스트, 큰 Trust</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3F.6 Gold Eval = 본 100문</h3>
+        <ul>
+          <li>저장: <code>design/query_catalog_100.json</code></li>
+          <li>지표: retrieval hit, list completeness(C), numeric accuracy(E/D), groundedness(B), abstention precision</li>
+          <li><strong>출시 게이트:</strong> 100문 중 ready=pass ≥ 95, critical(E/D numeric) 100%</li>
+        </ul>
+
+        <h3>3F.7 PR Plan 추가 (v2.2)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PR</th><th>제목</th><th>해소</th></tr></thead>
+            <tbody>
+              <tr><td>PR-22</td><td>test: gold query catalog 100 + eval harness</td><td>전체 회귀</td></tr>
+              <tr><td>PR-23</td><td>feat(analytics): metadata aggregate API</td><td>D 7문</td></tr>
+              <tr><td>PR-24</td><td>feat(capacity): rules seed + calculator</td><td>E 8문</td></tr>
+              <tr><td>PR-25</td><td>feat(incident): war-room bundles</td><td>I bundle</td></tr>
+              <tr><td>PR-26</td><td>feat(ui): persona presets</td><td>UX</td></tr>
+              <tr><td>PR-27</td><td>feat(ingest): table/capacity extractor</td><td>weak 표 강화</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3F.8 100% 도달 로드맵</h3>
+        <div class="timeline">
+          <div class="phase p1"><div class="ph">P1</div><h4>~76%</h4><ul><li>Search+RAG</li><li>Checkitem</li><li>A/A+/B</li></ul></div>
+          <div class="phase p2"><div class="ph">P2</div><h4>~85%</h4><ul><li>Planner</li><li>Entity/Exhaustive</li><li>+C</li></ul></div>
+          <div class="phase p3"><div class="ph">P3</div><h4>~93%</h4><ul><li>Capacity rules</li><li>+E</li></ul></div>
+          <div class="phase p0"><div class="ph">P4</div><h4>~100%</h4><ul><li>Analytics</li><li>+D · Gold pass</li></ul></div>
+        </div>
+
+        <div class="callout ok">
+          <div class="icon">✓</div>
+          <div>
+            <div class="title">설계 완료 정의 (업데이트)</div>
+            <div class="body">
+              “RAG 데모 성공”이 아니라 <strong>query_catalog_100 평가 통과</strong>.
+              특히 관리자 capacity 숫자와 analytics 숫자는 SQL/Rules만 정답으로 인정한다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- 3G Group leader similar incident -->
+    <section id="s3g">
+      <div class="section-card">
+        <h2><span class="num">3G</span> 그룹장 유사장애 질의 — 1급 유스케이스</h2>
+        <p class="section-sub">
+          “(지금 장애가 났다) 예전에 비슷한 게 있었나? 뭐였지? 어떻게 풀었지? <strong>이번에도 그 방법이 먹히나?</strong>”
+          — 부서장/그룹장의 mid-incident 의사결정 질문. 단순 검색이 아니라 <strong>유사도 + 적용 가능성 판정</strong>이다.
+        </p>
+
+        <h3>3G.1 질문 분해 (반드시 4슬롯)</h3>
+        <div class="grid-2">
+          <div class="card">
+            <div class="kicker">Slot 1 · Similarity</div>
+            <h4>이전에 유사 장애가 있었는가?</h4>
+            <p>Top-K 유사 사례 카드 (있음/약함/없음). 없음이면 기권+추가 수집 질문.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">Slot 2 · What</div>
+            <h4>어떤 장애였는가?</h4>
+            <p>증상 · 영향 범위 · 환경(CSP/온프레) · 제품 · 기간. Issue Frame 요약.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">Slot 3 · How fixed</div>
+            <h4>어떻게 해결했는가?</h4>
+            <p>조치 · workaround · 명령 · 담당/벤더. 원인+조치 동시 있는 사례 가중 (코퍼스 ~516건).</p>
+          </div>
+          <div class="card">
+            <div class="kicker">Slot 4 · Applicability ★</div>
+            <h4>이번에도 그 해결이 도움이 되는가?</h4>
+            <p>현재 장애 컨텍스트와 과거 사례의 <strong>차이점</strong>을 비교. 여기가 그룹장 질문의 핵심이며 일반 RAG가 가장 쉽게 거짓 확신을 내는 지점.</p>
+          </div>
+        </div>
+
+        <div class="callout insight">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">통찰: “유사”와 “적용 가능”은 다른 축</div>
+            <div class="body">
+              증상 텍스트가 비슷해도 환경이 다르면 해결책이 독이 될 수 있다
+              (예: 과거 GRO offload off 조치 ≠ 현재 물리 NIC/드라이버가 다른 구성).
+              시스템은 <strong>유사 사례 검색(Retrieval)</strong>과
+              <strong>적용 가능성 판정(Applicability)</strong>을 분리하고,
+              후자는 환경·제품·버전·구성 슬롯 일치도로 Trust를 매긴다.
+              슬롯이 비어 있으면 “도움이 된다”고 단정하지 말고 확인 질문을 한다.
+            </div>
+          </div>
+        </div>
+
+        <h3>3G.2 코퍼스 뒷받침 (실측)</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">2,278</div><div class="l">지원 티켓 (대부분 닫힘)</div></div>
+          <div class="stat"><div class="n">~516</div><div class="l">원인+조치 동시 서술</div></div>
+          <div class="stat"><div class="n">~484</div><div class="l">+결과까지 서술</div></div>
+          <div class="stat"><div class="n">~478</div><div class="l">장애/FRB 시그널</div></div>
+          <div class="stat"><div class="n">충분</div><div class="l">유사장애 검색 코퍼스</div></div>
+        </div>
+        <p>원인·조치가 없는 티켓은 유사 후보에는 올릴 수 있으나, “어떻게 해결했는지” 슬롯 우선순위에서 강등한다 (frame.quality).</p>
+
+        <h3>3G.3 전용 파이프라인: <code>similar_incident</code></h3>
+        <div class="layers">
+          <div class="layer">
+            <div class="layer-label" style="background:#b91c1c">1. Context</div>
+            <div class="layer-body">
+              <span class="chip">현재 증상 서술</span>
+              <span class="chip">환경 슬롯</span>
+              <span class="chip">제품/호스트</span>
+              <span class="chip">시간창</span>
+              <span class="chip">영향 서비스</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#1d4ed8">2. Retrieve</div>
+            <div class="layer-body">
+              <span class="chip">BM25 증상·에러코드</span>
+              <span class="chip">Dense 유사</span>
+              <span class="chip">Entity/host boost</span>
+              <span class="chip">Resolved 가중</span>
+              <span class="chip">frame.quality 가중</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#0f766e">3. Rank</div>
+            <div class="layer-body">
+              <span class="chip">증상 유사도</span>
+              <span class="chip">환경 일치</span>
+              <span class="chip">제품/스택 일치</span>
+              <span class="chip">조치 완결성</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#6d28d9">4. Apply?</div>
+            <div class="layer-body">
+              <span class="chip">차이점 diff</span>
+              <span class="chip">적용 가능 / 조건부 / 비권고</span>
+              <span class="chip">확인 질문</span>
+              <span class="chip">Trust Banner</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#0f172a">5. Brief</div>
+            <div class="layer-body">
+              <span class="chip">그룹장 1분 브리핑</span>
+              <span class="chip">유사 3건 카드</span>
+              <span class="chip">즉시 점검 액션</span>
+              <span class="chip">원문 citation</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>3G.4 응답 템플릿 (그룹장용 — 필수 UX)</h3>
+<pre><code>## 한 줄 결론
+- 유사 과거 장애: 있음 (강력 3건) / 약함 / 근거 부족
+- 우선 시도할 조치: … (조건부)
+- 주의: 현재 환경과 다른 점 …
+
+## 유사 사례 (최대 3)
+### 1) CITECTS-xxxx · [제목] · [날짜] · Trust: 증상●●● 환경●●○ 조치완결●●●
+- 무엇이: …
+- 원인: …
+- 해결: …
+- 이번 적용: 가능 | 조건부(…확인 필요) | 비권고(이유)
+- 링크/citation
+
+## 공통 패턴 (있을 때만)
+## 지금 바로 확인할 것 (체크 5개 이내)
+## 추가 정보 요청 (슬롯 비어 있을 때)
+- 환경(CSP/온프레/벤더)? 버전? 변경 창? 에러 메시지 전문?
+</code></pre>
+
+        <h3>3G.5 적용 가능성 (Applicability) 판정 규칙</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>판정</th><th>조건 (예시)</th><th>그룹장에게 보이는 말</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="sev low">적용 권고</span></td>
+                <td>증상 유사↑ + 환경/제품 일치 + 조치 검증됨(닫힘+결과)</td>
+                <td>“과거와 전제가 맞습니다. 동일 조치부터 검토 권고.”</td>
+              </tr>
+              <tr>
+                <td><span class="sev med">조건부</span></td>
+                <td>증상 유사↑ but 환경/버전 불명 또는 부분 불일치</td>
+                <td>“조치 자체는 참고. 적용 전 ○○ 확인 필요.”</td>
+              </tr>
+              <tr>
+                <td><span class="sev high">비권고</span></td>
+                <td>증상만 비슷, 근본 원인 축이 다름(예: 앱 버그 vs NIC)</td>
+                <td>“겉 증상만 유사. 과거 조치를 그대로 쓰면 위험.”</td>
+              </tr>
+              <tr>
+                <td><span class="sev high">기권</span></td>
+                <td>유사 점수 임계 미달 또는 현재 컨텍스트 공백</td>
+                <td>“유사 근거 부족. 아래 정보를 주시면 재검색.”</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3G.6 입력 UX — “현재 장애” 컨텍스트</h3>
+        <ul>
+          <li><strong>War-room 모드</strong> 진입 시: 증상 자유 서술 + 선택 슬롯(환경/제품/서비스명/시작시각).</li>
+          <li>슬롯 없이도 검색은 하되, Slot4(적용성)는 기본 <strong>조건부/기권</strong>.</li>
+          <li>Jira 장애 티켓 URL/키를 붙이면 현재 장애 본문을 컨텍스트로 파싱 (있으면).</li>
+          <li>그룹장 화면은 장문 금지: <strong>1분 브리핑 + 3카드</strong>. 상세는 펼치기.</li>
+        </ul>
+
+        <h3>3G.7 기존 모듈과의 연결</h3>
+        <ul>
+          <li>§3D exhaustive / issue_frame → 과거 건 “무엇/어떻게” 슬롯 채움</li>
+          <li>§3F incident bundle → “지금 바로 확인할 것” 체크리스트 공급</li>
+          <li>§5 Trust 4단 → 적용성 배지와 동일 언어 (HIGH/MEDIUM/LOW/ABSTAIN)</li>
+          <li>환경 축(CSP/MSP/On-Prem) → 적용성 차이의 1순위 피처</li>
+        </ul>
+
+        <h3>3G.8 추가 예상 질문 (G01–G10) · gold 확장</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>그룹장 질문 요지</th></tr></thead>
+            <tbody>
+              <tr><td>G01</td><td>간헐 지연 — 과거 유사·원인·해결</td></tr>
+              <tr><td>G02</td><td>Edge/BM hang — 과거 해결이 이번에도 유효한가</td></tr>
+              <tr><td>G03</td><td>NW timeout — GRO 사례 적용 가능 여부</td></tr>
+              <tr><td>G04</td><td>FRB 접속불가 — 유사 3건 조치·재발</td></tr>
+              <tr><td>G05</td><td>스토리지 latency — 현재 구성에 맞는 해결인가</td></tr>
+              <tr><td>G06</td><td>인증서/API — 유사장애 + 체크리스트</td></tr>
+              <tr><td>G07</td><td>DB failover 지연 — 과거 해결 도움 여부</td></tr>
+              <tr><td>G08</td><td>가장 비슷한 건 + <strong>그대로 쓰면 안 되는 이유</strong></td></tr>
+              <tr><td>G09</td><td>유사 없으면 기권 + 추가 수집 정보</td></tr>
+              <tr><td>G10</td><td>유사 건 해결 소요·투입 규모 의사결정 요약</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>3G.9 실현성 판정</h3>
+        <div class="verdict">
+          <div class="verdict-card yes">
+            <div class="v">가능</div>
+            <div class="d">닫힌 티켓·원인/조치 서술 규모가 유사장애 검색에 충분. Tech-Repo SOP로 “바로 할 일” 보강 가능.</div>
+          </div>
+          <div class="verdict-card cond">
+            <div class="v">조건부</div>
+            <div class="d">“이번에도 도움이 되나”는 현재 장애 슬롯(환경·버전) 없으면 단정 금지. 적용성 엔진 필수.</div>
+          </div>
+          <div class="verdict-card yes">
+            <div class="v">우선순위</div>
+            <div class="d">그룹장 War-room 가치 최상. P2에서 similar_incident를 1급 라우트로 구현 권고.</div>
+          </div>
+        </div>
+
+        <h3>3G.10 PR 추가</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PR</th><th>내용</th></tr></thead>
+            <tbody>
+              <tr><td>PR-28</td><td>feat(si): similar_incident router + dual retrieve + frame rank</td></tr>
+              <tr><td>PR-29</td><td>feat(si): applicability scorer (env/product/version diff) + 4-slot brief UI</td></tr>
+              <tr><td>PR-30</td><td>test(si): gold G01–G10 + “false apply” 회귀 (유사하지만 적용 비권고 케이스)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="s4">
+      <div class="section-card">
+        <h2><span class="num">4</span> 설계 원칙 — Trust-First Knowledge System</h2>
+        <p class="section-sub">이상적 지식검색의 7원칙</p>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="kicker">P1</div>
+            <h4>Precision over Coverage</h4>
+            <p>상위 결과 오탐이 한 건이라도 치명적. 애매하면 결과 수를 줄이고 기권한다.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P2</div>
+            <h4>Evidence over Eloquence</h4>
+            <p>유창한 문장보다 출처·재현 가능한 명령·티켓 링크. LLM은 해석자, 증거가 주연.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P3</div>
+            <h4>Environment is a First-class Axis</h4>
+            <p>CSP / MSP / On-Prem · 제품 스택 · 버전을 필터·랭킹·답변 경고에 넣는다.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P4</div>
+            <h4>Hybrid Retrieval is Non-negotiable</h4>
+            <p>기술지원 질의는 ID·파라미터·에러코드가 핵심. 벡터 alone 금지.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P5</div>
+            <h4>Calibrated Silence</h4>
+            <p>모르는 것을 “그럴듯하게” 말하지 않음. 기권 + 추가 수집 질문 + 검색 키워드 제안.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P6</div>
+            <h4>Human Gate on Flywheel</h4>
+            <p>생성 지식의 자동 색인은 금지. 시니어 승인 후에만 조직 지식.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P7</div>
+            <h4>Operational Minimalism</h4>
+            <p>50–100명·폐쇄망·부서 운영 → 컴포넌트 최소화. 한 팀이 밤샘 없이 운영 가능해야 이상적.</p>
+          </div>
+          <div class="card">
+            <div class="kicker">P8</div>
+            <h4>Measure or Don’t Ship</h4>
+            <p>gold set·주간 회귀 없이 모델/프롬프트 변경 금지. 품질은 느낌으로 관리하지 않는다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5 TRUST INSIGHT - key section -->
+    <section id="s5">
+      <div class="section-card">
+        <h2><span class="num">5</span> 신뢰도(Confidence)에 대한 깊은 통찰</h2>
+        <p class="section-sub">“답변에 신뢰도를 포함하는 것이 의미 있는가?” — 결론부터: <strong>의미 있다. 단, 잘못된 형태의 신뢰도는 해롭다.</strong></p>
+
+        <h3>5.1 왜 단일 “신뢰도 87%”는 위험한가</h3>
+        <div class="compare">
+          <div class="card bad">
+            <div class="kicker">Anti-pattern</div>
+            <h4>스칼라 확률 연출</h4>
+            <ul>
+              <li>“답변 신뢰도 87%”처럼 보이는 숫자</li>
+              <li>모델 logprob나 임의 가중 합산</li>
+              <li>교정(calibration) 없는 점수</li>
+              <li>사용자는 87%를 “거의 확실”로 오해 → 검증 생략</li>
+            </ul>
+            <p><strong>기술지원에서 가장 위험한 UX</strong>: 틀린 조치 + 높은 %.</p>
+          </div>
+          <div class="card good">
+            <div class="kicker">Recommended</div>
+            <h4>다차원 Trust Signal</h4>
+            <ul>
+              <li>증거 충분성 (근거 수·합의)</li>
+              <li>증거 등급 (Resolved 티켓 vs draft)</li>
+              <li>환경 일치 (CSP/온프레 불일치 경고)</li>
+              <li>검색 합의 (BM25∩Vector)</li>
+              <li>명시적 기권 / 부분 답변</li>
+            </ul>
+            <p><strong>숫자는 보조</strong>, 라벨·근거·경고가 주 인터페이스.</p>
+          </div>
+        </div>
+
+        <h3>5.2 이상적 Trust 모델 — 세 층</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>층</th><th>이름</th><th>산출</th><th>사용자에게 보이는 형태</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>L1</td>
+                <td><strong>Retrieval Trust</strong></td>
+                <td>상위 hit 점수 간격, BM25·벡터 교집합 크기, 메타 필터 일치</td>
+                <td>결과 카드의 “매칭 강함/보통/약함”, 점수 바(상대)</td>
+              </tr>
+              <tr>
+                <td>L2</td>
+                <td><strong>Evidence Grade</strong></td>
+                <td>소스 타입 × 문서 상태 × 신선도 × 승인 여부</td>
+                <td>배지: <code>Resolved 사례</code> <code>공식 문서</code> <code>점검기준</code> <code>승인 인사이트</code> <code>AI초안</code></td>
+              </tr>
+              <tr>
+                <td>L3</td>
+                <td><strong>Answer Faithfulness</strong></td>
+                <td>문장–citation 정렬, 근거 외 주장 탐지, 충돌 감지</td>
+                <td>답변 상단 Trust Banner + 문장별 출처 하이라이트</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>5.3 사용자에게 제시할 Trust Banner (권장 UX)</h3>
+        <div class="trust-ladder">
+          <div class="trust-step t1">
+            <div class="lv">HIGH</div>
+            <h4>근거 충분 · 일치</h4>
+            <p>Resolved 사례 ≥1 + 공식문서/점검 보강. 환경 태그 일치. 교차 검증됨. 조치 전 그래도 환경 확인 문구 고정.</p>
+          </div>
+          <div class="trust-step t2">
+            <div class="lv">MEDIUM</div>
+            <h4>참고 가능</h4>
+            <p>유사 사례는 있으나 버전/환경 불일치 가능. 차이점 명시. 시니어 확인 권고.</p>
+          </div>
+          <div class="trust-step t3">
+            <div class="lv">LOW</div>
+            <h4>가설 수준</h4>
+            <p>근거 약함·충돌·미해결 티켓 위주. 단정적 조치 문구 금지. 체크리스트만 제시.</p>
+          </div>
+          <div class="trust-step t4">
+            <div class="lv">ABSTAIN</div>
+            <h4>근거 부족 · 기권</h4>
+            <p>답변 본문 생성 안 함(또는 “모른다”). 추가 정보 질문 + 추천 검색어 + 관련 문서 링크만.</p>
+          </div>
+        </div>
+
+        <h3>5.4 점수 산출 (내부용 · 교정 가능)</h3>
+        <p>내부적으로는 0–1 점수를 쓰되, <strong>UI 기본은 4단 라벨</strong>만 노출. 고급 모드에서만 세부 분해.</p>
+<pre><code>retrieval_score = RRF_norm + 0.15 * agreement(BM25, dense) + 0.10 * exact_id_hit
+evidence_score  = grade_weight(source, status) * recency_factor * env_match
+faithfulness    = cited_sentence_ratio - contradiction_penalty
+
+# 기권 규칙 (예시, 평가셋으로 튜닝)
+if retrieval_score < θ_r or evidence_score < θ_e: ABSTAIN
+elif faithfulness < θ_f: regenerate once → still low → ABSTAIN / LOW
+else map to HIGH / MEDIUM / LOW by calibrated thresholds
+</code></pre>
+
+        <div class="callout insight">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">통찰: 신뢰도는 “모델의 기분”이 아니라 “증거의 구조”</div>
+            <div class="body">
+              기술지원 전문가에게 설득력 있는 신뢰 신호는 확률 숫자가 아니라
+              <strong>“닫힌 티켓 3건이 같은 원인을 가리키고, 테크리포 파라미터 문서와 일치하며, 당신 환경(온프레 HANA)과 태그가 같다”</strong>는 구조적 설명이다.
+              따라서 시스템은 신뢰도를 <em>계산</em>할 뿐 아니라 <em>설명</em>해야 한다.
+              <strong>Explainable confidence &gt; Numeric confidence.</strong>
+            </div>
+          </div>
+        </div>
+
+        <h3>5.5 의미 있는가? — 최종 답</h3>
+        <ul>
+          <li><strong>Yes</strong> — 주니어 과신 방지, 시니어 우선순위 결정, 감사·품질 개선에 필수.</li>
+          <li><strong>But</strong> — 단일 % 배지는 No. <strong>4단 라벨 + 근거 설명 + 환경 경고 + 기권</strong>이 Yes.</li>
+          <li><strong>Also</strong> — 검색 결과 카드에도 동일 언어 사용 (답변만의 장식이 아님).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 6 Domain -->
+    <section id="s6">
+      <div class="section-card">
+        <h2><span class="num">6</span> 도메인 지식 모델 (코퍼스 실측 기반)</h2>
+        <p class="section-sub">추상 CSP/MSP/On-Prem + <strong>raw 실측 택소노미</strong>(PISA Area, Tech-Repo path, 엔티티). 상세 근거는 §3B.</p>
+        <div class="callout info">
+          <div class="icon">i</div>
+          <div>
+            <div class="title">실측 요약</div>
+            <div class="body">
+              업무유형(Jira Component) ≠ 기술분야. 기술분야는 PISA Area(Linux, Oracle, SKE_K8S, Redis…)와 Tech-Repo
+              「분야별 기술 자료 &gt; OS/DB/스토리지/…」 경로에서 가져온다. 고객 시스템(모니모 등)은 엔티티 그래프.
+              SCP 언급 티켓 ~1000건 → environment=csp 비중이 코퍼스에 이미 큼.
+            </div>
+          </div>
+        </div>
+
+        <h3>6.1 3차원 택소노미</h3>
+        <div class="grid-3">
+          <div class="card">
+            <div class="kicker">Axis A · Environment</div>
+            <h4>환경</h4>
+            <ul>
+              <li><code>csp</code> — 클라우드 서비스 (가상화·매니지드)</li>
+              <li><code>msp</code> — 운영 대행·관제·지원 프로세스</li>
+              <li><code>onprem</code> — 레거시·베어메탈·자체 IDC</li>
+              <li><code>hybrid</code></li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="kicker">Axis B · Domain</div>
+            <h4>기술 분야</h4>
+            <ul>
+              <li>compute · k8s/vm · network · storage</li>
+              <li>os-linux · dbms · middleware</li>
+              <li>security · backup/dr · monitoring</li>
+              <li>app/platform · etc</li>
+            </ul>
+          </div>
+          <div class="card">
+            <div class="kicker">Axis C · Work type</div>
+            <h4>지원 유형</h4>
+            <ul>
+              <li>incident (장애)</li>
+              <li>technical (기술지원)</li>
+              <li>diagnostic (진단/컨설팅)</li>
+              <li>change (정기·수명)</li>
+              <li>preventive (점검/PISA)</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>6.2 태깅 전략 (가벼운 자동 + 사람 보정)</h3>
+        <ol>
+          <li><strong>규칙 사전</strong>: 경로/키워드 → 태그 (예: <code>VMware</code>, <code>NSX</code>→compute/network+csp/onprem 힌트, <code>HANA</code>→dbms, <code>PISA</code>→preventive).</li>
+          <li><strong>소스 메타</strong>: Jira Component/Epic, Confluence 디렉토리, tuning_ai domain.</li>
+          <li><strong>선택적 LLM 태깅</strong>: 야간 배치로 미태깅 문서만 (비용·부하 제한).</li>
+          <li><strong>검색 시 사용자 필터</strong>가 최종 권위 — 잘못된 자동 태그는 필터로 극복 가능해야 함.</li>
+        </ol>
+
+        <h3>6.3 랭킹에 환경을 넣는 법</h3>
+        <ul>
+          <li>사용자 프로필 기본 환경(담당 분야) soft-boost.</li>
+          <li>질의에서 환경 단서 추출 (“온프레 HANA”, “SCP VM”) → hard/soft filter.</li>
+          <li>답변 시 환경 불일치 근거가 섞이면 Trust를 MEDIUM 이하 + 경고 배너:
+            “이 사례는 CSP 가상화 환경 기준입니다. 온프레 적용 시 전제 확인 필요.”</li>
+        </ul>
+
+        <div class="callout info">
+          <div class="icon">i</div>
+          <div>
+            <div class="title">왜 이 축이 “이상적”인가</div>
+            <div class="body">
+              일반 사내 위키 검색은 “문서 유사도”만 본다.
+              CI-TEC의 이상적 검색은 <strong>유사 증상 × 같은 계층 문제 × 같은 환경 제약</strong>의 교집합을 올린다.
+              이것이 MSP/CSP/온프레 종합 지원 조직의 검색 품질을 결정한다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7 Architecture -->
+    <section id="s7">
+      <div class="section-card">
+        <h2><span class="num">7</span> 경량 목표 아키텍처</h2>
+        <p class="section-sub">무거운 엔터프라이즈 분산 시스템을 피하고, 품질은 알고리즘으로 확보</p>
+
+        <h3>7.1 논리 계층</h3>
+        <div class="layers">
+          <div class="layer">
+            <div class="layer-label" style="background:#1d4ed8">UI</div>
+            <div class="layer-body">
+              <span class="chip">검색</span><span class="chip">필터(환경·분야)</span>
+              <span class="chip">QA 챗</span><span class="chip">Trust Banner</span>
+              <span class="chip">인사이트 승인</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#0f766e">API</div>
+            <div class="layer-body">
+              <span class="chip">FastAPI</span><span class="chip">Auth SSO</span>
+              <span class="chip">Search</span><span class="chip">RAG Orchestrator</span>
+              <span class="chip">Trust Engine</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#6d28d9">Intel</div>
+            <div class="layer-body">
+              <span class="chip">GLM 5.2 130k (사내)</span>
+              <span class="chip">BGE-M3 embed</span>
+              <span class="chip">Rerank (옵션 경량)</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#b45309">Retrieve</div>
+            <div class="layer-body">
+              <span class="chip">PG Full-Text (BM25성)</span>
+              <span class="chip">pgvector</span>
+              <span class="chip">RRF</span>
+              <span class="chip">Parent expand</span>
+              <span class="chip">Quality gate</span>
+            </div>
+          </div>
+          <div class="layer">
+            <div class="layer-label" style="background:#334155">Data</div>
+            <div class="layer-body">
+              <span class="chip">Postgres 16+pgvector</span>
+              <span class="chip">Redis</span>
+              <span class="chip">raw volume</span>
+              <span class="chip">worker jobs</span>
+            </div>
+          </div>
+        </div>
+
+        <h3>7.2 왜 이 스택이 50–100명에 “이상적”인가</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>대안</th><th>기각/유예 이유</th><th>채택</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>OpenSearch + Qdrant + Kafka + 다중 GPU 상시</td>
+                <td>운영 부담·메모리·이미지 무거움. 현재 규모 과잉</td>
+                <td>Postgres 일체형 Hybrid</td>
+              </tr>
+              <tr>
+                <td>pgvector only (FTS 없음)</td>
+                <td>티켓키·sysctl 파라미터 실패</td>
+                <td>FTS + vector 동시</td>
+              </tr>
+              <tr>
+                <td>LLM-only long context</td>
+                <td>코퍼스 확장 불가, 지연·환각</td>
+                <td>RAG + 130k 합성</td>
+              </tr>
+              <tr>
+                <td>마이크로서비스 다수</td>
+                <td>부서 도구에 과한 복잡성</td>
+                <td>api / worker 2프로세스 + compose</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>7.3 핵심 설계 결정</h3>
+        <div class="decision">
+          <div class="q">KD-1. 스토어</div>
+          <div class="a"><strong>Postgres = System of Record + FTS + pgvector</strong></div>
+          <div class="why">단일 백업·단일 트랜잭션·5만~수십만 청크까지 충분. 추후 병목 시에만 Qdrant 분리(인터페이스 유지).</div>
+        </div>
+        <div class="decision">
+          <div class="q">KD-2. 리랭크</div>
+          <div class="a"><strong>Phase1: 휴리스틱+교차합의 / Phase2: 경량 cross-encoder 옵션</strong></div>
+          <div class="why">상시 리랭크 GPU는 무게. 먼저 RRF·exact boost·grade boost로 Precision@3 목표 달성 여부 측정 후 도입.</div>
+        </div>
+        <div class="decision">
+          <div class="q">KD-3. 임베딩 서빙</div>
+          <div class="a"><strong>worker 내 배치 추론 또는 얇은 embed 컨테이너 (요청 시 scale)</strong></div>
+          <div class="why">질의 시 쿼리 임베딩만 필요(ms~수십ms). 대량 임베딩은 비동기. 상시 대형 추론 서버 불필요.</div>
+        </div>
+        <div class="decision">
+          <div class="q">KD-4. LLM</div>
+          <div class="a"><strong>사내 GLM 엔드포인트 외부 의존 (compose 밖)</strong></div>
+          <div class="why">이미 인프라 존재. 앱 스택을 가볍게 유지. 장애 시 검색-only degraded mode.</div>
+        </div>
+        <div class="decision">
+          <div class="q">KD-5. 신뢰 UX</div>
+          <div class="a"><strong>4단 Trust Banner + 설명형 근거 (단일 % 기본 노출 금지)</strong></div>
+          <div class="why">§5. 과신 방지.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8 Docker -->
+    <section id="s8">
+      <div class="section-card">
+        <h2><span class="num">8</span> Docker 구성 — 가볍게, 충분히</h2>
+        <p class="section-sub">목표: 노트북/단일 VM에서도 compose up 가능 · 운영은 1인-day 수준</p>
+
+        <div class="compose-box">
+          <div class="cnode core"><div class="t">web</div><div class="s">nginx + static SPA</div><div class="m">~32–64MB</div></div>
+          <div class="cnode core"><div class="t">api</div><div class="s">FastAPI · gunicorn</div><div class="m">~200–400MB</div></div>
+          <div class="cnode core"><div class="t">worker</div><div class="s">ingest · embed jobs</div><div class="m">~300–800MB*</div></div>
+          <div class="cnode data"><div class="t">postgres</div><div class="s">16 + pgvector</div><div class="m">~512MB–2GB</div></div>
+          <div class="cnode data"><div class="t">redis</div><div class="s">queue · cache</div><div class="m">~32–64MB</div></div>
+        </div>
+        <p style="font-size:12.5px;color:var(--text-muted)">* worker 메모리: 임베딩 모델을 워커에 올리면 증가. 대안: 사내 공용 embed API 사용 시 worker 경량화.</p>
+
+        <div class="cnode ext" style="margin:12px 0;text-align:left;padding:14px">
+          <div class="t">compose 외부 (사내 공용)</div>
+          <div class="s" style="margin-top:6px">GLM 5.2 AWQ 4bit 서빙 (vLLM 등) · (옵션) 공용 Embedding endpoint · SSO IdP</div>
+        </div>
+
+        <h3>8.1 리소스 가이드 (초기 100명)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>프로파일</th><th>CPU</th><th>RAM</th><th>Disk</th><th>비고</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>최소 (검색+QA)</td>
+                <td>4 vCPU</td>
+                <td>8–12 GB</td>
+                <td>40 GB</td>
+                <td>embed는 CPU 또는 외부 API</td>
+              </tr>
+              <tr>
+                <td>권장</td>
+                <td>8 vCPU</td>
+                <td>16–24 GB</td>
+                <td>80 GB</td>
+                <td>로컬 BGE-M3 배치 여유</td>
+              </tr>
+              <tr>
+                <td>여유</td>
+                <td>8 + GPU(선택)</td>
+                <td>32 GB</td>
+                <td>100 GB+</td>
+                <td>리랭크·대량 재색인 가속</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.2 compose 스케치</h3>
+<pre><code>services:
+  web:      # nginx → api, static
+  api:      # uvicorn workers=2~4  (100명 burst 충분)
+  worker:   # arq/celery concurrency=2
+  postgres: # pgvector image, volume, shared_buffers 튜닝
+  redis:    # appendonly no (캐시·큐), volume optional
+
+# 올리지 않는 것: kafka, opensearch, milvus, jaeger full suite,
+# 다중 replica DB, service mesh
+</code></pre>
+
+        <h3>8.3 부하 추정 (보수적)</h3>
+        <ul>
+          <li>100명 중 동시 활성 ~10–20, 동시 RAG ~2–5.</li>
+          <li>검색 QPS 피크 &lt; 20 → Postgres FTS+pgvector 여유.</li>
+          <li>병목은 거의 항상 <strong>GLM 장문 생성</strong> → 앱 쪽 동시성 세마포어(예: deep=2, fast=6).</li>
+        </ul>
+
+        <div class="callout ok">
+          <div class="icon">✓</div>
+          <div>
+            <div class="title">경량화 원칙</div>
+            <div class="body">
+              “마이크로서비스 수”가 아니라 <strong>장애 지점 수</strong>를 줄인다.
+              백업 대상은 Postgres 볼륨 하나(+raw). 관측은 로그 + 기본 메트릭으로 시작.
+              무거워지는 순간은 측정 후 — 추측으로 컴포넌트를 추가하지 않는다.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9 Pipeline -->
+    <section id="s9">
+      <div class="section-card">
+        <h2><span class="num">9</span> 검색·답변 파이프라인 (정확성 중심)</h2>
+        <p class="section-sub">모든 단계에 Quality Gate</p>
+
+        <h3>9.1 Ingest (정확성의 시작)</h3>
+        <ol>
+          <li>소스 어댑터 → Canonical Document (hash upsert).</li>
+          <li>Cleaner: Jira 마크업 제거, 빈 본문 drop, 코드/파라미터 보존.</li>
+          <li>메타·택소노미 태깅 (규칙 우선).</li>
+          <li><strong>Evidence grade</strong> 부여 (resolved / official / draft…).</li>
+          <li>섹션 분할 → contextual header chunk (≤512 tok, overlap 10–15%).</li>
+          <li>FTS 문서 + embedding 배치. 실패는 DLQ, 부분 성공 표시.</li>
+        </ol>
+
+        <h3>9.2 Search path (고정밀)</h3>
+        <ol>
+          <li>질의 정규화 + 티켓키/파라미터 exact 패턴 추출.</li>
+          <li>사용자 필터 (environment, domain, work_type, source, 기간).</li>
+          <li>병렬: FTS top 40 + vector top 40. exact_id 히트는 강제 상위.</li>
+          <li>RRF 융합 + grade boost + env boost.</li>
+          <li><strong>Quality gate</strong>: 상위 스코어 절대/상대 임계 미달 시 결과 축소 또는 empty+가이드.</li>
+          <li>다양성: 동일 티켓 중복 청크 병합(parent).</li>
+          <li>카드 렌더: 제목, 등급 배지, 환경 태그, 매칭 강함, 스니펫, 링크.</li>
+        </ol>
+
+        <h3>9.3 QA / Insight path</h3>
+        <ol>
+          <li>검색 top N → parent expand → budget pack (Fast 기본).</li>
+          <li>Trust Engine 사전 판정 → ABSTAIN이면 생성 스킵.</li>
+          <li>GLM: 근거 내 답변, 문장 단위 citation, 환경 주의 문구.</li>
+          <li>사후 faithfulness 체크(규칙/짧은 검증 프롬프트) → 실패 시 재시도 1회 또는 기권.</li>
+          <li>Trust Banner + 설명형 근거(“왜 HIGH인가”) 표시.</li>
+        </ol>
+
+        <h3>9.4 프롬프트 계약 (요지)</h3>
+<pre><code>당신은 CI-TEC 기술지원 보조다. 최종 조치 책임은 엔지니어에게 있다.
+- 근거 문서에 없는 명령·수치·원인 단정 금지
+- 환경(CSP/MSP/온프레) 불일치 시 반드시 경고
+- 조치 제안은 "점검 항목" 형태로, 파괴적 명령은 재확인 요청
+- 근거 부족 시 한 줄로 기권하고 필요한 추가 정보를 질문
+- 각 불릿에 [C#] citation
+</code></pre>
+
+        <div class="callout risk">
+          <div class="icon">!</div>
+          <div>
+            <div class="title">정확성을 깨는 기능은 기본 off</div>
+            <div class="body">
+              과도한 query rewrite, 환각형 multi-agent, 검수 없는 자동 지식 학습, “창의적” 온도 높은 샘플링.
+              기본 temperature 낮게, 도구 실행 없음, 검색 결과가 왕.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="s10">
+      <div class="section-card">
+        <h2><span class="num">10</span> GLM 5.2 · 130k 운용</h2>
+        <p class="section-sub">긴 컨텍스트 = 다중 사례 교차 검증 예산</p>
+
+        <div class="legend">
+          <div class="legend-item"><span class="dot" style="background:#1d4ed8"></span>System ~2k</div>
+          <div class="legend-item"><span class="dot" style="background:#0f766e"></span>History ~2–4k</div>
+          <div class="legend-item"><span class="dot" style="background:#6d28d9"></span>Evidence (가변)</div>
+          <div class="legend-item"><span class="dot" style="background:#b45309"></span>Reserve/Output</div>
+        </div>
+        <div class="bar-stack">
+          <div class="bar-seg" style="width:2%;background:#1d4ed8">S</div>
+          <div class="bar-seg" style="width:3%;background:#0f766e">H</div>
+          <div class="bar-seg" style="width:75%;background:#6d28d9">Evidence (search-selected)</div>
+          <div class="bar-seg" style="width:20%;background:#b45309">Reserve</div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>모드</th><th>근거 토큰</th><th>동시성 캡</th><th>용도</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><strong>Fast QA</strong> (기본)</td><td>8–20k</td><td>6</td><td>일상 — 지연·정확 균형</td></tr>
+              <tr><td><strong>Deep QA</strong></td><td>40–80k</td><td>2</td><td>장애 원인 비교</td></tr>
+              <tr><td><strong>Insight</strong></td><td>60–110k</td><td>1–2</td><td>패턴 합성 (draft)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>AWQ 4bit: 수치·식별자 오류 위험 → <strong>명령/파라미터는 근거 인용 복사</strong>, Trust 엔진이 과신 방지.</p>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="s11">
+      <div class="section-card">
+        <h2><span class="num">11</span> 지식 환류 (Flywheel)</h2>
+        <p class="section-sub">오염 없는 성장</p>
+        <div class="flywheel">
+          <div class="fw-step"><div class="n">1</div><div class="t">검색/QA</div><div class="s">실사용</div></div>
+          <div class="fw-step"><div class="n">2</div><div class="t">Insight draft</div><div class="s">비검색</div></div>
+          <div class="fw-step"><div class="n">3</div><div class="t">시니어 검수</div><div class="s">환경·조치 검증</div></div>
+          <div class="fw-step"><div class="n">4</div><div class="t">Approved</div><div class="s">등급 A</div></div>
+          <div class="fw-step"><div class="n">5</div><div class="t">재색인</div><div class="s">조직 지식</div></div>
+        </div>
+        <ul>
+          <li>검수 체크리스트: 근거 충분한가 / 환경 일반화 과한가 / 파괴적 조치 없는가 / 최신성.</li>
+          <li>👎 피드백 → 해당 답변·인사이트 재검토 큐.</li>
+          <li>tuning_ai 문서는 고품질 seed로 온보딩.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <div class="section-card">
+        <h2><span class="num">12</span> 구현 가능성 검토</h2>
+        <p class="section-sub">경량 전제에서의 Feasibility</p>
+
+        <div class="verdict">
+          <div class="verdict-card yes">
+            <div class="v">가능</div>
+            <div class="d">Docker 5서비스 + 사내 LLM. 데이터·인력 규모 모두 적합.</div>
+          </div>
+          <div class="verdict-card yes">
+            <div class="v">8–12주</div>
+            <div class="d">검색 MVP 4–6주, QA+Trust 2–3주, Flywheel 2–3주 (병행 가능).</div>
+          </div>
+          <div class="verdict-card cond">
+            <div class="v">위험</div>
+            <div class="d">품질 목표(P@3≥0.9)는 엔지니어링+평가 문화 없이 미달 가능 — gold set 필수.</div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>영역</th><th>난이도</th><th>판단</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Docker compose 앱 골격</td><td><span class="sev low">낮음</span></td><td>표준</td></tr>
+              <tr><td>raw 파서·정규화</td><td><span class="sev low">낮음</span></td><td>스키마 확보됨</td></tr>
+              <tr><td>Hybrid 검색 (PG)</td><td><span class="sev low">낮음–중</span></td><td>검증된 패턴</td></tr>
+              <tr><td>Trust Engine + 기권</td><td><span class="sev med">중</span></td><td>임계값 튜닝 필요</td></tr>
+              <tr><td>도메인 태깅 품질</td><td><span class="sev med">중</span></td><td>사전+규칙으로 시작</td></tr>
+              <tr><td>GLM 장문 품질</td><td><span class="sev med">중</span></td><td>측정 후 모드 조정</td></tr>
+              <tr><td>P@3 ≥ 0.9 달성</td><td><span class="sev med">중–고</span></td><td>평가·부스팅·클리닝 반복</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <div class="section-card">
+        <h2><span class="num">13</span> 제약 · 위험 · 극복</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>항목</th><th>심각도</th><th>극복</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>폐쇄망 패키지/모델 반입</td>
+                <td><span class="sev high">High</span></td>
+                <td>사내 레지스트리, 버전 핀, 오프라인 wheelhouse</td>
+              </tr>
+              <tr>
+                <td>틀린 조치 권고</td>
+                <td><span class="sev high">High</span></td>
+                <td>기권, citation, 낮은 temperature, 승인 인사이트, 평가 회귀</td>
+              </tr>
+              <tr>
+                <td>단일 % 신뢰도 오남용</td>
+                <td><span class="sev high">High</span></td>
+                <td>4단 라벨+설명, % 기본 숨김</td>
+              </tr>
+              <tr>
+                <td>환경 착각 (CSP 사례→온프레 적용)</td>
+                <td><span class="sev high">High</span></td>
+                <td>environment 축, 불일치 경고, 필터 UX</td>
+              </tr>
+              <tr>
+                <td>AWQ 4bit 수치 오류</td>
+                <td><span class="sev med">Med</span></td>
+                <td>근거 복사 지시, 중요 수치는 검색 스니펫 우선 표시</td>
+              </tr>
+              <tr>
+                <td>동시 Deep QA 자원 경합</td>
+                <td><span class="sev med">Med</span></td>
+                <td>세마포어, Fast 기본, 큐</td>
+              </tr>
+              <tr>
+                <td>문서 노이즈·빈 제목</td>
+                <td><span class="sev med">Med</span></td>
+                <td>cleaner, drop 규칙, 품질 점수</td>
+              </tr>
+              <tr>
+                <td>운영 인력 부족</td>
+                <td><span class="sev med">Med</span></td>
+                <td>컨테이너 수 최소화, 단일 DB 백업</td>
+              </tr>
+              <tr>
+                <td>한국어 FTS 토큰</td>
+                <td><span class="sev med">Med</span></td>
+                <td>simple/ngram+동의어 사전, 필요 시 분석기 교체</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 14 -->
+    <section id="s14">
+      <div class="section-card">
+        <h2><span class="num">14</span> 로드맵 · PR Plan</h2>
+        <div class="timeline">
+          <div class="phase p0">
+            <div class="ph">Phase 0 · 1–2주</div>
+            <h4>스파이크</h4>
+            <ul>
+              <li>compose 골격</li>
+              <li>GLM/embed 연동</li>
+              <li>gold 50→100</li>
+              <li>P@3 베이스라인</li>
+            </ul>
+          </div>
+          <div class="phase p1">
+            <div class="ph">Phase 1 · 3–5주</div>
+            <h4>고정밀 검색</h4>
+            <ul>
+              <li>어댑터·정규화</li>
+              <li>Hybrid + grade</li>
+              <li>환경 필터</li>
+              <li>검색 UI</li>
+            </ul>
+          </div>
+          <div class="phase p2">
+            <div class="ph">Phase 2 · 2–4주</div>
+            <h4>신뢰 QA</h4>
+            <ul>
+              <li>Trust Engine</li>
+              <li>기권·Banner</li>
+              <li>citation 챗</li>
+              <li>피드백</li>
+            </ul>
+          </div>
+          <div class="phase p3">
+            <div class="ph">Phase 3 · 2–3주</div>
+            <h4>Flywheel</h4>
+            <ul>
+              <li>insight draft</li>
+              <li>시니어 승인</li>
+              <li>재색인</li>
+              <li>주간 회귀</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>PR</th><th>제목</th><th>의존</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>PR-01</td><td>chore: docker-compose slim skeleton (web, api, worker, pg, redis)</td><td>—</td></tr>
+              <tr><td>PR-02</td><td>feat(db): schema — documents, chunks, grades, taxonomy, jobs</td><td>01</td></tr>
+              <tr><td>PR-03</td><td>feat(ingest): raw adapters + cleaner + hash upsert</td><td>02</td></tr>
+              <tr><td>PR-04</td><td>feat(index): chunk headers + FTS + pgvector embed job</td><td>03</td></tr>
+              <tr><td>PR-05</td><td>feat(search): hybrid RRF + exact boost + quality gate API</td><td>04</td></tr>
+              <tr><td>PR-06</td><td>feat(taxonomy): env/domain tagging rules + filters</td><td>03</td></tr>
+              <tr><td>PR-07</td><td>feat(web): search UI — badges, filters, snippet</td><td>05,06</td></tr>
+              <tr><td>PR-08</td><td>feat(trust): trust engine + abstain rules + explain payload</td><td>05</td></tr>
+              <tr><td>PR-09</td><td>feat(rag): GLM client, packer, citation, faithfulness check</td><td>08</td></tr>
+              <tr><td>PR-10</td><td>feat(web): chat + Trust Banner + citation panel</td><td>09,07</td></tr>
+              <tr><td>PR-11</td><td>feat(insight): draft/review/approve/promote</td><td>09</td></tr>
+              <tr><td>PR-12</td><td>feat(eval): gold runner, P@3/nDCG/groundedness CI</td><td>05,09</td></tr>
+              <tr><td>PR-13</td><td>feat(sync): Jira/Confluence incremental (optional path)</td><td>03</td></tr>
+              <tr><td>PR-14</td><td>feat(ops): SSO, audit log, basic metrics, backup docs</td><td>01+</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section id="s15">
+      <div class="section-card">
+        <h2><span class="num">15</span> 결론 및 권고</h2>
+
+        <ol>
+          <li>
+            <strong>이상적 시스템은 “더 큰 모델”이 아니라 “더 정직한 검색 + 환경 인식 + 기권”이다.</strong>
+            CI-TEC처럼 장애 비용이 큰 조직에서는 이것이 제품 차별화의 전부다.
+          </li>
+          <li>
+            <strong>신뢰도 표시는 필요하다 — 다만 다차원·설명형으로.</strong>
+            단일 87%는 배제. HIGH/MEDIUM/LOW/ABSTAIN + “왜 그런지” + 환경 경고.
+          </li>
+          <li>
+            <strong>Docker는 5컨테이너로 충분하다.</strong>
+            50–100명 규모에서 ES/Qdrant/Kafka는 초기 필수가 아니다. Postgres hybrid가 이상적 균형점.
+          </li>
+          <li>
+            <strong>CSP/MSP/On-Prem 축을 1급 시민으로.</strong>
+            같은 증상 다른 환경 = 다른 지식. 필터·랭킹·Trust에 모두 반영.
+          </li>
+          <li>
+            <strong>착수 순서:</strong> gold set(Q-A/B/C 포함) → compose 골격 → 고정밀 검색(P@3) →
+            <strong>엔티티·checkitem·exhaustive planner</strong> → Trust QA → Flywheel.
+            검색 품질 게이트를 통과하기 전 생성 기능을 키우지 말 것.
+          </li>
+          <li>
+            <strong>코퍼스 검증 결론:</strong> 데이터는 세 예시 질의를 뒷받침하기에 <em>양적으로 충분하거나(모니모·PISA)·질적으로 충분(GRO)</em>하다.
+            부족한 것은 문서 양이 아니라 <strong>엔티티·구조화·집계형 검색 경로</strong>이며, §3D로 보완한다.
+          </li>
+          <li>
+            <strong>100문 gold (v2.2):</strong> 키워드 none=0. 완전 답변은 검색/RAG 76% + Planner 9% + Capacity 8% + Analytics 7%.
+            출시 게이트 = <code>query_catalog_100</code> 평가 통과. 관리자 숫자 질문은 SQL/Rules만 정답.
+          </li>
+        </ol>
+
+        <div class="callout ok">
+          <div class="icon">★</div>
+          <div>
+            <div class="title">최종 권고 — 조건부 GO (Strong)</div>
+            <div class="body">
+              v2 기준으로 구축을 권고한다. 성공의 정의는
+              “LLM이 잘 말하는 도구”가 아니라
+              <strong>부서원이 장애 대응 중 가장 먼저 켜고, 상위 결과가 거의 틀리지 않으며,
+              자신 없을 때 침묵할 줄 아는 동료</strong>를 만드는 것이다.
+            </div>
+          </div>
+        </div>
+
+        <h3>Open Questions</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>#</th><th>질문</th><th>기본 제안</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Q1</td><td>임베딩을 워커 내장 vs 사내 공용 API?</td><td>공용 있으면 공용, 없으면 워커+CPU/배치</td></tr>
+              <tr><td>Q2</td><td>리랭크 모델 초기 도입?</td><td>P@3 미달 시에만 (측정 후)</td></tr>
+              <tr><td>Q3</td><td>Trust 임계값 결정 주체?</td><td>시니어 3인 + 평가셋 공동 캘리브레이션</td></tr>
+              <tr><td>Q4</td><td>인사이트 승인 역할?</td><td>분야별 시니어 지정 (셀프 승인 금지)</td></tr>
+              <tr><td>Q5</td><td>SSO 필수 시점?</td><td>Phase1 내부 IP 허용 → Phase2 SSO</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 16 changelog -->
+    <section id="s16">
+      <div class="section-card">
+        <h2><span class="num">16</span> v1 → v2 변경 요약</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>영역</th><th>v1</th><th>v2 (본 문서)</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>인프라</td>
+                <td>Qdrant/OpenSearch 등 확장 전제 강함</td>
+                <td><strong>Postgres 일체형 경량 Docker 5서비스</strong></td>
+              </tr>
+              <tr>
+                <td>사용자 규모</td>
+                <td>일반적 언급</td>
+                <td><strong>50–100명</strong> 부하·리소스 가이드</td>
+              </tr>
+              <tr>
+                <td>품질 목표</td>
+                <td>Hit rate 등 일반 SLA</td>
+                <td><strong>Precision@3≥0.9, groundedness≥0.95, 기권</strong></td>
+              </tr>
+              <tr>
+                <td>신뢰도</td>
+                <td>암묵적 citation</td>
+                <td><strong>3층 Trust 모델 + 4단 Banner + 반-% 입장</strong></td>
+              </tr>
+              <tr>
+                <td>도메인</td>
+                <td>일반 지식관리</td>
+                <td><strong>CSP/MSP/On-Prem × 분야 × 지원유형</strong></td>
+              </tr>
+              <tr>
+                <td>제품 철학</td>
+                <td>검색+RAG+Flywheel</td>
+                <td><strong>Trust-First · Precision&gt;Coverage · 정직한 기권</strong></td>
+              </tr>
+              <tr>
+                <td>운영</td>
+                <td>관측 풀세트 암시</td>
+                <td><strong>최소 운영, 측정 후 확장</strong></td>
+              </tr>
+              <tr>
+                <td>코퍼스 검증 (v2.1)</td>
+                <td>가정 기반 도메인</td>
+                <td><strong>raw 전수 분석 · Q-A/B/C 실현성 · Entity/Frame/Planner 보완</strong></td>
+              </tr>
+              <tr>
+                <td>질문 100 (v2.2)</td>
+                <td>—</td>
+                <td><strong>역할별 100문 gold · 키워드 94% strong · Analytics/Capacity/Bundle로 100% 경로</strong></td>
+              </tr>
+              <tr>
+                <td>그룹장 SI (v2.3)</td>
+                <td>—</td>
+                <td><strong>similar_incident 4슬롯 · 적용성 판정 · War-room 1분 브리핑 · G01–G10</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>
+        <strong>CI-TEC 신뢰 우선 지식기반 검색 플랫폼 설계서</strong> · v2.3 · 2026-07-18 · 그룹장 유사장애 질의 포함 ·
+        환경: 폐쇄망 Docker · LLM: GLM 5.2 AWQ 4bit 130k · 사용자: 50–100 ·
+        코퍼스: raw/ ~5k docs · 파일: <code>design/CI-TEC_Knowledge_Platform_Design.html</code>
+      </p>
+      <p>
+        본 문서는 기술지원 조직의 의사결정 비용을 최우선으로 고려하여,
+        “이상적 데모”보다 “현장 mid-incident에서 틀리지 않는 도구”를 설계 목표로 삼았다.
+      </p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

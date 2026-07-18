@@ -15,6 +15,9 @@ from app import __version__
 from app.llm import check_llm
 from app.settings import get_settings
 
+# routers
+from app.routers import ingest as ingest_router  # noqa: E402
+
 logger = logging.getLogger("citec.api")
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -47,6 +50,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(ingest_router.router)
 
 
 class HealthResponse(BaseModel):

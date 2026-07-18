@@ -33,14 +33,33 @@ docker compose up -d --build
 ```bash
 curl -s localhost:8573/v1/health | jq .
 curl -s localhost:8573/v1/health/llm | jq .
-# UI: http://localhost:8572
-# Docs: http://localhost:8573/docs
+# UI:            http://localhost:8572
+# 설계·구현 문서: http://localhost:8572/docs/
+# API Swagger:   http://localhost:8572/api/docs  또는  http://localhost:8573/docs
 ```
 
-### 지식 문서 등록
+### 설계·구현 문서 (웹)
 
-원본 `~/dev/temp/raw` 코퍼스를 `data/raw/` 로 복사·등록함 (총 ~5007 files).  
-목록 메타: `data/raw_manifest.json`. 본문 파일은 gitignore (`data/raw/`).
+| URL | 내용 |
+|-----|------|
+| http://localhost:8572/docs/ | 문서 포털 |
+| http://localhost:8572/docs/design.html | 시스템 설계서 v2.3 |
+| http://localhost:8572/docs/implementation-plan.html | 구현 계획 |
+| http://localhost:8572/docs/query-catalog-analysis.html | 질문 100 분석 |
+
+### 지식 문서 등록 · 인제스트 (PR-03)
+
+원본 `~/dev/temp/raw` → `data/raw/` 복사 (총 ~5007 files). 메타: `data/raw_manifest.json`.
+
+```bash
+# 전량 적재 (idempotent)
+docker compose exec api python -m app.ingest.cli --raw-dir /data/raw
+
+# 또는 API
+curl -X POST localhost:8573/v1/ingest/run -H 'Content-Type: application/json' -d '{}'
+curl -s localhost:8573/v1/ingest/stats | jq .
+curl -s localhost:8573/v1/ingest/jobs | jq .
+```
 
 ## 서비스 (5)
 
