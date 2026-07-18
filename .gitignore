@@ -1,0 +1,36 @@
+# secrets & local env
+.env
+.env.local
+*.pem
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# node / web
+node_modules/
+apps/web/dist/
+
+# data & runtime
+data/raw/
+data/postgres/
+*.log
+logs/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# models (large)
+models/
+*.bin
+*.gguf

@@ -1,0 +1,13 @@
+{
+  "glm-5.2": {
+    "temperature": 0.4,
+    "top_p": 0.92,
+    "top_k": 30,
+    "repetition_penalty": 1.04,
+    "max_context_tokens": 130000,
+    "max_new_tokens_default": 8000,
+    "openrouter_id": "z-ai/glm-5.2",
+    "disable_thinking": true,
+    "_comment": "Dev: OpenRouter openrouter_id. Prod: Fabrix GLM-5.2 AWQ 4bit context 130k."
+  }
+}

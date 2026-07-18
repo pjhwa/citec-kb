@@ -1,0 +1,2021 @@
+[
+  {
+    "id": "E01",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "CITECTS-979에서 GPDB IO 성능 이슈의 원인과 조치는?",
+    "any": [
+      "CITECTS-979",
+      "GreenPlum",
+      "GPDB"
+    ],
+    "all": [],
+    "hits": 22,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-1503.md",
+      "CITECTS-1815.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E02",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "GRO hardware offload 관련 지원 건 전부와 공통 원인·해결은?",
+    "any": [
+      "rx-gro-hw",
+      "GRO hardware",
+      "generic receive offload"
+    ],
+    "all": [],
+    "hits": 3,
+    "samples": [
+      "CITECTS-2171.md",
+      "CITECTS-2557.md",
+      "json"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "E03",
+    "persona": "expert",
+    "qtype": "entity_aggregate",
+    "q": "모니모 시스템 기술지원 이력을 분야별로 카테고리화해줘",
+    "any": [
+      "모니모",
+      "monimo"
+    ],
+    "all": [],
+    "hits": 82,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-2044.md",
+      "CITECTS-604.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E04",
+    "persona": "expert",
+    "qtype": "prevention_map",
+    "q": "모니모 Redis 통신 장애를 예방하려면 무엇을 점검해야 하나?",
+    "any": [
+      "모니모",
+      "Redis"
+    ],
+    "all": [],
+    "hits": 182,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-1259.md",
+      "CITECTS-2044.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E05",
+    "persona": "expert",
+    "qtype": "checklist",
+    "q": "리눅스 파일시스템 관련 PISA 진단 체크리스트 항목은?",
+    "any": [
+      "파일 시스템",
+      "inode",
+      "PISAOLNX"
+    ],
+    "all": [
+      "Linux"
+    ],
+    "hits": 70,
+    "samples": [
+      "CITECTS-349.md",
+      "CITECTS-752.md",
+      "CITECTS-915.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E06",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "vm.min_free_kbytes 의미와 권장 확인 방법은?",
+    "any": [
+      "vm.min_free_kbytes",
+      "min_free_kbytes"
+    ],
+    "all": [],
+    "hits": 8,
+    "samples": [
+      "CITECTS-2419.md",
+      "confluence_148554390.md",
+      "confluence_1355260256.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E07",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "VMware 환경 anti-affinity 미적용으로 발생한 성능 이슈 사례는?",
+    "any": [
+      "anti-affinity",
+      "Anti-affinity",
+      "anti affinity"
+    ],
+    "all": [],
+    "hits": 10,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-285.md",
+      "CITECTS-709.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E08",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "MTU 변경으로 네트워크 성능이 개선된 사례를 모아줘",
+    "any": [
+      "MTU"
+    ],
+    "all": [],
+    "hits": 107,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-697.md",
+      "CITECTS-708.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E09",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "HANA SYSTEM_FAILOVER 반복 원인의 가설과 근거는?",
+    "any": [
+      "SYSTEM_FAILOVER",
+      "HANA"
+    ],
+    "all": [],
+    "hits": 319,
+    "samples": [
+      "CITECTS-1512.md",
+      "CITECTS-1016.md",
+      "CITECTS-914.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E10",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "Lookin으로 진단 가능한 분야·부문은 무엇인가? (버전 포함)",
+    "any": [
+      "진단 가능",
+      "Lookin",
+      "PIXEL"
+    ],
+    "all": [],
+    "hits": 295,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-2542.md",
+      "CITECTS-1831.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E11",
+    "persona": "expert",
+    "qtype": "capacity_lookup",
+    "q": "대외 진단 시 2주간 분야별 진단 가능 대수는?",
+    "any": [
+      "1주 분량",
+      "분야별 기준수량",
+      "0.25M/M",
+      "Linux 20"
+    ],
+    "all": [],
+    "hits": 6,
+    "samples": [
+      "CITECTS-746.md",
+      "CITECTS-1326.md",
+      "CITECTS-790.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E12",
+    "persona": "expert",
+    "qtype": "checklist",
+    "q": "Linux PISA 항목 중 네트워크 설정 관련 목록은?",
+    "any": [
+      "PISAOLNX",
+      "네트워크 설정"
+    ],
+    "all": [],
+    "hits": 30,
+    "samples": [
+      "CITECTS-349.md",
+      "CITECTS-2231.md",
+      "CITECTS-1397.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E13",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "SCP Edge LB 성능 검증·이슈 지원 이력은?",
+    "any": [
+      "Edge LB",
+      "SCP Edge"
+    ],
+    "all": [],
+    "hits": 10,
+    "samples": [
+      "CITECTS-1285.md",
+      "CITECTS-1629.md",
+      "CITECTS-1333.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E14",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "OS hang 반복 발생 시 Hang 대응 가이드 핵심은?",
+    "any": [
+      "Hang 대응",
+      "hang"
+    ],
+    "all": [],
+    "hits": 1039,
+    "samples": [
+      "CITECTS-2360.md",
+      "CITECTS-1072.md",
+      "CITECTS-1260.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E15",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "대외 프로젝트에서 Lookin 대신 PIXEL을 쓰는 조건은?",
+    "any": [
+      "PIXEL",
+      "대외",
+      "Lookin"
+    ],
+    "all": [],
+    "hits": 344,
+    "samples": [
+      "CITECTS-2381.md",
+      "CITECTS-802.md",
+      "CITECTS-974.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E16",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "NetApp/스토리지 latency 증가 분석 사례와 공통 패턴은?",
+    "any": [
+      "latency",
+      "NetApp",
+      "스토리지"
+    ],
+    "all": [],
+    "hits": 1032,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-2497.md",
+      "CITECTS-802.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E17",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "Kubernetes SSL 인증서 만료로 인한 서비스 오류 사례는?",
+    "any": [
+      "SSL",
+      "인증서",
+      "k8s",
+      "K8S"
+    ],
+    "all": [],
+    "hits": 399,
+    "samples": [
+      "CITECTS-2014.md",
+      "CITECTS-1844.md",
+      "CITECTS-1285.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E18",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "Buddy Allocator와 메모리 fragmentation 확인 방법은?",
+    "any": [
+      "Buddy",
+      "fragmentation",
+      "buddyfrag"
+    ],
+    "all": [],
+    "hits": 23,
+    "samples": [
+      "CITECTS-2360.md",
+      "CITECTS-2110.md",
+      "CITECTS-2570.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E19",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "SCP 금융풀 워커노드 IO wait 이슈 원인·조치는?",
+    "any": [
+      "IO wait",
+      "워커",
+      "금융풀",
+      "모니모"
+    ],
+    "all": [],
+    "hits": 130,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-2044.md",
+      "CITECTS-1166.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E20",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "Greenplum/GPDB BMT IO·NW 요구 성능 미달 시 점검 포인트는?",
+    "any": [
+      "Greenplum",
+      "GPDB",
+      "BMT"
+    ],
+    "all": [],
+    "hits": 37,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-1291.md",
+      "CITECTS-1503.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E21",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "PISA 진단 시 SAP ERP 전체 vs SAP DB 진단 가능 여부는?",
+    "any": [
+      "SAP",
+      "PISA"
+    ],
+    "all": [],
+    "hits": 603,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-2002.md",
+      "CITECTS-1260.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E22",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "NSX 업그레이드 중 발생한 장애 사례는?",
+    "any": [
+      "NSX",
+      "Upgrade",
+      "업그레이드"
+    ],
+    "all": [],
+    "hits": 658,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-974.md",
+      "CITECTS-2044.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E23",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "Redis Timeout/Cluster 재구성 이슈 지원 건 종합",
+    "any": [
+      "Redis",
+      "Timeout",
+      "Cluster"
+    ],
+    "all": [],
+    "hits": 1357,
+    "samples": [
+      "CITECTS-2127.md",
+      "CITECTS-1165.md",
+      "CITECTS-2497.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E24",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "이중화 테스트 표준 시나리오 문서 위치와 구성은?",
+    "any": [
+      "이중화 테스트",
+      "표준 시나리오"
+    ],
+    "all": [],
+    "hits": 568,
+    "samples": [
+      "CITECTS-1277.md",
+      "CITECTS-1958.md",
+      "CITECTS-2115.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E25",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "DR/log shipping timeout 관련 HANA 이슈 패턴은?",
+    "any": [
+      "logshipping",
+      "LogShipping",
+      "HANA"
+    ],
+    "all": [],
+    "hits": 321,
+    "samples": [
+      "CITECTS-1512.md",
+      "CITECTS-1016.md",
+      "CITECTS-914.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E26",
+    "persona": "expert",
+    "qtype": "checklist",
+    "q": "Oracle Area PISA 점검 항목 개수와 상위 카테고리는?",
+    "any": [
+      "Oracle",
+      "PISA"
+    ],
+    "all": [],
+    "hits": 851,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1076.md",
+      "CITECTS-476.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E27",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "SKE_K8S PISA 진단 항목은 어떤 것들이 있나?",
+    "any": [
+      "SKE_K8S",
+      "Kubernetes"
+    ],
+    "all": [],
+    "hits": 119,
+    "samples": [
+      "CITECTS-1649.md",
+      "CITECTS-859.md",
+      "CITECTS-1333.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E28",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "백업 시 성능 저하(Windows buffersize, Broadcom NIC) 사례는?",
+    "any": [
+      "buffersize",
+      "Broadcom",
+      "백업"
+    ],
+    "all": [],
+    "hits": 526,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-2497.md",
+      "CITECTS-1133.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E29",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "파일 전송 속도 저하(VXLAN/Calico) 원인 분석 사례는?",
+    "any": [
+      "VXLAN",
+      "Calico",
+      "throughput",
+      "파일 전송"
+    ],
+    "all": [],
+    "hits": 264,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-1285.md",
+      "CITECTS-2025.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E30",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "표준 장애대응 SOP는 어디에 있고 어떤 분야가 있나?",
+    "any": [
+      "표준 장애대응",
+      "SOP"
+    ],
+    "all": [],
+    "hits": 464,
+    "samples": [
+      "CITECTS-2025.md",
+      "CITECTS-2052.md",
+      "CITECTS-2155.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E31",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "VMware NSX Mgmt/Control/Data plane 구성 요약은?",
+    "any": [
+      "NSX Manager",
+      "Control Plane",
+      "TEP"
+    ],
+    "all": [],
+    "hits": 319,
+    "samples": [
+      "CITECTS-2044.md",
+      "CITECTS-1166.md",
+      "CITECTS-1599.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E32",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "멀티패스(Multipath) 구성 관련 장애·점검 포인트는?",
+    "any": [
+      "Multipath",
+      "multipath"
+    ],
+    "all": [],
+    "hits": 112,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-253.md",
+      "CITECTS-1628.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E33",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "권고 패치(PRB) 최근 연도별 공지 문서는?",
+    "any": [
+      "권고 패치",
+      "PRB"
+    ],
+    "all": [],
+    "hits": 127,
+    "samples": [
+      "CITECTS-1885.md",
+      "CITECTS-1796.md",
+      "CITECTS-1681.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E34",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "DB 서버 disk latency 급증 시 분석 절차 사례는?",
+    "any": [
+      "disk latency",
+      "latency 증가"
+    ],
+    "all": [],
+    "hits": 17,
+    "samples": [
+      "CITECTS-2379.md",
+      "CITECTS-1740.md",
+      "CITECTS-429.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E35",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "모니터링 표준항목(MRB) 문서는?",
+    "any": [
+      "MRB",
+      "표준 모니터링",
+      "모니터링 표준"
+    ],
+    "all": [],
+    "hits": 50,
+    "samples": [
+      "CITECTS-253.md",
+      "CITECTS-923.md",
+      "CITECTS-2503.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E36",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "LB 502/503 오류 지원 사례와 원인 유형은?",
+    "any": [
+      "502",
+      "503"
+    ],
+    "all": [],
+    "hits": 363,
+    "samples": [
+      "CITECTS-1076.md",
+      "CITECTS-2002.md",
+      "CITECTS-1302.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E37",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "NAS 통신 이슈 사례(모니모 등) 원인 패턴은?",
+    "any": [
+      "NAS",
+      "통신"
+    ],
+    "all": [],
+    "hits": 790,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1259.md",
+      "CITECTS-1844.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E38",
+    "persona": "expert",
+    "qtype": "factoid",
+    "q": "ethtool로 GRO/TSO/GSO 확인·변경하는 방법은?",
+    "any": [
+      "ethtool",
+      "gro",
+      "tso"
+    ],
+    "all": [],
+    "hits": 873,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1453.md",
+      "CITECTS-1076.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E39",
+    "persona": "expert",
+    "qtype": "technical_synthesize",
+    "q": "SCP File Storage 성능 이슈 지원 이력은?",
+    "any": [
+      "File Storage",
+      "파일스토리지",
+      "SCP"
+    ],
+    "all": [],
+    "hits": 1285,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-863.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "E40",
+    "persona": "expert",
+    "qtype": "prevention_map",
+    "q": "Linux 부팅 시 파일시스템 체크(fsck order) 취약 시 문제와 개선은?",
+    "any": [
+      "fstab",
+      "fsck",
+      "PISAOLNX_01.01.01",
+      "부팅 시 파일 시스템"
+    ],
+    "all": [],
+    "hits": 82,
+    "samples": [
+      "CITECTS-2404.md",
+      "CITECTS-347.md",
+      "CITECTS-1047.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M01",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "대외 PISA/Lookin 진단 1주·2주 기준 분야별 가능 대수와 M/M는?",
+    "any": [
+      "1주 분량",
+      "0.25M/M",
+      "Linux 20",
+      "분야별"
+    ],
+    "all": [],
+    "hits": 1255,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-746.md",
+      "CITECTS-206.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M02",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "진단 서비스 제안 시 분야별 단가 기준은?",
+    "any": [
+      "대당 100",
+      "분야별 단가",
+      "Instance당"
+    ],
+    "all": [],
+    "hits": 4,
+    "samples": [
+      "QRB_품질_인프라구축검증_PISA_FAQ.md",
+      "confluence_557908279.md",
+      "confluence_454207970.md"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "M03",
+    "persona": "manager",
+    "qtype": "aggregate_stats",
+    "q": "최근 연도별 기술지원 티켓 규모 추이는? (코퍼스 기준)",
+    "any": [
+      "Created",
+      "2024",
+      "2025"
+    ],
+    "all": [],
+    "hits": 2982,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-863.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M04",
+    "persona": "manager",
+    "qtype": "aggregate_stats",
+    "q": "Component(기술지원/장애지원/진단컨설팅)별 건수 비중은?",
+    "any": [
+      "Component",
+      "기술지원",
+      "장애지원"
+    ],
+    "all": [],
+    "hits": 2449,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-863.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M05",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "CI-TEC 부서 역할과 주요 서비스(Lookin/PISA) 소개 요지는?",
+    "any": [
+      "CI-TEC",
+      "Lookin",
+      "PISA"
+    ],
+    "all": [],
+    "hits": 3637,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-1076.md",
+      "CITECTS-974.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M06",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "진단 인력을 1주 2M/M 또는 2주 4M/M로 제안한 사례는?",
+    "any": [
+      "1주2M/M",
+      "2주 4M/M",
+      "2M/M"
+    ],
+    "all": [],
+    "hits": 3,
+    "samples": [
+      "CITECTS-746.md",
+      "CITECTS-1055.md",
+      "QRB_품질_인프라구축검증_PISA_FAQ.md"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "M07",
+    "persona": "manager",
+    "qtype": "entity_aggregate",
+    "q": "진단컨설팅 유형 이슈 목록과 대표 고객사 사례는?",
+    "any": [
+      "진단컨설팅"
+    ],
+    "all": [],
+    "hits": 64,
+    "samples": [
+      "CITECTS-314.md",
+      "CITECTS-650.md",
+      "CITECTS-1831.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M08",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "대외 SaaS 대상 CI-TEC 점검 요청 절차(사전 요청 기한)는?",
+    "any": [
+      "2달",
+      "대외 SaaS",
+      "점검 희망"
+    ],
+    "all": [],
+    "hits": 2,
+    "samples": [
+      "CITECTS-2433.md",
+      "QRB_품질_인프라구축검증_PISA_FAQ.md"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "M09",
+    "persona": "manager",
+    "qtype": "risk",
+    "q": "대외 진단·사업을 최소화한다는 내부 기조/우선순위 언급 문서는?",
+    "any": [
+      "대외진단",
+      "대외 진단",
+      "최소화"
+    ],
+    "all": [],
+    "hits": 136,
+    "samples": [
+      "CITECTS-1166.md",
+      "CITECTS-1068.md",
+      "CITECTS-635.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M10",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "Lookin 진단 가능 6개 분야 58개 부문 기준 설명은?",
+    "any": [
+      "6개분야",
+      "58개",
+      "부문"
+    ],
+    "all": [],
+    "hits": 177,
+    "samples": [
+      "CITECTS-1448.md",
+      "CITECTS-1831.md",
+      "CITECTS-1759.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M11",
+    "persona": "manager",
+    "qtype": "prevention_map",
+    "q": "반복 장애가 많은 영역(코퍼스 기준) 상위 키워드는?",
+    "any": [
+      "장애",
+      "재발"
+    ],
+    "all": [],
+    "hits": 1623,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1453.md",
+      "CITECTS-2497.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M12",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "품질(QRB) 인프라 검증/PISA FAQ의 핵심 Q&A는 어디에 있나?",
+    "any": [
+      "QRB",
+      "PISA",
+      "FAQ"
+    ],
+    "all": [],
+    "hits": 258,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-1260.md",
+      "CITECTS-349.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M13",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "5개 분야 2주 Lookin 진단 시 투입 M/M 산정 사례는?",
+    "any": [
+      "5개분야",
+      "3M/M",
+      "2주"
+    ],
+    "all": [],
+    "hits": 61,
+    "samples": [
+      "CITECTS-1831.md",
+      "CITECTS-710.md",
+      "CITECTS-746.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M14",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "PIXEL과 Lookin Enterprise 사용 기준 차이는?",
+    "any": [
+      "PIXEL",
+      "Lookin Ent"
+    ],
+    "all": [],
+    "hits": 49,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-341.md",
+      "CITECTS-2478.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M15",
+    "persona": "manager",
+    "qtype": "risk",
+    "q": "CSP/MSP 지원 확대와 대외 진단 여력 trade-off를 언급한 문서는?",
+    "any": [
+      "클라우드 사업",
+      "대외"
+    ],
+    "all": [],
+    "hits": 86,
+    "samples": [
+      "CITECTS-2381.md",
+      "CITECTS-802.md",
+      "CITECTS-1161.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M16",
+    "persona": "manager",
+    "qtype": "aggregate_stats",
+    "q": "모니모 관련 지원이 전체에서 차지하는 대략 규모는?",
+    "any": [
+      "모니모"
+    ],
+    "all": [],
+    "hits": 80,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-2044.md",
+      "CITECTS-604.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M17",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "부서 소개 자료상 글로벌/대외·관계사 진단 역할은?",
+    "any": [
+      "부서 소개",
+      "대외",
+      "관계사",
+      "진단"
+    ],
+    "all": [],
+    "hits": 342,
+    "samples": [
+      "CITECTS-863.md",
+      "CITECTS-2381.md",
+      "CITECTS-802.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M18",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "네트워크 장비 700대 중 Lookin 가능 대수와 2주치 선정 논리는?",
+    "any": [
+      "734",
+      "400대",
+      "2주치"
+    ],
+    "all": [],
+    "hits": 156,
+    "samples": [
+      "CITECTS-1133.md",
+      "CITECTS-2025.md",
+      "CITECTS-1302.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M19",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "서비스 base 계약 vs M/M base에 대한 CI-TEC 입장은?",
+    "any": [
+      "서비스 base",
+      "M/M base"
+    ],
+    "all": [],
+    "hits": 1,
+    "samples": [
+      "QRB_품질_인프라구축검증_PISA_FAQ.md"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "M20",
+    "persona": "manager",
+    "qtype": "technical_synthesize",
+    "q": "대형 금융 진단(신한 등) sampling 수량·인력 계획 사례는?",
+    "any": [
+      "신한",
+      "진단수량",
+      "sampling"
+    ],
+    "all": [],
+    "hits": 49,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-1111.md",
+      "CITECTS-1092.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M21",
+    "persona": "manager",
+    "qtype": "risk",
+    "q": "장애 시 SDS 평판 리스크를 언급한 대외/DRCC 사례는?",
+    "any": [
+      "평판",
+      "대외",
+      "DRCC"
+    ],
+    "all": [],
+    "hits": 136,
+    "samples": [
+      "CITECTS-2381.md",
+      "CITECTS-802.md",
+      "CITECTS-2052.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M22",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "구축검증/설계검증 대상 여부 판단 기준 논의 내용은?",
+    "any": [
+      "구축검증",
+      "설계검증",
+      "PISA"
+    ],
+    "all": [],
+    "hits": 212,
+    "samples": [
+      "CITECTS-974.md",
+      "CITECTS-1260.md",
+      "CITECTS-349.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M23",
+    "persona": "manager",
+    "qtype": "aggregate_stats",
+    "q": "SCP 관련 지원 이슈가 코퍼스에서 차지하는 비중 시그널은?",
+    "any": [
+      "SCP"
+    ],
+    "all": [],
+    "hits": 1270,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-863.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M24",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "진단 범위 결정 주체(고객 결정 원칙)는 FAQ에 어떻게 쓰여 있나?",
+    "any": [
+      "진단범위를 정하는데",
+      "고객이"
+    ],
+    "all": [],
+    "hits": 96,
+    "samples": [
+      "CITECTS-863.md",
+      "CITECTS-1260.md",
+      "CITECTS-1302.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M25",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "분야별 0.25M/M(1주) 산정 1안의 전체 분야 목록은?",
+    "any": [
+      "0.25M/M",
+      "AIX 20",
+      "네트워크 10"
+    ],
+    "all": [],
+    "hits": 3,
+    "samples": [
+      "CITECTS-746.md",
+      "CITECTS-1326.md",
+      "QRB_품질_인프라구축검증_PISA_FAQ.md"
+    ],
+    "band": "weak"
+  },
+  {
+    "id": "M26",
+    "persona": "manager",
+    "qtype": "prevention_map",
+    "q": "정기 안정화 작업·장애 후속 개선 유형 지원 사례는?",
+    "any": [
+      "안정화",
+      "후속 개선"
+    ],
+    "all": [],
+    "hits": 55,
+    "samples": [
+      "CITECTS-1455.md",
+      "CITECTS-274.md",
+      "CITECTS-1785.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M27",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "Tech-Repo 분야별 기술 자료 구조(OS/DB/스토리지…) 개요는?",
+    "any": [
+      "분야별 기술 자료",
+      "운영체제",
+      "데이터베이스"
+    ],
+    "all": [],
+    "hits": 1226,
+    "samples": [
+      "CITECTS-2414.md",
+      "CITECTS-1020.md",
+      "CITECTS-1903.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M28",
+    "persona": "manager",
+    "qtype": "risk",
+    "q": "동시 다중 진단 요청 시 일정 Fix 필요성을 언급한 사례는?",
+    "any": [
+      "진단일정",
+      "해외DC진단"
+    ],
+    "all": [],
+    "hits": 6,
+    "samples": [
+      "CITECTS-457.md",
+      "CITECTS-2081.md",
+      "CITECTS-2474.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M29",
+    "persona": "manager",
+    "qtype": "factoid",
+    "q": "PISA 방법론이 벤더 가이드·장애사례 기반으로 만들어졌다는 설명은?",
+    "any": [
+      "30년",
+      "장애 사례",
+      "진단 항목"
+    ],
+    "all": [],
+    "hits": 55,
+    "samples": [
+      "CITECTS-1885.md",
+      "CITECTS-1785.md",
+      "CITECTS-2582.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "M30",
+    "persona": "manager",
+    "qtype": "capacity_lookup",
+    "q": "운영시스템 기준 6명 2주 3M/M 계획 사례는?",
+    "any": [
+      "6명",
+      "3M/M",
+      "2주"
+    ],
+    "all": [],
+    "hits": 74,
+    "samples": [
+      "CITECTS-1831.md",
+      "CITECTS-808.md",
+      "CITECTS-710.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I01",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "FRB 장애 티켓에서 즉시 참고할 SOP/Hang 대응 문서는?",
+    "any": [
+      "FRB",
+      "Hang 대응",
+      "SOP"
+    ],
+    "all": [],
+    "hits": 692,
+    "samples": [
+      "CITECTS-2577.md",
+      "CITECTS-2406.md",
+      "CITECTS-2025.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I02",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "최근 유형의 접속 불가(FRB) 장애 원인 패턴은?",
+    "any": [
+      "FRB",
+      "접속 불가"
+    ],
+    "all": [],
+    "hits": 309,
+    "samples": [
+      "CITECTS-1453.md",
+      "CITECTS-2014.md",
+      "CITECTS-2577.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I03",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "장애등급 판정/귀책 관련 이슈 처리 이력은?",
+    "any": [
+      "장애등급",
+      "귀책"
+    ],
+    "all": [],
+    "hits": 13,
+    "samples": [
+      "CITECTS-2014.md",
+      "CITECTS-1973.md",
+      "CITECTS-1880.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I04",
+    "persona": "incident",
+    "qtype": "prevention_map",
+    "q": "장애 재발 방지 조치가 문서화된 사례를 보여줘",
+    "any": [
+      "재발",
+      "예방",
+      "후속"
+    ],
+    "all": [],
+    "hits": 329,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-974.md",
+      "CITECTS-2542.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I05",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "SCP BM Edge hang 장애 지원 건 원인·조치는?",
+    "any": [
+      "Edge",
+      "hang",
+      "SCP",
+      "BM"
+    ],
+    "all": [],
+    "hits": 2426,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-863.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I06",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "장애 발생 시 분야별 전문가 에스컬레이션 흐름 참고 문서는?",
+    "any": [
+      "Incident Commander",
+      "에스컬",
+      "장애"
+    ],
+    "all": [],
+    "hits": 1571,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1453.md",
+      "CITECTS-2497.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I07",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "간헐적 로그인 실패/접속 지연 장애 공통 원인은?",
+    "any": [
+      "로그인 실패",
+      "접속 지연",
+      "간헐"
+    ],
+    "all": [],
+    "hits": 168,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-2014.md",
+      "CITECTS-2406.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I08",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "스토리지 offline / disk offline 이슈 지원 패턴은?",
+    "any": [
+      "disk offline",
+      "offline 이슈",
+      "SDSI"
+    ],
+    "all": [],
+    "hits": 26,
+    "samples": [
+      "CITECTS-1583.md",
+      "CITECTS-1561.md",
+      "CITECTS-1506.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I09",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "네트워크 타임아웃(VM 통신 Timeout)과 NIC offload 연관 사례는?",
+    "any": [
+      "Timeout",
+      "rx-gro-hw",
+      "GRO"
+    ],
+    "all": [],
+    "hits": 1236,
+    "samples": [
+      "CITECTS-2127.md",
+      "CITECTS-1165.md",
+      "CITECTS-1453.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I10",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "표준 모니터링 항목으로 장애 전조를 보려면 무엇을 보나?",
+    "any": [
+      "모니터링 표준",
+      "MRB",
+      "표준 모니터링"
+    ],
+    "all": [],
+    "hits": 50,
+    "samples": [
+      "CITECTS-253.md",
+      "CITECTS-923.md",
+      "CITECTS-2503.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I11",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "WAF 트래픽 불균형으로 인한 장애/지연 사례는?",
+    "any": [
+      "WAF",
+      "불균형"
+    ],
+    "all": [],
+    "hits": 63,
+    "samples": [
+      "CITECTS-1285.md",
+      "CITECTS-2577.md",
+      "CITECTS-1778.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I12",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "인증서 만료로 인한 관계사 API 오류 장애 사례는?",
+    "any": [
+      "인증서",
+      "만료",
+      "관계사"
+    ],
+    "all": [],
+    "hits": 191,
+    "samples": [
+      "CITECTS-863.md",
+      "CITECTS-1844.md",
+      "CITECTS-2414.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I13",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "failover 지연 장애(NERP 등) 분석 포인트는?",
+    "any": [
+      "Failover",
+      "failover",
+      "지연"
+    ],
+    "all": [],
+    "hits": 1078,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-2497.md",
+      "CITECTS-1923.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I14",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "장애 대응 시 코어덤프/보라색 화면 수집 가이드는?",
+    "any": [
+      "코어덤프",
+      "보라색",
+      "zdump"
+    ],
+    "all": [],
+    "hits": 10,
+    "samples": [
+      "CITECTS-543.md",
+      "CITECTS-581.md",
+      "confluence_375122950.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I15",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "메모리 누수로 인한 웹서버 장애 사례는?",
+    "any": [
+      "메모리 누수",
+      "memory leak",
+      "웹서버"
+    ],
+    "all": [],
+    "hits": 96,
+    "samples": [
+      "CITECTS-1992.md",
+      "CITECTS-2349.md",
+      "CITECTS-2416.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I16",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "파일스토리지 사용 중 오류/성능 장애 사례는?",
+    "any": [
+      "File Storage",
+      "파일 스토리지",
+      "파일스토리지"
+    ],
+    "all": [],
+    "hits": 102,
+    "samples": [
+      "CITECTS-882.md",
+      "CITECTS-2121.md",
+      "CITECTS-285.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I17",
+    "persona": "incident",
+    "qtype": "prevention_map",
+    "q": "유사 장애 검색: heartbeat loss + cluster failover 키워드로 과거 사례는?",
+    "any": [
+      "heartbeat",
+      "Lost heartbeat",
+      "failover"
+    ],
+    "all": [],
+    "hits": 719,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-2497.md",
+      "CITECTS-1133.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I18",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "DRCC 연계 장애/구축 지원 시 참고할 Tech-Repo 위치는?",
+    "any": [
+      "DRCC"
+    ],
+    "all": [],
+    "hits": 58,
+    "samples": [
+      "CITECTS-2052.md",
+      "CITECTS-1958.md",
+      "CITECTS-1427.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I19",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "다중 AZ/이중화 구성 미비로 인한 이슈와 가이드는?",
+    "any": [
+      "Multi AZ",
+      "이중화",
+      "Multi-AZ"
+    ],
+    "all": [],
+    "hits": 928,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-1259.md",
+      "CITECTS-887.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I20",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "백업 창 동안 서비스 영향(Redis 백업 등) 장애 사례는?",
+    "any": [
+      "백업",
+      "Redis"
+    ],
+    "all": [],
+    "hits": 535,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-974.md",
+      "CITECTS-1133.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I21",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "장애 mid-incident에 쓸 Linux 긴급 점검 체크리스트는?",
+    "any": [
+      "긴급",
+      "점검",
+      "Linux",
+      "체크"
+    ],
+    "all": [],
+    "hits": 1838,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-2497.md",
+      "CITECTS-848.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I22",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "L4/LB health check 실패와 서버 네트워크 이상 연관 사례는?",
+    "any": [
+      "Health Check",
+      "L4",
+      "health"
+    ],
+    "all": [],
+    "hits": 397,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-1844.md",
+      "CITECTS-1285.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I23",
+    "persona": "incident",
+    "qtype": "aggregate_stats",
+    "q": "장애지원 Component 티켓들은 어떤 제목 패턴이 많은가?",
+    "any": [
+      "장애지원"
+    ],
+    "all": [],
+    "hits": 235,
+    "samples": [
+      "CITECTS-1453.md",
+      "CITECTS-1133.md",
+      "CITECTS-1072.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I24",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "GPU 노드/환경 네트워크 성능 저하와 GRO 연관은?",
+    "any": [
+      "GPU",
+      "GRO",
+      "rx-gro-hw"
+    ],
+    "all": [],
+    "hits": 908,
+    "samples": [
+      "CITECTS-1165.md",
+      "CITECTS-1453.md",
+      "CITECTS-1076.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I25",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "장애 등급판정회의 관련 기록/이슈는 어떻게 남아 있나?",
+    "any": [
+      "장애등급판정",
+      "등급판정회의"
+    ],
+    "all": [],
+    "hits": 5,
+    "samples": [
+      "CITECTS-2014.md",
+      "CITECTS-1880.md",
+      "CITECTS-1899.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I26",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "오픈 전 성능 이슈로 오픈 리스크가 된 사례(마이데이터 등)는?",
+    "any": [
+      "오픈 전",
+      "성능",
+      "마이데이타",
+      "마이데이터"
+    ],
+    "all": [],
+    "hits": 1192,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-2127.md",
+      "CITECTS-1453.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I27",
+    "persona": "incident",
+    "qtype": "prevention_map",
+    "q": "Past major outage 후속 개선(삼성카드/모니모 안정화) 내용은?",
+    "any": [
+      "후속 개선",
+      "정기 안정화",
+      "모니모"
+    ],
+    "all": [],
+    "hits": 80,
+    "samples": [
+      "CITECTS-1259.md",
+      "CITECTS-2044.md",
+      "CITECTS-604.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I28",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "DNS/NTP 구성 이슈가 서비스에 영향 준 사례는?",
+    "any": [
+      "DNS",
+      "NTP"
+    ],
+    "all": [],
+    "hits": 333,
+    "samples": [
+      "CITECTS-2014.md",
+      "CITECTS-1260.md",
+      "CITECTS-2577.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I29",
+    "persona": "incident",
+    "qtype": "factoid",
+    "q": "벤더 전달용 코어덤프/로그 수집 체크포인트는?",
+    "any": [
+      "벤더",
+      "코어덤프",
+      "분석 의뢰"
+    ],
+    "all": [],
+    "hits": 428,
+    "samples": [
+      "CITECTS-979.md",
+      "CITECTS-863.md",
+      "CITECTS-848.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "I30",
+    "persona": "incident",
+    "qtype": "technical_synthesize",
+    "q": "대외 고객사 서비스 지연 FRB 대응 시 참고 사례는?",
+    "any": [
+      "대외고객",
+      "FRB",
+      "지연"
+    ],
+    "all": [],
+    "hits": 621,
+    "samples": [
+      "CITECTS-2497.md",
+      "CITECTS-1923.md",
+      "CITECTS-1133.md"
+    ],
+    "band": "strong"
+  },
+  {
+    "id": "G01",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "(현재) 서비스 간헐 지연이 발생 중인데, 과거 유사 장애가 있었는지와 당시 원인·해결은?",
+    "any": [
+      "지연",
+      "간헐"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident pipeline",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G02",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "지금 Edge/BM hang 증상인데 이전 유사 건과 해결책이 이번에도 유효한가?",
+    "any": [
+      "Edge",
+      "hang"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+applicability",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G03",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "현재 네트워크 timeout 장애 — 과거 GRO/NIC offload 사례가 적용 가능한가?",
+    "any": [
+      "Timeout",
+      "GRO",
+      "rx-gro-hw"
+    ],
+    "band": "weak",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+env_match",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G04",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "접속 불가 FRB — 과거 FRB 중 가장 유사한 3건의 조치와 재발 여부를 요약해줘",
+    "any": [
+      "FRB",
+      "접속 불가"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+recurrence",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G05",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "스토리지 latency 급증 장애 — 과거 해결방안이 현재 구성(CSP/온프레)에도 맞는지 판단해줘",
+    "any": [
+      "latency",
+      "스토리지"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+applicability",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G06",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "인증서 만료로 보이는 API 오류 — 과거 관계사 연동 유사장애와 조치 체크리스트는?",
+    "any": [
+      "인증서",
+      "만료"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+checklist hop",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G07",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "DB failover 지연 — 과거 NERP/HANA 등 유사 건 해결이 이번에도 도움이 되나?",
+    "any": [
+      "failover",
+      "Failover"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "similar_incident+applicability",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G08",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "현재 장애와 가장 비슷한 과거 건을 찾고, 그 해결을 그대로 쓰면 안 되는 이유(환경 차이)를 알려줘",
+    "any": [
+      "장애",
+      "원인",
+      "조치"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "applicability diff",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G09",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "유사 장애가 없다면 근거 부족이라고 말하고, 추가로 수집해야 할 정보(환경·로그)를 제시해줘",
+    "any": [
+      "장애"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "abstain+slot questions",
+    "ready": "partial_need_si"
+  },
+  {
+    "id": "G10",
+    "persona": "group_lead",
+    "qtype": "similar_incident",
+    "q": "과거 유사 장애의 해결 소요시간·투입 규모가 기록되어 있으면 의사결정용으로 요약해줘",
+    "any": [
+      "장애",
+      "M/M",
+      "지원"
+    ],
+    "band": "strong",
+    "hits": -1,
+    "ans_class": "SI",
+    "need": "frame+time extract",
+    "ready": "partial_need_si"
+  }
+]

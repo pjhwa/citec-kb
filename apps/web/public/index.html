@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CI-TEC Knowledge Platform</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --primary: #1d4ed8;
+      --ok: #047857;
+      --bad: #b91c1c;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, "Noto Sans KR", sans-serif;
+      background: radial-gradient(900px 400px at 10% -10%, #e0eaff, transparent), var(--bg);
+      color: var(--text); line-height: 1.55; padding: 32px 20px 60px;
+    }
+    .wrap { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; margin: 0 0 8px; }
+    .sub { color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
+    .card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px 22px; margin-bottom: 14px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.05);
+    }
+    .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+    .badge.ok { background: #d1fae5; color: var(--ok); }
+    .badge.bad { background: #fee2e2; color: var(--bad); }
+    .badge.na { background: #f1f5f9; color: var(--muted); }
+    button {
+      background: var(--primary); color: #fff; border: 0; border-radius: 10px;
+      padding: 10px 16px; font-weight: 600; cursor: pointer; font-size: 14px;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    pre {
+      background: #f4f6fa; border-radius: 10px; padding: 12px; overflow: auto;
+      font-size: 12px; border: 1px solid var(--border);
+    }
+    a { color: var(--primary); }
+    .hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>CI-TEC Knowledge Platform</h1>
+    <p class="sub">PR-01 skeleton · 검색/RAG는 이후 PR. 지금은 스택 헬스와 LLM 연결을 확인합니다.</p>
+
+    <div class="card">
+      <div class="row"><span>API</span><span id="api-badge" class="badge na">…</span></div>
+      <div class="row"><span>Postgres</span><span id="pg-badge" class="badge na">…</span></div>
+      <div class="row"><span>Redis</span><span id="redis-badge" class="badge na">…</span></div>
+      <div class="row"><span>LLM config</span><span id="llm-badge" class="badge na">…</span></div>
+      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="btn-health" type="button">Refresh health</button>
+        <button id="btn-llm" type="button">Probe OpenRouter / GLM</button>
+      </div>
+      <p class="hint">API docs: <a href="/docs" target="_blank">/docs</a> · raw: <code>/v1/health</code></p>
+    </div>
+
+    <div class="card">
+      <strong>Last response</strong>
+      <pre id="out">Click a button…</pre>
+    </div>
+  </div>
+  <script>
+    const out = document.getElementById("out");
+    function setBadge(id, ok, label) {
+      const el = document.getElementById(id);
+      el.textContent = label;
+      el.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
+    }
+    async function loadHealth() {
+      const btn = document.getElementById("btn-health");
+      btn.disabled = true;
+      try {
+        const r = await fetch("/v1/health");
+        const j = await r.json();
+        out.textContent = JSON.stringify(j, null, 2);
+        setBadge("api-badge", j.status === "ok" || j.status === "degraded", j.status);
+        setBadge("pg-badge", j.checks?.postgres?.ok, j.checks?.postgres?.ok ? "ok" : "fail");
+        setBadge("redis-badge", j.checks?.redis?.ok, j.checks?.redis?.ok ? "ok" : "fail");
+        setBadge("llm-badge", j.checks?.llm?.ok, j.checks?.llm?.backend || "none");
+      } catch (e) {
+        out.textContent = String(e);
+        setBadge("api-badge", false, "unreachable");
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    async function probeLlm() {
+      const btn = document.getElementById("btn-llm");
+      btn.disabled = true;
+      out.textContent = "Probing LLM (may take up to 60s)…";
+      try {
+        const r = await fetch("/v1/health/llm");
+        const j = await r.json();
+        out.textContent = JSON.stringify(j, null, 2);
+        setBadge("llm-badge", j.ok, j.ok ? (j.model || "ok") : "fail");
+      } catch (e) {
+        out.textContent = String(e);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    document.getElementById("btn-health").onclick = loadHealth;
+    document.getElementById("btn-llm").onclick = probeLlm;
+    loadHealth();
+  </script>
+</body>
+</html>

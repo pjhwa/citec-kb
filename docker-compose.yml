@@ -1,0 +1,97 @@
+# CI-TEC Knowledge Platform — slim stack (PR-01)
+# Services: web, api, worker, postgres, redis
+# LLM is external (OpenRouter on dev, Fabrix on prod)
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-citec}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-citec}
+      POSTGRES_DB: ${POSTGRES_DB:-citec_knowledge}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-citec} -d ${POSTGRES_DB:-citec_knowledge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citec}:${POSTGRES_PASSWORD:-citec}@postgres:5432/${POSTGRES_DB:-citec_knowledge}
+      REDIS_URL: redis://redis:6379/0
+      RAW_DIR: /data/raw
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data:ro
+      - ${RAW_HOST_DIR:-../temp/raw}:/data/raw:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citec}:${POSTGRES_PASSWORD:-citec}@postgres:5432/${POSTGRES_DB:-citec_knowledge}
+      REDIS_URL: redis://redis:6379/0
+      RAW_DIR: /data/raw
+    volumes:
+      - ./config:/app/config:ro
+      - ./data:/app/data:ro
+      - ${RAW_HOST_DIR:-../temp/raw}:/data/raw:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./apps/web/public:/usr/share/nginx/html:ro
+      - ./apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
