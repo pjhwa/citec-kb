@@ -68,17 +68,45 @@ async def health() -> HealthResponse:
     except Exception as exc:  # noqa: BLE001
         checks["redis"] = {"ok": False, "error": str(exc)}
 
-    # Postgres (optional at PR-01 — may be empty schema)
+    # Postgres + schema revision
     try:
         import psycopg
 
-        # strip SQLAlchemy-style driver prefix if present
         dsn = settings.database_url.replace("postgresql+psycopg://", "postgresql://")
         with psycopg.connect(dsn, connect_timeout=3) as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
                 cur.fetchone()
-        checks["postgres"] = {"ok": True}
+                cur.execute(
+                    "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = 'alembic_version')"
+                )
+                has_alembic = bool(cur.fetchone()[0])
+                rev = None
+                if has_alembic:
+                    cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
+                    row = cur.fetchone()
+                    rev = row[0] if row else None
+                cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+                )
+                table_count = int(cur.fetchone()[0])
+                docs_count = None
+                if rev:
+                    cur.execute(
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                        "WHERE table_name = 'documents')"
+                    )
+                    if cur.fetchone()[0]:
+                        cur.execute("SELECT COUNT(*) FROM documents")
+                        docs_count = int(cur.fetchone()[0])
+        checks["postgres"] = {
+            "ok": True,
+            "alembic_revision": rev,
+            "public_tables": table_count,
+            "documents_count": docs_count,
+        }
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = {"ok": False, "error": str(exc)}
 

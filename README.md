@@ -72,9 +72,27 @@ docs/
 docker-compose.yml
 ```
 
+## DB 마이그레이션 (PR-02)
+
+API 컨테이너 기동 시 `alembic upgrade head` 자동 실행.
+
+```bash
+# 호스트에서 (venv + deps 필요)
+export DATABASE_URL=postgresql+psycopg://citec:citec@127.0.0.1:8574/citec_knowledge
+./scripts/migrate.sh
+
+# 또는
+docker compose exec api alembic current
+docker compose exec api alembic upgrade head
+```
+
+스키마: `sources`, `documents`, `document_sections`, `chunks`, `embeddings`(pgvector 1024),
+`ingest_jobs`, `checkitems`, `entities`, `issue_frames`, `capacity_rules`, …
+헬스: `checks.postgres.alembic_revision`.
+
 ## 로드맵
 
-`docs/IMPLEMENTATION_PLAN.md` — PR-02 schema부터 이어짐.
+`docs/IMPLEMENTATION_PLAN.md` — 다음 PR-03 ingest.
 
 ## 보안
 
