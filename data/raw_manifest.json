@@ -1,0 +1,45 @@
+{
+  "registered_at": "2026-07-18T06:29:31.630562+00:00",
+  "sources": {
+    "checkitems": {
+      "files": 3,
+      "by_ext": {
+        ".json": 2,
+        ".xls": 1
+      }
+    },
+    "confluence_docs": {
+      "files": 4,
+      "by_ext": {
+        ".md": 4
+      }
+    },
+    "incident_reports": {
+      "files": 0,
+      "by_ext": {}
+    },
+    "support_history": {
+      "files": 2280,
+      "by_ext": {
+        ".md": 2280
+      }
+    },
+    "tech_repo": {
+      "files": 2709,
+      "by_ext": {
+        ".md": 2709
+      }
+    },
+    "tuning_ai": {
+      "files": 11,
+      "by_ext": {
+        ".md": 11
+      }
+    },
+    "vendor_docs": {
+      "files": 0,
+      "by_ext": {}
+    }
+  },
+  "total_files": 5007
+}

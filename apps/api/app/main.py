@@ -82,12 +82,22 @@ async def health() -> HealthResponse:
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = {"ok": False, "error": str(exc)}
 
-    # raw dir
+    # raw dir (registered knowledge corpus)
     raw = Path(settings.raw_dir)
+    source_counts: dict[str, int] = {}
+    total = 0
+    if raw.is_dir():
+        for child in sorted(raw.iterdir()):
+            if child.is_dir():
+                n = sum(1 for f in child.rglob("*") if f.is_file() and f.name != ".gitkeep")
+                source_counts[child.name] = n
+                total += n
     checks["raw_dir"] = {
-        "ok": raw.is_dir(),
+        "ok": raw.is_dir() and total > 0,
         "path": str(raw),
         "exists": raw.exists(),
+        "total_files": total,
+        "sources": source_counts,
     }
 
     # LLM config presence (not full probe on every health — use /v1/health/llm)

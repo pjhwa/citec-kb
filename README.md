@@ -14,25 +14,33 @@ cd ~/dev/cite-c-knowledge
 cp ~/tmp/citec-wiki-qa/.env .env   # 이미 있으면 스킵
 # 또는: cp .env.example .env  후 OPENROUTER_API_KEY 설정
 
-# raw 지식 경로 (기본: 형제 경로 ../temp/raw — 없으면 환경변수로 지정)
-export RAW_HOST_DIR=/home/citec/dev/temp/raw
+# 지식 코퍼스: data/raw (등록 완료). 다른 경로를 쓸 때만:
+# export RAW_HOST_DIR=/path/to/raw
 
 docker compose up -d --build
 ```
 
-| URL | 설명 |
-|-----|------|
-| http://localhost:8080 | Web (헬스 UI) |
-| http://localhost:8000/docs | API OpenAPI |
-| http://localhost:8000/v1/health | 헬스 |
-| http://localhost:8000/v1/health/llm | OpenRouter/GLM 라이브 프로브 |
-| localhost:5433 | Postgres (host) |
-| localhost:6380 | Redis (host; 6379 충돌 회피) |
+### 호스트 포트 (할당 대역 8572–8580)
+
+| 호스트 포트 | 서비스 |
+|-------------|--------|
+| **8572** | web (UI) |
+| **8573** | api |
+| **8574** | postgres |
+| **8575** | redis |
+| 8576–8580 | 예약 (향후) |
 
 ```bash
-curl -s localhost:8000/v1/health | jq .
-curl -s localhost:8000/v1/health/llm | jq .
+curl -s localhost:8573/v1/health | jq .
+curl -s localhost:8573/v1/health/llm | jq .
+# UI: http://localhost:8572
+# Docs: http://localhost:8573/docs
 ```
+
+### 지식 문서 등록
+
+원본 `~/dev/temp/raw` 코퍼스를 `data/raw/` 로 복사·등록함 (총 ~5007 files).  
+목록 메타: `data/raw_manifest.json`. 본문 파일은 gitignore (`data/raw/`).
 
 ## 서비스 (5)
 
