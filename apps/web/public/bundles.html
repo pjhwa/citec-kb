@@ -35,6 +35,8 @@
   <a href="/analytics.html">집계</a>
   <a href="/capacity.html">공수·대수</a>
   <a href="/bundles.html">번들</a>
+  <a href="/admin.html">Admin</a>
+  <a href="/login.html">Login</a>
   <a href="/docs/">문서</a>
 </div>
 <div class="wrap">
@@ -61,14 +63,16 @@
   </div>
   <div id="out"></div>
 </div>
+<script src="/js/auth.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const splitCsv = (s) => String(s||"").split(/[,|]/).map(x=>x.trim()).filter(Boolean);
+const api = (url, opts) => CitecAuth.apiFetch(url, opts);
 
 async function loadAll() {
   $("out").innerHTML = "<p class='meta'>로딩…</p>";
-  const r = await fetch("/v1/bundles");
+  const r = await api("/v1/bundles");
   const d = await r.json();
   renderList(d.items || [], "전체 번들");
 }
@@ -76,7 +80,7 @@ async function match() {
   const q = $("q").value.trim();
   if (!q) return loadAll();
   $("out").innerHTML = "<p class='meta'>매칭 중…</p>";
-  const r = await fetch("/v1/bundles?q=" + encodeURIComponent(q));
+  const r = await api("/v1/bundles?q=" + encodeURIComponent(q));
   const d = await r.json();
   renderList(d.items || [], `매칭 결과: ${esc(q)}`);
 }
@@ -115,7 +119,7 @@ async function saveBundle() {
     notes: "saved via UI",
   };
   $("saveMsg").textContent = "저장 중…";
-  const r = await fetch("/v1/bundles", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const r = await api("/v1/bundles", {method:"POST", body});
   const d = await r.json();
   if (!r.ok) throw new Error(d.detail || r.statusText);
   $("saveMsg").textContent = "저장됨: " + (d.path || d.bundle?.name);
@@ -125,7 +129,7 @@ async function delBundle() {
   const name = $("bname").value.trim();
   if (!name) return;
   if (!confirm("삭제: " + name + "?")) return;
-  const r = await fetch("/v1/bundles/" + encodeURIComponent(name), {method:"DELETE"});
+  const r = await api("/v1/bundles/" + encodeURIComponent(name), {method:"DELETE"});
   const d = await r.json();
   if (!r.ok) throw new Error(d.detail || r.statusText);
   $("saveMsg").textContent = "삭제됨: " + name;
@@ -136,6 +140,7 @@ $("btnMatch").onclick = () => match().catch(e => $("out").innerHTML = `<div clas
 $("btnSave").onclick = () => saveBundle().catch(e => $("saveMsg").textContent = String(e));
 $("btnDel").onclick = () => delBundle().catch(e => $("saveMsg").textContent = String(e));
 $("q").addEventListener("keydown", e => { if (e.key==="Enter") match(); });
+CitecAuth.mountChip(".top");
 loadAll();
 </script>
 </body>

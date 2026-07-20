@@ -61,15 +61,11 @@
     <pre id="me" class="meta">—</pre>
   </div>
 </div>
+<script src="/js/auth.js"></script>
 <script>
-const KEY = "citec_kb_token";
 const $ = (id) => document.getElementById(id);
-
-function saveToken(t) {
-  if (t) localStorage.setItem(KEY, t);
-  else localStorage.removeItem(KEY);
-}
-function getToken() { return localStorage.getItem(KEY) || ""; }
+const saveToken = (t) => CitecAuth.setToken(t);
+const getToken = () => CitecAuth.getToken();
 
 // Capture OIDC callback fragment
 (function captureFragment() {
@@ -84,23 +80,17 @@ function getToken() { return localStorage.getItem(KEY) || ""; }
 })();
 
 async function loadStatus() {
-  const r = await fetch("/v1/auth/status");
-  const d = await r.json();
+  const d = await CitecAuth.status();
   $("status").textContent = JSON.stringify(d, null, 2);
 }
 
 async function me() {
-  const headers = {};
-  const t = getToken();
-  if (t) headers["Authorization"] = "Bearer " + t;
-  const r = await fetch("/v1/auth/me", {headers});
-  const d = await r.json();
-  $("me").textContent = JSON.stringify(d, null, 2);
+  const { data } = await CitecAuth.me();
+  $("me").textContent = JSON.stringify(data, null, 2);
 }
 
 $("btnRefresh").onclick = () => loadStatus().catch(e => $("status").textContent = String(e));
 $("btnOidc").onclick = () => {
-  // return_to this page (absolute path)
   location.href = "/v1/auth/login?return_to=" + encodeURIComponent("/login.html");
 };
 $("btnMock").onclick = async () => {
@@ -114,7 +104,7 @@ $("btnMock").onclick = async () => {
   }
 };
 $("btnLogout").onclick = () => {
-  saveToken(null);
+  CitecAuth.clear();
   location.href = "/v1/auth/logout";
 };
 $("btnSave").onclick = () => { saveToken($("manualTok").value.trim()); me(); };
@@ -125,13 +115,14 @@ $("btnDev").onclick = async () => {
     name: $("devName").value.trim() || "Dev",
     roles: $("devRoles").value.split(",").map(s => s.trim()).filter(Boolean),
   };
-  const r = await fetch("/v1/auth/dev/token", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const r = await CitecAuth.apiFetch("/v1/auth/dev/token", {method:"POST", body});
   const d = await r.json();
   if (!r.ok) { $("me").textContent = JSON.stringify(d, null, 2); return; }
   saveToken(d.access_token);
   $("manualTok").value = d.access_token;
   $("me").innerHTML = '<span class="ok">token saved</span>\n' + JSON.stringify(d.principal, null, 2);
 };
+CitecAuth.mountChip(".top");
 loadStatus();
 if (getToken()) { $("manualTok").value = getToken(); me(); }
 </script>

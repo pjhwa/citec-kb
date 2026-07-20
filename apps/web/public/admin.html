@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Admin / Ops — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:4px; }
+  .ok { background:#d1fae5; color:var(--ok); }
+  .bad { background:#fee2e2; color:var(--bad); }
+  .na { background:#f1f5f9; color:var(--muted); }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:8px 14px; font-weight:700; cursor:pointer; margin:4px 4px 4px 0; }
+  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+  pre { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px; font-size:11px; overflow:auto; max-height:280px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .row { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .row:last-child { border-bottom:0; }
+  a.link { color:var(--primary); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/insights.html">Insight</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/admin.html">Admin</a>
+  <a href="/login.html">Login</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>Admin / Ops 대시보드</h1>
+  <p class="sub">운영자 페르소나 · health · auth · worker · pilot 링크 · job ping (admin 토큰 시)</p>
+
+  <div style="margin-bottom:12px">
+    <button type="button" id="btnRefresh">전체 새로고침</button>
+    <button type="button" class="ghost" id="btnPing">Job ping</button>
+    <button type="button" class="ghost" id="btnPilot">Job status poll</button>
+    <span id="msg" class="meta"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <strong>Session</strong>
+      <div class="row"><span>principal</span><span id="who" class="meta">…</span></div>
+      <div class="row"><span>auth_mode</span><span id="amode" class="badge na">…</span></div>
+      <div class="row"><span>enforced</span><span id="aenf" class="badge na">…</span></div>
+      <div class="row"><span>oidc configured</span><span id="aoidc" class="badge na">…</span></div>
+    </div>
+    <div class="card">
+      <strong>Platform</strong>
+      <div class="row"><span>API health</span><span id="hapi" class="badge na">…</span></div>
+      <div class="row"><span>Postgres</span><span id="hpg" class="badge na">…</span></div>
+      <div class="row"><span>Redis</span><span id="hredis" class="badge na">…</span></div>
+      <div class="row"><span>LLM</span><span id="hllm" class="badge na">…</span></div>
+      <div class="row"><span>Worker</span><span id="hworker" class="badge na">…</span></div>
+      <div class="row"><span>Pilot ready</span><span id="hpilot" class="badge na">…</span></div>
+    </div>
+    <div class="card">
+      <strong>Quick links</strong>
+      <p class="meta" style="line-height:1.8">
+        <a class="link" href="/insights.html">Insight 승인</a><br/>
+        <a class="link" href="/login.html">Login / SSO</a><br/>
+        <a class="link" href="/docs/OIDC_IDP_SETUP.md">OIDC IdP 가이드</a><br/>
+        <a class="link" href="/docs/implementation-plan.html">구현 계획</a><br/>
+        <a class="link" href="/docs/PHASE2_PILOT_CHECKLIST.md">파일럿 체크리스트</a><br/>
+        <a class="link" href="/api/docs" target="_blank">Swagger</a>
+      </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <strong>ops/status</strong>
+    <pre id="ops">…</pre>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <strong>auth/status</strong>
+    <pre id="auth">…</pre>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <strong>job log</strong>
+    <pre id="job">—</pre>
+  </div>
+</div>
+<script src="/js/auth.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+function badge(el, ok, text) {
+  el.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
+  el.textContent = text;
+}
+
+async function refresh() {
+  $("msg").textContent = "loading…";
+  try {
+    const me = await CitecAuth.me();
+    const p = (me.data && me.data.principal) || {};
+    $("who").textContent = (p.sub || "?") + " · " + ((p.roles || []).join(",") || "—") + " · " + (p.auth_via || "");
+
+    const auth = await CitecAuth.status();
+    $("auth").textContent = JSON.stringify(auth, null, 2);
+    badge($("amode"), null, auth.auth_mode || "?");
+    badge($("aenf"), !!auth.enforced, String(!!auth.enforced));
+    const oc = !!(auth.oidc && auth.oidc.configured);
+    badge($("aoidc"), oc, oc ? "yes" : "no");
+
+    const hr = await fetch("/v1/health");
+    const health = await hr.json();
+    badge($("hapi"), health.status === "ok", health.status || "?");
+    badge($("hpg"), !!(health.checks && health.checks.postgres && health.checks.postgres.ok), "pg");
+    badge($("hredis"), !!(health.checks && health.checks.redis && health.checks.redis.ok), "redis");
+    badge($("hllm"), !!(health.checks && health.checks.llm && health.checks.llm.ok), (health.checks && health.checks.llm && health.checks.llm.backend) || "llm");
+
+    const or = await CitecAuth.apiFetch("/v1/ops/status");
+    const ops = await or.json();
+    $("ops").textContent = JSON.stringify(ops, null, 2);
+    const w = ops.checks && ops.checks.worker;
+    badge($("hworker"), !!(w && w.ok), w && w.ok ? "up" : "down");
+    badge($("hpilot"), !!ops.pilot_engineering_ready, ops.pilot_engineering_ready ? "ready" : "no");
+
+    $("msg").textContent = "ok " + new Date().toLocaleTimeString();
+  } catch (e) {
+    $("msg").textContent = String(e);
+  }
+}
+
+let lastJobId = null;
+$("btnPing").onclick = async () => {
+  try {
+    const r = await CitecAuth.apiFetch("/v1/jobs", { method: "POST", body: { type: "ping" } });
+    const d = await r.json();
+    $("job").textContent = JSON.stringify(d, null, 2);
+    lastJobId = d.id || null;
+    if (!r.ok) $("msg").textContent = "job " + r.status + " (admin role required when AUTH enforced)";
+    else $("msg").textContent = "queued " + lastJobId;
+  } catch (e) {
+    $("msg").textContent = String(e);
+  }
+};
+$("btnJob").onclick = async () => {
+  if (!lastJobId) { $("msg").textContent = "no job id — ping first"; return; }
+  const r = await CitecAuth.apiFetch("/v1/jobs/" + lastJobId);
+  const d = await r.json();
+  $("job").textContent = JSON.stringify(d, null, 2);
+};
+$("btnRefresh").onclick = () => refresh();
+CitecAuth.mountChip(".top");
+refresh();
+</script>
+</body>
+</html>

@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.20** |
+| 문서 버전 | **1.21** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP** |
+| 갱신 | **2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -42,7 +42,7 @@
 | 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
-| UI | search · chat · si · tickets · analytics · capacity · bundles · **insights(+reindex)** · `/docs/` |
+| UI | search · chat · si · tickets · analytics · capacity · bundles · insights · **login** · **admin/ops** · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
 | 미완 핵심 | 파일럿 **도메인 사인** · 원격 push · Keycloak/Entra **실서버** 검증 · 부서 오픈 |
 
@@ -336,7 +336,7 @@ citec-kb/
 | API 증분 동기화 | PR-13 | Jira/Confluence (허용 시) | 미착수 |
 | SSO·감사 | PR-14 | OIDC JWT · **mock IdP RS256** · login e2e · Keycloak 가이드 · RBAC | **✅ 엔지니어링** (실 IdP 서버 잔여) |
 | 부하 테스트 | — | concurrent search + health + planner | **load_sla_report pass** (gate c=8 · stress c=20 info) |
-| Persona UI | PR-26 | 전문가/관리자/War-room | 미착수 |
+| Persona UI | PR-26 | 관리자 Admin/Ops 대시보드 · War-room 번들 UI | **부분** (admin.html ✅) |
 
 ---
 
@@ -402,6 +402,7 @@ PR-01 compose ✅
 - [x] Formal **load/SLA report** (`scripts/load_sla_report.py` · `data/reports/`)
 - [x] **OIDC** JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint
 - [x] **Mock OIDC IdP** `/v1/mock-idp` RS256 · full login→callback e2e · `docs/OIDC_IDP_SETUP.md`
+- [x] Web **Bearer helper** (`/js/auth.js`) · insights/bundles · **admin.html** ops persona
 - [ ] Keycloak/Entra **실서버** 연동 검증 · 파일럿 도메인 사인
 - [ ] git 원격 push (정책 승인 후)
 ---
@@ -694,11 +695,11 @@ POST /v1/auth/introspect
 ### 제품 하드닝 (P4 잔여)
 3. **Keycloak/Entra 실서버**에 OIDC_ISSUER 연결 검증 (가이드: `docs/OIDC_IDP_SETUP.md`)  
 4. 파일럿 도메인 사인 · 원격 push  
-5. Persona UI — 선택 · promote embed 비동기 — 선택  
+5. promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  
 
-### 완료 스냅샷 (2026-07-20 v1.20)
-- **Mock OIDC IdP** RS256 JWKS · login→callback→Bearer e2e · unit tests **87**  
-- Guide `OIDC_IDP_SETUP.md` · 선행: OIDC JWT · load/SLA · Insight · pilot 13/13  
+### 완료 스냅샷 (2026-07-20 v1.21)
+- **Admin/Ops UI** · shared `auth.js` Bearer on insight/bundle writes  
+- Mock IdP e2e · unit tests **87** · pilot 13/13 · plan HTML  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -738,5 +739,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.20).**  
-mock IdP e2e + OIDC + load/SLA + Insight · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.
+**문서 끝 (v1.21).**  
+Admin UI + auth.js + mock IdP · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.

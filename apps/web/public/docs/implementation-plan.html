@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.20 — CI-TEC Knowledge</title>
+<title>구현 계획 1.21 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.20</div>
-  <p class="meta">문서 버전 1.20 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.21</div>
+  <p class="meta">문서 버전 1.21 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.20</strong></td>
+<td><strong>1.21</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP</strong></td>
+<td><strong>2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -164,7 +164,7 @@
 </tr>
 <tr>
 <td>UI</td>
-<td>search · chat · si · tickets · analytics · capacity · bundles · <strong>insights(+reindex)</strong> · <code>/docs/</code></td>
+<td>search · chat · si · tickets · analytics · capacity · bundles · insights · <strong>login</strong> · <strong>admin/ops</strong> · <code>/docs/</code></td>
 </tr>
 <tr>
 <td>alembic</td>
@@ -943,8 +943,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+
 <tr>
 <td>Persona UI</td>
 <td>PR-26</td>
-<td>전문가/관리자/War-room</td>
-<td>미착수</td>
+<td>관리자 Admin/Ops 대시보드 · War-room 번들 UI</td>
+<td><strong>부분</strong> (admin.html ✅)</td>
 </tr>
 </tbody>
 </table></div>
@@ -1011,6 +1011,7 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+
 <li class="check">✅ Formal <strong>load/SLA report</strong> (<code>scripts/load_sla_report.py</code> · <code>data/reports/</code>)</li>
 <li class="check">✅ <strong>OIDC</strong> JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint</li>
 <li class="check">✅ <strong>Mock OIDC IdP</strong> <code>/v1/mock-idp</code> RS256 · full login→callback e2e · <code>docs/OIDC_IDP_SETUP.md</code></li>
+<li class="check">✅ Web <strong>Bearer helper</strong> (<code>/js/auth.js</code>) · insights/bundles · <strong>admin.html</strong> ops persona</li>
 <li class="check">☐ Keycloak/Entra <strong>실서버</strong> 연동 검증 · 파일럿 도메인 사인</li>
 <li class="check">☐ git 원격 push (정책 승인 후)</li>
 </ul>
@@ -1563,12 +1564,12 @@ POST /v1/auth/introspect
 <ol start="3">
 <li><strong>Keycloak/Entra 실서버</strong>에 OIDC_ISSUER 연결 검증 (가이드: <code>docs/OIDC_IDP_SETUP.md</code>)  </li>
 <li>파일럿 도메인 사인 · 원격 push  </li>
-<li>Persona UI — 선택 · promote embed 비동기 — 선택  </li>
+<li>promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-20 v1.20)</h3>
+<h3>완료 스냅샷 (2026-07-20 v1.21)</h3>
 <ul>
-<li><strong>Mock OIDC IdP</strong> RS256 JWKS · login→callback→Bearer e2e · unit tests <strong>87</strong>  </li>
-<li>Guide <code>OIDC_IDP_SETUP.md</code> · 선행: OIDC JWT · load/SLA · Insight · pilot 13/13  </li>
+<li><strong>Admin/Ops UI</strong> · shared <code>auth.js</code> Bearer on insight/bundle writes  </li>
+<li>Mock IdP e2e · unit tests <strong>87</strong> · pilot 13/13 · plan HTML  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>
@@ -1670,8 +1671,8 @@ POST /v1/auth/introspect
 </tbody>
 </table></div>
 <hr>
-<p><strong>문서 끝 (v1.20).</strong><br>
-mock IdP e2e + OIDC + load/SLA + Insight · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
+<p><strong>문서 끝 (v1.21).</strong><br>
+Admin UI + auth.js + mock IdP · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
 </div>
 </body>
 </html>

@@ -32,11 +32,13 @@
   <a href="/search.html">검색</a>
   <a href="/chat.html">Fast QA</a>
   <a href="/insights.html">Insight</a>
+  <a href="/admin.html">Admin</a>
+  <a href="/login.html">Login</a>
   <a href="/docs/">문서</a>
 </div>
 <div class="wrap">
   <h1>Insight 승인 플로우</h1>
-  <p class="sub">Phase 4 · draft → review → approved/rejected · optional promote to documents</p>
+  <p class="sub">Phase 4 · draft → review → approved/rejected · optional promote · Bearer from <a href="/login.html">Login</a></p>
 
   <div class="card">
     <strong>새 draft 작성</strong>
@@ -59,9 +61,11 @@
   </div>
   <div id="out"></div>
 </div>
+<script src="/js/auth.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = (url, opts) => CitecAuth.apiFetch(url, opts);
 
 async function create() {
   const body = {
@@ -71,20 +75,20 @@ async function create() {
   };
   if (!body.title) return;
   $("msg").textContent = "저장 중…";
-  const r = await fetch("/v1/insights", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  const r = await api("/v1/insights", {method:"POST", body});
   const d = await r.json();
-  if (!r.ok) throw new Error(d.detail || r.statusText);
+  if (!r.ok) throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||r.statusText));
   $("msg").textContent = "created " + d.id;
   $("title").value = ""; $("body").value = "";
   await load();
 }
 
 async function act(id, action, promote=false) {
-  const opts = {method:"POST", headers:{"Content-Type":"application/json"}};
+  const opts = {method:"POST"};
   if (action !== "reindex") {
-    opts.body = JSON.stringify({reviewer:"senior", promote});
+    opts.body = {reviewer:"senior", promote};
   }
-  const r = await fetch(`/v1/insights/${id}/${action}`, opts);
+  const r = await api(`/v1/insights/${id}/${action}`, opts);
   const d = await r.json();
   if (!r.ok) throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||r.statusText));
   if (d.index) {
@@ -97,7 +101,7 @@ async function load() {
   $("out").innerHTML = "<p class='meta'>로딩…</p>";
   const st = $("filter").value;
   const url = "/v1/insights" + (st ? ("?status=" + encodeURIComponent(st)) : "");
-  const r = await fetch(url);
+  const r = await api(url);
   const d = await r.json();
   if (!r.ok) throw new Error(d.detail || r.statusText);
   const items = d.items || [];
@@ -135,6 +139,7 @@ async function load() {
 $("btnCreate").onclick = () => create().catch(e => $("msg").textContent = String(e));
 $("btnReload").onclick = () => load().catch(e => $("out").innerHTML = `<div class="err">${esc(e)}</div>`);
 $("filter").onchange = () => load();
+CitecAuth.mountChip(".top");
 load();
 </script>
 </body>
