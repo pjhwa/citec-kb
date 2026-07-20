@@ -1,0 +1,89 @@
+{
+  "generated_at": "2026-07-20T11:03:31.876756+00:00",
+  "base": "http://127.0.0.1:8573",
+  "concurrency": 8,
+  "scenarios": {
+    "search": {
+      "n": 40,
+      "ok": 40,
+      "fail": 0,
+      "success_rate": 1.0,
+      "wall_ms": 10744.5,
+      "rps": 3.72,
+      "latency_ms": {
+        "p50": 1720.4,
+        "p95": 3926.9,
+        "p99": 4454.9,
+        "mean": 1913.2,
+        "max": 4454.9
+      },
+      "p95_max_ms": 15000,
+      "concurrency": 8
+    },
+    "health": {
+      "n": 20,
+      "ok": 20,
+      "fail": 0,
+      "success_rate": 1.0,
+      "wall_ms": 3119.3,
+      "rps": 6.41,
+      "latency_ms": {
+        "p50": 1181.2,
+        "p95": 1305.1,
+        "p99": 1305.1,
+        "mean": 1027.8,
+        "max": 1305.1
+      },
+      "p95_max_ms": 2000
+    },
+    "planner_route": {
+      "n": 10,
+      "ok": 10,
+      "fail": 0,
+      "success_rate": 1.0,
+      "wall_ms": 2239.6,
+      "rps": 4.47,
+      "latency_ms": {
+        "p50": 975.5,
+        "p95": 2024.2,
+        "p99": 2024.2,
+        "mean": 945.6,
+        "max": 2024.2
+      },
+      "p95_max_ms": 15000
+    }
+  },
+  "stress_search": {
+    "n": 10,
+    "ok": 10,
+    "fail": 0,
+    "success_rate": 1.0,
+    "wall_ms": 2842.2,
+    "rps": 3.52,
+    "latency_ms": {
+      "p50": 2092.1,
+      "p95": 2835.4,
+      "p99": 2835.4,
+      "mean": 2083.8,
+      "max": 2835.4
+    },
+    "concurrency": 20,
+    "informational": true
+  },
+  "gates": {
+    "search_success": true,
+    "search_p95": true,
+    "health_success": true,
+    "health_p95": true,
+    "route_success": true,
+    "route_p95": true
+  },
+  "pass": true,
+  "notes": [
+    "Gate target: concurrent search default 8 (e5-base query embed saturation above ~10–20)",
+    "stress_search is informational only (concurrency 20 sample)",
+    "search multi_query=false for stable p95 under concurrency",
+    "planner_route uses POST /v1/query (capacity/analytics/list/SI/hybrid)",
+    "SSO: AUTH_MODE=off in dev; use apikey/oidc_stub for enforcement tests"
+  ]
+}

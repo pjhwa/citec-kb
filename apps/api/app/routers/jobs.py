@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.auth.deps import require_roles
+from app.auth.principal import Principal
 from app.jobs.queue import ALLOWED_TYPES, enqueue_job, get_job, list_jobs, worker_status
 
 router = APIRouter(prefix="/v1", tags=["jobs"])
@@ -19,7 +21,11 @@ class JobBody(BaseModel):
 
 
 @router.post("/jobs")
-def post_job(body: JobBody) -> dict[str, Any]:
+def post_job(
+    body: JobBody,
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    _ = principal
     try:
         return enqueue_job(body.type, payload=body.payload, priority=body.priority)
     except ValueError as exc:

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.auth.deps import require_roles
+from app.auth.principal import Principal
 from app.db.models import Feedback
 from app.db.session import session_scope
 from app.insights.service import (
@@ -48,12 +50,15 @@ class FeedbackBody(BaseModel):
 
 
 @router.post("/insights")
-def post_insight(body: InsightCreate) -> dict[str, Any]:
+def post_insight(
+    body: InsightCreate,
+    principal: Principal = Depends(require_roles("author", "senior", "admin")),
+) -> dict[str, Any]:
     return create_insight(
         title=body.title,
         body_md=body.body_md,
         source_doc_ids=body.source_doc_ids,
-        author=body.author,
+        author=body.author or principal.name,
     )
 
 
@@ -78,7 +83,12 @@ def get_one(insight_id: str) -> dict[str, Any]:
 
 
 @router.patch("/insights/{insight_id}")
-def patch_insight(insight_id: str, body: InsightUpdate) -> dict[str, Any]:
+def patch_insight(
+    insight_id: str,
+    body: InsightUpdate,
+    principal: Principal = Depends(require_roles("author", "senior", "admin")),
+) -> dict[str, Any]:
+    _ = principal
     try:
         return update_insight(
             insight_id,
@@ -93,9 +103,18 @@ def patch_insight(insight_id: str, body: InsightUpdate) -> dict[str, Any]:
 
 
 @router.post("/insights/{insight_id}/submit")
-def submit_insight(insight_id: str, body: TransitionBody | None = None) -> dict[str, Any]:
+def submit_insight(
+    insight_id: str,
+    body: TransitionBody | None = None,
+    principal: Principal = Depends(require_roles("author", "senior", "admin")),
+) -> dict[str, Any]:
+    _ = principal
     try:
-        return transition_insight(insight_id, to_status="review", reviewer=(body.reviewer if body else None))
+        return transition_insight(
+            insight_id,
+            to_status="review",
+            reviewer=(body.reviewer if body else None),
+        )
     except KeyError:
         raise HTTPException(status_code=404, detail="insight not found") from None
     except PermissionError as exc:
@@ -103,13 +122,17 @@ def submit_insight(insight_id: str, body: TransitionBody | None = None) -> dict[
 
 
 @router.post("/insights/{insight_id}/approve")
-def approve_insight_route(insight_id: str, body: TransitionBody | None = None) -> dict[str, Any]:
+def approve_insight_route(
+    insight_id: str,
+    body: TransitionBody | None = None,
+    principal: Principal = Depends(require_roles("senior", "admin")),
+) -> dict[str, Any]:
     body = body or TransitionBody()
     try:
         return transition_insight(
             insight_id,
             to_status="approved",
-            reviewer=body.reviewer or "senior",
+            reviewer=body.reviewer or principal.name or "senior",
             promote=body.promote,
         )
     except KeyError:
@@ -119,12 +142,16 @@ def approve_insight_route(insight_id: str, body: TransitionBody | None = None) -
 
 
 @router.post("/insights/{insight_id}/reject")
-def reject_insight(insight_id: str, body: TransitionBody | None = None) -> dict[str, Any]:
+def reject_insight(
+    insight_id: str,
+    body: TransitionBody | None = None,
+    principal: Principal = Depends(require_roles("senior", "admin")),
+) -> dict[str, Any]:
     try:
         return transition_insight(
             insight_id,
             to_status="rejected",
-            reviewer=(body.reviewer if body else None) or "senior",
+            reviewer=(body.reviewer if body else None) or principal.name or "senior",
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="insight not found") from None
@@ -133,8 +160,12 @@ def reject_insight(insight_id: str, body: TransitionBody | None = None) -> dict[
 
 
 @router.post("/insights/{insight_id}/reopen")
-def reopen_insight(insight_id: str) -> dict[str, Any]:
+def reopen_insight(
+    insight_id: str,
+    principal: Principal = Depends(require_roles("author", "senior", "admin")),
+) -> dict[str, Any]:
     """rejected | review → draft so author can edit and re-submit."""
+    _ = principal
     try:
         return transition_insight(insight_id, to_status="draft")
     except KeyError:
@@ -144,8 +175,12 @@ def reopen_insight(insight_id: str) -> dict[str, Any]:
 
 
 @router.post("/insights/{insight_id}/reindex")
-def reindex_insight_route(insight_id: str) -> dict[str, Any]:
+def reindex_insight_route(
+    insight_id: str,
+    principal: Principal = Depends(require_roles("senior", "admin")),
+) -> dict[str, Any]:
     """Re-chunk + embed a promoted/approved insight into the search index."""
+    _ = principal
     try:
         return reindex_insight(insight_id)
     except KeyError:
@@ -155,7 +190,10 @@ def reindex_insight_route(insight_id: str) -> dict[str, Any]:
 
 
 @router.post("/feedback")
-def post_feedback(body: FeedbackBody) -> dict[str, Any]:
+def post_feedback(
+    body: FeedbackBody,
+    principal: Principal = Depends(require_roles("viewer", "author", "senior", "admin")),
+) -> dict[str, Any]:
     if body.rating not in (-1, 1):
         raise HTTPException(status_code=400, detail="rating must be -1 or 1")
     if body.target_type not in {"answer", "insight", "search"}:
@@ -166,7 +204,7 @@ def post_feedback(body: FeedbackBody) -> dict[str, Any]:
             target_id=body.target_id,
             rating=body.rating,
             comment=body.comment,
-            user_id=body.user_id,
+            user_id=body.user_id or principal.sub,
         )
         session.add(row)
         session.flush()

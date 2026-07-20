@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
 
+    # Auth / SSO scaffolding (default off = open pilot)
+    # AUTH_MODE: off | apikey | oidc_stub
+    auth_mode: str = Field(default="off", alias="AUTH_MODE")
+    auth_tokens_json: str | None = Field(default=None, alias="AUTH_TOKENS_JSON")
+    oidc_issuer: str | None = Field(default=None, alias="OIDC_ISSUER")
+    oidc_client_id: str | None = Field(default=None, alias="OIDC_CLIENT_ID")
+    oidc_audience: str | None = Field(default=None, alias="OIDC_AUDIENCE")
+
     database_url: str = Field(
         default="postgresql+psycopg://citec:citec@localhost:5433/citec_knowledge",
         alias="DATABASE_URL",

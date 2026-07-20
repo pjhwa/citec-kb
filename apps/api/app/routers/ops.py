@@ -75,6 +75,15 @@ def ops_status() -> dict[str, Any]:
         ok = False
         checks["worker"] = {"ok": False, "error": str(exc)}
 
+    # auth mode (non-secret)
+    mode = (settings.auth_mode or "off").lower()
+    checks["auth"] = {
+        "ok": True,
+        "mode": mode,
+        "enforced": mode not in ("", "off", "disabled", "none"),
+        "oidc_configured": bool(settings.oidc_issuer and settings.oidc_client_id),
+    }
+
     # seeds readiness flags
     c = (checks.get("postgres") or {}).get("counts") or {}
     checks["seeds"] = {
