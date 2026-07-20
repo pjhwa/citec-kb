@@ -38,8 +38,10 @@
     <strong>상태</strong>
     <pre id="status">로딩…</pre>
     <button type="button" id="btnOidc">OIDC 로그인 (IdP)</button>
+    <button type="button" class="ghost" id="btnMock">Mock IdP 안내</button>
     <button type="button" class="ghost" id="btnRefresh">상태 새로고침</button>
     <button type="button" class="ghost" id="btnLogout">로그아웃</button>
+    <p class="meta" id="mockHint" style="margin-top:8px"></p>
   </div>
 
   <div class="card">
@@ -100,6 +102,16 @@ $("btnRefresh").onclick = () => loadStatus().catch(e => $("status").textContent 
 $("btnOidc").onclick = () => {
   // return_to this page (absolute path)
   location.href = "/v1/auth/login?return_to=" + encodeURIComponent("/login.html");
+};
+$("btnMock").onclick = async () => {
+  try {
+    const r = await fetch("/v1/mock-idp/.well-known/openid-configuration");
+    if (!r.ok) { $("mockHint").textContent = "mock IdP 비활성 (APP_ENV=dev 또는 MOCK_OIDC_ENABLED=true)"; return; }
+    const d = await r.json();
+    $("mockHint").textContent = "mock issuer=" + d.issuer + " · AUTH_MODE=oidc + OIDC_ISSUER 를 이 값으로 설정 후 OIDC 로그인";
+  } catch (e) {
+    $("mockHint").textContent = String(e);
+  }
 };
 $("btnLogout").onclick = () => {
   saveToken(null);

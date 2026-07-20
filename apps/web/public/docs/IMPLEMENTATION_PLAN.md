@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.19** |
+| 문서 버전 | **1.20** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-20 — v1.19: OIDC JWT validation · login/callback · login.html · local HS256** |
+| 갱신 | **2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -41,10 +41,10 @@
 | 임베딩 | e5-base · dim **768** · 배치 100% · **promote 시 document 단위 즉시 embed** |
 | 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
-| 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **84** · pilot **13/13** · load/SLA **pass** |
+| 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
 | UI | search · chat · si · tickets · analytics · capacity · bundles · **insights(+reindex)** · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
-| 미완 핵심 | 파일럿 **도메인 사인** · 원격 push · IdP 실서버 연동(Keycloak 등) · 부서 오픈 |
+| 미완 핵심 | 파일럿 **도메인 사인** · 원격 push · Keycloak/Entra **실서버** 검증 · 부서 오픈 |
 
 ### 성공 정의 (출시 게이트)
 
@@ -56,7 +56,7 @@
 | G3 | `similar_incident` 4슬롯 + 적용성 (G01–G10) | **엔지니어링 달성** (10/10; 그룹장 워크스루 잔여) |
 | G4 | capacity 숫자 = Rules/SQL만 | **달성** (JSON + **DB 10/4 rows** · estimate `loaded_from=database`) |
 | G5 | query catalog ≥ 95% pass | **route+answer 110/110** · prod multi-query **이식 완료** |
-| G6 | 50–100명 스모크 · SLA | **부분** (**OIDC JWT/login** · load/SLA pass · IdP 실서버·도메인 사인 잔여) |
+| G6 | 50–100명 스모크 · SLA | **부분** (OIDC+**mock IdP e2e** · load/SLA · 실 IdP·도메인 사인 잔여) |
 
 ### 일정 총괄
 
@@ -65,7 +65,7 @@ W1–2   Phase 0  스파이크·기반              ✅ 완료
 W3–7   Phase 1  고정밀 검색 MVP → G0,G1   ✅ 완료 (2026-07-20)
 W8–11  Phase 2  Trust QA + 유사장애 → G2,G3   ✅ 엔지니어링 강 / 파일럿·사인 잔여
 W12–14 Phase 3  Planner·Capacity·Analytics → G4,G5   ✅ 핵심 강 / 하드닝·DB시드·prod multi-query 잔여
-W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+OIDC+SLA ✅ / IdP·사인 잔여
+W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+SLA ✅ / 실IdP·사인 잔여
 ```
 ---
 
@@ -334,7 +334,7 @@ citec-kb/
 | Feedback | PR-11 | `POST /v1/feedback` (answer\|insight\|search · rating ±1) | **✅** |
 | Insight UI | PR-11 | `/insights.html` 승인 보드 · Reindex | **✅** |
 | API 증분 동기화 | PR-13 | Jira/Confluence (허용 시) | 미착수 |
-| SSO·감사 | PR-14 | API key · OIDC JWT(JWKS/HS256) · login/callback · `/login.html` · RBAC | **✅ 엔지니어링** (IdP 실서버 연동 잔여) |
+| SSO·감사 | PR-14 | OIDC JWT · **mock IdP RS256** · login e2e · Keycloak 가이드 · RBAC | **✅ 엔지니어링** (실 IdP 서버 잔여) |
 | 부하 테스트 | — | concurrent search + health + planner | **load_sla_report pass** (gate c=8 · stress c=20 info) |
 | Persona UI | PR-26 | 전문가/관리자/War-room | 미착수 |
 
@@ -401,7 +401,8 @@ PR-01 compose ✅
 - [x] Auth scaffold (`AUTH_MODE` · roles · `/v1/auth`) · write-path RBAC
 - [x] Formal **load/SLA report** (`scripts/load_sla_report.py` · `data/reports/`)
 - [x] **OIDC** JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint
-- [ ] IdP 실서버(Keycloak/Entra) 연동 검증 · 파일럿 도메인 사인
+- [x] **Mock OIDC IdP** `/v1/mock-idp` RS256 · full login→callback e2e · `docs/OIDC_IDP_SETUP.md`
+- [ ] Keycloak/Entra **실서버** 연동 검증 · 파일럿 도메인 사인
 - [ ] git 원격 push (정책 승인 후)
 ---
 
@@ -532,6 +533,8 @@ POST /v1/auth/introspect
 - Roles from claim `roles` / `realm_access.roles` / `groups` (+ kb-admin mapping)
 - UI: `/login.html` (OIDC button · dev mint · localStorage Bearer)
 - Enforced writes: insights author+/senior+ · jobs admin
+- **Mock IdP** (dev): `/v1/mock-idp` discovery · authorize · token · jwks (RS256)
+- Guide: `docs/OIDC_IDP_SETUP.md`
 
 ## 8. 평가 · 품질 운영
 
@@ -677,7 +680,8 @@ POST /v1/auth/introspect
 - [x] ops/status · pilot_tech_check · backup · worker  
 - [x] Auth scaffold + formal load/SLA report  
 - [x] OIDC JWT validation + login/callback UI  
-- [ ] IdP 실서버 검증 · 부서 공식 오픈 · 도메인 사인  
+- [x] Mock OIDC IdP full e2e + setup guide  
+- [ ] 실 IdP 서버 검증 · 부서 공식 오픈 · 도메인 사인  
 
 ---
 
@@ -688,13 +692,13 @@ POST /v1/auth/introspect
 2. **원격 push** — 로컬 커밋 후 정책에 따라 push  
 
 ### 제품 하드닝 (P4 잔여)
-3. **IdP 실서버** (Keycloak/Entra) discovery·login e2e · SAML 필요 시 별도  
-4. Persona UI (관리자/War-room) — 선택  
-5. (선택) promote embed worker 비동기 · 검색 p95 튜닝  
+3. **Keycloak/Entra 실서버**에 OIDC_ISSUER 연결 검증 (가이드: `docs/OIDC_IDP_SETUP.md`)  
+4. 파일럿 도메인 사인 · 원격 push  
+5. Persona UI — 선택 · promote embed 비동기 — 선택  
 
-### 완료 스냅샷 (2026-07-20 v1.19)
-- **OIDC** JWT+login/callback · login.html · unit tests **84** · OIDC e2e (HS256)  
-- 선행: auth scaffold · load/SLA · Insight flywheel · pilot 13/13  
+### 완료 스냅샷 (2026-07-20 v1.20)
+- **Mock OIDC IdP** RS256 JWKS · login→callback→Bearer e2e · unit tests **87**  
+- Guide `OIDC_IDP_SETUP.md` · 선행: OIDC JWT · load/SLA · Insight · pilot 13/13  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -734,5 +738,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.19).**  
-OIDC JWT/login + load/SLA + Insight · 잔여=도메인 사인·IdP 실서버·원격 push · **매 작업 현행화**.
+**문서 끝 (v1.20).**  
+mock IdP e2e + OIDC + load/SLA + Insight · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.

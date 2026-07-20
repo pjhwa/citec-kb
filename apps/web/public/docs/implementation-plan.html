@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.19 — CI-TEC Knowledge</title>
+<title>구현 계획 1.20 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.19</div>
-  <p class="meta">문서 버전 1.19 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.19: OIDC JWT validation · login/callback · login.html · local HS256</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.20</div>
+  <p class="meta">문서 버전 1.20 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.19</strong></td>
+<td><strong>1.20</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-20 — v1.19: OIDC JWT validation · login/callback · login.html · local HS256</strong></td>
+<td><strong>2026-07-20 — v1.20: mock OIDC IdP (RS256 JWKS) · full login e2e · OIDC_IDP_SETUP</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -160,7 +160,7 @@
 </tr>
 <tr>
 <td>품질</td>
-<td>retrieval hit@3 <strong>0.96</strong> · SI <strong>1.0</strong> · catalog <strong>110/110</strong> · unit tests <strong>84</strong> · pilot <strong>13/13</strong> · load/SLA <strong>pass</strong></td>
+<td>retrieval hit@3 <strong>0.96</strong> · SI <strong>1.0</strong> · catalog <strong>110/110</strong> · unit tests <strong>87</strong> · pilot <strong>13/13</strong> · load/SLA <strong>pass</strong> · mock-IdP e2e</td>
 </tr>
 <tr>
 <td>UI</td>
@@ -172,7 +172,7 @@
 </tr>
 <tr>
 <td>미완 핵심</td>
-<td>파일럿 <strong>도메인 사인</strong> · 원격 push · IdP 실서버 연동(Keycloak 등) · 부서 오픈</td>
+<td>파일럿 <strong>도메인 사인</strong> · 원격 push · Keycloak/Entra <strong>실서버</strong> 검증 · 부서 오픈</td>
 </tr>
 </tbody>
 </table></div>
@@ -219,7 +219,7 @@
 <tr>
 <td>G6</td>
 <td>50–100명 스모크 · SLA</td>
-<td><strong>부분</strong> (<strong>OIDC JWT/login</strong> · load/SLA pass · IdP 실서버·도메인 사인 잔여)</td>
+<td><strong>부분</strong> (OIDC+<strong>mock IdP e2e</strong> · load/SLA · 실 IdP·도메인 사인 잔여)</td>
 </tr>
 </tbody>
 </table></div>
@@ -228,7 +228,7 @@
 W3–7   Phase 1  고정밀 검색 MVP → G0,G1   ✅ 완료 (2026-07-20)
 W8–11  Phase 2  Trust QA + 유사장애 → G2,G3   ✅ 엔지니어링 강 / 파일럿·사인 잔여
 W12–14 Phase 3  Planner·Capacity·Analytics → G4,G5   ✅ 핵심 강 / 하드닝·DB시드·prod multi-query 잔여
-W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+OIDC+SLA ✅ / IdP·사인 잔여
+W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+SLA ✅ / 실IdP·사인 잔여
 </code></pre>
 <hr>
 <h2>1. 전제 · 제약 · 비목표</h2>
@@ -931,8 +931,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+OIDC+SL
 <tr>
 <td>SSO·감사</td>
 <td>PR-14</td>
-<td>API key · OIDC JWT(JWKS/HS256) · login/callback · <code>/login.html</code> · RBAC</td>
-<td><strong>✅ 엔지니어링</strong> (IdP 실서버 연동 잔여)</td>
+<td>OIDC JWT · <strong>mock IdP RS256</strong> · login e2e · Keycloak 가이드 · RBAC</td>
+<td><strong>✅ 엔지니어링</strong> (실 IdP 서버 잔여)</td>
 </tr>
 <tr>
 <td>부하 테스트</td>
@@ -1010,7 +1010,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+OIDC+SL
 <li class="check">✅ Auth scaffold (<code>AUTH_MODE</code> · roles · <code>/v1/auth</code>) · write-path RBAC</li>
 <li class="check">✅ Formal <strong>load/SLA report</strong> (<code>scripts/load_sla_report.py</code> · <code>data/reports/</code>)</li>
 <li class="check">✅ <strong>OIDC</strong> JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint</li>
-<li class="check">☐ IdP 실서버(Keycloak/Entra) 연동 검증 · 파일럿 도메인 사인</li>
+<li class="check">✅ <strong>Mock OIDC IdP</strong> <code>/v1/mock-idp</code> RS256 · full login→callback e2e · <code>docs/OIDC_IDP_SETUP.md</code></li>
+<li class="check">☐ Keycloak/Entra <strong>실서버</strong> 연동 검증 · 파일럿 도메인 사인</li>
 <li class="check">☐ git 원격 push (정책 승인 후)</li>
 </ul>
 <hr>
@@ -1173,6 +1174,8 @@ POST /v1/auth/introspect
 <li>Roles from claim <code>roles</code> / <code>realm_access.roles</code> / <code>groups</code> (+ kb-admin mapping)</li>
 <li>UI: <code>/login.html</code> (OIDC button · dev mint · localStorage Bearer)</li>
 <li>Enforced writes: insights author+/senior+ · jobs admin</li>
+<li><strong>Mock IdP</strong> (dev): <code>/v1/mock-idp</code> discovery · authorize · token · jwks (RS256)</li>
+<li>Guide: <code>docs/OIDC_IDP_SETUP.md</code></li>
 </ul>
 <h2>8. 평가 · 품질 운영</h2>
 <h3>8.1 Gold</h3>
@@ -1546,7 +1549,8 @@ POST /v1/auth/introspect
 <li class="check">✅ ops/status · pilot_tech_check · backup · worker  </li>
 <li class="check">✅ Auth scaffold + formal load/SLA report  </li>
 <li class="check">✅ OIDC JWT validation + login/callback UI  </li>
-<li class="check">☐ IdP 실서버 검증 · 부서 공식 오픈 · 도메인 사인  </li>
+<li class="check">✅ Mock OIDC IdP full e2e + setup guide  </li>
+<li class="check">☐ 실 IdP 서버 검증 · 부서 공식 오픈 · 도메인 사인  </li>
 </ul>
 <hr>
 <h2>15. 즉시 다음 액션</h2>
@@ -1557,14 +1561,14 @@ POST /v1/auth/introspect
 </ol>
 <h3>제품 하드닝 (P4 잔여)</h3>
 <ol start="3">
-<li><strong>IdP 실서버</strong> (Keycloak/Entra) discovery·login e2e · SAML 필요 시 별도  </li>
-<li>Persona UI (관리자/War-room) — 선택  </li>
-<li>(선택) promote embed worker 비동기 · 검색 p95 튜닝  </li>
+<li><strong>Keycloak/Entra 실서버</strong>에 OIDC_ISSUER 연결 검증 (가이드: <code>docs/OIDC_IDP_SETUP.md</code>)  </li>
+<li>파일럿 도메인 사인 · 원격 push  </li>
+<li>Persona UI — 선택 · promote embed 비동기 — 선택  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-20 v1.19)</h3>
+<h3>완료 스냅샷 (2026-07-20 v1.20)</h3>
 <ul>
-<li><strong>OIDC</strong> JWT+login/callback · login.html · unit tests <strong>84</strong> · OIDC e2e (HS256)  </li>
-<li>선행: auth scaffold · load/SLA · Insight flywheel · pilot 13/13  </li>
+<li><strong>Mock OIDC IdP</strong> RS256 JWKS · login→callback→Bearer e2e · unit tests <strong>87</strong>  </li>
+<li>Guide <code>OIDC_IDP_SETUP.md</code> · 선행: OIDC JWT · load/SLA · Insight · pilot 13/13  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>
@@ -1666,8 +1670,8 @@ POST /v1/auth/introspect
 </tbody>
 </table></div>
 <hr>
-<p><strong>문서 끝 (v1.19).</strong><br>
-OIDC JWT/login + load/SLA + Insight · 잔여=도메인 사인·IdP 실서버·원격 push · <strong>매 작업 현행화</strong>.</p>
+<p><strong>문서 끝 (v1.20).</strong><br>
+mock IdP e2e + OIDC + load/SLA + Insight · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
 </div>
 </body>
 </html>

@@ -54,6 +54,12 @@ class Settings(BaseSettings):
         default="http://localhost:8572",
         alias="PUBLIC_WEB_BASE",
     )
+    public_api_base: str = Field(
+        default="http://localhost:8573",
+        alias="PUBLIC_API_BASE",
+    )
+    # Dev mock OIDC IdP at /v1/mock-idp (None = enable when APP_ENV=dev|local|test)
+    mock_oidc_enabled: bool | None = Field(default=None, alias="MOCK_OIDC_ENABLED")
 
     database_url: str = Field(
         default="postgresql+psycopg://citec:citec@localhost:5433/citec_knowledge",

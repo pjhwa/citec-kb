@@ -26,6 +26,7 @@ from app.routers import similar_incident as si_router  # noqa: E402
 from app.routers import analytics as analytics_router  # noqa: E402
 from app.routers import capacity as capacity_router  # noqa: E402
 from app.routers import entities as entities_router  # noqa: E402
+from app.auth import mock_idp as mock_idp_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import insights as insights_router  # noqa: E402
 from app.routers import jobs as jobs_router  # noqa: E402
@@ -81,6 +82,7 @@ app.include_router(jobs_router.router)
 app.include_router(ops_router.router)
 app.include_router(insights_router.router)
 app.include_router(auth_router.router)
+app.include_router(mock_idp_router.router)
 
 
 class HealthResponse(BaseModel):

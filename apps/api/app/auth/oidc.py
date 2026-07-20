@@ -56,11 +56,23 @@ def oidc_status() -> dict[str, Any]:
         "token_endpoint": (disc or {}).get("token_endpoint"),
         "jwks_uri": (disc or {}).get("jwks_uri"),
         "role_claim": s.oidc_role_claim,
+        "mock_idp": {
+            "path": "/v1/mock-idp",
+            "enabled_default": "APP_ENV=dev|local|test",
+            "hint": "OIDC_ISSUER=http://localhost:8573/v1/mock-idp CLIENT_ID=citec-kb SECRET=mock-secret",
+        },
         "note": (
             "AUTH_MODE=oidc accepts validated JWT (+ API keys). "
-            "Set OIDC_ISSUER+CLIENT_ID for IdP, or OIDC_JWT_SECRET for local HS256."
+            "Set OIDC_ISSUER+CLIENT_ID for IdP, OIDC_JWT_SECRET for HS256, "
+            "or use mock IdP at /v1/mock-idp for local RS256 e2e."
         ),
     }
+
+
+def clear_discovery_cache() -> None:
+    _DISCOVERY_CACHE["at"] = 0.0
+    _DISCOVERY_CACHE["issuer"] = None
+    _DISCOVERY_CACHE["doc"] = None
 
 
 def get_discovery(*, force: bool = False) -> dict[str, Any]:
@@ -76,6 +88,16 @@ def get_discovery(*, force: bool = False) -> dict[str, Any]:
         and now - float(_DISCOVERY_CACHE["at"]) < _DISCOVERY_TTL
     ):
         return dict(_DISCOVERY_CACHE["doc"])  # type: ignore[arg-type]
+
+    # In-process mock IdP (no HTTP hop — works under TestClient)
+    from app.auth.mock_idp import is_mock_issuer, mock_discovery_document
+
+    if is_mock_issuer(issuer):
+        doc = mock_discovery_document(issuer)
+        _DISCOVERY_CACHE["at"] = now
+        _DISCOVERY_CACHE["issuer"] = issuer
+        _DISCOVERY_CACHE["doc"] = doc
+        return dict(doc)
 
     url = f"{issuer}/.well-known/openid-configuration"
     with httpx.Client(timeout=8.0) as client:
@@ -184,17 +206,13 @@ def validate_bearer_jwt(token: str) -> Optional[Principal]:
             logger.debug("HS256 JWT reject: %s", exc)
             # fall through to JWKS if issuer configured
 
-    # 2) RS* via JWKS discovery
+    # 2) RS* via JWKS discovery (or in-process mock public key)
     if not s.oidc_issuer:
         return None
     try:
-        disc = get_discovery()
-        jwks_uri = disc.get("jwks_uri")
-        if not jwks_uri:
-            return None
-        jwks_client = PyJWKClient(jwks_uri, cache_keys=True, lifespan=3600)
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        kwargs = {
+        from app.auth.mock_idp import is_mock_issuer, public_key_pem
+
+        kwargs: dict[str, Any] = {
             "algorithms": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
             "issuer": s.oidc_issuer.rstrip("/"),
             "options": {"require": ["exp", "sub"]},
@@ -202,6 +220,17 @@ def validate_bearer_jwt(token: str) -> Optional[Principal]:
         aud = s.oidc_audience or s.oidc_client_id
         if aud:
             kwargs["audience"] = aud
+
+        if is_mock_issuer(s.oidc_issuer):
+            claims = jwt.decode(token, public_key_pem(), **kwargs)
+            return principal_from_claims(claims, auth_via="oidc")
+
+        disc = get_discovery()
+        jwks_uri = disc.get("jwks_uri")
+        if not jwks_uri:
+            return None
+        jwks_client = PyJWKClient(jwks_uri, cache_keys=True, lifespan=3600)
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
         claims = jwt.decode(token, signing_key.key, **kwargs)
         return principal_from_claims(claims, auth_via="oidc")
     except Exception as exc:  # noqa: BLE001
@@ -300,6 +329,17 @@ def exchange_code(code: str) -> dict[str, Any]:
     token_ep = disc.get("token_endpoint")
     if not token_ep:
         raise RuntimeError("discovery missing token_endpoint")
+
+    from app.auth.mock_idp import exchange_mock_code, is_mock_issuer
+
+    if is_mock_issuer(s.oidc_issuer) or "/mock-idp/" in (token_ep or ""):
+        return exchange_mock_code(
+            code=code,
+            client_id=s.oidc_client_id,
+            redirect_uri=s.oidc_redirect_uri or "",
+            client_secret=s.oidc_client_secret or "mock-secret",
+        )
+
     data = {
         "grant_type": "authorization_code",
         "code": code,
