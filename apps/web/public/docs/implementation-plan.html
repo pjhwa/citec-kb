@@ -3,24 +3,28 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 — CI-TEC Knowledge</title>
+<title>구현 계획 1.15 — CI-TEC Knowledge</title>
 <style>
-  :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+  :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
-  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; position:sticky; top:0; }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; position:sticky; top:0; z-index:10; }
   .top a { color:var(--primary); margin-right:14px; text-decoration:none; font-size:14px; font-weight:600; }
-  .wrap { max-width:920px; margin:0 auto; padding:28px 20px 60px; }
-  h1 { font-size:1.7rem; } h2 { font-size:1.3rem; margin-top:1.6em; color:#1e3a8a; }
-  h3 { font-size:1.1rem; margin-top:1.2em; }
+  .banner { background:var(--okbg); color:var(--ok); border:1px solid #86efac; border-radius:10px; padding:12px 16px; margin:0 0 20px; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:1.7rem; } h2 { font-size:1.3rem; margin-top:1.6em; color:#1e3a8a; border-bottom:1px solid var(--border); padding-bottom:6px; }
+  h3 { font-size:1.1rem; margin-top:1.2em; } h4 { font-size:1rem; margin-top:1em; color:#334155; }
   code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:.9em; }
-  pre { background:#0f172a; color:#e2e8f0; padding:14px; border-radius:10px; overflow:auto; }
+  pre { background:#0f172a; color:#e2e8f0; padding:14px; border-radius:10px; overflow:auto; font-size:13px; }
   pre code { background:none; color:inherit; padding:0; }
-  .table-wrap { overflow:auto; border:1px solid var(--border); border-radius:10px; margin:12px 0; }
+  .table-wrap { overflow:auto; border:1px solid var(--border); border-radius:10px; margin:12px 0; background:#fff; }
   table { border-collapse:collapse; width:100%; font-size:13.5px; }
   th, td { border-bottom:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
   th { background:#f1f5f9; }
-  ul { padding-left:1.3em; } li { margin:4px 0; }
+  li { margin:4px 0; margin-left:1.2em; }
+  li.check { list-style:none; margin-left:0.2em; }
   p { color:#334155; }
+  blockquote { border-left:4px solid var(--primary); margin:12px 0; padding:4px 14px; background:#eff6ff; color:#1e3a8a; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:18px; }
 </style>
 </head>
 <body>
@@ -28,626 +32,1570 @@
   <a href="/">홈</a>
   <a href="/docs/">문서 목록</a>
   <a href="/docs/design.html">시스템 설계서</a>
-  <a href="/docs/implementation-plan.html">구현 계획</a>
+  <a href="/search.html">검색</a>
+  <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
+  <div class="banner"><strong>현재 상태:</strong> **P1 엔지니어링 완료** · **P2 핵심 엔지니어링 강** · **P3 핵심 엔지니어링 강** (planner·list·analytics·capacity·catalog eval) · 문서 1.15</div>
+  <p class="meta">문서 버전 1.15 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.15: ops/status · pilot tech check · postgres backup</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
-<tr><th>항목</th><th>내용</th></tr>
-<tr><td>문서 버전</td><td>1.0</td></tr>
-<tr><td>기준 설계</td><td><code>CI-TEC_Knowledge_Platform_Design.html</code> <strong>v2.3</strong></td></tr>
-<tr><td>평가 세트</td><td><code>query_catalog_100.json</code> (100+ G01–G10)</td></tr>
-<tr><td>환경</td><td>폐쇄망 · Docker 경량(5 서비스) · GLM 5.2 AWQ 4bit 130k</td></tr>
-<tr><td>사용자</td><td>초기 50–100명</td></tr>
-<tr><td>작성일</td><td>2026-07-18</td></tr>
+<thead>
+<tr>
+<th>항목</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>문서 버전</td>
+<td><strong>1.15</strong></td>
+</tr>
+<tr>
+<td>기준 설계</td>
+<td><code>CI-TEC_Knowledge_Platform_Design.html</code> <strong>v2.3</strong></td>
+</tr>
+<tr>
+<td>평가 세트</td>
+<td>gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold</td>
+</tr>
+<tr>
+<td>환경</td>
+<td>폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter)</td>
+</tr>
+<tr>
+<td>사용자</td>
+<td>초기 50–100명</td>
+</tr>
+<tr>
+<td>레포</td>
+<td><strong><code>~/dev/citec-kb</code></strong></td>
+</tr>
+<tr>
+<td>작성일</td>
+<td>2026-07-18</td>
+</tr>
+<tr>
+<td>갱신</td>
+<td><strong>2026-07-20 — v1.15: ops/status · pilot tech check · postgres backup</strong></td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
+<h3>문서 운영 규칙 (필수)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>규칙</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>매 작업 종료 시</strong></td>
+<td>본 문서 <strong>현재 상태 · 해당 Phase 체크리스트 · §15 다음 액션 · 버전/갱신일</strong> 을 같은 세션에서 갱신</td>
+</tr>
+<tr>
+<td><strong>완료 표기</strong></td>
+<td>코드만 있고 문서 미반영 = 미완료로 간주. 게이트/eval 수치 있으면 수치까지 기입</td>
+</tr>
+<tr>
+<td><strong>이월 표기</strong></td>
+<td>“나중에” 항목은 <strong>흡수 Phase / 별도 작업 / 명시적 비목표</strong> 중 하나로 분류 (모호한 잔여 금지)</td>
+</tr>
+<tr>
+<td><strong>웹 동기화</strong></td>
+<td>MD 복사 + HTML 재생성: <code>.venv/bin/python scripts/render_implementation_plan.py</code> (HTML은 스냅샷이므로 MD만 고치면 v1.2처럼 어긋남)</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
 <h2>0. 한 페이지 요약</h2>
 <h3>목표 제품</h3>
-<p>분산 지식(Jira 지원이력 · Confluence Tech-Repo · PISA · AI 분석)을 통합해  </p>
-<p><strong>정확한 검색 · 근거 기반 답변 · 유사장애 브리핑 · 관리자 공수/통계 · 승인형 지식 환류</strong>를 제공한다.</p>
+<p>분산 지식(Jira 지원이력 · Confluence Tech-Repo · PISA · AI 분석)을 통합해<br>
+<strong>정확한 검색 · 근거 기반 답변 · 유사장애 브리핑 · 관리자 공수/통계 · 승인형 지식 환류</strong>를 제공한다.</p>
+<h3>현재 상태 (2026-07-20)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>진행 페이즈</strong></td>
+<td><strong>P1 엔지니어링 완료</strong> · <strong>P2 핵심 엔지니어링 강</strong> · <strong>P3 핵심 엔지니어링 강</strong> (planner·list·analytics·capacity·catalog eval)</td>
+</tr>
+<tr>
+<td><strong>엔지니어링 게이트</strong></td>
+<td><strong>G0·G1 완료</strong> · <strong>G3 엔지니어링 달성</strong> · <strong>G4 시드 달성</strong> · <strong>G5 route+answer 110/110</strong> · G2 파일럿·도메인 사인 잔여 · G6 미착수</td>
+</tr>
+<tr>
+<td>레포/디렉터리</td>
+<td><code>~/dev/citec-kb</code></td>
+</tr>
+<tr>
+<td>Compose</td>
+<td>web <strong>8572</strong> · api <strong>8573</strong> · postgres <strong>8574</strong> · redis <strong>8575</strong> · <strong>worker(job queue)</strong></td>
+</tr>
+<tr>
+<td>코퍼스</td>
+<td>documents <strong>9,437</strong> · chunks <strong>~54,444</strong> · embeddings <strong>54,427</strong> · checkitems <strong>4,434</strong> · issue_frames <strong>2,280</strong></td>
+</tr>
+<tr>
+<td>소스별</td>
+<td>support_history 2,280 · tech_repo 2,709 · checkitem 4,434 · tuning_ai 10 · confluence_docs 4</td>
+</tr>
+<tr>
+<td>임베딩</td>
+<td>e5-base · dim <strong>768</strong> · 배치 100%</td>
+</tr>
+<tr>
+<td>검색</td>
+<td>Hybrid HTTP · <strong>multi_query=true 기본</strong> (CITECTS/PISA/FAQ/entity 확장 병합)</td>
+</tr>
+<tr>
+<td>Planner</td>
+<td><code>POST /v1/query</code> · capacity→analytics→list→SI→<strong>prevention→exhaustive</strong>→checklist→entity→hybrid</td>
+</tr>
+<tr>
+<td>품질</td>
+<td>retrieval hit@3 <strong>0.96</strong> · SI pass_rate <strong>1.0</strong> · catalog route/answer <strong>110/110</strong> · unit tests <strong>58</strong></td>
+</tr>
+<tr>
+<td>UI</td>
+<td>search · chat · si · tickets · analytics · capacity · bundles · <code>/docs/</code></td>
+</tr>
+<tr>
+<td>alembic</td>
+<td><code>20260718_0002</code> (vector 768)</td>
+</tr>
+<tr>
+<td>미완 핵심</td>
+<td>파일럿 <strong>도메인 사인</strong> · 원격 push · G6 SSO/Insight</td>
+</tr>
+</tbody>
+</table></div>
 <h3>성공 정의 (출시 게이트)</h3>
 <div class="table-wrap"><table>
-<tr><th>게이트</th><th>기준</th></tr>
-<tr><td>G0</td><td><code>docker compose up</code> 로 로컬/사내 VM 기동, raw 전량 ingest 완료</td></tr>
-<tr><td>G1</td><td>Hybrid 검색 P@3 ≥ 0.90 (gold 50+)</td></tr>
-<tr><td>G2</td><td>RAG groundedness ≥ 0.95, Trust/기권 동작</td></tr>
-<tr><td>G3</td><td><code>similar_incident</code> 4슬롯 브리핑 + 적용성 판정 (G01–G10)</td></tr>
-<tr><td>G4</td><td>capacity 숫자 = Rules/SQL만, 환산 라벨 표시</td></tr>
-<tr><td>G5</td><td>query catalog <strong>≥ 95% pass</strong>, numeric 문항 100%</td></tr>
-<tr><td>G6</td><td>50–100명 부하 스모크, 검색 p95 ≤ 700ms / Fast QA TTFT ≤ 2.5s</td></tr>
+<thead>
+<tr>
+<th>게이트</th>
+<th>기준</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>G0</td>
+<td><code>docker compose up</code> + raw 전량 ingest</td>
+<td><strong>완료</strong></td>
+</tr>
+<tr>
+<td>G1</td>
+<td>Hybrid 검색 hit@3 ≥ 0.90 (gold 50+)</td>
+<td><strong>완료 (0.96)</strong></td>
+</tr>
+<tr>
+<td>G2</td>
+<td>RAG groundedness ≥ 0.95, Trust/기권 동작</td>
+<td><strong>엔지니어링 1차</strong> (러너·Trust·chat 있음; 파일럿·정식 게이트 수치 사인 잔여)</td>
+</tr>
+<tr>
+<td>G3</td>
+<td><code>similar_incident</code> 4슬롯 + 적용성 (G01–G10)</td>
+<td><strong>엔지니어링 달성</strong> (10/10; 그룹장 워크스루 잔여)</td>
+</tr>
+<tr>
+<td>G4</td>
+<td>capacity 숫자 = Rules/SQL만</td>
+<td><strong>달성</strong> (JSON + <strong>DB 10/4 rows</strong> · estimate <code>loaded_from=database</code>)</td>
+</tr>
+<tr>
+<td>G5</td>
+<td>query catalog ≥ 95% pass</td>
+<td><strong>route+answer 110/110</strong> · prod multi-query <strong>이식 완료</strong></td>
+</tr>
+<tr>
+<td>G6</td>
+<td>50–100명 스모크 · SLA</td>
+<td><strong>미착수</strong></td>
+</tr>
+</tbody>
 </table></div>
-<h3>일정 총괄 (권장 12–16주)</h3>
-<pre><code>
-W1–2   Phase 0  스파이크·기반
-
-W3–7   Phase 1  고정밀 검색 MVP          → G0, G1
-
-W8–11  Phase 2  Trust QA + 유사장애      → G2, G3
-
-W12–14 Phase 3  Planner·Capacity·Analytics → G4, G5
-
-W15–16 Phase 4  Flywheel·운영·하드닝     → G6
-
+<h3>일정 총괄</h3>
+<pre><code>W1–2   Phase 0  스파이크·기반              ✅ 완료
+W3–7   Phase 1  고정밀 검색 MVP → G0,G1   ✅ 완료 (2026-07-20)
+W8–11  Phase 2  Trust QA + 유사장애 → G2,G3   ✅ 엔지니어링 강 / 파일럿·사인 잔여
+W12–14 Phase 3  Planner·Capacity·Analytics → G4,G5   ✅ 핵심 강 / 하드닝·DB시드·prod multi-query 잔여
+W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← 다음 큰 축
 </code></pre>
-<p>병행 가능 구간은 §4 DAG 참고. 인력 가정: BE 1.5 · FE 1 · ML/서빙 0.5 · 도메인 리뷰 0.3.</p>
-<hr/>
+<hr>
 <h2>1. 전제 · 제약 · 비목표</h2>
-<h3>1.1 전제 (착수 전 확정)</h3>
+<h3>1.1 전제</h3>
 <div class="table-wrap"><table>
-<tr><th>#</th><th>전제</th><th>미확정 시 영향</th><th>기본 가정</th></tr>
-<tr><td>P1</td><td>GLM OpenAI-compatible 엔드포인트</td><td>RAG 연동 지연</td><td>chat/completions + stream</td></tr>
-<tr><td>P2</td><td>130k tokenizer 실측</td><td>packer 오설정</td><td>HF tokenizer 기준 측정</td></tr>
-<tr><td>P3</td><td>BGE-M3 웨이트 사내 반입</td><td>임베딩 불가</td><td>worker 내 배치 또는 공용 API</td></tr>
-<tr><td>P4</td><td>raw 경로 read 가능</td><td>ingest 불가</td><td><code>/data/raw</code> 볼륨 마운트</td></tr>
-<tr><td>P5</td><td>초기 SSO 연기 가능</td><td>인증 범위</td><td>Phase1 IP allowlist</td></tr>
+<thead>
+<tr>
+<th>#</th>
+<th>전제</th>
+<th>현재</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>P1</td>
+<td>GLM OpenAI-compatible</td>
+<td>dev: OpenRouter <code>z-ai/glm-5.2</code> health ok</td>
+<td>Phase 2 RAG 본사용</td>
+</tr>
+<tr>
+<td>P2</td>
+<td>130k context 프로파일</td>
+<td>config에 max 130k</td>
+<td>packer는 Phase 2</td>
+</tr>
+<tr>
+<td>P3</td>
+<td>임베딩 웨이트</td>
+<td><strong>e5-base 로컬 스냅샷</strong> (<code>/models</code> 마운트)</td>
+<td>계획의 BGE-M3 대신 e5-base 채택</td>
+</tr>
+<tr>
+<td>P4</td>
+<td>raw 경로</td>
+<td><code>data/raw</code> + compose 볼륨</td>
+<td>등록 완료</td>
+</tr>
+<tr>
+<td>P5</td>
+<td>초기 SSO 연기</td>
+<td>유지</td>
+<td>IP allow 가정</td>
+</tr>
+</tbody>
 </table></div>
 <h3>1.2 제약</h3>
 <ul>
-<li>인터넷 egress 0 · 이미지/wheel 사내 레지스트리</li>
-<li>Docker 5서비스 유지: <code>web</code>, <code>api</code>, <code>worker</code>, <code>postgres</code>, <code>redis</code> (LLM은 compose 밖)</li>
-<li>50–100명: 권장 8 vCPU / 16–24GB</li>
-<li>Precision &gt; Coverage · 숫자 답변은 SQL/Rules만</li>
+<li>Docker 5서비스: <code>web</code>, <code>api</code>, <code>worker</code>, <code>postgres</code>, <code>redis</code> (LLM은 compose 밖)</li>
+<li>호스트 포트 대역 <strong>8572–8580</strong></li>
+<li>Precision &gt; Coverage · 숫자 답변은 SQL/Rules만 (Phase 3)</li>
+<li>API 이미지에 <strong>CPU torch + sentence-transformers</strong> 포함 (쿼리 임베딩; 이미지 크기↑ 트레이드오프)</li>
 </ul>
-<h3>1.3 본 계획의 비목표</h3>
+<h3>1.3 비목표</h3>
 <ul>
 <li>자동 원격 조치 실행</li>
 <li>소스 ACL 실시간 미러</li>
 <li>OpenSearch/Qdrant/Kafka 초기 도입</li>
 <li>LLM 파인튜닝</li>
 </ul>
-<hr/>
+<h3>1.4 Phase 1 비범위였던 기간·목록·집계 → Phase 3에서 <strong>구현됨</strong></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>질의 유형 예</th>
+<th>Phase 1 당시</th>
+<th>현재 (2026-07-20)</th>
+<th>API/경로</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>「지난 주 지원건」</td>
+<td>hybrid 0건 <strong>정상</strong></td>
+<td><strong>time_scoped_list</strong></td>
+<td><code>POST /v1/query</code> · <code>GET /v1/tickets</code></td>
+</tr>
+<tr>
+<td>「이번 달 장애 건수」</td>
+<td>키워드 부적합</td>
+<td><strong>analytics</strong></td>
+<td><code>GET /v1/analytics/tickets</code></td>
+</tr>
+<tr>
+<td>「2주 분야별 대수」</td>
+<td>범위 밖</td>
+<td><strong>capacity</strong></td>
+<td><code>POST /v1/capacity/estimate</code></td>
+</tr>
+<tr>
+<td>catalog 100</td>
+<td>미이관</td>
+<td><strong>route+answer 110/110</strong></td>
+<td><code>app.eval.catalog_*</code></td>
+</tr>
+</tbody>
+</table></div>
+<h2>원칙 유지: 기간·목록·집계·공수는 <strong>Router + metadata/Rules</strong> (LLM 계수·임시 핵 금지).</h2>
 <h2>2. 목표 아키텍처 (구현 단위)</h2>
-<pre><code>
-[raw/ | Jira/Conf API] 
-
-    → adapters → Postgres(documents, sections, chunks, checkitems, entities, frames, rules)
-
-    → embed job → pgvector + FTS
-
-    → api: search | rag | similar_incident | capacity | analytics | insight
-
-    → web: 검색 | 챗 | War-room | 관리자 표 | 승인
-
-    → GLM 5.2 (external)
-
+<pre><code>[data/raw | 향후 Jira/Conf API]
+    → ingest adapters → Postgres (documents, chunks, checkitems, …)
+    → embed CLI job → pgvector(768) + FTS
+    → api: search | checkitems | ingest | health
+         (+ Phase2: rag, similar_incident | Phase3: capacity, analytics)
+    → web: 검색 UI · 설계 문서 정적 호스팅
+    → GLM 5.2 (external OpenRouter / Fabrix)
 </code></pre>
-<h3>2.1 권장 레포 구조</h3>
-<pre><code>
-cite-c-knowledge/
-
+<h3>2.1 실제 레포 구조 (현재)</h3>
+<pre><code>citec-kb/
   docker-compose.yml
-
   apps/
-
-    api/                 # FastAPI
-
-    worker/              # arq/celery jobs
-
-    web/                 # React or lightweight SPA
-
-  packages/
-
-    domain/              # schemas, enums
-
-    retrieval/           # hybrid, rrf, packer
-
-    trust/               # trust engine
-
-    ingest/              # adapters, cleaners
-
-  data/
-
-    seeds/               # entities, lexicon, capacity_rules, bundles
-
-    gold/                # query_catalog_100.json, G01-10
-
-  docs/                  # design copies
-
-  scripts/               # eval, smoke, backup
-
+    api/          # FastAPI · ingest · embed · retrieval · eval
+    worker/       # heartbeat 스텁
+    web/public/   # search.html · docs/* · index
+  packages/domain/
+  config/models.json
+  data/raw/ · raw_manifest.json
+  docs/           # 설계·구현 계획 원본
+  scripts/
+  .venv/          # 호스트 배치 임베드·eval용
 </code></pre>
-<h3>2.2 기술 스택 (고정)</h3>
+<blockquote>
+<p>초기 계획의 <code>packages/retrieval|trust</code> 분리 monorepo는 아직 미적용. 로직은 <code>apps/api/app/{retrieval,embed,eval}</code>에 응집.</p>
+</blockquote>
+<h3>2.2 기술 스택 (현재 고정)</h3>
 <div class="table-wrap"><table>
-<tr><th>영역</th><th>선택</th></tr>
-<tr><td>API</td><td>Python 3.12 · FastAPI · uvicorn</td></tr>
-<tr><td>DB</td><td>Postgres 16 + pgvector · 내장 FTS</td></tr>
-<tr><td>Queue</td><td>Redis + arq (또는 Celery)</td></tr>
-<tr><td>Embed</td><td>BGE-M3 (worker)</td></tr>
-<tr><td>LLM</td><td>사내 GLM (httpx OpenAI client)</td></tr>
-<tr><td>Web</td><td>React+Vite 또는 초기 Streamlit→이관</td></tr>
-<tr><td>관측</td><td>구조화 로그 + Prometheus metrics (최소)</td></tr>
+<thead>
+<tr>
+<th>영역</th>
+<th>선택</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API</td>
+<td>Python 3.12 · FastAPI · uvicorn</td>
+</tr>
+<tr>
+<td>DB</td>
+<td>Postgres 16 + pgvector · FTS <code>simple</code></td>
+</tr>
+<tr>
+<td>Queue</td>
+<td>Redis (worker 스텁; 본 큐 미연결)</td>
+</tr>
+<tr>
+<td>Embed</td>
+<td><strong>intfloat/multilingual-e5-base (768-d)</strong> · 배치 CLI + API 쿼리 인코드</td>
+</tr>
+<tr>
+<td>LLM</td>
+<td>OpenRouter / Fabrix (Phase 1 검색 필수 아님; health probe만)</td>
+</tr>
+<tr>
+<td>Web</td>
+<td><strong>정적 HTML</strong> (<code>search.html</code> + nginx) — React 이관은 이후 옵션</td>
+</tr>
+<tr>
+<td>평가</td>
+<td><code>python -m app.eval.retrieval</code> · gate=<strong>hit@3</strong></td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
+<hr>
 <h2>3. 페이즈별 구현 계획</h2>
-<h3>Phase 0 — 스파이크 · 기반 (1–2주) → 게이트 G0 일부</h3>
+<h3>Phase 0 — 스파이크 · 기반 → ✅ 완료</h3>
 <div class="table-wrap"><table>
-<tr><th>주차</th><th>산출물</th><th>상세 작업</th><th>DoD</th></tr>
-<tr><td>W1</td><td>환경·모델 검증</td><td>GLM health, max context, 스트리밍, 동시성 한도 측정 문서화</td><td>벤치 리포트 1장</td></tr>
-<tr><td>W1</td><td>임베딩 스파이크</td><td>BGE-M3 로드 시간·QPS·메모리</td><td>의사결정: worker내장 vs 공용</td></tr>
-<tr><td>W1</td><td>Gold 시드</td><td>catalog 100+G10 을 <code>data/gold/</code> 이관, 평가 스키마 정의</td><td>JSON 스키마 확정</td></tr>
-<tr><td>W2</td><td>Compose skeleton</td><td>PR-01: 5 서비스, healthcheck, 볼륨, <code>.env.example</code></td><td><code>compose up</code> 성공</td></tr>
-<tr><td>W2</td><td>DB 마이그레이션</td><td>PR-02: 최소 스키마 (documents/chunks/jobs)</td><td>alembic upgrade head</td></tr>
+<thead>
+<tr>
+<th>산출물</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compose 5서비스 · health · 포트 8572–8575</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Alembic 스키마 (+ vector 768 마이그레이션)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>GLM OpenRouter probe</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>e5-base 오프라인 로드 경로</td>
+<td>✅</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>리스크:</strong> 모델 반입 지연 → Phase1 검색은 FTS-only로 진행 가능(임베딩 후행).</p>
-<hr/>
-<h3>Phase 1 — 고정밀 검색 MVP (3–5주) → G0, G1</h3>
-<p><strong>목표:</strong> 부서원이 “매일 켜는” 통합 검색. 생성 기능 없음 또는 최소.</p>
-<h4>W3 — Ingest</h4>
+<hr>
+<h3>Phase 1 — 고정밀 검색 MVP → G0, G1 → ✅ 엔지니어링 완료</h3>
+<p><strong>목표:</strong> 부서원이 “매일 켜는” 통합 검색. 생성 기능 없음.</p>
+<h4>구현 완료 맵</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>어댑터</td><td>PR-03</td><td><code>support_history</code>, <code>tech_repo</code>, <code>tuning_ai</code>, <code>confluence_docs</code> MD 파서</td></tr>
-<tr><td>Cleaner</td><td>PR-03</td><td>Jira color 마크업 제거, 빈 본문 drop, hash upsert</td></tr>
-<tr><td>Checkitems</td><td>PR-17(조기)</td><td>JSON → <code>checkitems</code> 정규 테이블 (검색 Phase1.5에서도 사용)</td></tr>
-<tr><td>Job</td><td>PR-03</td><td><code>ingest_jobs</code> 통계, 실패 DLQ 로그</td></tr>
+<thead>
+<tr>
+<th>영역</th>
+<th>내용</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ingest</td>
+<td>support_history, tech_repo, tuning_ai, confluence_docs, checkitem 어댑터 · idempotent · stats</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Index</td>
+<td>청크 + FTS · 배치 임베드 keyset 페이징 · 진행 로그</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Taxonomy</td>
+<td>path/work_type/domain 규칙 태그 (필터용)</td>
+<td>✅ 기본</td>
+</tr>
+<tr>
+<td>Hybrid API</td>
+<td>FTS+vector RRF · exact boost · quality gate · source 등 필터</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>쿼리 임베드</td>
+<td>API 컨테이너 torch+ST · degrade 시 FTS-only + <code>embed_error</code></td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Checkitems</td>
+<td><code>GET /v1/checkitems?area=&amp;q=</code> · Linux FS 동의어 확장</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Search UI</td>
+<td>필터·뱃지·스니펫 · live API</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Eval</td>
+<td>gold≥50 · <strong>hit@3=0.96</strong> · unit tests <strong>58</strong> (전 페이즈 합)</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>문서 포털</td>
+<td>design / implementation-plan / query-catalog 웹 제공</td>
+<td>✅</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>DoD:</strong> raw 전량 적재, documents 건수 ≈ 파일 수, 재실행 idempotent.</p>
-<h4>W4 — Index</h4>
-<div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>섹션/청크</td><td>PR-04</td><td>MD 헤더 분할, contextual header, 512tok/overlap</td></tr>
-<tr><td>FTS</td><td>PR-04</td><td><code>to_tsvector</code> 한국어 전략(simple/ngram 1차)</td></tr>
-<tr><td>Embed</td><td>PR-04/05</td><td>배치 임베딩, chunk_id = point id</td></tr>
-<tr><td>Taxonomy 규칙</td><td>PR-06</td><td>path_l2/l3, work_type, 키워드→domain 태그</td></tr>
-</table></div>
-<p><strong>DoD:</strong> 임의 티켓키·파라미터 exact 검색 성공, 벡터 검색 smoke.</p>
-<h4>W5 — Search API</h4>
-<div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Hybrid</td><td>PR-05</td><td>FTS top40 + vector top40 → RRF</td></tr>
-<tr><td>Exact boost</td><td>PR-05</td><td>CITECTS-*, pageId, 커널 파라미터 패턴</td></tr>
-<tr><td>Quality gate</td><td>PR-05</td><td>임계 미달 시 결과 축소/empty</td></tr>
-<tr><td>Filters</td><td>PR-05/06</td><td>source, date, domain, path, status</td></tr>
-<tr><td>Lexicon 시드</td><td>PR-19(조기 일부)</td><td>GRO/모니모 동의어 최소셋</td></tr>
-</table></div>
-<p><strong>DoD:</strong> gold 50문 retrieval P@3 측정 베이스라인 기록.</p>
-<h4>W6–7 — Search UI + 엔티티 기초</h4>
-<div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>검색 UI</td><td>PR-07</td><td>필터, 소스 뱃지, 스니펫, 증거 등급</td></tr>
-<tr><td>Entity seed</td><td>PR-15</td><td>모니모 등 20–50 시스템 + linker 규칙</td></tr>
-<tr><td>Checkitem API</td><td>PR-17</td><td>Area/Subject 필터 목록 API</td></tr>
-<tr><td>Eval</td><td>PR-12 일부</td><td>P@3 러너 스크립트</td></tr>
-</table></div>
-<p><strong>Phase 1 종료 게이트 G1</strong></p>
+<h4>Phase 1 종료 게이트 G1</h4>
 <ul>
-<li>[ ] P@3 ≥ 0.90 (또는 합의 베이스라인 대비 +X% with 이슈 목록)</li>
-<li>[ ] 검색 p95 ≤ 700ms (리랭크 전)</li>
-<li>[ ] checkitem “Linux FS” 질의 테이블 응답</li>
-<li>[ ] 사용자 파일럿 5–10명 피드백 1회</li>
+<li class="check">✅ Retrieval gate ≥ 0.90 — <strong>hit@3 = 0.96</strong> (hybrid, <code>vector_used</code>; classic p@3 별도 기록)</li>
+<li class="check">✅ 검색 p95 ≤ 700ms (리랭크 전, warm) — <strong>≈ 376ms</strong></li>
+<li class="check">✅ checkitem “Linux FS” 테이블/검색 응답</li>
+<li class="check">☐ 사용자 파일럿 5–10명 피드백 1회 — <strong>Phase 1.5</strong> (엔지니어링 게이트와 분리 · <strong>자동 흡수 안 됨</strong>)</li>
 </ul>
-<hr/>
-<h3>Phase 2 — Trust QA + 그룹장 유사장애 (3–4주) → G2, G3</h3>
-<p><strong>목표:</strong> 근거 있는 답변 + 그룹장 War-room 브리핑.  </p>
-<p><strong>원칙:</strong> 검색 품질 게이트 통과 전 Deep RAG 확대 금지.</p>
+<h4>Phase 1 잔여(비차단) — 처분 (자동으로 다 되는가?)</h4>
+<p><strong>결론: 아니다.</strong> Phase 2/3을 진행해도 <strong>일부만 흡수</strong>되고, 나머지는 <strong>명시적 별도 작업</strong>이 필요하다.<br>
+“비차단” = G1 출시에 막지 않음이지, <strong>무시해도 됨이 아님</strong>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>흡수 여부</th>
+<th>처분</th>
+<th>현재</th>
+<th>다음에 할 일</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>catalog 100 이관·eval</strong></td>
+<td><strong>Phase 3에 흡수·완료</strong></td>
+<td>완료</td>
+<td><code>query_catalog_100.json</code> + route/answer 110/110</td>
+<td>회귀 유지; prod multi-query 이식은 P3 후속</td>
+</tr>
+<tr>
+<td><strong>기간·목록·집계 (P1 비범위)</strong></td>
+<td><strong>Phase 3에 흡수·완료</strong></td>
+<td>완료</td>
+<td>tickets / analytics / planner</td>
+<td>title_tokens·exhaustive 등 확장만 잔여</td>
+</tr>
+<tr>
+<td><strong>classic p@3 개선</strong></td>
+<td><strong>흡수 안 됨 · 비목표에 가깝</strong></td>
+<td><strong>별도 안 함</strong> (명시)</td>
+<td>p@3≈0.32 참고만</td>
+<td>multi-label gold 재설계 없으면 착수 금지</td>
+</tr>
+<tr>
+<td><strong>Entity seed (모니모 등)</strong></td>
+<td><strong>별도 작업으로 완료 (v1.9)</strong></td>
+<td><strong>완료</strong></td>
+<td>entities <strong>5</strong> · document_entities <strong>549</strong></td>
+<td>유지·확장 시드 JSON</td>
+</tr>
+<tr>
+<td><strong>worker 실큐</strong></td>
+<td><strong>흡수 안 됨</strong></td>
+<td><strong>별도 (필요 시 P2+)</strong></td>
+<td>heartbeat 스텁</td>
+<td>비동기 잡(재임베드·frame job 큐) 도입 시 구현</td>
+</tr>
+<tr>
+<td><strong>git 커밋/원격 정리</strong></td>
+<td><strong>흡수 안 됨</strong></td>
+<td><strong>별도 (운영 위생)</strong></td>
+<td>uncommitted 다수</td>
+<td>의미 단위 커밋 · 원격 정책 합의 후 push</td>
+</tr>
+<tr>
+<td><strong>파일럿 5–10명 (1.5)</strong></td>
+<td><strong>흡수 안 됨</strong></td>
+<td><strong>별도 (조직)</strong></td>
+<td>체크리스트만 존재</td>
+<td><code>PHASE2_PILOT_CHECKLIST.md</code> 실행·사인</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h3>Phase 2 — Trust QA + 그룹장 유사장애 (3–4주) → G2, G3 — <strong>엔지니어링 강 / 사인 잔여</strong></h3>
+<p><strong>목표:</strong> 근거 있는 답변 + 그룹장 War-room 브리핑.<br>
+<strong>원칙:</strong> 검색 품질 게이트(G1) 통과 전 Deep RAG 확대 금지 — <strong>현재 충족, RAG 착수 가능</strong>.</p>
 <h4>W8 — Trust + RAG 코어</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Trust engine</td><td>PR-08</td><td>Retrieval/Evidence/Faithfulness → 4단 배너</td></tr>
-<tr><td>기권 규칙</td><td>PR-08</td><td>임계 미달 ABSTAIN</td></tr>
-<tr><td>GLM client</td><td>PR-09</td><td>stream, token budget packer (Fast 8–20k)</td></tr>
-<tr><td>Citation</td><td>PR-09</td><td>[C#] 강제, faithfulness 1회 재시도</td></tr>
-<tr><td>챗 UI</td><td>PR-10</td><td>Trust Banner, 출처 패널</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trust engine</td>
+<td>PR-08</td>
+<td>Retrieval/Evidence/Faithfulness → 다차원 배너 (단일 % 없음)</td>
+<td>✅ 1차 (<code>app/trust</code>)</td>
+</tr>
+<tr>
+<td>기권 규칙</td>
+<td>PR-08</td>
+<td>임계 미달 ABSTAIN</td>
+<td>✅ 1차</td>
+</tr>
+<tr>
+<td>GLM client</td>
+<td>PR-09</td>
+<td>complete + stream helper, packer</td>
+<td>✅ 1차 (<code>llm_chat</code>, <code>rag/packer</code>)</td>
+</tr>
+<tr>
+<td>Citation</td>
+<td>PR-09</td>
+<td>[C#] 강제 프롬프트 + 사용 인용 추출</td>
+<td>✅ 1차 (재시도 루프는 후속)</td>
+</tr>
+<tr>
+<td>Fast RAG API</td>
+<td>PR-09/10</td>
+<td><code>POST /v1/chat</code> mode=fast</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Deep mode</td>
+<td>PR-09</td>
+<td>context 40k · top_k 16 · 구조화 프롬프트</td>
+<td>✅ 1차</td>
+</tr>
+<tr>
+<td>SSE stream</td>
+<td>PR-10</td>
+<td><code>stream=true</code> → meta/token/done 이벤트</td>
+<td>✅ 1차</td>
+</tr>
+<tr>
+<td>챗 UI</td>
+<td>PR-10</td>
+<td>Trust Banner · deep/SSE 토글</td>
+<td>✅ (<code>/chat.html</code>)</td>
+</tr>
+<tr>
+<td>Groundedness sample</td>
+<td>PR-12</td>
+<td>20문 자동 메트릭 러너</td>
+<td>✅ (<code>app.eval.groundedness</code>)</td>
+</tr>
+<tr>
+<td>Citation 강제 재시도</td>
+<td>PR-09</td>
+<td>무인용 답변 rewrite + 자동 보강</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Faithfulness LLM 재판정</td>
+<td>PR-09</td>
+<td>1회 재생성 루프</td>
+<td>후속 (overlap 휴리스틱)</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>DoD:</strong> Fast QA 샘플 20문 groundedness 수동/자동 ≥ 0.95 목표.</p>
 <h4>W9 — Issue Frame + 유사장애 Retrieve</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Frame 추출</td><td>PR-16</td><td>배치: symptom/cause/resolution/components (규칙 우선, LLM 보조)</td></tr>
-<tr><td>quality 점수</td><td>PR-16</td><td>원인+조치 동시 존재 가산</td></tr>
-<tr><td>SI retrieve</td><td>PR-28</td><td>dual retrieve + Resolved/frame 가중</td></tr>
-<tr><td>랭킹</td><td>PR-28</td><td>증상·환경·조치완결성</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frame 추출</td>
+<td>PR-16</td>
+<td>rules_v2 · support_history <strong>2,280 frames</strong> · both-slot 소수</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Frame API</td>
+<td>PR-16</td>
+<td>extract / stats / by key</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>SI retrieve</td>
+<td>PR-28</td>
+<td>hybrid + frame quality + applicability</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>SI UI</td>
+<td>PR-29</td>
+<td><code>/si.html</code> 4슬롯 + 적용성</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>랭킹 고도화</td>
+<td>PR-28</td>
+<td>Resolved 가중 · dual embed</td>
+<td>후속</td>
+</tr>
+</tbody>
 </table></div>
 <h4>W10 — Applicability + 그룹장 UX</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>적용성 스코어</td><td>PR-29</td><td>가능/조건부/비권고/기권</td></tr>
-<tr><td>4슬롯 브리핑</td><td>PR-29</td><td>1분 요약 + 유사 3카드</td></tr>
-<tr><td>War-room 모드</td><td>PR-26 일부</td><td>현재 장애 슬롯 입력 폼</td></tr>
-<tr><td>Bundle 시드</td><td>PR-25</td><td>linux-hang, network-timeout 2팩</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>적용성 스코어</td>
+<td>PR-29</td>
+<td>가능/조건부/비권고/기권</td>
+<td>✅ 휴리스틱</td>
+</tr>
+<tr>
+<td>4슬롯 브리핑</td>
+<td>PR-29</td>
+<td>1분 요약 + 유사 3카드</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>Bundle 시드</td>
+<td>PR-25</td>
+<td>linux-hang, network-timeout + 매칭 UI</td>
+<td>✅ 읽기 전용</td>
+</tr>
+<tr>
+<td>Bundle 쓰기 API</td>
+<td>PR-25</td>
+<td>온라인 편집·저장</td>
+<td>잔여</td>
+</tr>
+</tbody>
 </table></div>
 <h4>W11 — 하드닝</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>SI eval</td><td>PR-30</td><td>G01–G10, false-apply 케이스</td></tr>
-<tr><td>동시성</td><td>—</td><td>Deep 세마포어 2, Fast 6</td></tr>
-<tr><td>감사 로그</td><td>PR-14 일부</td><td>query/answer 저장</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>내용</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SI eval</td>
+<td>G01–G10 + false-apply</td>
+<td>✅ pass_rate=1.0</td>
+</tr>
+<tr>
+<td>동시성 한도</td>
+<td>Deep 2 / Fast 6</td>
+<td>잔여 (설정 강화)</td>
+</tr>
+<tr>
+<td>감사 로그</td>
+<td>query/answer 저장</td>
+<td>잔여</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>Phase 2 종료 게이트 G2+G3</strong></p>
-<ul>
-<li>[ ] Trust 4단 UI 동작, 기권 시 단정 조치 문구 0건(샘플 감사)</li>
-<li>[ ] G01–G10 중 ≥ 8 pass (적용성 라벨 포함)</li>
-<li>[ ] 그룹장 시나리오 워크스루 1회 통과</li>
-</ul>
-<hr/>
-<h3>Phase 3 — Planner · Capacity · Analytics · 100문 (3주) → G4, G5</h3>
-<p><strong>목표:</strong> 관리자 숫자 질문 + 전량/예방 + gold 95%+.</p>
+<p><strong>Phase 2 게이트 G2+G3</strong><br>
+- [x] Trust 배너·기권·Fast/Deep·SSE 엔지니어링<br>
+- [x] G01–G10 ≥ 8 pass — <strong>10/10</strong><br>
+- [ ] Trust 4단 UI 파일럿 확인 · 기권 시 단정 조치 문구 0건 (현장)<br>
+- [ ] 그룹장 시나리오 워크스루 1회</p>
+<hr>
+<h3>Phase 3 — Planner · Capacity · Analytics · 100문 → G4, G5</h3>
+<p><strong>목표:</strong> 관리자 숫자 + 전량/예방 + <strong>기간·목록형 질의</strong> + gold 95%+.</p>
+<blockquote>
+<p>Phase 1에서 미구현: 「지난 주 지원건」 등 — hybrid 0건이 정상.<br>
+<strong>PR-18 router + 기간 파서 + PR-23 tickets/analytics</strong> 에서 해결.</p>
+</blockquote>
 <h4>W12 — Query Planner</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Router</td><td>PR-18</td><td>factoid / synthesize / checklist / exhaustive / capacity / analytics / similar_incident / prevention</td></tr>
-<tr><td>Exhaustive</td><td>PR-18</td><td>entity·lexicon 전량 스캔, 상한, completeness 메타</td></tr>
-<tr><td>Prevention hop</td><td>PR-20</td><td>frame.components → PISA/tech path</td></tr>
-<tr><td>Lexicon 확장</td><td>PR-19</td><td>GRO, monimo, SCP 등</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Router</td>
+<td>PR-18</td>
+<td>factoid / synthesize / checklist / <strong>time_scoped_list</strong> / exhaustive / capacity / analytics / SI / prevention</td>
+</tr>
+<tr>
+<td>상대 기간 파서</td>
+<td>PR-18</td>
+<td>지난 주·이번 달·최근 N일 → date_from/to (KST)</td>
+</tr>
+<tr>
+<td>Exhaustive</td>
+<td>PR-18</td>
+<td>전량 스캔 · completeness 메타</td>
+</tr>
+<tr>
+<td>Prevention hop</td>
+<td>PR-20</td>
+<td>frame → PISA/tech</td>
+</tr>
+<tr>
+<td>Lexicon</td>
+<td>PR-19</td>
+<td>GRO, monimo, SCP</td>
+</tr>
+</tbody>
 </table></div>
-<h4>W13 — Capacity + Analytics</h4>
+<h4>W13 — Capacity + Analytics + 기간 목록</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>capacity_rules seed</td><td>PR-24</td><td>FAQ 1주 표, 단가, mm_per_field</td></tr>
-<tr><td>Calculator</td><td>PR-24</td><td>2주 환산 + citation + “환산” 라벨</td></tr>
-<tr><td>Analytics API</td><td>PR-23</td><td>year/component/entity counts, title tokens</td></tr>
-<tr><td>표 추출</td><td>PR-27</td><td>FAQ/Confluence 표 보존 인덱싱</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>capacity_rules</td>
+<td>PR-24</td>
+<td>FAQ 표 · 환산</td>
+</tr>
+<tr>
+<td>Analytics</td>
+<td>PR-23</td>
+<td>year/component/entity counts</td>
+</tr>
+<tr>
+<td><strong>기간 목록</strong></td>
+<td><strong>PR-23</strong></td>
+<td><code>GET /v1/tickets?date_field=Created|Resolved&amp;from=&amp;to=</code> (metadata, not ingest <code>created_at</code>)</td>
+</tr>
+<tr>
+<td><strong>time_scoped_list</strong></td>
+<td>PR-18+23</td>
+<td>키워드 없이 기간+소스 목록; 건수는 COUNT</td>
+</tr>
+<tr>
+<td>표 추출</td>
+<td>PR-27</td>
+<td>Confluence/FAQ 표</td>
+</tr>
+</tbody>
 </table></div>
-<h4>W14 — Gold 100 회귀</h4>
+<h4>W14 — Gold 100</h4>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Full eval</td><td>PR-22</td><td>catalog 100 + G10</td></tr>
-<tr><td>메트릭 대시보드</td><td>PR-12</td><td>nDCG, list completeness, numeric accuracy</td></tr>
-<tr><td>실패 분석</td><td>—</td><td>실패 문항 → 시드/규칙/파서 패치 스프린트</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Full eval</td>
+<td>catalog 100 + G10</td>
+</tr>
+<tr>
+<td>기간·목록 gold</td>
+<td>「지난 주 지원건」 등 5–10문</td>
+</tr>
+<tr>
+<td>메트릭</td>
+<td>nDCG, list completeness, numeric accuracy</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>Phase 3 종료 게이트 G4+G5</strong></p>
-<ul>
-<li>[ ] capacity 문항 숫자 100% Rules/SQL 일치</li>
-<li>[ ] analytics 문항 LLM 계수 0</li>
-<li>[ ] catalog pass ≥ 95%</li>
-</ul>
-<hr/>
-<h3>Phase 4 — Flywheel · 동기화 · 운영 (2주) → G6</h3>
+<p><strong>Phase 3 진행 (2026-07-20)</strong><br>
+- [x] 상대 기간 파서 KST (<code>app/query/time_range.py</code>) — 지난 주·이번 달·최근 N일 등<br>
+- [x] <code>GET /v1/tickets</code> — metadata Created/Resolved/Updated 필터 (ingest <code>created_at</code> 아님)<br>
+- [x] <code>POST /v1/query/route</code> · <code>POST /v1/query</code> — full planner<br>
+  (capacity → analytics → time_scoped_list → SI → checklist → entity_aggregate → hybrid)<br>
+- [x] UI <code>/tickets.html</code> · <code>/analytics.html</code> · <code>/capacity.html</code><br>
+- [x] unit tests time_range · analytics · capacity · planner<br>
+- [x] analytics / capacity / tickets APIs<br>
+- [x] route gold 14 + catalog-100 <strong>route pass_rate=1.0</strong> (<code>app.eval.catalog_route</code>)<br>
+- [x] capacity rules seed (FAQ 1안) + estimate API<br>
+- [x] catalog <strong>answer-level</strong> ≥ 95% — <strong>110/110</strong> (<code>app.eval.catalog_answer</code>)<br>
+  - capacity/analytics/checklist/SI: 구조화 결과 검증<br>
+  - hybrid: multi-query (원질 + any + sample id) hit@10 / keyword<br>
+- [ ] exhaustive / prevention hop / title_tokens analytics<br>
+- [x] capacity_rules / pricing_rules <strong>DB 시드</strong> (10 + 4 rows · <code>POST /v1/capacity/seed</code>)<br>
+- [x] Entity seed + document links (<code>POST /v1/entities/seed</code> · monimo 48건 등)<br>
+- [x] production multi-query hybrid (<code>app/retrieval/multi_query.py</code> · <code>/v1/search</code> default on)<br>
+- [x] <code>GET /v1/analytics/title_tokens</code> · planner title_tokens 모드<br>
+- [x] prevention hop (SI + checkitems)<br>
+- [x] exhaustive multi-hybrid + completeness 메타</p>
+<p><strong>Phase 3 게이트</strong><br>
+- [x] capacity 숫자 Rules 100% (<code>llm_used=false</code>) — JSON + <strong>DB</strong><br>
+- [x] analytics LLM 계수 0 · entity_share <strong>document_entities</strong> 경로<br>
+- [x] catalog <strong>routing</strong> ≥ 95% (110/110)<br>
+- [x] catalog <strong>answer-level</strong> ≥ 95% (110/110)<br>
+- [x] 기간 목록 router→list<br>
+- [x] prod multi-query hybrid 이식<br>
+- [x] title_tokens / prevention / exhaustive 시드 구현<br>
+- [x] bundle 쓰기 API (POST/PUT/DELETE) · UI 저장 폼<br>
+- [x] lexicon_terms 시드 + search FTS 동의어 연동<br>
+- [x] chat multi-query 기본 on (<code>retrieval.multi_query</code>)<br>
+- [x] query/answer 감사 로그 (<code>queries</code>/<code>answers</code> · <code>GET /v1/queries/recent</code>)<br>
+- [x] worker Redis job queue (<code>POST /v1/jobs</code> · ping/seed handlers · heartbeat)<br>
+- [x] load smoke script (<code>scripts/load_smoke.py</code>)</p>
+<hr>
+<h3>Phase 4 — Flywheel · 동기화 · 운영 → G6</h3>
 <div class="table-wrap"><table>
-<tr><th>작업</th><th>PR</th><th>내용</th></tr>
-<tr><td>Insight 워크플로</td><td>PR-11</td><td>draft → 시니어 승인 → promote ingest</td></tr>
-<tr><td>API 증분</td><td>PR-13</td><td>Jira/Confluence (네트워크 허용 시)</td></tr>
-<tr><td>SSO·감사</td><td>PR-14</td><td>OIDC/SAML, audit, 백업 런북</td></tr>
-<tr><td>부하 테스트</td><td>—</td><td>20 동시 검색, 5 동시 Fast QA</td></tr>
-<tr><td>운영 문서</td><td>—</td><td>runbook, oncall, restore drill</td></tr>
-<tr><td>Persona UI 완성</td><td>PR-26</td><td>전문가/관리자/War-room 프리셋</td></tr>
+<thead>
+<tr>
+<th>작업</th>
+<th>PR</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Insight 승인</td>
+<td>PR-11</td>
+<td>draft → 시니어 → promote</td>
+</tr>
+<tr>
+<td>API 증분 동기화</td>
+<td>PR-13</td>
+<td>Jira/Confluence (허용 시)</td>
+</tr>
+<tr>
+<td>SSO·감사</td>
+<td>PR-14</td>
+<td>OIDC/SAML, audit, 백업</td>
+</tr>
+<tr>
+<td>부하 테스트</td>
+<td>—</td>
+<td>20 동시 검색, 5 Fast QA</td>
+</tr>
+<tr>
+<td>Persona UI</td>
+<td>PR-26</td>
+<td>전문가/관리자/War-room</td>
+</tr>
+</tbody>
 </table></div>
-<p><strong>Phase 4 종료 게이트 G6</strong></p>
-<ul>
-<li>[ ] 50–100명 스모크, SLA 충족</li>
-<li>[ ] 백업/복구 리허설 1회</li>
-<li>[ ] 부서 파일럿 종료 보고</li>
-</ul>
-<hr/>
-<h2>4. PR 의존성 DAG (실행 순서)</h2>
-<pre><code>
-PR-01 compose
-
-  └─ PR-02 schema
-
-       ├─ PR-03 ingest ──────────────┬─ PR-06 taxonomy
-
-       │                             ├─ PR-15 entity
-
-       │                             ├─ PR-16 frames
-
-       │                             └─ PR-17 checkitems
-
-       └─ PR-04 index/embed
-
-            └─ PR-05 hybrid search ──┬─ PR-07 search UI
-
-                 │                   ├─ PR-08 trust
-
-                 │                   │    └─ PR-09 rag ── PR-10 chat UI
-
-                 │                   ├─ PR-19 lexicon
-
-                 │                   └─ PR-12 eval (partial)
-
+<hr>
+<h2>4. PR 의존성 DAG</h2>
+<pre><code>PR-01 compose ✅
+  └─ PR-02 schema ✅
+       ├─ PR-03 ingest ✅ ──────────┬─ PR-06 taxonomy ✅(기본)
+       │                             ├─ PR-15 entity        ← 다음 병행 가능
+       │                             ├─ PR-16 frames        ← Phase 2
+       │                             └─ PR-17 checkitems ✅(목록 API 포함)
+       └─ PR-04 index/embed ✅
+            └─ PR-05 hybrid search ✅ ──┬─ PR-07 search UI ✅
+                 │                       ├─ PR-08 trust      ← Phase 2 NEXT
+                 │                       │    └─ PR-09 rag ── PR-10 chat UI
+                 │                       ├─ PR-19 lexicon
+                 │                       └─ PR-12 eval ✅(partial gold-50)
                  │
-
-                 PR-18 planner ◄── PR-15,17,05
-
-                 PR-28 SI ◄── PR-05,16
-
-                      └─ PR-29 applicability UI
-
-                           └─ PR-30 SI tests
-
-                 PR-20 prevention ◄── PR-16,17,18
-
-                 PR-23 analytics ◄── PR-02,03
-
-                 PR-24 capacity ◄── PR-02 (+ FAQ seed)
-
-                 PR-22 full gold ◄── PR-18,23,24,28,09
-
-                 PR-25 bundles
-
-                 PR-11 insight ◄── PR-09
-
-                 PR-13 sync ◄── PR-03
-
-                 PR-14 ops (횡단)
-
-                 PR-26 persona UI
-
-                 PR-27 table extract
-
+                 PR-18 planner ◄── Phase 3
+                 PR-28 SI ◄── PR-05✅,16
+                 PR-23 analytics · PR-24 capacity ◄── Phase 3
+                 PR-22 full gold · PR-11 insight · PR-13 sync · PR-14 ops
 </code></pre>
-<h3>병렬 트랙 (인력 2 BE 가정)</h3>
+<hr>
+<h2>5. 스프린트 백로그</h2>
+<h3>Sprint 1–3 (Foundation · Ingest · Search MVP) — ✅ 완료</h3>
+<ul>
+<li class="check">✅ Compose + schema + alembic</li>
+<li class="check">✅ 4+ adapters + full raw backfill + ingest metrics</li>
+<li class="check">✅ Chunk + FTS + embed batch (100%)</li>
+<li class="check">✅ Hybrid API + filters + gate + HTTP query embed</li>
+<li class="check">✅ Search UI · Checkitem list API · hit@3=0.96</li>
+<li class="check">✅ Entity monimo 등 정식 seed (5 entities · 549 links)</li>
+<li class="check">☐ 파일럿 온보딩 (Phase 1.5) — <strong>별도</strong> (조직)</li>
+</ul>
+<h3>Sprint 4 (W7–8): Trust QA — ✅ 엔지니어링 / 사인 잔여</h3>
+<ul>
+<li class="check">✅ Trust + Fast/Deep RAG + SSE + chat UI + citation rewrite</li>
+<li class="check">✅ Frame extraction (2,280 frames)</li>
+<li class="check">☐ Faithfulness LLM 재판정 루프 (후속)</li>
+</ul>
+<h3>Sprint 5 (W9–10): Similar Incident — ✅ 엔지니어링 / 워크스루 잔여</h3>
+<ul>
+<li class="check">✅ SI pipeline + UI + bundles 읽기 + G01–G10 pass_rate=1.0</li>
+<li class="check">✅ Groundedness 20문 러너</li>
+<li class="check">✅ 번들 쓰기 API · UI</li>
+<li class="check">☐ 그룹장 워크스루 사인</li>
+</ul>
+<h3>Sprint 6–7: Planner · Analytics · Gold 100 — ✅ 핵심 / 하드닝 잔여</h3>
+<ul>
+<li class="check">✅ list · analytics · capacity · full planner · UIs</li>
+<li class="check">✅ catalog route+answer <strong>110/110</strong></li>
+<li class="check">☐ Exhaustive · prevention · lexicon</li>
+<li class="check">✅ capacity DB · Entity seed · multi-query · title_tokens · prevention · exhaustive</li>
+</ul>
+<h3>Sprint 8: Ship</h3>
+<ul>
+<li class="check">✅ worker 실큐 (Redis list + job status)</li>
+<li class="check">✅ load smoke (concurrent search)</li>
+<li class="check">☐ Insight approve · Ops/SSO/backup</li>
+<li class="check">☐ git 정리 · Pilot report · 정식 load test 리포트</li>
+</ul>
+<hr>
+<h2>6. 데이터 모델</h2>
 <div class="table-wrap"><table>
-<tr><th>트랙 A (검색 코어)</th><th>트랙 B (지식 구조)</th><th>트랙 C (FE)</th></tr>
-<tr><td>01→02→03→04→05</td><td>15 entity, 17 checkitem, 16 frame</td><td>07 search UI</td></tr>
-<tr><td>08→09</td><td>24 capacity seed, 23 analytics</td><td>10 chat, 29 SI UI</td></tr>
-<tr><td>18 planner, 28 SI</td><td>19 lexicon, 20 prevent</td><td>26 persona</td></tr>
+<thead>
+<tr>
+<th>순서</th>
+<th>테이블</th>
+<th>Phase</th>
+<th>상태</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>sources, documents, ingest_jobs</td>
+<td>0–1</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>2</td>
+<td>document_sections, chunks, embeddings(768)</td>
+<td>1</td>
+<td>✅ (~54k)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>checkitems</td>
+<td>1</td>
+<td>✅ (4,434)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>entities, document_entities</td>
+<td>1–2</td>
+<td>✅ <strong>5 entities · 549 links</strong> (<code>/v1/entities/seed</code>)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>lexicon_terms</td>
+<td>1–2</td>
+<td>✅ <strong>10 terms</strong> (<code>POST /v1/lexicon/seed</code> · FTS variants 연동)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>issue_frames</td>
+<td>2</td>
+<td>✅ <strong>2,280행</strong> 적재 (both-slot 품질은 코퍼스 한계)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>capacity_rules, pricing_rules</td>
+<td>3</td>
+<td>✅ <strong>10 + 4 rows</strong> · calculator prefers DB</td>
+</tr>
+<tr>
+<td>8</td>
+<td>queries, answers, feedback</td>
+<td>2</td>
+<td>✅ queries/answers 감사 로그 · feedback 미완</td>
+</tr>
+<tr>
+<td>9</td>
+<td>insights</td>
+<td>4</td>
+<td>미완</td>
+</tr>
+<tr>
+<td>10</td>
+<td>bundles</td>
+<td>2–3</td>
+<td>✅ seed json + <strong>POST/PUT/DELETE write API</strong> (파일 기반)</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
-<h2>5. 스프린트 백로그 (2주 스프린트 기준 예시)</h2>
-<h3>Sprint 1 (W1–2): Foundation</h3>
-<ul>
-<li>[ ] Compose + CI lint</li>
-<li>[ ] Schema v1 + alembic</li>
-<li>[ ] GLM/embed 스파이크 리포트</li>
-<li>[ ] Gold JSON 레포 이관</li>
-</ul>
-<h3>Sprint 2 (W3–4): Ingest &amp; Index</h3>
-<ul>
-<li>[ ] 4 adapters + cleaner</li>
-<li>[ ] Full raw backfill</li>
-<li>[ ] Chunk + FTS + embed batch</li>
-<li>[ ] Ingest metrics</li>
-</ul>
-<h3>Sprint 3 (W5–6): Search MVP</h3>
-<ul>
-<li>[ ] Hybrid API + filters + gate</li>
-<li>[ ] Search UI</li>
-<li>[ ] Entity monimo seed</li>
-<li>[ ] Checkitem list API</li>
-<li>[ ] P@3 baseline</li>
-</ul>
-<h3>Sprint 4 (W7–8): Trust QA</h3>
-<ul>
-<li>[ ] Trust engine + RAG Fast</li>
-<li>[ ] Chat UI + citations</li>
-<li>[ ] Faithfulness check</li>
-<li>[ ] Frame extraction job v1</li>
-</ul>
-<h3>Sprint 5 (W9–10): Similar Incident</h3>
-<ul>
-<li>[ ] SI pipeline + rank</li>
-<li>[ ] Applicability + 4-slot brief</li>
-<li>[ ] War-room UI</li>
-<li>[ ] Bundles ×2</li>
-<li>[ ] G01–G10 eval</li>
-</ul>
-<h3>Sprint 6 (W11–12): Planner &amp; Exhaustive</h3>
-<ul>
-<li>[ ] Query router</li>
-<li>[ ] Exhaustive mode</li>
-<li>[ ] Prevention hop</li>
-<li>[ ] Lexicon full</li>
-</ul>
-<h3>Sprint 7 (W13–14): Numbers &amp; Gold</h3>
-<ul>
-<li>[ ] Capacity calculator</li>
-<li>[ ] Analytics API</li>
-<li>[ ] Catalog 100 eval ≥95%</li>
-<li>[ ] Table extractor</li>
-</ul>
-<h3>Sprint 8 (W15–16): Ship</h3>
-<ul>
-<li>[ ] Insight approve loop</li>
-<li>[ ] Ops/SSO/backup</li>
-<li>[ ] Load test</li>
-<li>[ ] Pilot report</li>
-</ul>
-<hr/>
-<h2>6. 데이터 모델 구현 순서</h2>
-<div class="table-wrap"><table>
-<tr><th>순서</th><th>테이블</th><th>Phase</th><th>비고</th></tr>
-<tr><td>1</td><td>sources, documents, ingest_jobs</td><td>0–1</td><td>SoR</td></tr>
-<tr><td>2</td><td>document_sections, chunks, embeddings</td><td>1</td><td>검색</td></tr>
-<tr><td>3</td><td>checkitems</td><td>1</td><td>정규 JSON 분해</td></tr>
-<tr><td>4</td><td>entities, document_entities</td><td>1–2</td><td>모니모 등</td></tr>
-<tr><td>5</td><td>lexicon_terms</td><td>1–2</td><td>GRO 등</td></tr>
-<tr><td>6</td><td>issue_frames</td><td>2</td><td>SI·예방</td></tr>
-<tr><td>7</td><td>capacity_rules, pricing_rules</td><td>3</td><td>관리자</td></tr>
-<tr><td>8</td><td>queries, answers, feedback</td><td>2</td><td>감사·학습</td></tr>
-<tr><td>9</td><td>insights</td><td>4</td><td>flywheel</td></tr>
-<tr><td>10</td><td>bundles</td><td>2–3</td><td>war-room</td></tr>
-</table></div>
-<p>마이그레이션 규칙: <strong>확장만, destructive 변경은 expand-contract</strong>.</p>
-<hr/>
-<h2>7. API 표면 (구현 계약)</h2>
-<h3>7.1 Phase 1</h3>
-<pre><code>
-POST /v1/search
+<p>규칙: <strong>확장만</strong>, destructive는 expand-contract.</p>
+<hr>
+<h2>7. API 표면</h2>
+<h3>7.1 Phase 1 (구현됨)</h3>
+<pre><code>POST /v1/search
+  {q, filters{source_type,domain,environment,work_type,path_l2,status}, top_k}
+  → {results[{…, fts_rank, vec_rank}], trust_retrieval, vector_used, embed_degraded?}
 
-  {q, filters{}, top_k, mode?}
-
-  → {results[{doc_id, title, snippet, score, grade, tags}], trust_retrieval}
-
-
-
-GET  /v1/checkitems?area=&amp;q=
-
-GET  /v1/documents/{id}
-
-POST /v1/ingest/run  (admin)
-
-GET  /v1/health
-
+GET  /v1/checkitems?area=&amp;q=&amp;category_1=&amp;limit=&amp;offset=
+POST /v1/ingest/run
+GET  /v1/ingest/stats · /v1/ingest/jobs
+GET  /v1/health · /v1/health/llm
+</code></pre>
+<p>호스트 CLI (배치/평가):</p>
+<pre><code>python -m app.embed.cli [--batch-size N] [--limit N]
+python -m app.eval.retrieval [--out path] [--no-vector]
 </code></pre>
 <h3>7.2 Phase 2</h3>
-<pre><code>
+<pre><code># 구현됨 (Fast)
 POST /v1/chat
+  {q, mode: &quot;fast&quot;, top_k, filters{}, max_context_tokens?}
+  → {answer, abstained, trust{level,banner,retrieval,evidence,faithfulness,reasons,confidence_pct:null},
+     citations[{id,title,external_id,snippet,…}], citations_used, retrieval{}, llm_error?}
 
-  {q, mode: fast|deep, filters, stream}
-
-  → SSE tokens + final {answer, citations[], trust}
-
-
-
+# 구현됨 (SI / Frames)
 POST /v1/similar-incident
+  {symptom, environment?, product?, service?, top_k?}
+  → {brief, cases[{what,cause,resolution,applicability,components,…}], actions, questions}
+POST /v1/frames/extract  {source_type?, limit?, force?}
+GET  /v1/frames/stats
+GET  /v1/frames/{external_id}
 
-  {symptom, context{env, product, service, started_at}, top_k=3}
-
-  → {brief, cases[{what, cause, resolution, applicability, trust}], actions[], questions[]}
-
+# 계획
+POST /v1/chat  {mode, multi_query, audit, stream}
+GET  /v1/queries/recent?limit=
 </code></pre>
 <h3>7.3 Phase 3</h3>
-<pre><code>
-POST /v1/query   # unified router (optional facade)
-
-GET  /v1/analytics/tickets?group_by=year|component|entity_id
-
-GET  /v1/analytics/entity-share?entity=
-
-POST /v1/capacity/estimate
-
-  {period_days: 14, fields?: []}
-
-  → {per_field_units, mm, basis, scale_note, citations[]}
-
+<pre><code># 구현됨
+POST /v1/query                    # full planner facade (execute default)
+POST /v1/query/route              # same; execute=false → plan only
+GET  /v1/tickets?…&amp;relative=지난+주
+GET  /v1/analytics/tickets?group_by=year|month|component|status|assignee|total
+GET  /v1/analytics/entity_share?entity=모니모
+GET  /v1/capacity/rules
+POST /v1/capacity/estimate  {period_days, fields?, basis?}
 </code></pre>
-<h3>7.4 Phase 4</h3>
-<pre><code>
-POST /v1/insights  GET/PATCH /v1/insights/{id}/status
-
-POST /v1/feedback
-
+<p>Planner intents: <code>capacity</code> · <code>analytics</code>(+title_tokens) · <code>time_scoped_list</code> ·<br>
+<code>similar_incident</code> · <code>prevention</code> · <code>exhaustive</code> · <code>checklist</code> · <code>entity_aggregate</code> · <code>hybrid_search</code>.<br>
+날짜·집계·공수 숫자는 metadata / Rules (LLM 계수·숫자 생성 금지).</p>
+<pre><code>GET  /v1/analytics/title_tokens?component=장애지원&amp;top_k=20
 </code></pre>
-<p>모든 응답: <code>request_id</code>, <code>citations[]</code> (해당 시), <code>trust</code> 객체.</p>
-<hr/>
+<h3>7.4 Phase 4 (계획)</h3>
+<pre><code>POST /v1/insights · PATCH status · POST /v1/feedback
+</code></pre>
+<hr>
 <h2>8. 평가 · 품질 운영</h2>
-<h3>8.1 Gold 세트 운영</h3>
+<h3>8.1 Gold</h3>
 <div class="table-wrap"><table>
-<tr><th>세트</th><th>용도</th><th>빈도</th></tr>
-<tr><td>gold-50 retrieval</td><td>P@3, nDCG</td><td>PR마다</td></tr>
-<tr><td>gold-100 full</td><td>라우팅·답변</td><td>Phase3+ 주 1</td></tr>
-<tr><td>G01–G10 SI</td><td>유사·적용성</td><td>SI PR마다</td></tr>
-<tr><td>false-apply set</td><td>적용 비권고 회귀</td><td>SI PR마다</td></tr>
-<tr><td>capacity numeric</td><td>숫자 일치</td><td>capacity PR마다</td></tr>
+<thead>
+<tr>
+<th>세트</th>
+<th>용도</th>
+<th>상태/빈도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>gold-50 retrieval</td>
+<td><strong>hit@3</strong> (주), p@3 (부)</td>
+<td>✅ hit@3=0.96 · p@3 참고만 (개선 비목표)</td>
+</tr>
+<tr>
+<td>catalog-100</td>
+<td>라우팅·답변</td>
+<td>✅ route 110/110 · answer 110/110 (<code>catalog_route</code> / <code>catalog_answer</code>)</td>
+</tr>
+<tr>
+<td>time_list_analytics_10</td>
+<td>기간·집계·공수 라우팅</td>
+<td>✅ 14문 pass_rate=1.0</td>
+</tr>
+<tr>
+<td>G01–G10 SI</td>
+<td>유사·적용성</td>
+<td>✅ <code>app.eval.si_eval</code> pass_rate=1.0</td>
+</tr>
+<tr>
+<td>capacity numeric</td>
+<td>Rules 일치</td>
+<td>✅ unit test + estimate e2e (Linux 2주=40 등)</td>
+</tr>
+<tr>
+<td>qa_groundedness_20</td>
+<td>RAG 근거</td>
+<td>✅ 러너 존재 · 정기 회귀 권장</td>
+</tr>
+</tbody>
 </table></div>
-<h3>8.2 메트릭 대시보드 (최소)</h3>
+<h3>8.2 게이트 지표 정책</h3>
+<ul>
+<li>Phase 1 retrieval 게이트 = <strong>hit@3 ≥ 0.90</strong> (단일 정답 라벨 친화)</li>
+<li>classic Precision@3는 베이스라인으로만 보고 (현재 ≈0.32)</li>
+<li>임계 변경 시 gold 재측정 필수</li>
+</ul>
+<h3>8.3 메트릭 (목표)</h3>
 <ul>
 <li>ingest lag, fail count  </li>
-<li>search latency, empty rate  </li>
-<li>RAG TTFT, tokens  </li>
-<li>abstention rate, 👎 rate  </li>
-<li>SI applicability distribution  </li>
+<li>search latency · empty rate · <code>vector_used</code> 비율  </li>
+<li>RAG TTFT, tokens (Phase 2)  </li>
+<li>abstention / 👎 / SI applicability (Phase 2+)</li>
 </ul>
-<h3>8.3 품질 회의</h3>
-<ul>
-<li>격주 30분: 실패 gold 리뷰, 시니어 1인 + BE  </li>
-<li>임계 변경은 gold 재측정 없이 금지  </li>
-</ul>
-<hr/>
+<hr>
 <h2>9. 인력 · R&amp;R</h2>
 <div class="table-wrap"><table>
-<tr><th>역할</th><th>책임</th><th>공수(권장)</th></tr>
-<tr><td>BE 리드</td><td>API, retrieval, planner, SI</td><td>1.0</td></tr>
-<tr><td>BE/데이터</td><td>ingest, schema, analytics, capacity seed</td><td>0.5–1.0</td></tr>
-<tr><td>FE</td><td>검색·챗·War-room·관리자 표</td><td>1.0</td></tr>
-<tr><td>ML/서빙</td><td>embed, GLM 연동, 토큰 벤치</td><td>0.3–0.5</td></tr>
-<tr><td>도메인 시니어</td><td>gold 라벨, frame 검수, capacity 시드 확정, 인사이트 승인</td><td>0.2–0.4</td></tr>
-<tr><td>그룹장 스폰서</td><td>War-room 시나리오 수용 테스트</td><td>마일스톤 시 2h</td></tr>
+<thead>
+<tr>
+<th>역할</th>
+<th>책임</th>
+<th>공수(권장)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BE 리드</td>
+<td>API, retrieval, planner, SI</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>BE/데이터</td>
+<td>ingest, schema, analytics, capacity</td>
+<td>0.5–1.0</td>
+</tr>
+<tr>
+<td>FE</td>
+<td>검색·챗·War-room·관리자</td>
+<td>1.0</td>
+</tr>
+<tr>
+<td>ML/서빙</td>
+<td>embed, GLM, 토큰 벤치</td>
+<td>0.3–0.5</td>
+</tr>
+<tr>
+<td>도메인 시니어</td>
+<td>gold, frame, capacity 시드, 인사이트 승인</td>
+<td>0.2–0.4</td>
+</tr>
+<tr>
+<td>그룹장 스폰서</td>
+<td>War-room 수용 테스트</td>
+<td>마일스톤 시</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
+<hr>
 <h2>10. 인프라 · 배포</h2>
 <h3>10.1 환경</h3>
 <div class="table-wrap"><table>
-<tr><th>환경</th><th>용도</th></tr>
-<tr><td>dev</td><td>개발자 compose</td></tr>
-<tr><td>staging</td><td>사내 VM, 전체 raw, 파일럿</td></tr>
-<tr><td>prod</td><td>동일 스택, 리소스 권장 스펙</td></tr>
+<thead>
+<tr>
+<th>환경</th>
+<th>용도</th>
+<th>현재</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>dev</td>
+<td>compose on host</td>
+<td><strong>가동 중</strong> (<code>citec-kb</code>)</td>
+</tr>
+<tr>
+<td>staging</td>
+<td>사내 VM 전량 raw</td>
+<td>미구축</td>
+</tr>
+<tr>
+<td>prod</td>
+<td>동일 스택</td>
+<td>미구축</td>
+</tr>
+</tbody>
 </table></div>
-<h3>10.2 리소스 (prod 초기)</h3>
+<h3>10.2 리소스 (prod 초기 권장)</h3>
 <ul>
-<li>8 vCPU / 16–24GB RAM / 80GB disk  </li>
-<li>Postgres shared_buffers 튜닝, 백업 일 1회  </li>
+<li>8 vCPU / 16–24GB RAM / 80GB+ disk  </li>
+<li>API는 쿼리 임베딩용 RAM 여유 필요 (e5-base CPU)  </li>
 <li>GLM 동시성: Fast 6 / Deep 2 / SI 3  </li>
 </ul>
-<h3>10.3 보안 체크리스트</h3>
-<ul>
-<li>[ ] egress deny  </li>
-<li>[ ] secrets vault  </li>
-<li>[ ] audit log 90일  </li>
-<li>[ ] 관리 API 권한 분리  </li>
-<li>[ ] 프롬프트에 근거 텍스트 untrusted 처리  </li>
-</ul>
-<hr/>
-<h2>11. 리스크 등록부 (구현 관점)</h2>
+<h3>10.3 포트 (dev)</h3>
 <div class="table-wrap"><table>
-<tr><th>ID</th><th>리스크</th><th>영향</th><th>완화</th><th>소유</th></tr>
-<tr><td>R1</td><td>임베딩 반입 지연</td><td>Phase1 벡터 지연</td><td>FTS-first 출시</td><td>ML</td></tr>
-<tr><td>R2</td><td>한국어 FTS 품질</td><td>P@3 미달</td><td>ngram+lexicon, 이후 분석기</td><td>BE</td></tr>
-<tr><td>R3</td><td>Frame 추출 품질</td><td>SI 실패</td><td>규칙 우선, quality 강등</td><td>BE+도메인</td></tr>
-<tr><td>R4</td><td>4bit 수치 오류</td><td>잘못된 조치</td><td>citation 복사, Trust</td><td>BE</td></tr>
-<tr><td>R5</td><td>적용성 오판</td><td>그룹장 오판</td><td>false-apply 테스트, 기권</td><td>BE</td></tr>
-<tr><td>R6</td><td>범위 팽창</td><td>일정 지연</td><td>Phase 게이트 엄수</td><td>리드</td></tr>
-<tr><td>R7</td><td>SSO 지연</td><td>보안 이슈</td><td>IP allow + 감사</td><td>Ops</td></tr>
+<thead>
+<tr>
+<th>포트</th>
+<th>서비스</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>8572</td>
+<td>web</td>
+</tr>
+<tr>
+<td>8573</td>
+<td>api</td>
+</tr>
+<tr>
+<td>8574</td>
+<td>postgres</td>
+</tr>
+<tr>
+<td>8575</td>
+<td>redis</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
-<h2>12. 의사결정 로그 (착수 시 채울 것)</h2>
+<h3>10.4 보안 체크리스트</h3>
+<ul>
+<li class="check">☐ egress deny  </li>
+<li class="check">☐ secrets vault  </li>
+<li class="check">☐ audit log 90일  </li>
+<li class="check">☐ 관리 API 권한 분리  </li>
+<li class="check">☐ 프롬프트 근거 텍스트 untrusted 처리  </li>
+</ul>
+<hr>
+<h2>11. 리스크 등록부</h2>
 <div class="table-wrap"><table>
-<tr><th>결정</th><th>옵션</th><th>권장</th><th>기한</th></tr>
-<tr><td>FE 초기</td><td>Streamlit vs React</td><td>React(검색) / 챗 동시</td><td>W2</td></tr>
-<tr><td>Embed 위치</td><td>worker vs 공용 API</td><td>공용 있으면 공용</td><td>W1</td></tr>
-<tr><td>리랭크</td><td>없이 vs 경량 CE</td><td>P@3 미달 시만</td><td>G1 후</td></tr>
-<tr><td>SSO</td><td>Phase1 연기 vs 즉시</td><td>Phase1 연기</td><td>W2</td></tr>
-<tr><td>인사이트 승인자</td><td>셀프 vs 시니어</td><td>시니어 필수</td><td>W14</td></tr>
+<thead>
+<tr>
+<th>ID</th>
+<th>리스크</th>
+<th>상태</th>
+<th>완화</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>R1</td>
+<td>임베딩 반입 지연</td>
+<td><strong>완화됨</strong></td>
+<td>e5 오프라인 + 전량 임베드 완료</td>
+</tr>
+<tr>
+<td>R2</td>
+<td>한국어 FTS 품질</td>
+<td>진행중</td>
+<td>동의어 확장·exact boost; lexicon Phase 2–3</td>
+</tr>
+<tr>
+<td>R3</td>
+<td>Frame 추출 품질</td>
+<td>미착수</td>
+<td>규칙 우선 · quality 강등</td>
+</tr>
+<tr>
+<td>R4</td>
+<td>4bit 수치 오류</td>
+<td>미착수</td>
+<td>citation · Trust</td>
+</tr>
+<tr>
+<td>R5</td>
+<td>적용성 오판</td>
+<td>미착수</td>
+<td>false-apply 테스트</td>
+</tr>
+<tr>
+<td>R6</td>
+<td>범위 팽창</td>
+<td>감시</td>
+<td>Phase 게이트 엄수 · 기간질의 Phase3 고정</td>
+</tr>
+<tr>
+<td>R7</td>
+<td>SSO 지연</td>
+<td>수용</td>
+<td>IP allow + 이후 SSO</td>
+</tr>
+<tr>
+<td>R8</td>
+<td>기간·목록 기대 불일치</td>
+<td><strong>문서화됨</strong></td>
+<td>UX 안내 + Phase3 list/analytics</td>
+</tr>
+<tr>
+<td>R9</td>
+<td>API 이미지 비대화 (torch)</td>
+<td>수용</td>
+<td>CPU wheel · 필요 시 사이드카 분리 검토</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
-<h2>13. 주간 운영 리듬 (구축 기간)</h2>
+<hr>
+<h2>12. 의사결정 로그</h2>
 <div class="table-wrap"><table>
-<tr><th>요일</th><th>활동</th></tr>
-<tr><td>월</td><td>스프린트 목표 정렬 15m</td></tr>
-<tr><td>수</td><td>통합 데모(검색 또는 SI) 20m</td></tr>
-<tr><td>금</td><td>gold 회귀 결과 + 리스크 리뷰 30m</td></tr>
-<tr><td>격주</td><td>도메인 시니어 실패 케이스 라벨링 1h</td></tr>
+<thead>
+<tr>
+<th>결정</th>
+<th>선택</th>
+<th>일자</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>레포/디렉터리명</td>
+<td><strong>citec-kb</strong> (<code>~/dev/citec-kb</code>)</td>
+<td>2026-07-18</td>
+</tr>
+<tr>
+<td>FE 초기</td>
+<td><strong>정적 HTML 검색 UI</strong> (React 이후 옵션)</td>
+<td>2026-07</td>
+</tr>
+<tr>
+<td>Embed 모델</td>
+<td><strong>multilingual-e5-base 768</strong> (BGE-M3 대신)</td>
+<td>2026-07</td>
+</tr>
+<tr>
+<td>Embed 실행</td>
+<td>호스트 CLI 배치 + API 인프로세스 쿼리 인코드</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>Retrieval 게이트</td>
+<td><strong>hit@3 ≥ 0.90</strong> (p@3 참고)</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>기간·목록 질의</td>
+<td>Phase3 정식 구현 (tickets/analytics/planner)</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>catalog answer eval</td>
+<td>multi-query hybrid 허용 (any+sample id)</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>classic p@3 개선</td>
+<td><strong>비목표</strong> (multi-label gold 없이 착수 금지)</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>P1 비차단 처분</td>
+<td>흡수 완료 vs 별도 작업 표로 고정</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>파일럿 피드백</td>
+<td>G1과 분리 (Phase 1.5) · 자동 흡수 안 됨</td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>계획 현행화</td>
+<td><strong>매 작업 세션 종료 시 본 문서 갱신</strong></td>
+<td>2026-07-20</td>
+</tr>
+<tr>
+<td>SSO</td>
+<td>Phase1 연기</td>
+<td>유지</td>
+</tr>
+<tr>
+<td>인사이트 승인자</td>
+<td>시니어 필수</td>
+<td>유지</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
-<h2>14. 마일스톤 체크리스트 (인쇄용)</h2>
-<h3>M0 착수 (W0)</h3>
+<hr>
+<h2>13. 주간 운영 리듬</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>요일</th>
+<th>활동</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>월</td>
+<td>스프린트 목표 정렬 15m</td>
+</tr>
+<tr>
+<td>수</td>
+<td>통합 데모 (검색 유지 회귀 + Phase2 진행) 20m</td>
+</tr>
+<tr>
+<td>금</td>
+<td>gold hit@3 스모크 + 리스크 리뷰 30m</td>
+</tr>
+<tr>
+<td>격주</td>
+<td>도메인 시니어 실패 케이스 라벨링 1h</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2>14. 마일스톤 체크리스트</h2>
+<h3>M0 착수</h3>
 <ul>
-<li>[ ] 스폰서·인력 확정  </li>
-<li>[ ] GLM/embed 접근 확인  </li>
-<li>[ ] raw 볼륨·레지스트리 준비  </li>
-<li>[ ] 본 계획 리뷰 승인  </li>
+<li class="check">✅ 레포·compose·raw·embed 경로  </li>
+<li class="check">✅ 본 계획 실행 (Phase 0–1)  </li>
+<li class="check">☐ 스폰서·상시 인력 확정 (조직)  </li>
 </ul>
-<h3>M1 검색 MVP (W7)</h3>
+<h3>M1 검색 MVP</h3>
 <ul>
-<li>[ ] G0, G1  </li>
-<li>[ ] 파일럿 사용자 온보딩  </li>
+<li class="check">✅ G0, G1 엔지니어링  </li>
+<li class="check">☐ 파일럿 사용자 온보딩 (1.5) — <strong>별도</strong>  </li>
 </ul>
-<h3>M2 지능 답변 + 유사장애 (W11)</h3>
+<h3>M2 지능 답변 + 유사장애</h3>
 <ul>
-<li>[ ] G2, G3  </li>
-<li>[ ] 그룹장 워크스루  </li>
+<li class="check">✅ G2/G3 <strong>엔지니어링</strong> (chat·Trust·SI eval)  </li>
+<li class="check">☐ G2 현장 사인 · 그룹장 워크스루  </li>
 </ul>
-<h3>M3 숫자·전량·gold (W14)</h3>
+<h3>M3 숫자·전량·gold</h3>
 <ul>
-<li>[ ] G4, G5  </li>
+<li class="check">✅ G4 시드 · G5 catalog route+answer eval  </li>
+<li class="check">☐ G4 DB 시드 · prod multi-query · exhaustive  </li>
 </ul>
-<h3>M4 운영 이관 (W16)</h3>
+<h3>M4 운영 이관</h3>
 <ul>
-<li>[ ] G6  </li>
-<li>[ ] runbook·백업·권한  </li>
-<li>[ ] 부서 공식 오픈  </li>
+<li class="check">☐ G6  </li>
+<li class="check">☐ runbook·백업·권한 · git 정리  </li>
+<li class="check">☐ 부서 공식 오픈  </li>
 </ul>
-<hr/>
-<h2>15. 즉시 다음 액션 (이번 주)</h2>
+<hr>
+<h2>15. 즉시 다음 액션</h2>
+<h3>별도 수행 (자동 흡수 안 됨)</h3>
+<ol>
+<li><strong>파일럿 1.5 도메인 사인</strong> — 사람 워크스루 (기술 점검 스크립트는 완료)  </li>
+<li><strong>원격 push</strong> — 로컬 커밋 후 정책에 따라 push  </li>
+</ol>
+<h3>제품 하드닝 (P4)</h3>
+<ol start="3">
+<li>Insight approve · SSO  </li>
+</ol>
+<h3>완료 스냅샷 (2026-07-20 v1.15)</h3>
 <ul>
-<li><strong>계획 리뷰 미팅</strong> (60분): 페이즈 게이트·인력·SSO 결정  </li>
-<li><strong>PR-01 착수</strong>: monorepo + compose skeleton  </li>
-<li><strong>W1 스파이크</strong>: GLM 130k 실측 + BGE-M3 메모리  </li>
-<li><strong>도메인 1h</strong>: capacity_rules 표 FAQ 확정(1안), 모니모 엔티티 별칭 검수  </li>
-<li><strong>gold 이관</strong>: <code>design/query_catalog_*.json</code> → 레포 <code>data/gold/</code>  </li>
+<li><strong>ops/status</strong> · <strong>pilot_tech_check</strong> · <strong>postgres backup</strong> · worker queue · load smoke  </li>
 </ul>
-<hr/>
+<h3>현행화 체크 (매 작업 종료)</h3>
+<ul>
+<li class="check">☐ §0 현재 상태 표 수치/페이즈 갱신  </li>
+<li class="check">☐ 해당 Sprint/Phase 체크박스 반영  </li>
+<li class="check">☐ §15 다음 액션 재작성  </li>
+<li class="check">☐ 문서 버전 + 갱신일  </li>
+<li class="check">☐ <code>apps/web/public/docs/IMPLEMENTATION_PLAN.md</code> 동기화  </li>
+</ul>
+<hr>
 <h2>16. 참고 산출물 맵</h2>
 <div class="table-wrap"><table>
-<tr><th>산출물</th><th>경로</th></tr>
-<tr><td>설계서 v2.3</td><td><code>design/CI-TEC_Knowledge_Platform_Design.html</code></td></tr>
-<tr><td>질문 100 분석</td><td><code>design/Query_Catalog_100_Analysis.md</code></td></tr>
-<tr><td>Gold JSON</td><td><code>design/query_catalog_100.json</code></td></tr>
-<tr><td>본 구현 계획</td><td><code>design/IMPLEMENTATION_PLAN.md</code></td></tr>
+<thead>
+<tr>
+<th>산출물</th>
+<th>경로</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>설계서 v2.3</td>
+<td><code>docs/CI-TEC_Knowledge_Platform_Design.html</code> · 웹 <code>/docs/design.html</code></td>
+</tr>
+<tr>
+<td>질문 100 분석</td>
+<td><code>docs/Query_Catalog_100_Analysis.md</code> · 웹 <code>/docs/query-catalog-analysis.html</code></td>
+</tr>
+<tr>
+<td><strong>본 구현 계획</strong></td>
+<td><strong><code>docs/IMPLEMENTATION_PLAN.md</code></strong> · 웹 <code>/docs/IMPLEMENTATION_PLAN.md</code> · <code>/docs/implementation-plan.html</code></td>
+</tr>
+<tr>
+<td>운영 README</td>
+<td><code>README.md</code></td>
+</tr>
+<tr>
+<td>Phase1 증거(개발)</td>
+<td><code>/tmp/grok-goal-b30c1f3bc333/implementer/</code> (<code>GOAL_COMPLETE.md</code>, <code>retrieval_eval.json</code>, …)</td>
+</tr>
+</tbody>
 </table></div>
-<hr/>
-<p><strong>문서 끝.</strong> 승인 후 Phase 0 / PR-01부터 실행하면 된다.</p>
+<h3>로컬 접속 (dev)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>URL</th>
+<th>용도</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>http://localhost:8572/search.html</td>
+<td>통합 검색</td>
+</tr>
+<tr>
+<td>http://localhost:8572/chat.html</td>
+<td>Fast/Deep QA</td>
+</tr>
+<tr>
+<td>http://localhost:8572/si.html</td>
+<td>유사장애</td>
+</tr>
+<tr>
+<td>http://localhost:8572/tickets.html</td>
+<td>기간 지원건</td>
+</tr>
+<tr>
+<td>http://localhost:8572/analytics.html</td>
+<td>집계</td>
+</tr>
+<tr>
+<td>http://localhost:8572/capacity.html</td>
+<td>공수·대수</td>
+</tr>
+<tr>
+<td>http://localhost:8572/bundles.html</td>
+<td>번들</td>
+</tr>
+<tr>
+<td>http://localhost:8572/docs/</td>
+<td>설계·구현 문서</td>
+</tr>
+<tr>
+<td>http://localhost:8573/v1/health</td>
+<td>API health</td>
+</tr>
+<tr>
+<td>http://localhost:8573/docs</td>
+<td>Swagger</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<p><strong>문서 끝 (v1.15).</strong><br>
+ops readiness + pilot tech check + backup · 잔여=도메인 사인·원격 push · <strong>매 작업 현행화</strong>.</p>
+<pre><code>POST /v1/jobs  {type: ping|lexicon_seed|entities_seed|capacity_seed|noop}
+GET  /v1/jobs · GET /v1/jobs/{id} · GET /v1/worker/status
+</code></pre>
 </div>
 </body>
 </html>

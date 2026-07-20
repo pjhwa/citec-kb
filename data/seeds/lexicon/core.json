@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "terms": [
+    {"canonical": "GRO", "variants": ["rx-gro-hw", "generic receive offload", "hardware offload", "GRO offload"], "priority": 10},
+    {"canonical": "Linux", "variants": ["리눅스", "linux", "PISAOLNX"], "priority": 20},
+    {"canonical": "filesystem", "variants": ["파일시스템", "파일 시스템", "FS", "fsck"], "priority": 20},
+    {"canonical": "Redis", "variants": ["레디스", "redis", "Redis Cluster"], "priority": 15},
+    {"canonical": "monimo", "variants": ["모니모", "Monimo", "MONIMO"], "priority": 10},
+    {"canonical": "SCP", "variants": ["삼성클라우드", "Samsung Cloud Platform"], "priority": 15},
+    {"canonical": "timeout", "variants": ["타임아웃", "time-out", "timed out"], "priority": 30},
+    {"canonical": "hang", "variants": ["hung", "soft lockup", "행", "시스템 멈춤"], "priority": 25},
+    {"canonical": "BFD", "variants": ["bfd", "Bidirectional Forwarding Detection"], "priority": 20},
+    {"canonical": "MTU", "variants": ["mtu", "jumbo frame"], "priority": 30}
+  ]
+}

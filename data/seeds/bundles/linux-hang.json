@@ -1,0 +1,21 @@
+{
+  "id": "bundle:linux-hang",
+  "name": "linux-hang",
+  "title": "Linux hang / soft lockup 대응 번들",
+  "symptom_hints": ["hang", "soft lockup", "not responding", "hung_task", "시스템 멈춤", "행"],
+  "checklist": [
+    "dmesg / journalctl 에서 hung_task, soft lockup, NMI 로그 확인",
+    "uptime · load average · CPU steal 확인",
+    "디스크 full / inode 고갈 여부 확인",
+    "최근 커널·드라이버·보안 패치 이력 확인",
+    "vmcore / crash dump 수집 가능 여부 확인"
+  ],
+  "commands": [
+    "dmesg -T | egrep -i 'hung|lockup|blocked|oom'",
+    "journalctl -k -b | egrep -i 'hung|lockup'",
+    "cat /proc/loadavg; uptime",
+    "df -h; df -i"
+  ],
+  "related_components": ["Linux", "Kernel"],
+  "notes": "War-room seed pack — 유사장애 조회 시 증상 힌트로 사용"
+}

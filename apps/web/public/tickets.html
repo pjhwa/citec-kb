@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>기간 지원건 — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  input, select {
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px; width:100%;
+  }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; align-items:end; }
+  .row > * { flex:1; min-width:120px; }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; white-space:nowrap; }
+  button:disabled { opacity:.6; }
+  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 14px; }
+  .chips button { font-size:12px; padding:6px 12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+  .brief { background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:14px; margin:14px 0; line-height:1.55; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+  .card h3 { margin:0 0 6px; font-size:15px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:4px; background:#f1f5f9; color:#334155; }
+  .badge.ok { background:#d1fae5; color:var(--ok); }
+  .meta { color:var(--muted); font-size:12px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  td a { color:var(--primary); font-weight:600; text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>기간 지원건 목록</h1>
+  <p class="sub">Phase 3 · Jira <code>Created</code>/<code>Resolved</code> 메타데이터 기준 (ingest 시각 아님) · hybrid 검색과 분리</p>
+
+  <div class="chips">
+    <button type="button" data-q="지난 주 지원건">지난 주 지원건</button>
+    <button type="button" data-q="이번 주 지원건">이번 주 지원건</button>
+    <button type="button" data-q="이번 달 지원건">이번 달 지원건</button>
+    <button type="button" data-q="최근 7일 티켓">최근 7일 티켓</button>
+    <button type="button" data-q="어제 지원건">어제 지원건</button>
+  </div>
+
+  <div class="row">
+    <div class="field" style="flex:2">
+      <label>자연어 질의 (route) 또는 상대 기간</label>
+      <input id="q" placeholder="예: 지난 주 지원건" value="지난 주 지원건" />
+    </div>
+    <div class="field">
+      <label>날짜 필드</label>
+      <select id="date_field">
+        <option value="Created">Created</option>
+        <option value="Resolved">Resolved</option>
+        <option value="Updated">Updated</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>limit</label>
+      <input id="limit" type="number" min="1" max="200" value="50" />
+    </div>
+  </div>
+  <div class="row">
+    <button id="btn-route" type="button">질의 라우팅 실행</button>
+    <button id="btn-list" type="button" class="ghost">GET /tickets (relative)</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderList(payload, note) {
+  const result = payload.result || payload;
+  const items = result.items || [];
+  const label = payload.range_label || result.range_label || "";
+  const intent = payload.intent || "tickets";
+  let html = `<div class="brief">
+    <strong>${esc(label || "기간 목록")}</strong>
+    · intent=<code>${esc(intent)}</code>
+    · total=<strong>${result.total ?? items.length}</strong>
+    · field=<code>${esc(result.date_field||"")}</code>
+    · ${esc(result.date_from||"")} ~ ${esc(result.date_to||"")}
+    ${note ? `<div class="meta" style="margin-top:6px">${esc(note)}</div>` : ""}
+  </div>`;
+  if (!items.length) {
+    html += `<p class="meta">해당 기간에 일치하는 티켓이 없습니다.</p>`;
+    $("out").innerHTML = html;
+    return;
+  }
+  html += `<div class="card"><table>
+    <thead><tr><th>ID</th><th>제목</th><th>Created</th><th>Resolved</th><th>Status</th><th>Component</th></tr></thead>
+    <tbody>`;
+  for (const it of items) {
+    html += `<tr>
+      <td><a href="/search.html?q=${encodeURIComponent(it.external_id||"")}">${esc(it.external_id)}</a></td>
+      <td>${esc(it.title||"")}</td>
+      <td class="meta">${esc(it.Created||"")}</td>
+      <td class="meta">${esc(it.Resolved||"")}</td>
+      <td><span class="badge">${esc(it.status||"-")}</span></td>
+      <td class="meta">${esc(it.component||"-")}</td>
+    </tr>`;
+  }
+  html += `</tbody></table></div>`;
+  $("out").innerHTML = html;
+}
+
+async function runRoute() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("btn-route").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const r = await fetch("/v1/query/route", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ q, limit: Number($("limit").value)||50 }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    if (d.intent === "time_scoped_list") {
+      renderList(d, d.note);
+    } else {
+      $("out").innerHTML = `<div class="brief">intent=<code>${esc(d.intent)}</code><br/>${esc(d.note||"")}<br/><span class="meta">일반 검색은 <a href="/search.html?q=${encodeURIComponent(q)}">검색 UI</a>를 사용하세요.</span></div>`;
+    }
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-route").disabled = false;
+  }
+}
+
+async function runList() {
+  const relative = $("q").value.trim() || "지난 주";
+  $("btn-list").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const params = new URLSearchParams({
+      relative,
+      date_field: $("date_field").value,
+      limit: String(Number($("limit").value)||50),
+      source_type: "support_history",
+    });
+    const r = await fetch("/v1/tickets?" + params.toString());
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    renderList(d, "GET /v1/tickets?relative=…");
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-list").disabled = false;
+  }
+}
+
+$("btn-route").onclick = runRoute;
+$("btn-list").onclick = runList;
+document.querySelectorAll(".chips button").forEach(btn => {
+  btn.onclick = () => { $("q").value = btn.dataset.q; runRoute(); };
+});
+// auto-run demo on load
+runRoute();
+</script>
+</body>
+</html>

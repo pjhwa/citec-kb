@@ -1,0 +1,51 @@
+{
+  "version": "1.0",
+  "description": "Core business entities for document linking (PR-15)",
+  "entities": [
+    {
+      "id": "sys:monimo",
+      "canonical_name": "모니모",
+      "type": "business_system",
+      "customer": null,
+      "aliases": ["모니모", "monimo", "Monimo", "MONIMO"],
+      "host_patterns": ["*monimo*"],
+      "env_hints": ["csp", "scp"]
+    },
+    {
+      "id": "sys:scp",
+      "canonical_name": "SCP",
+      "type": "platform",
+      "customer": null,
+      "aliases": ["SCP", "삼성클라우드", "Samsung Cloud Platform"],
+      "host_patterns": [],
+      "env_hints": ["csp"]
+    },
+    {
+      "id": "sys:redis",
+      "canonical_name": "Redis",
+      "type": "component",
+      "customer": null,
+      "aliases": ["Redis", "레디스", "redis"],
+      "host_patterns": [],
+      "env_hints": []
+    },
+    {
+      "id": "sys:oracle",
+      "canonical_name": "Oracle",
+      "type": "component",
+      "customer": null,
+      "aliases": ["Oracle", "오라클", "ORACLE"],
+      "host_patterns": [],
+      "env_hints": []
+    },
+    {
+      "id": "sys:gro",
+      "canonical_name": "GRO",
+      "type": "tech_term",
+      "customer": null,
+      "aliases": ["GRO", "rx-gro-hw", "generic receive offload", "hardware offload"],
+      "host_patterns": [],
+      "env_hints": []
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "version": "1.1",
+  "description": "Similar-incident gold (G01–G10) + false-apply + G3-style gate",
+  "gate": {
+    "metric": "top_k_hit_and_false_apply",
+    "min_pass_rate": 0.8,
+    "min_cases": 10,
+    "require_false_apply_clean": true,
+    "g3_min_true_similar_pass": 8
+  },
+  "queries": [
+    {
+      "id": "G01",
+      "symptom": "모니모 Redis 타임아웃 POD 접속 불가 BFD down",
+      "product": "Redis",
+      "service": "모니모",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G02",
+      "symptom": "Redis TimeOut peak traffic Spine BGW",
+      "product": "Redis",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G03",
+      "symptom": "모니모원앱 Redis Cluster VM 백업 시 재구성",
+      "product": "Redis",
+      "service": "모니모",
+      "relevant_external_ids": ["CITECTS-2280", "CITECTS-1460", "CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G04",
+      "symptom": "삼성카드 모니모 Redis 통신 불가",
+      "product": "Redis",
+      "relevant_external_ids": ["CITECTS-1460", "CITECTS-2502", "CITECTS-2280"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G05",
+      "symptom": "CITECTS-2502 Redis 장애 유사 사례",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "exact_key_hint"
+    },
+    {
+      "id": "G06",
+      "symptom": "네트워크 방화벽 순단 장애 지원",
+      "relevant_external_ids": ["CITECTS-870", "CITECTS-937", "CITECTS-520", "CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G07",
+      "symptom": "워커노드 재기동 후 Redis POD 장애 복구",
+      "product": "Redis",
+      "relevant_external_ids": ["CITECTS-1014", "CITECTS-2502", "CITECTS-1765"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G08",
+      "symptom": "ESXi host BFD down Redis WAS 장애",
+      "product": "Redis",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G09",
+      "symptom": "GPU burst traffic fabric spine congestion",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "G10",
+      "symptom": "Redis 클러스터 응답 지연 4시간 주기",
+      "product": "Redis",
+      "relevant_external_ids": ["CITECTS-2502"],
+      "kind": "true_similar"
+    },
+    {
+      "id": "FA01",
+      "symptom": "Oracle tablespace 부족으로 서비스 중단",
+      "product": "Oracle",
+      "relevant_external_ids": [],
+      "false_apply_external_ids": ["CITECTS-2502"],
+      "kind": "false_apply",
+      "notes": "Redis monimo case must not be top applicability=가능"
+    },
+    {
+      "id": "FA02",
+      "symptom": "Windows 파일서버 권한 오류",
+      "product": "Windows",
+      "relevant_external_ids": [],
+      "false_apply_external_ids": ["CITECTS-2502"],
+      "kind": "false_apply"
+    },
+    {
+      "id": "FA03",
+      "symptom": "SAP HANA 메모리 부족 OOM",
+      "product": "HANA",
+      "false_apply_external_ids": ["CITECTS-2502", "CITECTS-2280"],
+      "kind": "false_apply"
+    }
+  ]
+}

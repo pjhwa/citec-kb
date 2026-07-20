@@ -1,0 +1,21 @@
+{
+  "id": "bundle:network-timeout",
+  "name": "network-timeout",
+  "title": "네트워크 타임아웃 / 순단 대응 번들",
+  "symptom_hints": ["timeout", "타임아웃", "순단", "BFD down", "BFD", "packet loss", "latency", "통신 불가", "fabric", "spine", "burst", "peak traffic", "congestion"],
+  "checklist": [
+    "장애 구간(APP-LB-GW-Spine) 시각화 및 영향 서비스 목록화",
+    "동시간대 네트워크 장비/호스트 로그 상관 (BFD, BGP, link flap)",
+    "대역 사용률 peak / microburst 여부 확인",
+    "방화벽·보안장비 세션 테이블·policy 변경 이력 확인",
+    "MTU / ECMP / 경로 비대칭 점검"
+  ],
+  "commands": [
+    "ping -c 20 <peer>",
+    "mtr -rwzc 50 <peer>",
+    "ss -s; netstat -i",
+    "ip -s link"
+  ],
+  "related_components": ["Network", "BFD", "Redis", "Kubernetes"],
+  "notes": "War-room seed pack — monimo Redis/BFD 사례와 연계 가능"
+}

@@ -42,13 +42,20 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citec}:${POSTGRES_PASSWORD:-citec}@postgres:5432/${POSTGRES_DB:-citec_knowledge}
       REDIS_URL: redis://redis:6379/0
       RAW_DIR: /data/raw
+      HF_HOME: /models
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}
     ports:
       - "8573:8000"
     volumes:
       - ./config:/app/config:ro
-      - ./data:/app/data:ro
+      # RW: bundle/lexicon/capacity seed writes (POST /v1/bundles, /v1/lexicon/seed)
+      - ./data:/app/data
+      # Dev: live-reload API source without rebuild
+      - ./apps/api/app:/app/app
       # Knowledge corpus (registered under data/raw)
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
+      - ${MODELS_HOST_DIR:-/home/citec/tmp/citec-wiki-qa/models}:/models:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,14 +79,19 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-citec}:${POSTGRES_PASSWORD:-citec}@postgres:5432/${POSTGRES_DB:-citec_knowledge}
       REDIS_URL: redis://redis:6379/0
       RAW_DIR: /data/raw
+      API_BASE_URL: http://api:8000
     volumes:
       - ./config:/app/config:ro
       - ./data:/app/data:ro
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
+      # Dev: live worker code without rebuild
+      - ./apps/worker/app:/app/app
     depends_on:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      api:
         condition: service_healthy
     restart: unless-stopped
 

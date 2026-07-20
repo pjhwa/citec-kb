@@ -29,8 +29,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-# BGE-M3 dense dimension (default). Re-embed if model changes.
-EMBEDDING_DIM = 1024
+# multilingual-e5-base dimension (offline cache). Re-embed if model changes.
+EMBEDDING_DIM = 768
 
 
 def _uuid() -> str:
@@ -184,7 +184,9 @@ class Embedding(Base):
     chunk_id: Mapped[str] = mapped_column(
         ForeignKey("chunks.id", ondelete="CASCADE"), nullable=False
     )
-    model: Mapped[str] = mapped_column(String(128), nullable=False, server_default="BAAI/bge-m3")
+    model: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default="intfloat/multilingual-e5-base"
+    )
     dim: Mapped[int] = mapped_column(Integer, nullable=False, server_default=str(EMBEDDING_DIM))
     vector: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
     created_at: Mapped[datetime] = mapped_column(

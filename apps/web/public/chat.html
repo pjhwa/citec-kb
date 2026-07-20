@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Fast QA — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:900px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  input[type=text], select, textarea {
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px;
+  }
+  textarea { width:100%; min-height:72px; resize:vertical; }
+  input[type=text], select { flex:1; min-width:140px; }
+  button {
+    background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px;
+    font-weight:700; cursor:pointer;
+  }
+  button:disabled { opacity:.6; cursor:wait; }
+  .banner {
+    border-radius:12px; padding:12px 14px; margin:12px 0; border:1px solid var(--border);
+    font-size:14px; font-weight:600;
+  }
+  .banner.strong { background:#ecfdf5; border-color:#a7f3d0; color:#065f46; }
+  .banner.medium { background:#fefce8; border-color:#fde68a; color:#854d0e; }
+  .banner.weak { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+  .banner.abstain, .banner.empty { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
+  .answer {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:16px; white-space:pre-wrap; line-height:1.55; font-size:14.5px;
+  }
+  .cite {
+    background:var(--card); border:1px solid var(--border); border-radius:10px;
+    padding:12px 14px; margin-top:8px; font-size:13px;
+  }
+  .cite h3 { margin:0 0 4px; font-size:13.5px; }
+  .badge {
+    display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px;
+    background:#eff6ff; color:#1d4ed8; margin-right:4px;
+  }
+  .meta { color:var(--muted); font-size:12px; margin-top:8px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  .dims { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/docs/">문서</a>
+  <a href="/api/docs" target="_blank">API</a>
+</div>
+<div class="wrap">
+  <h1>Fast QA (근거 기반)</h1>
+  <p class="sub">Phase 2 · Hybrid 검색 근거 + GLM · Trust 배너(단일 % 없음) · 기권 가능</p>
+
+  <textarea id="q" placeholder="예: 모니모 Redis 타임아웃 원인과 조치, 부팅 시 파일 시스템 체크 설정"></textarea>
+  <div class="row" style="margin-top:10px">
+    <select id="source_type">
+      <option value="">전체 소스</option>
+      <option value="support_history">support_history</option>
+      <option value="tech_repo">tech_repo</option>
+      <option value="checkitem">checkitem</option>
+      <option value="tuning_ai">tuning_ai</option>
+    </select>
+    <select id="mode">
+      <option value="fast">fast</option>
+      <option value="deep">deep</option>
+    </select>
+    <label class="meta" style="display:flex;align-items:center;gap:6px;min-width:auto">
+      <input type="checkbox" id="stream" /> SSE stream
+    </label>
+    <button id="btn" type="button">질문하기</button>
+  </div>
+
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+$("btn").onclick = async () => {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("btn").disabled = true;
+  $("out").innerHTML = "<p class='meta'>검색·생성 중…</p>";
+  const body = {
+    q,
+    mode: $("mode").value || "fast",
+    top_k: ($("mode").value === "deep") ? 16 : 8,
+    filters: {},
+    stream: !!$("stream").checked,
+  };
+  const st = $("source_type").value;
+  if (st) body.filters.source_type = st;
+  try {
+    if (body.stream) {
+      await runStream(body);
+    } else {
+      const r = await fetch("/v1/chat", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body)
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || r.statusText);
+      render(data);
+    }
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message || e)}</div>`;
+  } finally {
+    $("btn").disabled = false;
+  }
+};
+
+async function runStream(body) {
+  const r = await fetch("/v1/chat", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body)
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(t || r.statusText);
+  }
+  const reader = r.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let live = "";
+  $("out").innerHTML = `<div class="banner medium">스트리밍 중…</div><div class="answer" id="live"></div><div id="rest"></div>`;
+  while (true) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream: true});
+    const parts = buf.split("\n\n");
+    buf = parts.pop() || "";
+    for (const block of parts) {
+      const line = block.split("\n").find(l => l.startsWith("data: "));
+      if (!line) continue;
+      let ev;
+      try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+      if (ev.type === "token") {
+        live += (ev.text || "");
+        const el = document.getElementById("live");
+        if (el) el.textContent = live;
+      } else if (ev.type === "done" && ev.result) {
+        render(ev.result);
+      } else if (ev.type === "error") {
+        throw new Error(ev.error || "stream error");
+      }
+    }
+  }
+}
+
+function render(d) {
+  const t = d.trust || {};
+  const level = t.level || "weak";
+  const cites = d.citations || [];
+  let html = "";
+  html += `<div class="banner ${esc(level)}">${esc(t.banner || level)}</div>`;
+  html += `<div class="dims">
+    retrieval: <strong>${esc(t.retrieval)}</strong> ·
+    evidence: <strong>${esc(t.evidence)}</strong> ·
+    faithfulness: <strong>${esc(t.faithfulness)}</strong>
+    ${t.abstain ? " · <strong>ABSTAIN</strong>" : ""}
+  </div>`;
+  if (t.reasons && t.reasons.length) {
+    html += `<p class="meta">reasons: ${t.reasons.map(esc).join(" · ")}</p>`;
+  }
+  html += `<div class="answer">${esc(d.answer || "")}</div>`;
+  if (d.llm_error) html += `<p class="meta">llm_error: ${esc(d.llm_error)}</p>`;
+  const ret = d.retrieval || {};
+  html += `<p class="meta">retrieval hits=${ret.total} trust=${esc(ret.trust_retrieval)} vector_used=${ret.vector_used} citations_used=${esc(JSON.stringify(d.citations_used||[]))}</p>`;
+  html += `<h2 style="font-size:1rem;margin:18px 0 8px">출처 (${cites.length})</h2>`;
+  for (const c of cites) {
+    html += `<div class="cite">
+      <h3><span class="badge">${esc(c.id)}</span> ${esc(c.title || "")}</h3>
+      <div><span class="badge">${esc(c.source_type||"")}</span> ${esc(c.external_id||"")}</div>
+      <p class="meta">${esc(c.snippet||"")}</p>
+    </div>`;
+  }
+  $("out").innerHTML = html;
+}
+
+// Enter+Ctrl to submit
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("btn").click();
+});
+</script>
+</body>
+</html>

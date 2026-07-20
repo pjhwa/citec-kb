@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>War-room 번들 — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  input { flex:1; min-width:200px; border:1px solid var(--border); border-radius:10px; padding:10px 12px; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .card h2 { margin:0 0 8px; font-size:1.05rem; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; margin-right:4px; }
+  .meta { color:var(--muted); font-size:12px; }
+  code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:10px; overflow:auto; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>War-room 번들 관리</h1>
+  <p class="sub">목록·매칭 + <strong>POST/PUT/DELETE</strong> 쓰기 API (<code>data/seeds/bundles/*.json</code>).</p>
+  <div class="row">
+    <input id="q" placeholder="증상 키워드로 매칭 테스트 (예: BFD timeout, soft lockup)" />
+    <button id="btnMatch" type="button">매칭</button>
+    <button id="btnAll" type="button">전체 목록</button>
+  </div>
+  <div class="card" style="margin-bottom:16px">
+    <h2 style="margin:0 0 10px;font-size:1rem">번들 저장 (upsert)</h2>
+    <div class="row"><input id="bname" placeholder="name (slug) e.g. demo-pack" /></div>
+    <div class="row"><input id="btitle" placeholder="title" /></div>
+    <div class="row"><input id="bhints" placeholder="symptom_hints (comma)" /></div>
+    <div class="row"><input id="bcomps" placeholder="related_components (comma)" /></div>
+    <div class="row"><input id="bcheck" placeholder="checklist item 1 | item 2" /></div>
+    <div class="row"><input id="bcmd" placeholder="commands: cmd1 | cmd2" /></div>
+    <div class="row">
+      <button id="btnSave" type="button">저장</button>
+      <button id="btnDel" type="button" style="background:#b91c1c">삭제 (name)</button>
+    </div>
+    <p id="saveMsg" class="meta"></p>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const splitCsv = (s) => String(s||"").split(/[,|]/).map(x=>x.trim()).filter(Boolean);
+
+async function loadAll() {
+  $("out").innerHTML = "<p class='meta'>로딩…</p>";
+  const r = await fetch("/v1/bundles");
+  const d = await r.json();
+  renderList(d.items || [], "전체 번들");
+}
+async function match() {
+  const q = $("q").value.trim();
+  if (!q) return loadAll();
+  $("out").innerHTML = "<p class='meta'>매칭 중…</p>";
+  const r = await fetch("/v1/bundles?q=" + encodeURIComponent(q));
+  const d = await r.json();
+  renderList(d.items || [], `매칭 결과: ${esc(q)}`);
+}
+function renderList(items, title) {
+  if (!items.length) {
+    $("out").innerHTML = `<div class="err">결과 없음</div>`;
+    return;
+  }
+  let html = `<p class="meta">${esc(title)} · ${items.length}건</p>`;
+  for (const b of items) {
+    html += `<div class="card">
+      <h2>${esc(b.title || b.name)} <span class="badge">${esc(b.name||"")}</span>
+      ${b.score!=null?`<span class="badge">score ${b.score}</span>`:""}</h2>
+      <div class="meta">id: ${esc(b.id||"")}</div>
+      <div class="meta">hints: ${(b.symptom_hints||b.matched_hints||[]).map(esc).join(", ")}</div>
+      <div class="meta">components: ${(b.related_components||b.matched_components||[]).map(esc).join(", ")}</div>
+      <p><b>체크리스트</b></p>
+      <ul>${(b.checklist||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+      <p><b>참고 명령</b></p>
+      <ul>${(b.commands||[]).map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul>
+      ${b.notes?`<p class="meta">${esc(b.notes)}</p>`:""}
+    </div>`;
+  }
+  $("out").innerHTML = html;
+}
+async function saveBundle() {
+  const name = $("bname").value.trim();
+  if (!name) { $("saveMsg").textContent = "name 필요"; return; }
+  const body = {
+    name,
+    title: $("btitle").value.trim() || name,
+    symptom_hints: splitCsv($("bhints").value),
+    related_components: splitCsv($("bcomps").value),
+    checklist: splitCsv($("bcheck").value),
+    commands: splitCsv($("bcmd").value),
+    notes: "saved via UI",
+  };
+  $("saveMsg").textContent = "저장 중…";
+  const r = await fetch("/v1/bundles", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  $("saveMsg").textContent = "저장됨: " + (d.path || d.bundle?.name);
+  await loadAll();
+}
+async function delBundle() {
+  const name = $("bname").value.trim();
+  if (!name) return;
+  if (!confirm("삭제: " + name + "?")) return;
+  const r = await fetch("/v1/bundles/" + encodeURIComponent(name), {method:"DELETE"});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  $("saveMsg").textContent = "삭제됨: " + name;
+  await loadAll();
+}
+$("btnAll").onclick = () => loadAll().catch(e => $("out").innerHTML = `<div class="err">${esc(e)}</div>`);
+$("btnMatch").onclick = () => match().catch(e => $("out").innerHTML = `<div class="err">${esc(e)}</div>`);
+$("btnSave").onclick = () => saveBundle().catch(e => $("saveMsg").textContent = String(e));
+$("btnDel").onclick = () => delBundle().catch(e => $("saveMsg").textContent = String(e));
+$("q").addEventListener("keydown", e => { if (e.key==="Enter") match(); });
+loadAll();
+</script>
+</body>
+</html>

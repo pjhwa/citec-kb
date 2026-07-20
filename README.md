@@ -3,12 +3,13 @@
 부서 지식(Jira 지원이력 · Confluence Tech-Repo · PISA 등) 통합 검색 · RAG · 유사장애 브리핑 플랫폼.
 
 - **설계:** 폐쇄망 · Docker 경량 · GLM 5.2 (dev: OpenRouter, prod: Fabrix)
-- **현재:** **PR-01** monorepo skeleton + compose + health + LLM probe
+- **현재:** **P1 완료 · P2/P3 핵심 엔지니어링 강** — full planner · catalog route+answer 110/110  
+- **계획:** `docs/IMPLEMENTATION_PLAN.md` **v1.15** (worker job queue · load smoke · chat multi-query)
 
 ## 빠른 시작 (개발 서버)
 
 ```bash
-cd ~/dev/cite-c-knowledge
+cd ~/dev/citec-kb
 
 # API 키 (한 번)
 cp ~/tmp/citec-wiki-qa/.env .env   # 이미 있으면 스킵
@@ -61,6 +62,76 @@ curl -s localhost:8573/v1/ingest/stats | jq .
 curl -s localhost:8573/v1/ingest/jobs | jq .
 ```
 
+### 검색 · 임베딩 · Checkitem (Phase 1)
+
+```bash
+# 하이브리드 검색 (API: e5 query embed + FTS+pgvector RRF; 모델 없으면 FTS degrade)
+curl -s -X POST localhost:8573/v1/search -H 'Content-Type: application/json' \
+  -d '{"q":"모니모 Redis","top_k":5}' | jq '{vector_used, trust_retrieval, total, top: .results[:2]}'
+
+# PISA checkitem 테이블 (예: Linux FS)
+curl -s 'localhost:8573/v1/checkitems?area=Linux&q=FS&limit=10' | jq .
+
+# 배치 임베딩 (호스트 venv · sentence-transformers, idempotent)
+export PYTHONPATH=apps/api
+export DATABASE_URL=postgresql+psycopg://citec:citec@127.0.0.1:8574/citec_knowledge
+.venv/bin/python -m app.embed.cli --batch-size 16 -v
+
+# Gold retrieval 평가
+.venv/bin/python -m app.eval.retrieval --out /tmp/retrieval_eval.json
+```
+
+UI 검색: http://localhost:8572/search.html  
+Fast QA: http://localhost:8572/chat.html  
+유사장애: http://localhost:8572/si.html  
+
+```bash
+# Issue frames (지원이력 구조화)
+python -m app.frames.cli --force
+curl -s localhost:8573/v1/frames/stats | jq .
+# 유사장애
+curl -s -X POST localhost:8573/v1/similar-incident -H 'Content-Type: application/json' \
+  -d '{"symptom":"모니모 Redis 타임아웃","product":"Redis","top_k":3}' | jq '{brief, cases: [.cases[]|{external_id,applicability}]}'
+```
+
+
+```bash
+# Fast / Deep RAG (근거 + Trust)
+curl -s -X POST localhost:8573/v1/chat -H 'Content-Type: application/json' \
+  -d '{"q":"모니모 Redis 타임아웃 조치","mode":"fast","top_k":6}' | jq '{abstained, trust, answer: .answer[:200], citations: [.citations[].id]}'
+# SSE stream
+curl -sN -X POST localhost:8573/v1/chat -H 'Content-Type: application/json' \
+  -d '{"q":"CITECTS-2502 요약","mode":"fast","stream":true}'
+# Groundedness sample (20문, LLM 호출 다수)
+PYTHONPATH=apps/api .venv/bin/python -m app.eval.groundedness_main --gold data/gold/qa_groundedness_20.json
+```
+
+```bash
+# 기간·목록 (Jira Created 메타데이터 — hybrid 검색 아님)
+curl -s -X POST localhost:8573/v1/query/route -H 'Content-Type: application/json' \
+  -d '{"q":"지난 주 지원건","limit":20}' | jq '{intent, range_label, total: .result.total, ids: [.result.items[].external_id]}'
+curl -s 'localhost:8573/v1/tickets?relative=지난+주&limit=20' | jq '{range_label, total, date_from, date_to}'
+# 집계 (LLM 계수 없음)
+curl -s 'localhost:8573/v1/analytics/tickets?group_by=year' | jq '{total, llm_used, buckets: .buckets[:5]}'
+curl -s -X POST localhost:8573/v1/query/route -H 'Content-Type: application/json' \
+  -d '{"q":"연도별 지원 건수"}' | jq '{intent, total: .result.total, buckets: .result.buckets[:3]}'
+# 공수·대수 (FAQ 1안 Rules — LLM 숫자 없음)
+curl -s -X POST localhost:8573/v1/capacity/estimate -H 'Content-Type: application/json' \
+  -d '{"period_days":14,"fields":["Linux","DBMS"]}' | jq '{scale, scale_note, totals, fields}'
+curl -s -X POST localhost:8573/v1/query/route -H 'Content-Type: application/json' \
+  -d '{"q":"2주 분야별 대수"}' | jq '{intent, scale: .result.scale, mm: .result.totals.mm}'
+# Full planner
+curl -s -X POST localhost:8573/v1/query -H 'Content-Type: application/json' \
+  -d '{"q":"리눅스 PISA 체크리스트 항목"}' | jq '{intent, total: .result.total}'
+# UI: /tickets.html · /analytics.html · /capacity.html
+# Route gold: PYTHONPATH=apps/api .venv/bin/python -m app.eval.route_eval --gold data/gold/time_list_analytics_10.json
+# Catalog routing: PYTHONPATH=apps/api .venv/bin/python -m app.eval.catalog_route --gold data/gold/query_catalog_100.json
+# Catalog answer:  PYTHONPATH=apps/api .venv/bin/python -m app.eval.catalog_answer --gold data/gold/query_catalog_100.json --out /tmp/catalog_answer.json
+```
+
+> **기간·목록·집계·공수·체크리스트·유사장애**는 planner가 경로를 고릅니다 (`POST /v1/query`).  
+> Catalog answer eval은 multi-query hybrid(원질+any+sample id)를 사용합니다. exhaustive/prevention·prod multi-query 이식은 후속.
+
 ## 서비스 (5)
 
 | Service | 역할 |
@@ -105,13 +176,13 @@ docker compose exec api alembic current
 docker compose exec api alembic upgrade head
 ```
 
-스키마: `sources`, `documents`, `document_sections`, `chunks`, `embeddings`(pgvector 1024),
+스키마: `sources`, `documents`, `document_sections`, `chunks`, `embeddings`(pgvector **768**, e5-base),
 `ingest_jobs`, `checkitems`, `entities`, `issue_frames`, `capacity_rules`, …
 헬스: `checks.postgres.alembic_revision`.
 
 ## 로드맵
 
-`docs/IMPLEMENTATION_PLAN.md` — 다음 PR-03 ingest.
+`docs/IMPLEMENTATION_PLAN.md` **v1.15** — worker jobs · load smoke · chat multi-query · audit.
 
 ## 보안
 

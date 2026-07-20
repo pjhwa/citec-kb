@@ -16,7 +16,20 @@ from app.llm import check_llm
 from app.settings import get_settings
 
 # routers
+from app.routers import bundles as bundles_router  # noqa: E402
+from app.routers import chat as chat_router  # noqa: E402
+from app.routers import checkitems as checkitems_router  # noqa: E402
+from app.routers import frames as frames_router  # noqa: E402
 from app.routers import ingest as ingest_router  # noqa: E402
+from app.routers import search as search_router  # noqa: E402
+from app.routers import similar_incident as si_router  # noqa: E402
+from app.routers import analytics as analytics_router  # noqa: E402
+from app.routers import capacity as capacity_router  # noqa: E402
+from app.routers import entities as entities_router  # noqa: E402
+from app.routers import jobs as jobs_router  # noqa: E402
+from app.routers import lexicon as lexicon_router  # noqa: E402
+from app.routers import ops as ops_router  # noqa: E402
+from app.routers import tickets as tickets_router  # noqa: E402
 
 logger = logging.getLogger("citec.api")
 logging.basicConfig(
@@ -51,6 +64,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(ingest_router.router)
+app.include_router(search_router.router)
+app.include_router(checkitems_router.router)
+app.include_router(chat_router.router)
+app.include_router(frames_router.router)
+app.include_router(si_router.router)
+app.include_router(bundles_router.router)
+app.include_router(tickets_router.router)
+app.include_router(analytics_router.router)
+app.include_router(capacity_router.router)
+app.include_router(entities_router.router)
+app.include_router(lexicon_router.router)
+app.include_router(jobs_router.router)
+app.include_router(ops_router.router)
 
 
 class HealthResponse(BaseModel):

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>검색 — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 16px; }
+  .search-box { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  input[type=text], select {
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px;
+  }
+  input[type=text] { flex:1; min-width:220px; }
+  button {
+    background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px;
+    font-weight:700; cursor:pointer;
+  }
+  button:disabled { opacity:.6; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:12px; }
+  .hit {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:14px 16px; margin-bottom:10px;
+  }
+  .hit h3 { margin:0 0 6px; font-size:15px; }
+  .badges { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  .badge {
+    font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px;
+    background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;
+  }
+  .badge.grade { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
+  .snip { color:#334155; font-size:13.5px; line-height:1.5; }
+  .score { color:var(--muted); font-size:12px; }
+  pre.err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/docs/">문서</a>
+  <a href="/api/docs" target="_blank">API</a>
+</div>
+<div class="wrap">
+  <h1>지식 통합 검색</h1>
+  <div class="search-box">
+    <input id="q" type="text" placeholder="예: CITECTS-979, 모니모 Redis, 파일시스템 체크리스트" />
+    <button id="btn" type="button">검색</button>
+  </div>
+  <div class="filters">
+    <select id="source_type">
+      <option value="">전체 소스</option>
+      <option value="support_history">support_history</option>
+      <option value="tech_repo">tech_repo</option>
+      <option value="checkitem">checkitem</option>
+      <option value="tuning_ai">tuning_ai</option>
+      <option value="confluence_docs">confluence_docs</option>
+    </select>
+    <select id="environment">
+      <option value="">환경 전체</option>
+      <option value="csp">csp</option>
+      <option value="onprem">onprem</option>
+      <option value="msp">msp</option>
+    </select>
+    <select id="domain">
+      <option value="">도메인 전체</option>
+      <option value="os">os</option>
+      <option value="dbms">dbms</option>
+      <option value="storage">storage</option>
+      <option value="network">network</option>
+      <option value="middleware">middleware</option>
+      <option value="cloud">cloud</option>
+    </select>
+  </div>
+  <div class="meta" id="meta">쿼리를 입력하세요.</div>
+  <div id="results"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+async function runSearch() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("btn").disabled = true;
+  $("meta").textContent = "검색 중…";
+  $("results").innerHTML = "";
+  const filters = { status: "active" };
+  if ($("source_type").value) filters.source_type = $("source_type").value;
+  if ($("environment").value) filters.environment = $("environment").value;
+  if ($("domain").value) filters.domain = $("domain").value;
+  try {
+    const r = await fetch("/v1/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q, top_k: 10, filters }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || r.statusText);
+    $("meta").textContent =
+      `결과 ${j.total}건 · trust=${j.trust_retrieval} · vector=${j.vector_used} · exact=[${(j.exact_tokens||[]).join(", ")}]`;
+    if (!j.results || !j.results.length) {
+      $("results").innerHTML = "<p class='meta'>결과 없음 (quality gate 또는 미매칭).</p>";
+      return;
+    }
+    $("results").innerHTML = j.results.map((hit) => `
+      <div class="hit">
+        <div class="score">#${hit.rank} · score ${hit.score} · fts ${hit.fts_rank ?? "-"} · vec ${hit.vec_rank ?? "-"}</div>
+        <h3>${escapeHtml(hit.title || hit.external_id)}</h3>
+        <div class="badges">
+          <span class="badge">${escapeHtml(hit.source_type)}</span>
+          <span class="badge">${escapeHtml(hit.external_id)}</span>
+          ${hit.evidence_grade ? `<span class="badge grade">${escapeHtml(hit.evidence_grade)}</span>` : ""}
+          ${hit.domain ? `<span class="badge">${escapeHtml(hit.domain)}</span>` : ""}
+          ${hit.environment ? `<span class="badge">${escapeHtml(hit.environment)}</span>` : ""}
+          ${hit.work_type ? `<span class="badge">${escapeHtml(hit.work_type)}</span>` : ""}
+        </div>
+        <div class="snip">${escapeHtml(hit.snippet || "")}</div>
+      </div>
+    `).join("");
+  } catch (e) {
+    $("meta").textContent = "오류";
+    $("results").innerHTML = `<pre class="err">${escapeHtml(String(e))}</pre>`;
+  } finally {
+    $("btn").disabled = false;
+  }
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+$("btn").onclick = runSearch;
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") runSearch(); });
+const params = new URLSearchParams(location.search);
+if (params.get("q")) { $("q").value = params.get("q"); runSearch(); }
+</script>
+</body>
+</html>

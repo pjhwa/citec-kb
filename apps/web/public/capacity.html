@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>공수·대수 (Capacity) — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  input, select { border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px; width:100%; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; align-items:end; }
+  .row > * { flex:1; min-width:110px; }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 14px; }
+  .chips button { font-size:12px; padding:6px 12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+  .brief { background:#fef3c7; border:1px solid #fcd34d; border-radius:12px; padding:14px; margin:14px 0; line-height:1.55; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>진단 공수 · 대수 · 단가</h1>
+  <p class="sub">Phase 3 · FAQ <strong>1안</strong> rules · <code>POST /v1/capacity/estimate</code> · <strong>LLM 숫자 없음</strong></p>
+
+  <div class="chips">
+    <button type="button" data-q="1주 분야별 대수">1주 분야별 대수</button>
+    <button type="button" data-q="2주 Linux 대수">2주 Linux 대수</button>
+    <button type="button" data-q="분야별 단가">분야별 단가</button>
+    <button type="button" data-q="0.25M/M 1안 전체 분야">0.25M/M 1안 전체</button>
+    <button type="button" data-q="2주 공수 산정">2주 공수 산정</button>
+  </div>
+
+  <div class="row">
+    <div class="field" style="flex:2">
+      <label>자연어 질의 (route)</label>
+      <input id="q" value="2주 분야별 대수" />
+    </div>
+    <div class="field">
+      <label>period_days (직접 API)</label>
+      <input id="period" type="number" min="1" max="365" value="14" />
+    </div>
+  </div>
+  <div class="row">
+    <button id="btn-route" type="button">질의 라우팅 실행</button>
+    <button id="btn-api" type="button" class="ghost">POST /capacity/estimate</button>
+    <button id="btn-rules" type="button" class="ghost">GET /capacity/rules</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderEstimate(payload) {
+  const r = payload.result || payload;
+  const fields = r.fields || [];
+  const t = r.totals || {};
+  let html = `<div class="brief">
+    <strong>basis=${esc(r.basis)}</strong>
+    · period=<strong>${r.period_days}일</strong>
+    · scale=<strong>${r.scale}</strong>
+    · llm_used=<code>${esc(String(r.llm_used))}</code>
+    · total M/M=<strong>${t.mm}</strong>
+    · total units=<strong>${t.units}</strong>
+    ${t.price!=null ? ` · price=<strong>${t.price}</strong> ${esc(t.currency||"")}` : ""}
+    ${r.scale_note ? `<div class="meta" style="margin-top:6px">${esc(r.scale_note)}</div>` : ""}
+    ${payload.note ? `<div class="meta">${esc(payload.note)}</div>` : ""}
+    <div class="meta">source: ${esc(r.source_ref||"")}</div>
+  </div>`;
+  if (!fields.length) {
+    html += `<p class="meta">필드 없음</p>`;
+    $("out").innerHTML = html;
+    return;
+  }
+  html += `<div class="card"><table>
+    <thead><tr><th>분야</th><th>base</th><th>units</th><th>kind</th><th>M/M</th><th>단가</th><th>금액</th></tr></thead><tbody>`;
+  for (const f of fields) {
+    html += `<tr>
+      <td><strong>${esc(f.field)}</strong></td>
+      <td class="meta">${f.base_units}</td>
+      <td>${f.units}</td>
+      <td class="meta">${esc(f.unit_kind)}</td>
+      <td>${f.mm}</td>
+      <td class="meta">${f.unit_price??"-"}</td>
+      <td>${f.price??"-"}</td>
+    </tr>`;
+  }
+  html += `</tbody></table></div>`;
+  $("out").innerHTML = html;
+}
+
+async function runRoute() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("btn-route").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const r = await fetch("/v1/query/route", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ q }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    if (d.intent === "capacity") renderEstimate(d);
+    else $("out").innerHTML = `<div class="brief">intent=<code>${esc(d.intent)}</code><br/>${esc(d.note||"")}</div>`;
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-route").disabled = false;
+  }
+}
+
+async function runApi() {
+  $("btn-api").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const r = await fetch("/v1/capacity/estimate", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ period_days: Number($("period").value)||7, include_pricing: true }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    renderEstimate(d);
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-api").disabled = false;
+  }
+}
+
+async function runRules() {
+  $("btn-rules").disabled = true;
+  try {
+    const r = await fetch("/v1/capacity/rules");
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    $("out").innerHTML = `<div class="brief"><strong>1안 rules</strong> · mm/field/week=${d.mm_per_field_week}
+      · fields=${(d.fields||[]).length}<pre class="meta" style="white-space:pre-wrap">${esc(JSON.stringify(d,null,2))}</pre></div>`;
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-rules").disabled = false;
+  }
+}
+
+$("btn-route").onclick = runRoute;
+$("btn-api").onclick = runApi;
+$("btn-rules").onclick = runRules;
+document.querySelectorAll(".chips button").forEach(btn => {
+  btn.onclick = () => { $("q").value = btn.dataset.q; runRoute(); };
+});
+runRoute();
+</script>
+</body>
+</html>

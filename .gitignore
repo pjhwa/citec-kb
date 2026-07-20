@@ -34,3 +34,7 @@ logs/
 models/
 *.bin
 *.gguf
+
+# db dumps
+data/backups/
+

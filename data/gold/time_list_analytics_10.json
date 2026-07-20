@@ -1,0 +1,92 @@
+{
+  "version": "1.1",
+  "description": "Phase 3 routing gold: time list + analytics + capacity (intent correctness)",
+  "queries": [
+    {
+      "id": "T01",
+      "q": "지난 주 지원건",
+      "expect_intent": "time_scoped_list",
+      "expect_range_label": "지난 주"
+    },
+    {
+      "id": "T02",
+      "q": "이번 달 지원건",
+      "expect_intent": "time_scoped_list",
+      "expect_range_label": "이번 달"
+    },
+    {
+      "id": "T03",
+      "q": "최근 7일 티켓 목록",
+      "expect_intent": "time_scoped_list",
+      "expect_range_label": "최근 7일"
+    },
+    {
+      "id": "A01",
+      "q": "연도별 지원 건수",
+      "expect_intent": "analytics",
+      "expect_group_by": "year",
+      "expect_min_total": 2000
+    },
+    {
+      "id": "A02",
+      "q": "Component 비중",
+      "expect_intent": "analytics",
+      "expect_group_by": "component",
+      "expect_min_total": 2000
+    },
+    {
+      "id": "A03",
+      "q": "이번 달 장애 건수",
+      "expect_intent": "analytics",
+      "expect_component": "장애지원",
+      "expect_group_by": "total"
+    },
+    {
+      "id": "A04",
+      "q": "모니모 지원 비중",
+      "expect_intent": "analytics",
+      "expect_mode": "entity_share",
+      "expect_entity": "모니모"
+    },
+    {
+      "id": "A05",
+      "q": "지난 달 지원 건수",
+      "expect_intent": "analytics",
+      "expect_group_by": "total",
+      "expect_range_label": "지난 달"
+    },
+    {
+      "id": "C01",
+      "q": "2주 분야별 대수",
+      "expect_intent": "capacity",
+      "expect_period_days": 14
+    },
+    {
+      "id": "C02",
+      "q": "2주 Linux 대수",
+      "expect_intent": "capacity",
+      "expect_period_days": 14,
+      "expect_fields": ["Linux"]
+    },
+    {
+      "id": "C03",
+      "q": "분야별 단가",
+      "expect_intent": "capacity"
+    },
+    {
+      "id": "C04",
+      "q": "0.25M/M 1안",
+      "expect_intent": "capacity"
+    },
+    {
+      "id": "H01",
+      "q": "모니모 Redis 타임아웃",
+      "expect_intent": "hybrid_search"
+    },
+    {
+      "id": "H02",
+      "q": "CITECTS-2502",
+      "expect_intent": "hybrid_search"
+    }
+  ]
+}

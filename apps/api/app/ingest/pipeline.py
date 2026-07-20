@@ -16,6 +16,7 @@ from app.db.models import Checkitem, Chunk, Document, DocumentSection, IngestJob
 from app.db.session import session_scope
 from app.ingest.adapters import DocumentDraft, iter_all
 from app.ingest.chunking import chunk_markdown
+from app.taxonomy import enrich_draft_fields
 
 logger = logging.getLogger("citec.ingest")
 
@@ -52,8 +53,34 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             Document.external_id == draft.external_id,
         )
     )
+    tax = enrich_draft_fields(
+        title=draft.title,
+        body=draft.body_md,
+        source_type=draft.source_type,
+        metadata=draft.metadata or {},
+        path_l2=draft.path_l2,
+        path_l3=draft.path_l3,
+        environment=draft.environment,
+        domain=draft.domain,
+        work_type=draft.work_type,
+    )
+    draft.environment = tax.get("environment") or draft.environment
+    draft.domain = tax.get("domain") or draft.domain
+    draft.work_type = tax.get("work_type") or draft.work_type
+
     if existing and existing.content_hash == draft.content_hash:
-        return "skipped"
+        # still refresh taxonomy if empty
+        dirty = False
+        if not existing.environment and draft.environment:
+            existing.environment = draft.environment
+            dirty = True
+        if not existing.domain and draft.domain:
+            existing.domain = draft.domain
+            dirty = True
+        if not existing.work_type and draft.work_type:
+            existing.work_type = draft.work_type
+            dirty = True
+        return "updated" if dirty else "skipped"
 
     if existing:
         doc = existing

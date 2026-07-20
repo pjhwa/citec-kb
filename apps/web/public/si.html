@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>유사장애 — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  textarea, select, input {
+    border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px; width:100%;
+  }
+  textarea { min-height:80px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  .row > * { flex:1; min-width:140px; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  .brief { background:#eff6ff; border:1px solid #bfdbfe; border-radius:12px; padding:14px; margin:14px 0; line-height:1.55; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .card h3 { margin:0 0 8px; font-size:15px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:4px; background:#eff6ff; color:#1d4ed8; }
+  .badge.ok { background:#d1fae5; color:#047857; }
+  .badge.warn { background:#fef3c7; color:#b45309; }
+  .badge.bad { background:#fee2e2; color:#b91c1c; }
+  .slot { margin:6px 0; font-size:13.5px; }
+  .slot b { color:#334155; }
+  .meta { color:var(--muted); font-size:12px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>유사장애 브리핑 (MVP)</h1>
+  <p class="sub">Phase 2 · hybrid 검색 + issue frame · 적용성 휴리스틱 (단일 % 신뢰도 없음)</p>
+  <label class="meta">현재 증상</label>
+  <textarea id="symptom" placeholder="예: 모니모 Redis 타임아웃, POD 접속 불가, 4시간 주기 BFD down"></textarea>
+  <div class="row">
+    <input id="product" placeholder="제품 (선택) Redis" />
+    <input id="service" placeholder="서비스 (선택) 모니모" />
+    <select id="environment">
+      <option value="">환경 전체</option>
+      <option value="csp">csp</option>
+      <option value="onprem">onprem</option>
+      <option value="msp">msp</option>
+    </select>
+  </div>
+  <button id="btn" type="button">유사 사례 조회</button>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const appClass = (l) => ({"가능":"ok","조건부":"warn","비권고":"bad","기권":"bad"}[l] || "");
+
+$("btn").onclick = async () => {
+  const symptom = $("symptom").value.trim();
+  if (!symptom) return;
+  $("btn").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  const body = {
+    symptom,
+    top_k: 3,
+    product: $("product").value.trim() || null,
+    service: $("service").value.trim() || null,
+    environment: $("environment").value || null,
+  };
+  try {
+    const r = await fetch("/v1/similar-incident", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    let html = `<div class="brief"><strong>1분 요약</strong><br/>${esc(d.brief)}</div>`;
+    html += `<p class="meta">candidates=${d.retrieval?.candidates} vector=${d.retrieval?.vector_used} trust=${esc(d.retrieval?.trust_retrieval)}</p>`;
+    for (const c of (d.cases || [])) {
+      const app = c.applicability || {};
+      html += `<div class="card">
+        <h3>${esc(c.external_id)} · ${esc(c.title)}</h3>
+        <div>
+          <span class="badge ${appClass(app.label)}">적용성: ${esc(app.label)}</span>
+          <span class="badge">frame_q=${c.frame_quality}</span>
+          ${(c.components||[]).map(x=>`<span class="badge">${esc(x)}</span>`).join("")}
+        </div>
+        <div class="slot"><b>What</b> ${esc(c.what)}</div>
+        <div class="slot"><b>Cause</b> ${esc(c.cause || "(프레임 없음)")}</div>
+        <div class="slot"><b>Resolution</b> ${esc(c.resolution || "(프레임 없음)")}</div>
+        <p class="meta">${esc(app.note||"")}</p>
+      </div>`;
+    }
+    if (d.actions?.length) {
+      html += `<div class="card"><h3>권고 액션 (참고)</h3><ul>${d.actions.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`;
+    }
+    if (d.questions?.length) {
+      html += `<div class="card"><h3>확인 질문</h3><ul>${d.questions.map(a=>`<li>${esc(a)}</li>`).join("")}</ul></div>`;
+    }
+    if (d.bundles?.length) {
+      html += `<div class="card"><h3>매칭 번들 (War-room)</h3>`;
+      for (const b of d.bundles) {
+        html += `<div style="margin-bottom:12px;border-top:1px solid var(--border);padding-top:8px">
+          <strong>${esc(b.title||b.name)}</strong>
+          <span class="badge ok">match ${b.score}</span>
+          <div class="meta">hints: ${(b.matched_hints||[]).map(esc).join(", ") || "-"} · comps: ${(b.matched_components||[]).map(esc).join(", ") || "-"}</div>
+          <div class="meta" style="margin-top:4px"><b>체크리스트</b></div>
+          <ul>${(b.checklist||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+          ${(b.commands&&b.commands.length)?`<div class="meta"><b>참고 명령</b></div><ul>${b.commands.map(x=>`<li><code>${esc(x)}</code></li>`).join("")}</ul>`:""}
+        </div>`;
+      }
+      html += `</div>`;
+    }
+    $("out").innerHTML = html;
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn").disabled = false;
+  }
+};
+</script>
+</body>
+</html>

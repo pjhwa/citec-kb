@@ -1,0 +1,27 @@
+{
+  "basis": "1안",
+  "period_days": 7,
+  "mm_per_field_week": 0.25,
+  "source_ref": "support_history/QRB_품질_인프라구축검증_PISA_FAQ.md",
+  "source_note": "진단범위와 공수 · 진단단가 절. 1주 표준표; N주 질의는 period_days/7 환산.",
+  "fields": [
+    {"field": "AIX", "units": 20, "unit_kind": "host", "price_group": "server"},
+    {"field": "HP-UX", "units": 20, "unit_kind": "host", "price_group": "server"},
+    {"field": "Solaris", "units": 20, "unit_kind": "host", "price_group": "server"},
+    {"field": "Linux", "units": 20, "unit_kind": "host", "price_group": "server"},
+    {"field": "Windows", "units": 20, "unit_kind": "host", "price_group": "server"},
+    {"field": "Web/WAS", "units": 5, "unit_kind": "instance", "price_group": "db_mw_instance"},
+    {"field": "DBMS", "units": 5, "unit_kind": "instance", "price_group": "db_mw_instance"},
+    {"field": "가상화", "units": 5, "unit_kind": "host", "price_group": "server"},
+    {"field": "스토리지", "units": 5, "unit_kind": "host", "price_group": "storage"},
+    {"field": "네트워크", "units": 10, "unit_kind": "host", "price_group": "nw"}
+  ],
+  "pricing": {
+    "server": {"unit_price": 100, "unit_kind": "host", "note": "서버군 linux/windows/hp/aix 대당"},
+    "db_mw_instance": {"unit_price": 500, "unit_kind": "instance", "note": "DB/MW Instance당"},
+    "storage": {"unit_price": 180, "unit_kind": "host", "note": "Storage 대당"},
+    "nw": {"unit_price": 50, "unit_kind": "host", "note": "NW 대당"}
+  },
+  "example_1w_fields": ["Linux", "Windows", "Web/WAS", "DBMS", "가상화", "스토리지", "네트워크"],
+  "example_1w_mm_note": "FAQ 예시 (진단7+PL1)*0.25≈2M/M — 계산기는 분야당 0.25×scale 합산"
+}

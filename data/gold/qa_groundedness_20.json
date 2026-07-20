@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "description": "Fast QA groundedness sample set (auto metrics + manual review hooks)",
+  "gate": {
+    "citation_rate_min": 0.6,
+    "overlap_ok_rate_min": 0.5,
+    "min_answered": 10
+  },
+  "queries": [
+    {"id": "Q01", "q": "CITECTS-2502 원인과 조치 요약", "filters": {"source_type": "support_history"}},
+    {"id": "Q02", "q": "모니모 Redis TimeOut 이슈 무엇이 문제였나", "filters": {"source_type": "support_history"}},
+    {"id": "Q03", "q": "CITECTS-2280 Redis Cluster 백업 이슈", "filters": {"source_type": "support_history"}},
+    {"id": "Q04", "q": "PISAOLNX_01.01.01 파일 시스템 체크 설정", "filters": {"source_type": "checkitem"}},
+    {"id": "Q05", "q": "부팅 시 파일 시스템 옵션 nofail", "filters": {"source_type": "checkitem"}},
+    {"id": "Q06", "q": "Linux FS 점검 항목", "filters": {"source_type": "checkitem"}},
+    {"id": "Q07", "q": "CITECTS-1460 모니모 Redis 통신 불가", "filters": {"source_type": "support_history"}},
+    {"id": "Q08", "q": "BFD down과 Redis 장애 관계", "filters": {"source_type": "support_history"}},
+    {"id": "Q09", "q": "CITECTS-1000 ProbeONE 대시보드", "filters": {"source_type": "support_history"}},
+    {"id": "Q10", "q": "네트워크 방화벽 순단 장애 사례", "filters": {"source_type": "support_history"}},
+    {"id": "Q11", "q": "PISAOLNX_04.04.02 루트 파일 시스템 사용률", "filters": {"source_type": "checkitem"}},
+    {"id": "Q12", "q": "Redis 클러스터 응답 지연 조치", "filters": {"source_type": "support_history"}},
+    {"id": "Q13", "q": "ESXi host BFD 로그 장애", "filters": {"source_type": "support_history"}},
+    {"id": "Q14", "q": "CITECTS-870 네트워크 장애 요약", "filters": {"source_type": "support_history"}},
+    {"id": "Q15", "q": "파일시스템 inode 사용률 체크", "filters": {"source_type": "checkitem"}},
+    {"id": "Q16", "q": "SCP 물리 네트워크 peak traffic", "filters": {"source_type": "support_history"}},
+    {"id": "Q17", "q": "kdump 메모리 reserve 점검", "filters": {"source_type": "checkitem"}},
+    {"id": "Q18", "q": "CITECTS-2502 해결 방안은", "filters": {"source_type": "support_history"}},
+    {"id": "Q19", "q": "존재하지않는티켓XYZ999 원인", "filters": {}, "expect_abstain": true},
+    {"id": "Q20", "q": "zzzznotexist_query_000", "filters": {}, "expect_abstain": true}
+  ]
+}

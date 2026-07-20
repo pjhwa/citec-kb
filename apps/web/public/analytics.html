@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>집계 · Analytics — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  input, select { border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px; width:100%; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; align-items:end; }
+  .row > * { flex:1; min-width:120px; }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 16px; font-weight:700; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 14px; }
+  .chips button { font-size:12px; padding:6px 12px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+  .brief { background:#ecfdf5; border:1px solid #a7f3d0; border-radius:12px; padding:14px; margin:14px 0; line-height:1.55; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; font-size:12px; }
+  .bar { height:8px; background:#dbeafe; border-radius:4px; overflow:hidden; min-width:80px; }
+  .bar > i { display:block; height:100%; background:var(--primary); }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/si.html">유사장애</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/analytics.html">집계</a>
+  <a href="/capacity.html">공수·대수</a>
+  <a href="/bundles.html">번들</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>지원 이력 집계 (Analytics)</h1>
+  <p class="sub">Phase 3 · metadata COUNT only · <strong>LLM 계수 없음</strong> · <code>GET /v1/analytics/tickets</code></p>
+
+  <div class="chips">
+    <button type="button" data-q="연도별 지원 건수">연도별 지원 건수</button>
+    <button type="button" data-q="Component 비중">Component 비중</button>
+    <button type="button" data-q="이번 달 장애 건수">이번 달 장애 건수</button>
+    <button type="button" data-q="모니모 지원 비중">모니모 지원 비중</button>
+    <button type="button" data-q="지난 달 지원 건수">지난 달 지원 건수</button>
+  </div>
+
+  <div class="row">
+    <div class="field" style="flex:2">
+      <label>자연어 질의 (route)</label>
+      <input id="q" value="연도별 지원 건수" />
+    </div>
+    <div class="field">
+      <label>group_by (직접 API)</label>
+      <select id="group_by">
+        <option value="year">year</option>
+        <option value="month">month</option>
+        <option value="component">component</option>
+        <option value="status">status</option>
+        <option value="assignee">assignee</option>
+        <option value="total">total</option>
+      </select>
+    </div>
+  </div>
+  <div class="row">
+    <button id="btn-route" type="button">질의 라우팅 실행</button>
+    <button id="btn-api" type="button" class="ghost">GET /analytics/tickets</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function renderAnalytics(payload) {
+  const r = payload.result || payload;
+  const buckets = r.buckets || [];
+  const max = Math.max(...buckets.map(b => b.count||0), 1);
+  let html = `<div class="brief">
+    <strong>total = ${r.total ?? r.matched ?? 0}</strong>
+    · intent=<code>${esc(payload.intent||"analytics")}</code>
+    · group_by=<code>${esc(r.group_by||"")}</code>
+    · llm_used=<code>${esc(String(r.llm_used===false?false:r.llm_used))}</code>
+    · method=<code>${esc(r.method||"")}</code>
+    ${r.range_label || payload.range_label ? ` · range=<strong>${esc(r.range_label||payload.range_label)}</strong>` : ""}
+    ${r.share!=null ? ` · share=<strong>${(r.share*100).toFixed(2)}%</strong> (${r.matched}/${r.total})` : ""}
+    ${payload.note ? `<div class="meta" style="margin-top:6px">${esc(payload.note)}</div>` : ""}
+  </div>`;
+  if (r.matched != null && !buckets.length) {
+    html += `<div class="card"><p>entity=<strong>${esc(r.entity)}</strong> matched=${r.matched} / total=${r.total}</p></div>`;
+    $("out").innerHTML = html;
+    return;
+  }
+  if (!buckets.length) {
+    html += `<p class="meta">버킷 없음</p>`;
+    $("out").innerHTML = html;
+    return;
+  }
+  html += `<div class="card"><table><thead><tr><th>key</th><th>count</th><th>share</th><th></th></tr></thead><tbody>`;
+  for (const b of buckets) {
+    const pct = ((b.share||0)*100).toFixed(1);
+    const w = Math.round(((b.count||0)/max)*100);
+    html += `<tr>
+      <td>${esc(b.key)}</td>
+      <td><strong>${b.count}</strong></td>
+      <td class="meta">${pct}%</td>
+      <td><div class="bar"><i style="width:${w}%"></i></div></td>
+    </tr>`;
+  }
+  html += `</tbody></table></div>`;
+  $("out").innerHTML = html;
+}
+
+async function runRoute() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  $("btn-route").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const r = await fetch("/v1/query/route", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ q }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    if (d.intent === "analytics") renderAnalytics(d);
+    else if (d.intent === "time_scoped_list") {
+      $("out").innerHTML = `<div class="brief">intent=time_scoped_list · total=${d.result?.total}
+        <div class="meta">목록 UI: <a href="/tickets.html">/tickets.html</a></div></div>`;
+    } else {
+      $("out").innerHTML = `<div class="brief">intent=<code>${esc(d.intent)}</code><br/>${esc(d.note||"")}</div>`;
+    }
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-route").disabled = false;
+  }
+}
+
+async function runApi() {
+  $("btn-api").disabled = true;
+  $("out").innerHTML = "<p class='meta'>조회 중…</p>";
+  try {
+    const params = new URLSearchParams({ group_by: $("group_by").value, top_k: "30" });
+    const r = await fetch("/v1/analytics/tickets?" + params.toString());
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    renderAnalytics(d);
+  } catch (e) {
+    $("out").innerHTML = `<div class="err">${esc(e.message||e)}</div>`;
+  } finally {
+    $("btn-api").disabled = false;
+  }
+}
+
+$("btn-route").onclick = runRoute;
+$("btn-api").onclick = runApi;
+document.querySelectorAll(".chips button").forEach(btn => {
+  btn.onclick = () => { $("q").value = btn.dataset.q; runRoute(); };
+});
+runRoute();
+</script>
+</body>
+</html>
