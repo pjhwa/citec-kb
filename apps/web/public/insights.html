@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Insight 승인 — CI-TEC Knowledge</title>
+<style>
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+  .wrap { max-width:960px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:1.4rem; margin:0 0 8px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
+  input, textarea, select { width:100%; border:1px solid var(--border); border-radius:10px; padding:10px 12px; font-size:14px; margin:6px 0; }
+  textarea { min-height:100px; font-family:inherit; }
+  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:8px 14px; font-weight:700; cursor:pointer; margin:4px 4px 4px 0; }
+  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+  button.ok { background:var(--ok); }
+  button.bad { background:var(--bad); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; margin-right:4px; }
+  .meta { color:var(--muted); font-size:12px; }
+  .err { background:#fef2f2; color:var(--bad); padding:10px; border-radius:8px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+</style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/insights.html">Insight</a>
+  <a href="/docs/">문서</a>
+</div>
+<div class="wrap">
+  <h1>Insight 승인 플로우</h1>
+  <p class="sub">Phase 4 · draft → review → approved/rejected · optional promote to documents</p>
+
+  <div class="card">
+    <strong>새 draft 작성</strong>
+    <input id="title" placeholder="제목" />
+    <textarea id="body" placeholder="본문 (markdown)"></textarea>
+    <input id="author" placeholder="author (선택)" value="pilot" />
+    <button id="btnCreate" type="button">Create draft</button>
+    <span id="msg" class="meta"></span>
+  </div>
+
+  <div class="row">
+    <select id="filter">
+      <option value="">전체 status</option>
+      <option value="draft">draft</option>
+      <option value="review">review</option>
+      <option value="approved">approved</option>
+      <option value="rejected">rejected</option>
+    </select>
+    <button id="btnReload" type="button" class="ghost">새로고침</button>
+  </div>
+  <div id="out"></div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function create() {
+  const body = {
+    title: $("title").value.trim(),
+    body_md: $("body").value,
+    author: $("author").value.trim() || null,
+  };
+  if (!body.title) return;
+  $("msg").textContent = "저장 중…";
+  const r = await fetch("/v1/insights", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  $("msg").textContent = "created " + d.id;
+  $("title").value = ""; $("body").value = "";
+  await load();
+}
+
+async function act(id, action, promote=false) {
+  const r = await fetch(`/v1/insights/${id}/${action}`, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({reviewer:"senior", promote}),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  await load();
+}
+
+async function load() {
+  $("out").innerHTML = "<p class='meta'>로딩…</p>";
+  const st = $("filter").value;
+  const url = "/v1/insights" + (st ? ("?status=" + encodeURIComponent(st)) : "");
+  const r = await fetch(url);
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.detail || r.statusText);
+  const items = d.items || [];
+  if (!items.length) { $("out").innerHTML = "<p class='meta'>없음</p>"; return; }
+  let html = `<p class="meta">total=${d.total}</p>`;
+  for (const it of items) {
+    html += `<div class="card">
+      <div><span class="badge">${esc(it.status)}</span><strong>${esc(it.title)}</strong></div>
+      <div class="meta">id=${esc(it.id)} · author=${esc(it.author||"-")} · reviewer=${esc(it.reviewer||"-")}</div>
+      <pre class="meta" style="white-space:pre-wrap;background:#f8fafc;padding:8px;border-radius:8px">${esc((it.body_md||"").slice(0,400))}</pre>
+      <div class="row">
+        ${it.status==="draft"?`<button data-a="submit" data-id="${esc(it.id)}">Submit review</button>`:""}
+        ${it.status==="review"?`<button class="ok" data-a="approve" data-id="${esc(it.id)}">Approve</button>
+          <button class="ok" data-a="approve-promote" data-id="${esc(it.id)}">Approve+Promote</button>
+          <button class="bad" data-a="reject" data-id="${esc(it.id)}">Reject</button>
+          <button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
+        ${it.status==="rejected"?`<button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
+        ${it.promoted_document_id?`<span class="meta">promoted_doc=${esc(it.promoted_document_id)}</span>`:""}
+      </div>
+    </div>`;
+  }
+  $("out").innerHTML = html;
+  $("out").querySelectorAll("button[data-a]").forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.id;
+      const a = btn.dataset.a;
+      if (a === "approve-promote") return act(id, "approve", true).catch(e => alert(e));
+      act(id, a).catch(e => alert(e));
+    };
+  });
+}
+
+$("btnCreate").onclick = () => create().catch(e => $("msg").textContent = String(e));
+$("btnReload").onclick = () => load().catch(e => $("out").innerHTML = `<div class="err">${esc(e)}</div>`);
+$("filter").onchange = () => load();
+load();
+</script>
+</body>
+</html>
