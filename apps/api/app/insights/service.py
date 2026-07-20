@@ -1,16 +1,18 @@
-"""Insight flywheel: draft → review → approved/rejected (+ optional promote)."""
+"""Insight flywheel: draft → review → approved/rejected (+ optional promote/index)."""
 
 from __future__ import annotations
 
-import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import uuid4
 
 from sqlalchemy import func, select
 
-from app.db.models import Document, Insight
+from app.db.models import Chunk, Document, Embedding, Insight
 from app.db.session import session_scope
+from app.ingest.adapters import DocumentDraft
+
+logger = logging.getLogger("citec.insights")
 
 VALID_STATUS = frozenset({"draft", "review", "approved", "rejected"})
 TRANSITIONS = {
@@ -110,6 +112,100 @@ def update_insight(
         return _to_dict(row)
 
 
+def _insight_draft(row: Insight) -> DocumentDraft:
+    body = (row.body_md or "").strip() or row.title
+    return DocumentDraft(
+        source_type="insight",
+        external_id=f"INSIGHT-{row.id[:8]}",
+        title=row.title,
+        body_md=body,
+        metadata={
+            "insight_id": row.id,
+            "author": row.author,
+            "reviewer": row.reviewer,
+            "promoted": True,
+        },
+        evidence_grade="draft",
+        source_uri=f"insight://{row.id}",
+    ).finalize()
+
+
+def _index_stats(document_id: str) -> dict[str, Any]:
+    with session_scope() as session:
+        n_chunks = session.scalar(
+            select(func.count())
+            .select_from(Chunk)
+            .where(Chunk.document_id == document_id, Chunk.is_active.is_(True))
+        ) or 0
+        n_emb = session.scalar(
+            select(func.count())
+            .select_from(Embedding)
+            .join(Chunk, Chunk.id == Embedding.chunk_id)
+            .where(Chunk.document_id == document_id, Chunk.is_active.is_(True))
+        ) or 0
+        doc = session.get(Document, document_id)
+        return {
+            "document_id": document_id,
+            "chunks": int(n_chunks),
+            "embeddings": int(n_emb),
+            "source_type": doc.source_type if doc else None,
+            "external_id": doc.external_id if doc else None,
+        }
+
+
+def promote_and_index(insight_id: str, *, reindex: bool = False) -> dict[str, Any]:
+    """Upsert promoted document, chunk+FTS, then embed pending chunks for that doc.
+
+    When ``reindex`` is True and a document already exists, force re-upsert
+    by bumping content (content_hash change) only if needed via normal upsert
+    (hash-based skip still applies when content unchanged).
+    """
+    from app.embed.job import embed_pending_chunks
+    from app.ingest.pipeline import upsert_document_from_draft
+
+    with session_scope() as session:
+        row = session.get(Insight, insight_id)
+        if not row:
+            raise KeyError(insight_id)
+        if row.status != "approved" and not reindex:
+            # allow reindex only for approved insights that already have a doc
+            if not (reindex and row.promoted_document_id):
+                raise PermissionError(
+                    f"promote requires approved status (got {row.status})"
+                )
+        draft = _insight_draft(row)
+        insight_snapshot = _to_dict(row)
+
+    upsert = upsert_document_from_draft(draft)
+    doc_id = upsert["document_id"]
+
+    with session_scope() as session:
+        row = session.get(Insight, insight_id)
+        if not row:
+            raise KeyError(insight_id)
+        row.promoted_document_id = doc_id
+        session.flush()
+        insight_snapshot = _to_dict(row)
+
+    emb: dict[str, Any]
+    try:
+        emb = embed_pending_chunks(document_id=doc_id, batch_size=16)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("embed after promote failed doc=%s", doc_id)
+        emb = {"error": str(exc), "embedded": 0, "document_id": doc_id}
+
+    stats = _index_stats(doc_id)
+    insight_snapshot["index"] = {
+        **stats,
+        "upsert_action": upsert.get("action"),
+        "embedded": emb.get("embedded", 0),
+        "embed_errors": emb.get("errors", 0),
+        "model": emb.get("model"),
+        "embed_error": emb.get("error"),
+    }
+    return insight_snapshot
+
+
 def transition_insight(
     insight_id: str,
     *,
@@ -119,6 +215,8 @@ def transition_insight(
 ) -> dict[str, Any]:
     if to_status not in VALID_STATUS:
         raise ValueError(f"invalid status: {to_status}")
+
+    do_promote = False
     with session_scope() as session:
         row = session.get(Insight, insight_id)
         if not row:
@@ -131,29 +229,28 @@ def transition_insight(
             row.reviewer = reviewer
         if to_status == "approved":
             row.approved_at = datetime.now(timezone.utc)
-            if promote and not row.promoted_document_id:
-                payload = f"{row.title}\n{row.body_md}"
-                content_hash = hashlib.sha256(
-                    payload.encode("utf-8", errors="ignore")
-                ).hexdigest()
-                doc = Document(
-                    id=str(uuid4()),
-                    source_type="insight",
-                    external_id=f"INSIGHT-{row.id[:8]}",
-                    title=row.title,
-                    body_md=row.body_md,
-                    status="active",
-                    content_hash=content_hash,
-                    evidence_grade="draft",
-                    metadata_={
-                        "insight_id": row.id,
-                        "author": row.author,
-                        "reviewer": row.reviewer,
-                        "promoted": True,
-                    },
-                )
-                session.add(doc)
-                session.flush()
-                row.promoted_document_id = doc.id
+            # promote if requested and not yet linked (or always re-index when promote)
+            if promote:
+                do_promote = True
         session.flush()
-        return _to_dict(row)
+        result = _to_dict(row)
+
+    if do_promote:
+        try:
+            promoted = promote_and_index(insight_id)
+            result = promoted
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("promote/index failed insight=%s", insight_id)
+            result["index"] = {"error": str(exc)}
+    return result
+
+
+def reindex_insight(insight_id: str) -> dict[str, Any]:
+    """Re-run chunk+embed for an already approved (or previously promoted) insight."""
+    with session_scope() as session:
+        row = session.get(Insight, insight_id)
+        if not row:
+            raise KeyError(insight_id)
+        if row.status != "approved" and not row.promoted_document_id:
+            raise PermissionError("reindex requires approved insight or existing promote")
+    return promote_and_index(insight_id, reindex=True)

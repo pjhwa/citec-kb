@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.16** |
+| 문서 버전 | **1.17** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-20 — v1.16: Insight draft→review→approve/reject/reopen + promote + feedback UI** |
+| 갱신 | **2026-07-20 — v1.17: Insight promote → chunk/FTS/embed + hybrid 검색 검증 · reindex API** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -32,17 +32,17 @@
 
 | 항목 | 상태 |
 |------|------|
-| **진행 페이즈** | **P1–P3 엔지니어링 강** · **P4 Insight 플라이휠 1차 완료** (승인·promote·feedback) |
+| **진행 페이즈** | **P1–P3 강** · **P4 Insight 플라이휠+인덱싱 완료** (승인·promote·chunk/embed·feedback) |
 | **엔지니어링 게이트** | **G0·G1 완료** · **G3 엔지니어링 달성** · **G4 시드 달성** · **G5 route+answer 110/110** · G2 파일럿·도메인 사인 잔여 · G6 SSO/부하·도메인 사인 잔여 |
 | 레포/디렉터리 | `~/dev/citec-kb` |
 | Compose | web **8572** · api **8573** · postgres **8574** · redis **8575** · **worker(job queue)** |
-| 코퍼스 | documents **~9,438** · chunks **~54,444** · embeddings **54,427** · checkitems **4,434** · issue_frames **2,280** |
-| 소스별 | support_history 2,280 · tech_repo 2,709 · checkitem 4,434 · tuning_ai 10 · confluence_docs 4 · **insight(promote)** |
-| 임베딩 | e5-base · dim **768** · 배치 100% |
-| 검색 | Hybrid HTTP · **multi_query=true 기본** (CITECTS/PISA/FAQ/entity 확장 병합) |
+| 코퍼스 | documents **~9,439+** · chunks **~54,446+** · embeddings **~54,429+** · checkitems **4,434** · issue_frames **2,280** |
+| 소스별 | support_history 2,280 · tech_repo 2,709 · checkitem 4,434 · tuning_ai 10 · confluence_docs 4 · **insight(promote+index)** |
+| 임베딩 | e5-base · dim **768** · 배치 100% · **promote 시 document 단위 즉시 embed** |
+| 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
-| 품질 | retrieval hit@3 **0.96** · SI pass_rate **1.0** · catalog route/answer **110/110** · unit tests **73** · pilot_tech_check **13/13** |
-| UI | search · chat · si · tickets · analytics · capacity · bundles · **insights** · `/docs/` |
+| 품질 | retrieval hit@3 **0.96** · SI pass_rate **1.0** · catalog **110/110** · unit tests **74** · pilot_tech_check **13/13** |
+| UI | search · chat · si · tickets · analytics · capacity · bundles · **insights(+reindex)** · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
 | 미완 핵심 | 파일럿 **도메인 사인** · 원격 push · G6 SSO · 부하/SLA 정식 리포트 |
 
@@ -65,7 +65,7 @@ W1–2   Phase 0  스파이크·기반              ✅ 완료
 W3–7   Phase 1  고정밀 검색 MVP → G0,G1   ✅ 완료 (2026-07-20)
 W8–11  Phase 2  Trust QA + 유사장애 → G2,G3   ✅ 엔지니어링 강 / 파일럿·사인 잔여
 W12–14 Phase 3  Planner·Capacity·Analytics → G4,G5   ✅ 핵심 강 / 하드닝·DB시드·prod multi-query 잔여
-W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight 1차 ✅ / SSO·사인 잔여
+W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index ✅ / SSO·사인 잔여
 ```
 ---
 
@@ -329,9 +329,10 @@ citec-kb/
 
 | 작업 | PR | 내용 | 상태 |
 |------|-----|------|------|
-| Insight 승인 | PR-11 | draft → review → approved/rejected · reopen · optional promote Document | **✅ 1차** |
+| Insight 승인 | PR-11 | draft → review → approved/rejected · reopen · optional promote Document | **✅** |
+| Promote 인덱싱 | PR-11 | upsert draft → chunk+FTS → embed(document_id) · `POST …/reindex` | **✅** |
 | Feedback | PR-11 | `POST /v1/feedback` (answer\|insight\|search · rating ±1) | **✅** |
-| Insight UI | PR-11 | `/insights.html` 승인 보드 | **✅** |
+| Insight UI | PR-11 | `/insights.html` 승인 보드 · Reindex | **✅** |
 | API 증분 동기화 | PR-13 | Jira/Confluence (허용 시) | 미착수 |
 | SSO·감사 | PR-14 | OIDC/SAML · audit 확장 | 부분(queries 감사·backup 있음 · SSO 미) |
 | 부하 테스트 | — | 20 동시 검색, 5 Fast QA | load smoke 1차 ✅ · 정식 리포트 잔여 |
@@ -395,6 +396,7 @@ PR-01 compose ✅
 - [x] worker 실큐 (Redis list + job status)
 - [x] load smoke (concurrent search)
 - [x] Insight approve/reject/reopen + promote + feedback + UI
+- [x] **promote → chunk/FTS/embed** · hybrid 검색 e2e · `POST …/reindex`
 - [x] ops/status · pilot_tech_check · postgres backup
 - [ ] SSO · 정식 load test 리포트 · 파일럿 도메인 사인
 - [ ] git 원격 push (정책 승인 후)
@@ -484,7 +486,7 @@ Planner intents: `capacity` · `analytics`(+title_tokens) · `time_scoped_list` 
 GET  /v1/analytics/title_tokens?component=장애지원&top_k=20
 ```
 
-### 7.4 Phase 4 (Insight · Feedback) — ✅ 1차
+### 7.4 Phase 4 (Insight · Feedback · Index) — ✅
 
 ```
 POST   /v1/insights
@@ -495,11 +497,16 @@ POST   /v1/insights/{id}/submit   # → review
 POST   /v1/insights/{id}/approve  # body: {reviewer?, promote?}
 POST   /v1/insights/{id}/reject
 POST   /v1/insights/{id}/reopen   # review|rejected → draft
+POST   /v1/insights/{id}/reindex  # approved/promoted → re-chunk + embed
 POST   /v1/feedback               # target_type answer|insight|search · rating ±1
 ```
 
 상태 머신: `draft ⇄ review → approved` · `draft|review → rejected → draft(reopen)`.  
-`promote=true` 시 `documents` 행 생성 (`source_type=insight`, `evidence_grade=draft`).
+`promote=true` 시:
+1. `DocumentDraft` upsert (`source_type=insight`, `evidence_grade=draft`)
+2. section/chunk + FTS (`to_tsvector`)
+3. `embed_pending_chunks(document_id=…)` — 응답 `index.{chunks,embeddings,embedded,model}`
+4. hybrid `/v1/search` 로 즉시 검색 가능 (e2e unique-token 검증)
 
 ---
 
@@ -643,7 +650,7 @@ POST   /v1/feedback               # target_type answer|insight|search · rating 
 - [ ] G4 DB 시드 · prod multi-query · exhaustive  
 
 ### M4 운영 이관
-- [x] Insight flywheel 1차 (API·UI·feedback·promote)  
+- [x] Insight flywheel (API·UI·feedback·promote·**chunk/embed index**)  
 - [x] ops/status · pilot_tech_check · backup · worker  
 - [ ] G6 SSO · 정식 SLA 스모크 리포트  
 - [ ] 부서 공식 오픈 · 도메인 사인  
@@ -658,13 +665,14 @@ POST   /v1/feedback               # target_type answer|insight|search · rating 
 
 ### 제품 하드닝 (P4 잔여)
 3. **SSO** (OIDC/SAML) · 권한 모델  
-4. 정식 load/SLA 리포트 · promote 문서 재인덱싱(chunk/embed) 파이프라인  
+4. 정식 load/SLA 리포트 (20 concurrent search · 5 Fast QA 수치화)  
 5. Persona UI (관리자/War-room) — 선택  
+6. (선택) promote embed를 worker 비동기 큐로 분리 — 현재는 동기 e2e  
 
-### 완료 스냅샷 (2026-07-20 v1.16)
-- **Insight** draft→review→approve/reject/reopen · **promote Document** · **feedback** · `/insights.html`  
-- e2e 검증 · unit tests **73** · pilot_tech_check **13/13**  
-- 선행: ops/status · backup · worker · load smoke  
+### 완료 스냅샷 (2026-07-20 v1.17)
+- promote → **chunk+FTS+embed** · `POST /v1/insights/{id}/reindex`  
+- hybrid 검색 unique-token e2e 통과 · unit tests **74** · pilot **13/13**  
+- 선행: Insight 승인 플로우 · ops · worker · load smoke  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -703,5 +711,5 @@ POST   /v1/feedback               # target_type answer|insight|search · rating 
 
 ---
 
-**문서 끝 (v1.16).**  
-Insight flywheel 1차 + ops readiness · 잔여=도메인 사인·SSO·원격 push · **매 작업 현행화**.
+**문서 끝 (v1.17).**  
+Insight promote 검색 인덱싱 + flywheel · 잔여=도메인 사인·SSO·원격 push · **매 작업 현행화**.

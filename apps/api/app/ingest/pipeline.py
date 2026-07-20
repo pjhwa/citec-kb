@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import Checkitem, Chunk, Document, DocumentSection, IngestJob, Source
@@ -45,6 +45,40 @@ def _ensure_source(session: Session, source_id: str = "fs_raw") -> None:
         )
 
 
+def upsert_document_from_draft(
+    draft: DocumentDraft,
+    *,
+    source_id: str = "fs_raw",
+) -> dict[str, Any]:
+    """Public upsert: write document + sections + FTS chunks. Returns ids/stats."""
+    with session_scope() as session:
+        _ensure_source(session, source_id)
+        action = _upsert_document(session, draft, source_id=source_id)
+        doc = session.scalar(
+            select(Document).where(
+                Document.source_type == draft.source_type,
+                Document.external_id == draft.external_id,
+            )
+        )
+        if not doc:
+            raise RuntimeError(
+                f"upsert missing document {draft.source_type}:{draft.external_id}"
+            )
+        n_chunks = session.scalar(
+            select(func.count())
+            .select_from(Chunk)
+            .where(Chunk.document_id == doc.id, Chunk.is_active.is_(True))
+        )
+        return {
+            "document_id": doc.id,
+            "action": action,
+            "chunks": int(n_chunks or 0),
+            "source_type": doc.source_type,
+            "external_id": doc.external_id,
+            "content_hash": doc.content_hash,
+        }
+
+
 def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "fs_raw") -> str:
     """Insert or update document; rechunk when content_hash changes. Returns action."""
     existing = session.scalar(
@@ -69,18 +103,25 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
     draft.work_type = tax.get("work_type") or draft.work_type
 
     if existing and existing.content_hash == draft.content_hash:
-        # still refresh taxonomy if empty
-        dirty = False
-        if not existing.environment and draft.environment:
-            existing.environment = draft.environment
-            dirty = True
-        if not existing.domain and draft.domain:
-            existing.domain = draft.domain
-            dirty = True
-        if not existing.work_type and draft.work_type:
-            existing.work_type = draft.work_type
-            dirty = True
-        return "updated" if dirty else "skipped"
+        n_active = session.scalar(
+            select(func.count())
+            .select_from(Chunk)
+            .where(Chunk.document_id == existing.id, Chunk.is_active.is_(True))
+        ) or 0
+        if int(n_active) > 0:
+            # still refresh taxonomy if empty
+            dirty = False
+            if not existing.environment and draft.environment:
+                existing.environment = draft.environment
+                dirty = True
+            if not existing.domain and draft.domain:
+                existing.domain = draft.domain
+                dirty = True
+            if not existing.work_type and draft.work_type:
+                existing.work_type = draft.work_type
+                dirty = True
+            return "updated" if dirty else "skipped"
+        # same hash but no active chunks (e.g. bare promote) → fall through rechunk
 
     if existing:
         doc = existing

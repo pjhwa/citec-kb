@@ -80,13 +80,16 @@ async function create() {
 }
 
 async function act(id, action, promote=false) {
-  const r = await fetch(`/v1/insights/${id}/${action}`, {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({reviewer:"senior", promote}),
-  });
+  const opts = {method:"POST", headers:{"Content-Type":"application/json"}};
+  if (action !== "reindex") {
+    opts.body = JSON.stringify({reviewer:"senior", promote});
+  }
+  const r = await fetch(`/v1/insights/${id}/${action}`, opts);
   const d = await r.json();
-  if (!r.ok) throw new Error(d.detail || r.statusText);
+  if (!r.ok) throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||r.statusText));
+  if (d.index) {
+    $("msg").textContent = `index chunks=${d.index.chunks||0} emb=${d.index.embeddings||d.index.embedded||0}`;
+  }
   await load();
 }
 
@@ -108,10 +111,11 @@ async function load() {
       <div class="row">
         ${it.status==="draft"?`<button data-a="submit" data-id="${esc(it.id)}">Submit review</button>`:""}
         ${it.status==="review"?`<button class="ok" data-a="approve" data-id="${esc(it.id)}">Approve</button>
-          <button class="ok" data-a="approve-promote" data-id="${esc(it.id)}">Approve+Promote</button>
+          <button class="ok" data-a="approve-promote" data-id="${esc(it.id)}">Approve+Promote+Index</button>
           <button class="bad" data-a="reject" data-id="${esc(it.id)}">Reject</button>
           <button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
         ${it.status==="rejected"?`<button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
+        ${it.status==="approved"?`<button class="ghost" data-a="reindex" data-id="${esc(it.id)}">Reindex</button>`:""}
         ${it.promoted_document_id?`<span class="meta">promoted_doc=${esc(it.promoted_document_id)}</span>`:""}
       </div>
     </div>`;
@@ -122,6 +126,7 @@ async function load() {
       const id = btn.dataset.id;
       const a = btn.dataset.a;
       if (a === "approve-promote") return act(id, "approve", true).catch(e => alert(e));
+      if (a === "reindex") return act(id, "reindex").catch(e => alert(e));
       act(id, a).catch(e => alert(e));
     };
   });

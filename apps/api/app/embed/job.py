@@ -30,6 +30,7 @@ def _fetch_pending_batch(
     batch_size: int,
     after_id: Optional[str],
     remaining: Optional[int],
+    document_id: Optional[str] = None,
 ) -> list[Any]:
     """Keyset page of active chunks missing an embedding for model_name."""
     limit = batch_size if remaining is None else min(batch_size, remaining)
@@ -52,6 +53,8 @@ def _fetch_pending_batch(
             .order_by(Chunk.id)
             .limit(limit)
         )
+        if document_id:
+            stmt = stmt.where(Chunk.document_id == document_id)
         if after_id:
             stmt = stmt.where(Chunk.id > after_id)
         rows = list(session.execute(stmt).all())
@@ -63,6 +66,7 @@ def embed_pending_chunks(
     batch_size: int = 16,
     limit: Optional[int] = None,
     model_name: str = MODEL_ID,
+    document_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Embed chunks that lack a row in embeddings for this model (streamed)."""
     job_id = str(uuid.uuid4())
@@ -75,6 +79,7 @@ def embed_pending_chunks(
         "dim": EMBEDDING_DIM,
         "batch_size": batch_size,
         "limit": limit,
+        "document_id": document_id,
     }
     t_job = time.perf_counter()
 
@@ -111,6 +116,7 @@ def embed_pending_chunks(
             batch_size=batch_size,
             after_id=after_id,
             remaining=remaining,
+            document_id=document_id,
         )
         fetch_ms = (time.perf_counter() - t_fetch) * 1000
         if not batch:

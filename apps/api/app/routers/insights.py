@@ -13,6 +13,7 @@ from app.insights.service import (
     create_insight,
     get_insight,
     list_insights,
+    reindex_insight,
     transition_insight,
     update_insight,
 )
@@ -136,6 +137,17 @@ def reopen_insight(insight_id: str) -> dict[str, Any]:
     """rejected | review → draft so author can edit and re-submit."""
     try:
         return transition_insight(insight_id, to_status="draft")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="insight not found") from None
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/insights/{insight_id}/reindex")
+def reindex_insight_route(insight_id: str) -> dict[str, Any]:
+    """Re-chunk + embed a promoted/approved insight into the search index."""
+    try:
+        return reindex_insight(insight_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="insight not found") from None
     except PermissionError as exc:
