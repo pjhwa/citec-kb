@@ -9,5 +9,7 @@ python-dotenv==1.1.0
 SQLAlchemy==2.0.40
 alembic==1.15.2
 pgvector==0.4.1
+# OIDC JWT (HS256 local + RS256 JWKS)
+PyJWT[crypto]==2.10.1
 # Query-time hybrid (e5-base). Install torch from CPU wheel index in Dockerfile.
 sentence-transformers==5.6.0

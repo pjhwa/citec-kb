@@ -34,13 +34,26 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", alias="API_HOST")
     api_port: int = Field(default=8000, alias="API_PORT")
 
-    # Auth / SSO scaffolding (default off = open pilot)
-    # AUTH_MODE: off | apikey | oidc_stub
+    # Auth / SSO (default off = open pilot)
+    # AUTH_MODE: off | apikey | oidc_stub | oidc
     auth_mode: str = Field(default="off", alias="AUTH_MODE")
     auth_tokens_json: str | None = Field(default=None, alias="AUTH_TOKENS_JSON")
     oidc_issuer: str | None = Field(default=None, alias="OIDC_ISSUER")
     oidc_client_id: str | None = Field(default=None, alias="OIDC_CLIENT_ID")
+    oidc_client_secret: str | None = Field(default=None, alias="OIDC_CLIENT_SECRET")
     oidc_audience: str | None = Field(default=None, alias="OIDC_AUDIENCE")
+    oidc_redirect_uri: str | None = Field(
+        default="http://localhost:8573/v1/auth/callback",
+        alias="OIDC_REDIRECT_URI",
+    )
+    oidc_scopes: str = Field(default="openid profile email", alias="OIDC_SCOPES")
+    # Dev/local HS256 secret — validates Bearer JWT without external IdP
+    oidc_jwt_secret: str | None = Field(default=None, alias="OIDC_JWT_SECRET")
+    oidc_role_claim: str = Field(default="roles", alias="OIDC_ROLE_CLAIM")
+    public_web_base: str = Field(
+        default="http://localhost:8572",
+        alias="PUBLIC_WEB_BASE",
+    )
 
     database_url: str = Field(
         default="postgresql+psycopg://citec:citec@localhost:5433/citec_knowledge",

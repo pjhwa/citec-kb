@@ -1,7 +1,7 @@
-"""Auth principals, API-key gate, OIDC config stubs."""
+"""Auth principals, API-key gate, OIDC JWT validation."""
 
-from app.auth.principal import Principal, parse_bearer_or_key
 from app.auth.deps import get_principal, require_roles
+from app.auth.principal import Principal, parse_bearer_or_key
 
 __all__ = [
     "Principal",

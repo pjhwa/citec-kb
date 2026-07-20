@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.18 — CI-TEC Knowledge</title>
+<title>구현 계획 1.19 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+auth scaffold+SLA report** · 문서 1.18</div>
-  <p class="meta">문서 버전 1.18 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.18: Auth/SSO scaffolding · load/SLA formal report</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.19</div>
+  <p class="meta">문서 버전 1.19 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.19: OIDC JWT validation · login/callback · login.html · local HS256</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.18</strong></td>
+<td><strong>1.19</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-20 — v1.18: Auth/SSO scaffolding · load/SLA formal report</strong></td>
+<td><strong>2026-07-20 — v1.19: OIDC JWT validation · login/callback · login.html · local HS256</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -124,11 +124,11 @@
 <tbody>
 <tr>
 <td><strong>진행 페이즈</strong></td>
-<td><strong>P1–P3 강</strong> · <strong>P4 Insight+index+auth scaffold+SLA report</strong></td>
+<td><strong>P1–P3 강</strong> · <strong>P4 Insight+index+OIDC+SLA</strong></td>
 </tr>
 <tr>
 <td><strong>엔지니어링 게이트</strong></td>
-<td><strong>G0·G1 완료</strong> · <strong>G3/G4/G5 엔지니어링</strong> · G2 파일럿 사인 잔여 · <strong>G6 부분</strong> (auth scaffold · load/SLA pass · SSO 실연동 잔여)</td>
+<td><strong>G0·G1 완료</strong> · <strong>G3/G4/G5 엔지니어링</strong> · G2 파일럿 사인 잔여 · <strong>G6 부분</strong> (OIDC JWT+login · load/SLA pass · IdP 실연동·도메인 사인 잔여)</td>
 </tr>
 <tr>
 <td>레포/디렉터리</td>
@@ -160,7 +160,7 @@
 </tr>
 <tr>
 <td>품질</td>
-<td>retrieval hit@3 <strong>0.96</strong> · SI <strong>1.0</strong> · catalog <strong>110/110</strong> · unit tests <strong>79</strong> · pilot <strong>13/13</strong> · load/SLA <strong>pass</strong></td>
+<td>retrieval hit@3 <strong>0.96</strong> · SI <strong>1.0</strong> · catalog <strong>110/110</strong> · unit tests <strong>84</strong> · pilot <strong>13/13</strong> · load/SLA <strong>pass</strong></td>
 </tr>
 <tr>
 <td>UI</td>
@@ -172,7 +172,7 @@
 </tr>
 <tr>
 <td>미완 핵심</td>
-<td>파일럿 <strong>도메인 사인</strong> · 원격 push · G6 <strong>실 OIDC 연동</strong> · 부서 오픈</td>
+<td>파일럿 <strong>도메인 사인</strong> · 원격 push · IdP 실서버 연동(Keycloak 등) · 부서 오픈</td>
 </tr>
 </tbody>
 </table></div>
@@ -219,7 +219,7 @@
 <tr>
 <td>G6</td>
 <td>50–100명 스모크 · SLA</td>
-<td><strong>부분</strong> (auth scaffold · <strong>load/SLA pass</strong> · 실 OIDC·도메인 사인 잔여)</td>
+<td><strong>부분</strong> (<strong>OIDC JWT/login</strong> · load/SLA pass · IdP 실서버·도메인 사인 잔여)</td>
 </tr>
 </tbody>
 </table></div>
@@ -228,7 +228,7 @@
 W3–7   Phase 1  고정밀 검색 MVP → G0,G1   ✅ 완료 (2026-07-20)
 W8–11  Phase 2  Trust QA + 유사장애 → G2,G3   ✅ 엔지니어링 강 / 파일럿·사인 잔여
 W12–14 Phase 3  Planner·Capacity·Analytics → G4,G5   ✅ 핵심 강 / 하드닝·DB시드·prod multi-query 잔여
-W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+auth+SLA ✅ / OIDC·사인 잔여
+W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+OIDC+SLA ✅ / IdP·사인 잔여
 </code></pre>
 <hr>
 <h2>1. 전제 · 제약 · 비목표</h2>
@@ -931,8 +931,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+auth+SL
 <tr>
 <td>SSO·감사</td>
 <td>PR-14</td>
-<td>API key roles · OIDC config stub · <code>/v1/auth/*</code> · write-path RBAC</td>
-<td><strong>scaffold ✅</strong> (실 OIDC 잔여)</td>
+<td>API key · OIDC JWT(JWKS/HS256) · login/callback · <code>/login.html</code> · RBAC</td>
+<td><strong>✅ 엔지니어링</strong> (IdP 실서버 연동 잔여)</td>
 </tr>
 <tr>
 <td>부하 테스트</td>
@@ -1009,7 +1009,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+index+auth+SL
 <li class="check">✅ ops/status · pilot_tech_check · postgres backup</li>
 <li class="check">✅ Auth scaffold (<code>AUTH_MODE</code> · roles · <code>/v1/auth</code>) · write-path RBAC</li>
 <li class="check">✅ Formal <strong>load/SLA report</strong> (<code>scripts/load_sla_report.py</code> · <code>data/reports/</code>)</li>
-<li class="check">☐ 실 OIDC 연동 · 파일럿 도메인 사인</li>
+<li class="check">✅ <strong>OIDC</strong> JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint</li>
+<li class="check">☐ IdP 실서버(Keycloak/Entra) 연동 검증 · 파일럿 도메인 사인</li>
 <li class="check">☐ git 원격 push (정책 승인 후)</li>
 </ul>
 <hr>
@@ -1156,16 +1157,22 @@ POST   /v1/feedback               # target_type answer|insight|search · rating 
 3. <code>embed_pending_chunks(document_id=…)</code> — 응답 <code>index.{chunks,embeddings,embedded,model}</code><br>
 4. hybrid <code>/v1/search</code> 로 즉시 검색 가능 (e2e unique-token 검증)</p>
 <hr>
-<h3>7.5 Auth / SSO scaffold — ✅ (실 OIDC 잔여)</h3>
-<pre><code>GET  /v1/auth/me        # principal + roles
-GET  /v1/auth/status    # mode, OIDC config flags (no secrets)
+<h3>7.5 Auth / OIDC — ✅ 엔지니어링 (IdP 실서버 잔여)</h3>
+<pre><code>GET  /v1/auth/me
+GET  /v1/auth/status
+GET  /v1/auth/login?return_to=&amp;redirect=
+GET  /v1/auth/callback?code=&amp;state=
+GET  /v1/auth/logout
+POST /v1/auth/dev/token     # HS256 mint when OIDC_JWT_SECRET (dev)
+POST /v1/auth/introspect
 </code></pre>
 <ul>
-<li><code>AUTH_MODE=off|apikey|oidc_stub</code> (default <strong>off</strong> = open pilot)</li>
-<li>Tokens: <code>config/auth.json</code> 또는 <code>AUTH_TOKENS_JSON</code></li>
-<li>Roles: <code>viewer</code> · <code>author</code> · <code>senior</code> · <code>admin</code></li>
-<li>Enforced when mode≠off: insights write (author+/senior+) · <code>POST /v1/jobs</code> (admin)</li>
-<li>OIDC_ISSUER / CLIENT_ID / AUDIENCE placeholders for future full SSO</li>
+<li><code>AUTH_MODE=off|apikey|oidc_stub|oidc</code> (default <strong>off</strong>)</li>
+<li>JWT: local <strong>HS256</strong> (<code>OIDC_JWT_SECRET</code>) · IdP <strong>JWKS RS</strong>* (discovery)</li>
+<li>Auth code: discovery → authorize → token exchange → fragment redirect to web</li>
+<li>Roles from claim <code>roles</code> / <code>realm_access.roles</code> / <code>groups</code> (+ kb-admin mapping)</li>
+<li>UI: <code>/login.html</code> (OIDC button · dev mint · localStorage Bearer)</li>
+<li>Enforced writes: insights author+/senior+ · jobs admin</li>
 </ul>
 <h2>8. 평가 · 품질 운영</h2>
 <h3>8.1 Gold</h3>
@@ -1538,7 +1545,8 @@ GET  /v1/auth/status    # mode, OIDC config flags (no secrets)
 <li class="check">✅ Insight flywheel (API·UI·feedback·promote·<strong>chunk/embed index</strong>)  </li>
 <li class="check">✅ ops/status · pilot_tech_check · backup · worker  </li>
 <li class="check">✅ Auth scaffold + formal load/SLA report  </li>
-<li class="check">☐ G6 실 OIDC · 부서 공식 오픈 · 도메인 사인  </li>
+<li class="check">✅ OIDC JWT validation + login/callback UI  </li>
+<li class="check">☐ IdP 실서버 검증 · 부서 공식 오픈 · 도메인 사인  </li>
 </ul>
 <hr>
 <h2>15. 즉시 다음 액션</h2>
@@ -1549,15 +1557,14 @@ GET  /v1/auth/status    # mode, OIDC config flags (no secrets)
 </ol>
 <h3>제품 하드닝 (P4 잔여)</h3>
 <ol start="3">
-<li><strong>실 OIDC/SAML</strong> 연동 (issuer JWT 검증 · 로그인 리다이렉트)  </li>
+<li><strong>IdP 실서버</strong> (Keycloak/Entra) discovery·login e2e · SAML 필요 시 별도  </li>
 <li>Persona UI (관리자/War-room) — 선택  </li>
-<li>(선택) promote embed worker 비동기 · 검색 p95 튜닝 (embed 캐시/배치)  </li>
+<li>(선택) promote embed worker 비동기 · 검색 p95 튜닝  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-20 v1.18)</h3>
+<h3>완료 스냅샷 (2026-07-20 v1.19)</h3>
 <ul>
-<li><strong>Auth scaffold</strong> · role gate e2e (401/403/200) · unit tests <strong>79</strong>  </li>
-<li><strong>load/SLA</strong> gate pass (search c=8 p95~4s · health · planner) · stress c=20 informational  </li>
-<li>선행: Insight index · ops · pilot 13/13  </li>
+<li><strong>OIDC</strong> JWT+login/callback · login.html · unit tests <strong>84</strong> · OIDC e2e (HS256)  </li>
+<li>선행: auth scaffold · load/SLA · Insight flywheel · pilot 13/13  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>
@@ -1641,6 +1648,10 @@ GET  /v1/auth/status    # mode, OIDC config flags (no secrets)
 <td>Insight 승인</td>
 </tr>
 <tr>
+<td>http://localhost:8572/login.html</td>
+<td>Login / SSO</td>
+</tr>
+<tr>
 <td>http://localhost:8572/docs/</td>
 <td>설계·구현 문서</td>
 </tr>
@@ -1655,8 +1666,8 @@ GET  /v1/auth/status    # mode, OIDC config flags (no secrets)
 </tbody>
 </table></div>
 <hr>
-<p><strong>문서 끝 (v1.18).</strong><br>
-Auth scaffold + load/SLA + Insight flywheel · 잔여=도메인 사인·실 OIDC·원격 push · <strong>매 작업 현행화</strong>.</p>
+<p><strong>문서 끝 (v1.19).</strong><br>
+OIDC JWT/login + load/SLA + Insight · 잔여=도메인 사인·IdP 실서버·원격 push · <strong>매 작업 현행화</strong>.</p>
 </div>
 </body>
 </html>

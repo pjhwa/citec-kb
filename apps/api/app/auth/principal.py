@@ -1,4 +1,4 @@
-"""Principal model + token table (API keys / OIDC stub claims)."""
+"""Principal model + token table (API keys / OIDC JWT / stub)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class Principal:
     sub: str
     name: str
     roles: frozenset[str] = field(default_factory=frozenset)
-    auth_via: str = "anonymous"  # anonymous | apikey | oidc_stub
+    auth_via: str = "anonymous"  # anonymous | apikey | oidc | oidc_stub
 
     def has_any(self, *needed: str) -> bool:
         return bool(self.roles.intersection(needed))
@@ -136,32 +136,44 @@ def resolve_principal(
     settings = get_settings()
     mode = (getattr(settings, "auth_mode", None) or "off").lower().strip()
 
+    cred = parse_bearer_or_key(authorization, api_key)
+
     if mode in ("", "off", "disabled", "none"):
-        # optional identity even when open (for audit / UI), but full roles
-        cred = parse_bearer_or_key(authorization, api_key)
         if cred:
+            # Prefer OIDC JWT identity even in open mode (roles not enforced)
+            try:
+                from app.auth.oidc import validate_bearer_jwt
+
+                p = validate_bearer_jwt(cred)
+                if p:
+                    return Principal(
+                        sub=p.sub,
+                        name=p.name,
+                        roles=ALL_ROLES,
+                        auth_via=p.auth_via,
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             table = _load_token_table()
             if cred in table:
                 p = table[cred]
                 return Principal(
                     sub=p.sub,
                     name=p.name,
-                    roles=ALL_ROLES,  # mode off ignores role restrictions
+                    roles=ALL_ROLES,
                     auth_via=p.auth_via,
                 )
         return ANON_OPEN
 
-    # apikey | oidc_stub (JWT not fully validated yet — same token table for stub)
-    cred = parse_bearer_or_key(authorization, api_key)
     if not cred:
         return ANON_RESTRICTED
 
+    # API keys always accepted in enforced modes (service accounts)
     table = _load_token_table()
     if cred in table:
         return table[cred]
 
-    # oidc_stub: accept opaque tokens with role claim prefix "stub:<sub>:<roles>"
-    # e.g. stub:alice:senior,admin
+    # oidc_stub opaque helper
     if mode in ("oidc_stub", "oidc") and cred.startswith("stub:"):
         parts = cred.split(":")
         if len(parts) >= 3:
@@ -173,5 +185,16 @@ def resolve_principal(
                 roles=roles or frozenset({ROLE_VIEWER}),
                 auth_via="oidc_stub",
             )
+
+    # Real JWT validation (oidc / oidc_stub / apikey hybrid)
+    if mode in ("oidc", "oidc_stub", "apikey"):
+        try:
+            from app.auth.oidc import validate_bearer_jwt
+
+            p = validate_bearer_jwt(cred)
+            if p:
+                return p
+        except Exception:  # noqa: BLE001
+            logger.exception("JWT validation error")
 
     return ANON_RESTRICTED
