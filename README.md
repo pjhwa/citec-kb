@@ -19,6 +19,11 @@ cp ~/tmp/citec-wiki-qa/.env .env   # 이미 있으면 스킵
 # export RAW_HOST_DIR=/path/to/raw
 
 docker compose up -d --build
+
+# 또는 종료 → 재빌드 → 재기동 한 번에:
+./rebuild.sh              # 도움말: ./rebuild.sh --help
+# ./rebuild.sh --no-cache
+# ./rebuild.sh api mcp
 ```
 
 ### 호스트 포트 (할당 대역 8572–8580)
