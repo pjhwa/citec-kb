@@ -33,6 +33,7 @@ from app.routers import jobs as jobs_router  # noqa: E402
 from app.routers import lexicon as lexicon_router  # noqa: E402
 from app.routers import ops as ops_router  # noqa: E402
 from app.routers import tickets as tickets_router  # noqa: E402
+from app.routers import external_compat as external_compat_router  # noqa: E402
 
 logger = logging.getLogger("citec.api")
 logging.basicConfig(
@@ -83,6 +84,8 @@ app.include_router(ops_router.router)
 app.include_router(insights_router.router)
 app.include_router(auth_router.router)
 app.include_router(mock_idp_router.router)
+# wiki-qa compatible /api/* + /v1/external/* for external system integration
+app.include_router(external_compat_router.router)
 
 
 class HealthResponse(BaseModel):
