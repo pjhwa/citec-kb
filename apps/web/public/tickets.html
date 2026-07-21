@@ -47,6 +47,8 @@
   <a href="/analytics.html">집계</a>
   <a href="/capacity.html">공수·대수</a>
   <a href="/bundles.html">번들</a>
+  <a href="/admin.html">Admin</a>
+  <a href="/login.html">Login</a>
   <a href="/docs/">문서</a>
 </div>
 <div class="wrap">
@@ -179,5 +181,7 @@ document.querySelectorAll(".chips button").forEach(btn => {
 // auto-run demo on load
 runRoute();
 </script>
+<script src="/js/auth.js"></script>
+<script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>
 </html>

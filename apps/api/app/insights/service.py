@@ -153,12 +153,15 @@ def _index_stats(document_id: str) -> dict[str, Any]:
         }
 
 
-def promote_and_index(insight_id: str, *, reindex: bool = False) -> dict[str, Any]:
-    """Upsert promoted document, chunk+FTS, then embed pending chunks for that doc.
+def promote_and_index(
+    insight_id: str,
+    *,
+    reindex: bool = False,
+    embed: bool = True,
+) -> dict[str, Any]:
+    """Upsert promoted document, chunk+FTS, optionally embed pending chunks.
 
-    When ``reindex`` is True and a document already exists, force re-upsert
-    by bumping content (content_hash change) only if needed via normal upsert
-    (hash-based skip still applies when content unchanged).
+    When ``embed`` is False, only document/FTS is written (worker can embed later).
     """
     from app.embed.job import embed_pending_chunks
     from app.ingest.pipeline import upsert_document_from_draft
@@ -168,13 +171,11 @@ def promote_and_index(insight_id: str, *, reindex: bool = False) -> dict[str, An
         if not row:
             raise KeyError(insight_id)
         if row.status != "approved" and not reindex:
-            # allow reindex only for approved insights that already have a doc
             if not (reindex and row.promoted_document_id):
                 raise PermissionError(
                     f"promote requires approved status (got {row.status})"
                 )
         draft = _insight_draft(row)
-        insight_snapshot = _to_dict(row)
 
     upsert = upsert_document_from_draft(draft)
     doc_id = upsert["document_id"]
@@ -188,11 +189,20 @@ def promote_and_index(insight_id: str, *, reindex: bool = False) -> dict[str, An
         insight_snapshot = _to_dict(row)
 
     emb: dict[str, Any]
-    try:
-        emb = embed_pending_chunks(document_id=doc_id, batch_size=16)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("embed after promote failed doc=%s", doc_id)
-        emb = {"error": str(exc), "embedded": 0, "document_id": doc_id}
+    if embed:
+        try:
+            emb = embed_pending_chunks(document_id=doc_id, batch_size=16)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("embed after promote failed doc=%s", doc_id)
+            emb = {"error": str(exc), "embedded": 0, "document_id": doc_id}
+    else:
+        emb = {
+            "embedded": 0,
+            "deferred": True,
+            "document_id": doc_id,
+            "model": None,
+            "errors": 0,
+        }
 
     stats = _index_stats(doc_id)
     insight_snapshot["index"] = {
@@ -202,6 +212,7 @@ def promote_and_index(insight_id: str, *, reindex: bool = False) -> dict[str, An
         "embed_errors": emb.get("errors", 0),
         "model": emb.get("model"),
         "embed_error": emb.get("error"),
+        "deferred": bool(emb.get("deferred")),
     }
     return insight_snapshot
 
@@ -212,6 +223,7 @@ def transition_insight(
     to_status: str,
     reviewer: Optional[str] = None,
     promote: bool = False,
+    async_index: bool = False,
 ) -> dict[str, Any]:
     if to_status not in VALID_STATUS:
         raise ValueError(f"invalid status: {to_status}")
@@ -229,7 +241,6 @@ def transition_insight(
             row.reviewer = reviewer
         if to_status == "approved":
             row.approved_at = datetime.now(timezone.utc)
-            # promote if requested and not yet linked (or always re-index when promote)
             if promote:
                 do_promote = True
         session.flush()
@@ -237,15 +248,32 @@ def transition_insight(
 
     if do_promote:
         try:
-            promoted = promote_and_index(insight_id)
-            result = promoted
+            if async_index:
+                promoted = promote_and_index(insight_id, embed=False)
+                from app.jobs.queue import enqueue_job
+
+                job = enqueue_job(
+                    "insight_reindex",
+                    payload={"insight_id": insight_id},
+                )
+                promoted["index_job"] = {
+                    "id": job.get("id"),
+                    "type": job.get("type"),
+                    "status": job.get("status"),
+                }
+                if promoted.get("index"):
+                    promoted["index"]["async"] = True
+                    promoted["index"]["job_id"] = job.get("id")
+                result = promoted
+            else:
+                result = promote_and_index(insight_id, embed=True)
         except Exception as exc:  # noqa: BLE001
             logger.exception("promote/index failed insight=%s", insight_id)
             result["index"] = {"error": str(exc)}
     return result
 
 
-def reindex_insight(insight_id: str) -> dict[str, Any]:
+def reindex_insight(insight_id: str, *, embed: bool = True) -> dict[str, Any]:
     """Re-run chunk+embed for an already approved (or previously promoted) insight."""
     with session_scope() as session:
         row = session.get(Insight, insight_id)
@@ -253,4 +281,4 @@ def reindex_insight(insight_id: str) -> dict[str, Any]:
             raise KeyError(insight_id)
         if row.status != "approved" and not row.promoted_document_id:
             raise PermissionError("reindex requires approved insight or existing promote")
-    return promote_and_index(insight_id, reindex=True)
+    return promote_and_index(insight_id, reindex=True, embed=embed)

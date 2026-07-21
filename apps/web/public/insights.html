@@ -83,15 +83,17 @@ async function create() {
   await load();
 }
 
-async function act(id, action, promote=false) {
+async function act(id, action, promote=false, asyncIndex=false) {
   const opts = {method:"POST"};
   if (action !== "reindex") {
-    opts.body = {reviewer:"senior", promote};
+    opts.body = {reviewer:"senior", promote, async_index: asyncIndex};
   }
   const r = await api(`/v1/insights/${id}/${action}`, opts);
   const d = await r.json();
   if (!r.ok) throw new Error(typeof d.detail==="string"?d.detail:JSON.stringify(d.detail||r.statusText));
-  if (d.index) {
+  if (d.index_job) {
+    $("msg").textContent = `async job=${d.index_job.id} chunks=${(d.index&&d.index.chunks)||0}`;
+  } else if (d.index) {
     $("msg").textContent = `index chunks=${d.index.chunks||0} emb=${d.index.embeddings||d.index.embedded||0}`;
   }
   await load();
@@ -116,6 +118,7 @@ async function load() {
         ${it.status==="draft"?`<button data-a="submit" data-id="${esc(it.id)}">Submit review</button>`:""}
         ${it.status==="review"?`<button class="ok" data-a="approve" data-id="${esc(it.id)}">Approve</button>
           <button class="ok" data-a="approve-promote" data-id="${esc(it.id)}">Approve+Promote+Index</button>
+          <button class="ok" data-a="approve-async" data-id="${esc(it.id)}">Approve+Promote async</button>
           <button class="bad" data-a="reject" data-id="${esc(it.id)}">Reject</button>
           <button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
         ${it.status==="rejected"?`<button class="ghost" data-a="reopen" data-id="${esc(it.id)}">Reopen draft</button>`:""}
@@ -129,7 +132,8 @@ async function load() {
     btn.onclick = () => {
       const id = btn.dataset.id;
       const a = btn.dataset.a;
-      if (a === "approve-promote") return act(id, "approve", true).catch(e => alert(e));
+      if (a === "approve-promote") return act(id, "approve", true, false).catch(e => alert(e));
+      if (a === "approve-async") return act(id, "approve", true, true).catch(e => alert(e));
       if (a === "reindex") return act(id, "reindex").catch(e => alert(e));
       act(id, a).catch(e => alert(e));
     };

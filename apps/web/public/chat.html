@@ -59,6 +59,8 @@
   <a href="/tickets.html">기간 지원건</a>
   <a href="/analytics.html">집계</a>
   <a href="/capacity.html">공수·대수</a>
+  <a href="/admin.html">Admin</a>
+  <a href="/login.html">Login</a>
   <a href="/docs/">문서</a>
   <a href="/api/docs" target="_blank">API</a>
 </div>
@@ -199,5 +201,7 @@ $("q").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("btn").click();
 });
 </script>
+<script src="/js/auth.js"></script>
+<script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>
 </html>

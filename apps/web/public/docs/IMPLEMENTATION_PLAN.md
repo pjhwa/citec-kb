@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.21** |
+| 문서 버전 | **1.22** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI** |
+| 갱신 | **2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -403,8 +403,9 @@ PR-01 compose ✅
 - [x] **OIDC** JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint
 - [x] **Mock OIDC IdP** `/v1/mock-idp` RS256 · full login→callback e2e · `docs/OIDC_IDP_SETUP.md`
 - [x] Web **Bearer helper** (`/js/auth.js`) · insights/bundles · **admin.html** ops persona
+- [x] **async_index** promote · worker job `insight_reindex` · auth chip on main UIs
 - [ ] Keycloak/Entra **실서버** 연동 검증 · 파일럿 도메인 사인
-- [ ] git 원격 push (정책 승인 후)
+- [ ] git 원격 push (원격 미설정 상태)
 ---
 
 ## 6. 데이터 모델
@@ -697,9 +698,9 @@ POST /v1/auth/introspect
 4. 파일럿 도메인 사인 · 원격 push  
 5. promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  
 
-### 완료 스냅샷 (2026-07-20 v1.21)
-- **Admin/Ops UI** · shared `auth.js` Bearer on insight/bundle writes  
-- Mock IdP e2e · unit tests **87** · pilot 13/13 · plan HTML  
+### 완료 스냅샷 (2026-07-21 v1.22)
+- **async promote** → queue `insight_reindex` · worker embeds · e2e done  
+- auth chip on search/chat/si/… · unit tests **87** · pilot 13/13  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -739,5 +740,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.21).**  
-Admin UI + auth.js + mock IdP · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.
+**문서 끝 (v1.22).**  
+async reindex + Admin UI + OIDC · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.

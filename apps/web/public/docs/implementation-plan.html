@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.21 — CI-TEC Knowledge</title>
+<title>구현 계획 1.22 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.21</div>
-  <p class="meta">문서 버전 1.21 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.22</div>
+  <p class="meta">문서 버전 1.22 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.21</strong></td>
+<td><strong>1.22</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-20 — v1.21: web Bearer auth helper · Admin/Ops persona UI</strong></td>
+<td><strong>2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -1012,8 +1012,9 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+
 <li class="check">✅ <strong>OIDC</strong> JWT validate (JWKS RS* + local HS256) · login/callback · login.html · dev mint</li>
 <li class="check">✅ <strong>Mock OIDC IdP</strong> <code>/v1/mock-idp</code> RS256 · full login→callback e2e · <code>docs/OIDC_IDP_SETUP.md</code></li>
 <li class="check">✅ Web <strong>Bearer helper</strong> (<code>/js/auth.js</code>) · insights/bundles · <strong>admin.html</strong> ops persona</li>
+<li class="check">✅ <strong>async_index</strong> promote · worker job <code>insight_reindex</code> · auth chip on main UIs</li>
 <li class="check">☐ Keycloak/Entra <strong>실서버</strong> 연동 검증 · 파일럿 도메인 사인</li>
-<li class="check">☐ git 원격 push (정책 승인 후)</li>
+<li class="check">☐ git 원격 push (원격 미설정 상태)</li>
 </ul>
 <hr>
 <h2>6. 데이터 모델</h2>
@@ -1566,10 +1567,10 @@ POST /v1/auth/introspect
 <li>파일럿 도메인 사인 · 원격 push  </li>
 <li>promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-20 v1.21)</h3>
+<h3>완료 스냅샷 (2026-07-21 v1.22)</h3>
 <ul>
-<li><strong>Admin/Ops UI</strong> · shared <code>auth.js</code> Bearer on insight/bundle writes  </li>
-<li>Mock IdP e2e · unit tests <strong>87</strong> · pilot 13/13 · plan HTML  </li>
+<li><strong>async promote</strong> → queue <code>insight_reindex</code> · worker embeds · e2e done  </li>
+<li>auth chip on search/chat/si/… · unit tests <strong>87</strong> · pilot 13/13  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>
@@ -1671,8 +1672,8 @@ POST /v1/auth/introspect
 </tbody>
 </table></div>
 <hr>
-<p><strong>문서 끝 (v1.21).</strong><br>
-Admin UI + auth.js + mock IdP · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
+<p><strong>문서 끝 (v1.22).</strong><br>
+async reindex + Admin UI + OIDC · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
 </div>
 </body>
 </html>

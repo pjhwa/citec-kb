@@ -27,6 +27,8 @@ ALLOWED_TYPES = frozenset(
         "entities_seed",
         "capacity_seed",
         "noop",
+        "insight_reindex",  # payload: {insight_id}
+        "embed_document",  # payload: {document_id}
     }
 )
 

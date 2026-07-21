@@ -39,6 +39,10 @@ class InsightUpdate(BaseModel):
 class TransitionBody(BaseModel):
     reviewer: Optional[str] = None
     promote: bool = False
+    async_index: bool = Field(
+        default=False,
+        description="When promote=true, chunk/FTS sync then queue embed (insight_reindex job)",
+    )
 
 
 class FeedbackBody(BaseModel):
@@ -134,6 +138,7 @@ def approve_insight_route(
             to_status="approved",
             reviewer=body.reviewer or principal.name or "senior",
             promote=body.promote,
+            async_index=body.async_index,
         )
     except KeyError:
         raise HTTPException(status_code=404, detail="insight not found") from None
