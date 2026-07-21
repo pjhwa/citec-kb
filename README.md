@@ -26,6 +26,25 @@ docker compose up -d --build
 # ./rebuild.sh api mcp
 ```
 
+### 폐쇄망 패키징 · 배포
+
+개발 → 사내 운용 (wiki-qa `out.sh`/`in.sh` 와 동일 패턴, **변경 번들만**).
+
+```bash
+# 개발: 코드만 패키징
+scripts/out.sh --code
+# 의존성 변경 시
+scripts/out.sh --code --docker --docker-mcp
+# 도움말
+scripts/out.sh --help
+
+# 전송 후 운용
+scripts/in.sh --code -y
+scripts/in.sh --help
+```
+
+상세: [`docs/DEPLOY.md`](docs/DEPLOY.md) · 번들 `~/tmp/citec-kb-*.tar.gz`
+
 ### 호스트 포트 (할당 대역 8572–8580)
 
 | 호스트 포트 | 서비스 |
