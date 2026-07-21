@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.24** |
+| 문서 버전 | **1.25** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.24: Keycloak compose profile · real IdP OIDC e2e** |
+| 갱신 | **2026-07-21 — v1.25: unified home ask UI · /v1/query multi-intent UX** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -42,7 +42,7 @@
 | 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
-| UI | search · chat · si · tickets · analytics · capacity · bundles · insights · **login** · **admin/ops** · `/docs/` |
+| UI | **홈 통합 질의** (`/`) · 전문 UI(search/chat/si/…) · login · admin · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
 | 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Entra/상용 IdP 운영 연동 · 부서 오픈 |
 
@@ -698,10 +698,10 @@ POST /v1/auth/introspect
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
 4. (선택) G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.24)
-- **Keycloak** compose profile `:8576` · realm seed · `keycloak_oidc_e2e` pass  
-- JWT: aud optional (`*`) + azp check · realm_access roles  
-- 선행: pilot signoff pack · CI · mock IdP · async reindex  
+### 완료 스냅샷 (2026-07-21 v1.25)
+- **홈 통합 질의**: `POST /v1/query` 자동 intent · hybrid 기본 검색 실행  
+- SI 패턴 보강(비슷한 장애) · 전문 UI는 보조 링크  
+- 선행: Keycloak e2e · CI · pilot pack  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -726,7 +726,8 @@ POST /v1/auth/introspect
 
 | URL | 용도 |
 |-----|------|
-| http://localhost:8572/search.html | 통합 검색 |
+| http://localhost:8572/ | **통합 질의 (홈)** |
+| http://localhost:8572/search.html | 지식 검색(전문) |
 | http://localhost:8572/chat.html | Fast/Deep QA |
 | http://localhost:8572/si.html | 유사장애 |
 | http://localhost:8572/tickets.html | 기간 지원건 |
@@ -741,5 +742,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.24).**  
-Keycloak e2e + pilot pack + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.
+**문서 끝 (v1.25).**  
+통합 질의 홈 + Keycloak + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.

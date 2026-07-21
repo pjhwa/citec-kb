@@ -29,7 +29,7 @@ _CHECKLIST = re.compile(
     re.I,
 )
 _SI = re.compile(
-    r"유사\s*장애|과거\s*유사|비슷한\s*(과거|건)|유사\s*건|"
+    r"유사\s*장애|과거\s*유사|비슷한\s*(과거|건|장애|사례|증상)|유사\s*건|"
     r"이전\s*유사|이번에도\s*(유효|도움|맞는지)|현재\s*(장애|증상)|"
     r"가장\s*비슷한\s*과거|유사\s*사례|가장\s*유사|"
     r"과거\s*.{0,20}(사례|해결|유사)|"
@@ -316,10 +316,12 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
         }
 
     if intent == "hybrid_search":
-        # Optionally execute multi-query hybrid for convenience
+        # Unified ask UI: default run hybrid search when plan is executed.
+        # Opt out with include_search=false / execute_search=false.
         q = str((plan.get("params") or {}).get("q") or body.get("q") or "")
         result = None
-        if body.get("execute_search") or body.get("include_search"):
+        include = body.get("include_search", body.get("execute_search", True))
+        if str(include).lower() not in {"0", "false", "no"}:
             from app.db.session import session_scope
             from app.retrieval.multi_query import multi_hybrid_search
             from app.retrieval.search import SearchFilters, SearchRequest
@@ -352,6 +354,7 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                         "title": r.title,
                         "score": r.score,
                         "snippet": r.snippet,
+                        "source_type": getattr(r, "source_type", None),
                     }
                     for r in resp.results
                 ],
@@ -361,7 +364,7 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             "params": plan.get("params") or {"q": q, "multi_query": True},
             "result": result,
             "note": plan.get("note")
-            or "일반 검색 의도 — POST /v1/search (multi_query) 또는 /v1/chat 사용",
+            or "일반 검색 의도 — multi-query hybrid (답변은 POST /v1/chat)",
         }
 
 

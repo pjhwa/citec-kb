@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CI-TEC Knowledge Platform</title>
+  <title>CI-TEC Knowledge — 통합 질의</title>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -14,126 +14,461 @@
       --ok: #047857;
       --bad: #b91c1c;
       --border: #e2e8f0;
+      --chip: #eff6ff;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: system-ui, "Noto Sans KR", sans-serif;
-      background: radial-gradient(900px 400px at 10% -10%, #e0eaff, transparent), var(--bg);
-      color: var(--text); line-height: 1.55; padding: 32px 20px 60px;
+      margin: 0;
+      font-family: system-ui, "Noto Sans KR", sans-serif;
+      background: radial-gradient(900px 420px at 12% -12%, #e0eaff, transparent), var(--bg);
+      color: var(--text);
+      line-height: 1.55;
     }
-    .wrap { max-width: 720px; margin: 0 auto; }
-    h1 { font-size: 1.5rem; margin: 0 0 8px; }
-    .sub { color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
-    .card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 20px 22px; margin-bottom: 14px;
-      box-shadow: 0 8px 24px rgba(15,23,42,.05);
+    .top {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
     }
-    .row { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
-    .row:last-child { border-bottom: none; }
-    .badge { font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
-    .badge.ok { background: #d1fae5; color: var(--ok); }
-    .badge.bad { background: #fee2e2; color: var(--bad); }
-    .badge.na { background: #f1f5f9; color: var(--muted); }
+    .top a { color: var(--primary); text-decoration: none; font-weight: 600; font-size: 14px; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 28px 16px 72px; }
+    h1 { font-size: 1.55rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
+    .ask-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+      margin-bottom: 16px;
+    }
+    .ask-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    #q {
+      flex: 1;
+      min-width: 220px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 16px;
+    }
+    #q:focus { outline: 2px solid #bfdbfe; border-color: #93c5fd; }
     button {
-      background: var(--primary); color: #fff; border: 0; border-radius: 10px;
-      padding: 10px 16px; font-weight: 600; cursor: pointer; font-size: 14px;
+      background: var(--primary);
+      color: #fff;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 15px;
     }
-    button:disabled { opacity: .6; cursor: wait; }
-    pre {
-      background: #f4f6fa; border-radius: 10px; padding: 12px; overflow: auto;
-      font-size: 12px; border: 1px solid var(--border);
+    button:disabled { opacity: 0.6; cursor: wait; }
+    button.ghost {
+      background: #fff;
+      color: var(--primary);
+      border: 1px solid var(--border);
     }
+    .opts {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip {
+      border: 1px solid var(--border);
+      background: var(--chip);
+      color: #1e3a8a;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .chip:hover { background: #dbeafe; }
+    .intent-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .badge.ok { background: #d1fae5; color: var(--ok); }
+    .badge.muted { background: #f1f5f9; color: var(--muted); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+    .card h3 { margin: 0 0 6px; font-size: 1.02rem; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .err {
+      background: #fef2f2;
+      color: var(--bad);
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 12px;
+    }
+    .note {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    pre.answer {
+      white-space: pre-wrap;
+      font-family: inherit;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      margin: 0;
+    }
+    .snippet {
+      white-space: pre-wrap;
+      font-size: 13px;
+      color: #334155;
+      margin-top: 6px;
+    }
+    .score { font-size: 11px; color: var(--muted); margin-left: 6px; }
+    details.more { margin-top: 16px; }
+    details.more summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .health-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .health-row .badge { font-size: 11px; }
     a { color: var(--primary); }
-    .hint { font-size: 13px; color: var(--muted); margin-top: 12px; }
+    .links { font-size: 13px; color: var(--muted); line-height: 1.8; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>CI-TEC Knowledge Platform</h1>
-    <p class="sub">citec-kb · 포트 8572(web)/8573(api) · <a href="/search.html">검색</a> · <a href="/chat.html">Fast QA</a> · <a href="/tickets.html">기간 지원건</a> · <a href="/docs/">설계·구현 문서</a></p>
-
-    <div class="card">
-      <strong>바로가기</strong>
-      <p class="hint" style="margin-top:8px">
-        <a href="/search.html"><strong>지식 검색 UI</strong></a> ·
-        <a href="/chat.html"><strong>Fast QA</strong></a> ·
-        <a href="/si.html"><strong>유사장애</strong></a> ·
-        <a href="/tickets.html"><strong>기간 지원건</strong></a> ·
-        <a href="/analytics.html"><strong>집계</strong></a> ·
-        <a href="/capacity.html"><strong>공수·대수</strong></a> ·
-        <a href="/insights.html"><strong>Insight</strong></a> ·
-        <a href="/bundles.html"><strong>번들</strong></a> ·
-        <a href="/admin.html"><strong>Admin / Ops</strong></a> ·
-        <a href="/login.html"><strong>Login / SSO</strong></a> ·
-        <a href="/docs/design.html">시스템 설계서</a> ·
-        <a href="/docs/implementation-plan.html">구현 계획</a> ·
-        <a href="/docs/OIDC_IDP_SETUP.md">OIDC 가이드</a> ·
-        <a href="/docs/pilot-signoff.html">파일럿 사인 팩</a> ·
-        <a href="/docs/">문서 목록</a>
-      </p>
-    </div>
-
-    <div class="card">
-      <div class="row"><span>API</span><span id="api-badge" class="badge na">…</span></div>
-      <div class="row"><span>Postgres</span><span id="pg-badge" class="badge na">…</span></div>
-      <div class="row"><span>Redis</span><span id="redis-badge" class="badge na">…</span></div>
-      <div class="row"><span>LLM config</span><span id="llm-badge" class="badge na">…</span></div>
-      <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="btn-health" type="button">Refresh health</button>
-        <button id="btn-llm" type="button">Probe OpenRouter / GLM</button>
-      </div>
-      <p class="hint">설계 문서: <a href="/docs/">/docs/</a> · API Swagger: <a href="/api/docs" target="_blank">/api/docs</a> · <code>/v1/health</code></p>
-    </div>
-
-    <div class="card">
-      <strong>Last response</strong>
-      <pre id="out">Click a button…</pre>
-    </div>
+  <div class="top">
+    <a href="/"><strong>홈 · 통합 질의</strong></a>
+    <a href="/search.html">검색</a>
+    <a href="/chat.html">Fast QA</a>
+    <a href="/si.html">유사장애</a>
+    <a href="/tickets.html">기간</a>
+    <a href="/analytics.html">집계</a>
+    <a href="/capacity.html">공수</a>
+    <a href="/insights.html">Insight</a>
+    <a href="/admin.html">Admin</a>
+    <a href="/login.html">Login</a>
+    <a href="/docs/">문서</a>
   </div>
+
+  <div class="wrap">
+    <h1>무엇이든 물어보세요</h1>
+    <p class="sub">
+      한 검색창에서 지식 검색 · 유사장애 · 기간 목록 · 집계 · 공수 · 점검 항목을 자동 분류합니다.
+      내부적으로 <code>POST /v1/query</code> planner가 의도를 판단합니다.
+    </p>
+
+    <div class="ask-card">
+      <div class="ask-row">
+        <input id="q" type="search" placeholder="예: 지난 주 지원건 / 유사장애 모니모 Redis / 2주 Linux 공수 / CITECTS-2502" autocomplete="off" />
+        <button id="btnAsk" type="button">질의</button>
+      </div>
+      <div class="opts">
+        <label><input type="checkbox" id="wantAnswer" /> hybrid 결과 후 Fast QA 답변 생성</label>
+        <span class="meta">특수 UI가 필요하면 상단 메뉴 · 아래 바로가기</span>
+      </div>
+      <div class="chips" id="chips"></div>
+    </div>
+
+    <div id="status" class="meta" style="margin-bottom:10px"></div>
+    <div id="out"></div>
+
+    <details class="more">
+      <summary>전문 UI · 상태 · 문서</summary>
+      <div class="card" style="margin-top:10px">
+        <div class="links">
+          <a href="/search.html">지식 검색</a> ·
+          <a href="/chat.html">Fast/Deep QA</a> ·
+          <a href="/si.html">유사장애</a> ·
+          <a href="/tickets.html">기간 지원건</a> ·
+          <a href="/analytics.html">집계</a> ·
+          <a href="/capacity.html">공수·대수</a> ·
+          <a href="/insights.html">Insight</a> ·
+          <a href="/bundles.html">번들</a> ·
+          <a href="/admin.html">Admin/Ops</a> ·
+          <a href="/docs/implementation-plan.html">구현 계획</a>
+        </div>
+        <div class="health-row" style="margin-top:12px">
+          <span>API <span id="h-api" class="badge muted">…</span></span>
+          <span>PG <span id="h-pg" class="badge muted">…</span></span>
+          <span>Redis <span id="h-redis" class="badge muted">…</span></span>
+          <span>LLM <span id="h-llm" class="badge muted">…</span></span>
+          <button type="button" class="ghost" id="btnHealth" style="padding:6px 10px;font-size:12px">상태 새로고침</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script src="/js/auth.js"></script>
   <script>
-    const out = document.getElementById("out");
-    function setBadge(id, ok, label) {
-      const el = document.getElementById(id);
-      el.textContent = label;
-      el.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+
+    const EXAMPLES = [
+      "CITECTS-2502",
+      "유사장애 모니모 Redis 타임아웃",
+      "지난 주 지원건",
+      "2주 Linux 공수",
+      "연도별 지원 건수",
+      "체크리스트 리눅스 hang",
+      "Redis 예방 점검",
+    ];
+
+    const INTENT_LABEL = {
+      hybrid_search: "지식 검색",
+      similar_incident: "유사장애",
+      time_scoped_list: "기간 지원 목록",
+      analytics: "집계",
+      capacity: "공수·대수",
+      checklist: "점검 항목",
+      prevention: "예방/점검",
+      exhaustive: "전량 탐색",
+      entity_aggregate: "엔티티 집계",
+    };
+
+    function renderChips() {
+      $("chips").innerHTML = EXAMPLES.map(
+        (t) => `<button type="button" class="chip" data-q="${esc(t)}">${esc(t)}</button>`
+      ).join("");
+      $("chips").querySelectorAll(".chip").forEach((el) => {
+        el.onclick = () => {
+          $("q").value = el.dataset.q;
+          ask();
+        };
+      });
     }
+
+    function setBadge(id, ok, text) {
+      const el = $(id);
+      el.textContent = text;
+      el.className = "badge " + (ok === true ? "ok" : ok === false ? "muted" : "muted");
+      if (ok === false) el.className = "badge";
+      el.style.background = ok === true ? "#d1fae5" : ok === false ? "#fee2e2" : "#f1f5f9";
+      el.style.color = ok === true ? "#047857" : ok === false ? "#b91c1c" : "#64748b";
+    }
+
     async function loadHealth() {
-      const btn = document.getElementById("btn-health");
-      btn.disabled = true;
       try {
         const r = await fetch("/v1/health");
         const j = await r.json();
-        out.textContent = JSON.stringify(j, null, 2);
-        setBadge("api-badge", j.status === "ok" || j.status === "degraded", j.status);
-        setBadge("pg-badge", j.checks?.postgres?.ok, j.checks?.postgres?.ok ? "ok" : "fail");
-        setBadge("redis-badge", j.checks?.redis?.ok, j.checks?.redis?.ok ? "ok" : "fail");
-        setBadge("llm-badge", j.checks?.llm?.ok, j.checks?.llm?.backend || "none");
+        setBadge("h-api", j.status === "ok" || j.status === "degraded", j.status || "?");
+        setBadge("h-pg", !!j.checks?.postgres?.ok, j.checks?.postgres?.ok ? "ok" : "fail");
+        setBadge("h-redis", !!j.checks?.redis?.ok, j.checks?.redis?.ok ? "ok" : "fail");
+        setBadge("h-llm", !!j.checks?.llm?.ok, j.checks?.llm?.backend || "none");
       } catch (e) {
-        out.textContent = String(e);
-        setBadge("api-badge", false, "unreachable");
-      } finally {
-        btn.disabled = false;
+        setBadge("h-api", false, "down");
       }
     }
-    async function probeLlm() {
-      const btn = document.getElementById("btn-llm");
-      btn.disabled = true;
-      out.textContent = "Probing LLM (may take up to 60s)…";
+
+    function deepLink(intent, q) {
+      const enc = encodeURIComponent(q);
+      const map = {
+        hybrid_search: `/search.html?q=${enc}`,
+        similar_incident: `/si.html?q=${enc}`,
+        time_scoped_list: `/tickets.html?q=${enc}`,
+        analytics: `/analytics.html?q=${enc}`,
+        capacity: `/capacity.html?q=${enc}`,
+      };
+      return map[intent] || null;
+    }
+
+    function renderHybrid(result, q) {
+      const items = result?.items || [];
+      if (!items.length) return `<p class="meta">검색 결과 없음</p>`;
+      let html = `<p class="meta">hits=${esc(result.total)} · multi_query=${esc(result.multi_query)} · vector=${esc(result.vector_used)}</p>`;
+      for (const it of items.slice(0, 12)) {
+        html += `<div class="card">
+          <h3>${esc(it.title || it.external_id || "(제목 없음)")}
+span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span></h3>
+          <div class="meta">${esc(it.source_type || "")}</div>
+          <div class="snippet">${esc((it.snippet || "").slice(0, 420))}</div>
+        </div>`;
+      }
+      return html;
+    }
+
+    function renderSI(result) {
+      const cases = result?.cases || [];
+      let html = "";
+      if (result?.brief) {
+        html += `<div class="note"><strong>브리프</strong><div class="snippet">${esc(typeof result.brief === "string" ? result.brief : JSON.stringify(result.brief))}</div></div>`;
+      }
+      if (!cases.length) return html + `<p class="meta">유사 사례 없음</p>`;
+      for (const c of cases.slice(0, 8)) {
+        const app = c.applicability || {};
+        html += `<div class="card">
+          <h3>${esc(c.title || c.external_id || "case")}<span class="score">${esc(c.external_id || "")}</span></h3>
+          <div class="meta">적용성: ${esc(app.label || "-")} · score ${esc(c.score)}</div>
+          <div class="snippet">${esc((c.symptom || c.summary || c.snippet || "").toString().slice(0, 400))}</div>
+        </div>`;
+      }
+      if (result?.actions?.length) {
+        html += `<div class="card"><h3>권장 조치</h3><ul>${result.actions.slice(0, 8).map((a) => `<li>${esc(typeof a === "string" ? a : JSON.stringify(a))}</li>`).join("")}</ul></div>`;
+      }
+      return html;
+    }
+
+    function renderList(result) {
+      const items = result?.items || result?.tickets || [];
+      const total = result?.total ?? items.length;
+      let html = `<p class="meta">total=${esc(total)}</p>`;
+      if (!items.length) return html + `<p class="meta">목록 없음</p>`;
+      for (const it of items.slice(0, 20)) {
+        html += `<div class="card">
+          <h3>${esc(it.title || it.external_id || it.code || it.subject || "(item)")}</h3>
+          <div class="meta">${esc(it.external_id || it.code || "")} ${esc(it.created || it.date || "")}</div>
+          <div class="snippet">${esc((it.snippet || it.summary || it.subject || "").toString().slice(0, 300))}</div>
+        </div>`;
+      }
+      return html;
+    }
+
+    function renderCapacity(result) {
+      const est = result?.estimate || result;
+      return `<div class="card">
+        <h3>공수·대수 추정</h3>
+        <pre class="answer meta">${esc(JSON.stringify(est, null, 2).slice(0, 4000))}</pre>
+        <p class="meta">Rules/SQL 기반 (LLM 숫자 생성 없음)</p>
+      </div>`;
+    }
+
+    function renderAnalytics(result) {
+      return `<div class="card">
+        <h3>집계 결과</h3>
+        <pre class="answer meta">${esc(JSON.stringify(result, null, 2).slice(0, 5000))}</pre>
+      </div>`;
+    }
+
+    function renderGeneric(result) {
+      if (!result) return `<p class="meta">결과 없음</p>`;
+      if (result.items) return renderList(result);
+      return `<div class="card"><pre class="answer meta">${esc(JSON.stringify(result, null, 2).slice(0, 6000))}</pre></div>`;
+    }
+
+    function renderByIntent(intent, data, q) {
+      const result = data.result;
+      const label = INTENT_LABEL[intent] || intent;
+      const link = deepLink(intent, q);
+      let html = `<div class="intent-bar">
+        <span class="badge">${esc(label)}</span>
+        <span class="badge muted">${esc(intent)}</span>
+        ${link ? `<a href="${link}">전문 UI에서 보기 →</a>` : ""}
+      </div>`;
+      if (data.note) html += `<div class="note">${esc(data.note)}</div>`;
+      if (data.range_label) html += `<p class="meta">기간: ${esc(data.range_label)}</p>`;
+
+      if (intent === "hybrid_search") html += renderHybrid(result, q);
+      else if (intent === "similar_incident") html += renderSI(result);
+      else if (intent === "time_scoped_list" || intent === "checklist" || intent === "exhaustive") html += renderList(result);
+      else if (intent === "capacity") html += renderCapacity(result);
+      else if (intent === "analytics" || intent === "entity_aggregate") html += renderAnalytics(result);
+      else if (intent === "prevention") html += renderGeneric(result);
+      else html += renderGeneric(result);
+
+      return html;
+    }
+
+    async function maybeAnswer(q) {
+      $("status").textContent = "Fast QA 생성 중…";
+      const r = await CitecAuth.apiFetch("/v1/chat", {
+        method: "POST",
+        body: { q, mode: "fast", top_k: 8, stream: false },
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail || r.statusText));
+      const answer = d.answer_md || d.answer || d.message || "";
+      const trust = d.trust || {};
+      return `<div class="card">
+        <h3>Fast QA 답변</h3>
+        <div class="meta">model=${esc(d.model || "")} · trust=${esc(JSON.stringify(trust).slice(0, 120))}</div>
+        <pre class="answer">${esc(answer)}</pre>
+      </div>`;
+    }
+
+    async function ask() {
+      const q = $("q").value.trim();
+      if (!q) return;
+      $("btnAsk").disabled = true;
+      $("status").textContent = "의도 분류 · 실행 중…";
+      $("out").innerHTML = "";
       try {
-        const r = await fetch("/v1/health/llm");
-        const j = await r.json();
-        out.textContent = JSON.stringify(j, null, 2);
-        setBadge("llm-badge", j.ok, j.ok ? (j.model || "ok") : "fail");
+        const r = await CitecAuth.apiFetch("/v1/query", {
+          method: "POST",
+          body: { q, include_search: true, top_k: 10 },
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || r.statusText));
+        const intent = data.intent || "unknown";
+        let html = renderByIntent(intent, data, q);
+
+        if ($("wantAnswer").checked && (intent === "hybrid_search" || intent === "prevention" || intent === "exhaustive")) {
+          try {
+            html = (await maybeAnswer(q)) + html;
+          } catch (e) {
+            html = `<div class="err">답변 생성 실패: ${esc(e.message || e)}</div>` + html;
+          }
+        }
+
+        $("out").innerHTML = html;
+        $("status").textContent = `intent=${intent} · done`;
       } catch (e) {
-        out.textContent = String(e);
+        $("out").innerHTML = `<div class="err">${esc(e.message || e)}</div>`;
+        $("status").textContent = "실패";
       } finally {
-        btn.disabled = false;
+        $("btnAsk").disabled = false;
       }
     }
-    document.getElementById("btn-health").onclick = loadHealth;
-    document.getElementById("btn-llm").onclick = probeLlm;
+
+    $("btnAsk").onclick = () => ask();
+    $("q").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ask();
+    });
+    $("btnHealth").onclick = () => loadHealth();
+
+    // ?q= prefill
+    const params = new URLSearchParams(location.search);
+    if (params.get("q")) $("q").value = params.get("q");
+    if (params.get("answer") === "1") $("wantAnswer").checked = true;
+
+    renderChips();
+    CitecAuth.mountChip(".top");
     loadHealth();
+    if (params.get("q") && params.get("auto") !== "0") ask();
   </script>
 </body>
 </html>
