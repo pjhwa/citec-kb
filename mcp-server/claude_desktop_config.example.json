@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "citec-kb": {
+      "url": "http://localhost:8577/mcp",
+      "transport": "streamable-http"
+    }
+  }
+}

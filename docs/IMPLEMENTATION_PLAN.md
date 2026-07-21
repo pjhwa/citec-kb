@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.29** |
+| 문서 버전 | **1.30** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.29: wiki-qa 호환 외부 연동 API (`/api/*`)** |
+| 갱신 | **2026-07-21 — v1.30: MCP server (Claude) · port 8577** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -698,12 +698,12 @@ POST /v1/auth/introspect
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
 4. (선택) G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.29)
-- **wiki-qa 호환 외부 연동 API** (`apps/api/app/routers/external_compat.py`)  
-  - `/api/health` · `/api/version` · `/api/wiki-stats` · `/api/wiki/search` · `/api/wiki/file`  
-  - `/api/query` SSE (MCP wiki_ask) · `/api/synthesis`≈Insight · `/api/feedback`  
-  - `/v1/external/catalog` · 문서 `docs/EXTERNAL_API.md`  
-- **이슈 유형 세분류** (v1.28) · MD→HTML (v1.26) · 홈 통합 질의 (v1.25)  
+### 완료 스냅샷 (2026-07-21 v1.30)
+- **MCP 서버** (`mcp-server/`) · compose **8577** · FastMCP streamable-http/stdio  
+  - tools: `kb_search`·`kb_ask`·`kb_query`·`kb_ticket`·`kb_list_insights`… + `wiki_*` 호환  
+  - docs: `docs/MCP.md` · Claude Desktop 예시 JSON  
+- **wiki-qa 호환 REST** (v1.29) · 이슈 유형 세분류 (v1.28) · MD HTML (v1.26)  
+
 
 
 
@@ -745,8 +745,9 @@ POST /v1/auth/introspect
 | http://localhost:8572/docs/ | 설계·구현 문서 |
 | http://localhost:8573/v1/health | API health |
 | http://localhost:8573/docs | Swagger |
+| http://localhost:8577 | MCP (Claude/Cursor) |
 
 ---
 
-**문서 끝 (v1.29).**  
-wiki-qa 호환 외부 API + 이슈 유형 세분류 + 통합 질의 홈 · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.
+**문서 끝 (v1.30).**  
+MCP(Claude) + wiki-qa 호환 REST + 이슈 유형 세분류 · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.

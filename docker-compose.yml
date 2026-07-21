@@ -110,6 +110,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # MCP server for Claude Desktop / Claude Code / Cursor (proxy → api)
+  # Host: http://localhost:8577  · tools: kb_search, kb_ask, kb_query, …
+  mcp:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    image: citec-kb-mcp:latest
+    environment:
+      CITEC_KB_BASE_URL: ${CITEC_KB_BASE_URL:-http://api:8000}
+      CITEC_KB_TOKEN: ${CITEC_KB_TOKEN:-}
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8100"
+      MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
+    ports:
+      - "8577:8100"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Optional local IdP: docker compose --profile keycloak up -d keycloak
   # Host: http://localhost:8576  · Realm: citec  · Client: citec-kb / citec-kb-secret
   keycloak:

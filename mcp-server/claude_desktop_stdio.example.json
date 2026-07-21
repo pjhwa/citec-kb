@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "citec-kb": {
+      "command": "python3",
+      "args": ["/ABSOLUTE/PATH/TO/citec-kb/mcp-server/server.py"],
+      "env": {
+        "CITEC_KB_BASE_URL": "http://localhost:8573",
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}

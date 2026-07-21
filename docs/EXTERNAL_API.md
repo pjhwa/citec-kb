@@ -135,25 +135,25 @@ OpenAPI: `http://localhost:8573/docs`
 
 ---
 
-## 3. MCP / 외부 클라이언트 이전
+## 3. MCP 서버 (Claude 등)
 
-wiki-qa MCP 프록시는 다음 URL만 바꾸면 됩니다.
-
-| MCP tool | wiki-qa | citec-kb |
-|----------|---------|----------|
-| `wiki_search` | `GET /api/wiki/search` | 동일 경로 |
-| `wiki_get_document` | `GET /api/wiki/file` | 동일 경로 |
-| `wiki_list_synthesis` | `GET /api/synthesis` | 동일 (Insight) |
-| `wiki_get_synthesis` | `GET /api/synthesis/{slug}` | 동일 |
-| `wiki_ask` | `POST /api/query` SSE | 동일 이벤트 타입 |
-
-환경 변수 예:
+citec-kb 전용 MCP 서버: **`mcp-server/`** · 문서 **`docs/MCP.md`**
 
 ```bash
-# was: WIKI_QA_BASE_URL=http://wiki-qa:8000
-CITEC_KB_BASE_URL=http://api:8000
-# 또는 호스트: http://localhost:8573
+docker compose up -d --build mcp   # http://localhost:8577
 ```
+
+| MCP tool | REST |
+|----------|------|
+| `kb_search` / `wiki_search` | `GET /api/wiki/search` |
+| `kb_get_document` / `wiki_get_document` | `GET /api/wiki/file` |
+| `kb_list_insights` / `wiki_list_synthesis` | `GET /api/synthesis` |
+| `kb_get_insight` / `wiki_get_synthesis` | `GET /api/synthesis/{slug}` |
+| `kb_ask` / `wiki_ask` | `POST /api/query` SSE |
+| `kb_query` | `POST /v1/query` |
+| `kb_ticket` | `GET /v1/tickets/{id}` |
+
+Claude Desktop 예시: `mcp-server/claude_desktop_config.example.json`
 
 ---
 

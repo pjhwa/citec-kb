@@ -29,7 +29,9 @@ docker compose up -d --build
 | **8573** | api |
 | **8574** | postgres |
 | **8575** | redis |
-| 8576–8580 | 예약 (향후) |
+| **8576** | Keycloak (optional profile) |
+| **8577** | **MCP** (Claude/Cursor 연동) |
+| 8578–8580 | 예약 |
 
 ```bash
 curl -s localhost:8573/v1/health | jq .
@@ -37,7 +39,22 @@ curl -s localhost:8573/v1/health/llm | jq .
 # UI:            http://localhost:8572
 # 설계·구현 문서: http://localhost:8572/docs/
 # API Swagger:   http://localhost:8572/api/docs  또는  http://localhost:8573/docs
+# MCP (Claude):  http://localhost:8577  · docs/MCP.md
+# 외부 연동 REST: docs/EXTERNAL_API.md
 ```
+
+### MCP (Claude Desktop / Claude Code)
+
+```bash
+docker compose up -d --build mcp
+# Claude Desktop: mcp-server/claude_desktop_config.example.json
+#   → url http://localhost:8577/mcp  (streamable-http)
+# stdio: mcp-server/claude_desktop_stdio.example.json
+CITEC_KB_BASE_URL=http://localhost:8573 python3 mcp-server/test_smoke.py
+```
+
+도구: `kb_search`, `kb_get_document`, `kb_ask`, `kb_query`, `kb_ticket`, `kb_list_insights`, …  
+(`wiki_*` 별칭 = citec-wiki-qa MCP 호환)
 
 ### 설계·구현 문서 (웹)
 
