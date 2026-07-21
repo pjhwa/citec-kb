@@ -1,7 +1,15 @@
-# CI-TEC Knowledge Platform — slim stack (PR-01)
-# Host ports restricted to 8572–8580 (org allocation)
-# Services: web, api, worker, postgres, redis
+# CI-TEC Knowledge Platform
+# Host ports: 8572–8580 (org allocation)
+# Services: web, api, worker, postgres, redis, mcp (+ optional keycloak)
 # LLM is external (OpenRouter on dev, Fabrix on prod)
+#
+# Air-gap packaging (scripts/out.sh · scripts/in.sh):
+#   code        host-mounted sources (apps/, config/, mcp-server/, …)
+#   docker      api+worker + nginx/redis/pgvector images
+#   docker-mcp  citec-kb-mcp:latest
+#   data        data/raw + seeds (+ optional PG dump)
+#   model       HF embedding cache under MODELS_HOST_DIR
+# Index/embeddings live in Postgres volume `pgdata` — not in the data file tree.
 
 services:
   postgres:
@@ -33,6 +41,8 @@ services:
     restart: unless-stopped
 
   api:
+    # Explicit tag required for air-gap docker load + compose up (no build on prod)
+    image: citec-kb-api:latest
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -43,22 +53,26 @@ services:
       REDIS_URL: redis://redis:6379/0
       RAW_DIR: /data/raw
       HF_HOME: /models
-      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
+      # Air-gap safe defaults (override to 0 only when hub download is intentional)
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}
-      # Pilot default: auth off (no Bearer required). Enable later via .env override only if intentional.
       AUTH_MODE: ${AUTH_MODE:-off}
       MOCK_OIDC_ENABLED: ${MOCK_OIDC_ENABLED:-false}
     ports:
       - "8573:8000"
     volumes:
       - ./config:/app/config:ro
-      # RW: bundle/lexicon/capacity seed writes (POST /v1/bundles, /v1/lexicon/seed)
+      # RW: bundle/lexicon/capacity seed writes
       - ./data:/app/data
-      # Dev: live-reload API source without rebuild
+      # Code-mount: daily deploys = code bundle + restart (no image rebuild)
       - ./apps/api/app:/app/app
-      # Knowledge corpus (registered under data/raw)
+      # Migrations also mount so schema changes ride with code bundle
+      - ./apps/api/alembic:/app/alembic:ro
+      - ./apps/api/alembic.ini:/app/alembic.ini:ro
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
-      - ${MODELS_HOST_DIR:-/home/citec/tmp/citec-wiki-qa/models}:/models:ro
+      # Prefer project ./models (in.sh sets MODELS_HOST_DIR). Dev may override to shared HF cache.
+      - ${MODELS_HOST_DIR:-./models}:/models:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -73,6 +87,7 @@ services:
     restart: unless-stopped
 
   worker:
+    image: citec-kb-worker:latest
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
@@ -87,7 +102,6 @@ services:
       - ./config:/app/config:ro
       - ./data:/app/data:ro
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
-      # Dev: live worker code without rebuild
       - ./apps/worker/app:/app/app
     depends_on:
       redis:
@@ -110,13 +124,13 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # MCP server for Claude Desktop / Claude Code / Cursor (proxy → api)
-  # Host: http://localhost:8577  · tools: kb_search, kb_ask, kb_query, …
+  # MCP server (Claude Desktop / Claude Code / Cursor) — proxy → api
+  # Host: http://localhost:8577
   mcp:
+    image: citec-kb-mcp:latest
     build:
       context: ./mcp-server
       dockerfile: Dockerfile
-    image: citec-kb-mcp:latest
     environment:
       CITEC_KB_BASE_URL: ${CITEC_KB_BASE_URL:-http://api:8000}
       CITEC_KB_TOKEN: ${CITEC_KB_TOKEN:-}
@@ -125,6 +139,9 @@ services:
       MCP_TRANSPORT: ${MCP_TRANSPORT:-streamable-http}
     ports:
       - "8577:8100"
+    volumes:
+      # server.py mount: MCP logic can ship with code bundle; pip deps still need docker-mcp
+      - ./mcp-server/server.py:/app/server.py:ro
     depends_on:
       api:
         condition: service_healthy
