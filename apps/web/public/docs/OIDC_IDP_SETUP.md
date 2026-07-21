@@ -52,6 +52,41 @@ Authorize 시 쿼리로 사용자 지정 가능:
 .../authorize?...&sub=alice&roles=viewer,author,senior
 ```
 
+## 로컬 Keycloak (compose profile) — 실 IdP 경로 검증
+
+포트 범위 내 **8576**. mock IdP와 달리 실제 Keycloak JWKS/토큰을 사용합니다.
+
+```bash
+# 기동
+docker compose --profile keycloak up -d keycloak
+
+# 준비 대기 후 e2e (discovery · password grant · JWT · API RBAC)
+.venv/bin/python scripts/keycloak_oidc_e2e.py --wait 180
+```
+
+| 항목 | 값 |
+|------|-----|
+| Admin console | http://localhost:8576 (admin / admin) |
+| Issuer | `http://localhost:8576/realms/citec` |
+| Client | `citec-kb` / secret `citec-kb-secret` |
+| Users | `viewer`/`author`/`senior`/`admin` (비밀번호=username) |
+| Realm import | `deploy/keycloak/realm-citec.json` |
+
+API를 Keycloak에 붙이려면 (선택, 기본 stack은 `AUTH_MODE=off` 유지):
+
+```bash
+# .env 또는 compose override
+AUTH_MODE=oidc
+OIDC_ISSUER=http://localhost:8576/realms/citec
+OIDC_CLIENT_ID=citec-kb
+OIDC_CLIENT_SECRET=citec-kb-secret
+OIDC_AUDIENCE=*
+OIDC_REDIRECT_URI=http://localhost:8573/v1/auth/callback
+# Access token에 aud 가 없을 수 있음 → OIDC_AUDIENCE=* 후 azp=client_id 검증
+```
+
+브라우저: Keycloak 로그인 UI → `http://localhost:8572/login.html` (API에 OIDC env 적용 후).
+
 ## Keycloak 실서버 체크리스트
 
 1. Realm 생성 (예: `citec`)

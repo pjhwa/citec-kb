@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.23** |
+| 문서 버전 | **1.24** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.23: pilot domain sign-off pack · GitHub Actions CI · remote origin** |
+| 갱신 | **2026-07-21 — v1.24: Keycloak compose profile · real IdP OIDC e2e** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -44,7 +44,7 @@
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
 | UI | search · chat · si · tickets · analytics · capacity · bundles · insights · **login** · **admin/ops** · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
-| 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Keycloak/Entra **실서버** · 부서 오픈 |
+| 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Entra/상용 IdP 운영 연동 · 부서 오픈 |
 
 ### 성공 정의 (출시 게이트)
 
@@ -334,7 +334,7 @@ citec-kb/
 | Feedback | PR-11 | `POST /v1/feedback` (answer\|insight\|search · rating ±1) | **✅** |
 | Insight UI | PR-11 | `/insights.html` 승인 보드 · Reindex | **✅** |
 | API 증분 동기화 | PR-13 | Jira/Confluence (허용 시) | 미착수 |
-| SSO·감사 | PR-14 | OIDC JWT · **mock IdP RS256** · login e2e · Keycloak 가이드 · RBAC | **✅ 엔지니어링** (실 IdP 서버 잔여) |
+| SSO·감사 | PR-14 | OIDC JWT · mock IdP · **Keycloak local e2e** · 가이드 · RBAC | **✅ 로컬 실 IdP** (상용 IdP 잔여) |
 | 부하 테스트 | — | concurrent search + health + planner | **load_sla_report pass** (gate c=8 · stress c=20 info) |
 | Persona UI | PR-26 | 관리자 Admin/Ops 대시보드 · War-room 번들 UI | **부분** (admin.html ✅) |
 
@@ -405,7 +405,8 @@ PR-01 compose ✅
 - [x] Web **Bearer helper** (`/js/auth.js`) · insights/bundles · **admin.html** ops persona
 - [x] **async_index** promote · worker job `insight_reindex` · auth chip on main UIs
 - [x] **pilot sign-off pack** · GitHub Actions CI · remote push to `pjhwa/citec-kb`
-- [ ] Keycloak/Entra **실서버** · 사람 도메인 사인 H1–H7
+- [x] **Keycloak local profile** + real JWKS OIDC e2e (`scripts/keycloak_oidc_e2e.py`)
+- [ ] Entra/상용 IdP · 사람 도메인 사인 H1–H7
 ---
 
 ## 6. 데이터 모델
@@ -690,17 +691,17 @@ POST /v1/auth/introspect
 ## 15. 즉시 다음 액션
 
 ### 별도 수행 (자동 흡수 안 됨)
-1. **파일럿 1.5 도메인 사인** — 사람 워크스루 H1–H7 (`/docs/pilot-signoff.html` 증거 팩)  
-2. **Keycloak/Entra 실서버** OIDC 연동 검증  
+1. **파일럿 1.5 도메인 사인** — 사람 워크스루 H1–H7 (`/docs/pilot-signoff.html`)  
+2. **Entra/상용 IdP** 운영 연동 (로컬 Keycloak e2e는 완료)  
 
 ### 제품 하드닝 (P4 잔여)
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
-4. (선택) 검색/chat 전 페이지 auth 칩 강화 · G2 groundedness 정기 회귀 리포트  
+4. (선택) G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.23)
-- **pilot_domain_signoff** 리포트 (eng 13/13 · human H1–H7 pending)  
-- **GitHub Actions CI** (unit 84 without torch) · remote `origin` → github.com/pjhwa/citec-kb  
-- 선행: async reindex · OIDC mock · load/SLA · unit 87 full docker  
+### 완료 스냅샷 (2026-07-21 v1.24)
+- **Keycloak** compose profile `:8576` · realm seed · `keycloak_oidc_e2e` pass  
+- JWT: aud optional (`*`) + azp check · realm_access roles  
+- 선행: pilot signoff pack · CI · mock IdP · async reindex  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -740,5 +741,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.23).**  
-pilot signoff pack + CI + remote · 잔여=사람 도메인 사인·실 IdP · **매 작업 현행화**.
+**문서 끝 (v1.24).**  
+Keycloak e2e + pilot pack + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.

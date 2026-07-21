@@ -181,25 +181,46 @@ def _looks_like_jwt(token: str) -> bool:
     return len(parts) == 3 and all(parts)
 
 
+def _audience_kw(settings: Any) -> dict[str, Any]:
+    """Build audience kwargs; supports comma-separated list; '*' skips check.
+
+    Keycloak *access* tokens often omit ``aud`` (use ``azp`` instead). Prefer
+    ``OIDC_AUDIENCE=*`` for those, then optionally check ``azp`` in principal.
+    """
+    # Explicit empty / * → do not verify aud
+    raw = getattr(settings, "oidc_audience", None)
+    if raw is not None and str(raw).strip() in ("", "*"):
+        return {}
+    aud = raw or getattr(settings, "oidc_client_id", None)
+    if not aud or str(aud).strip() == "*":
+        return {}
+    parts = [a.strip() for a in str(aud).split(",") if a.strip()]
+    if not parts:
+        return {}
+    if len(parts) == 1:
+        return {"audience": parts[0]}
+    return {"audience": parts}
+
+
 def validate_bearer_jwt(token: str) -> Optional[Principal]:
     """Validate access/id token. Returns Principal or None if not a valid OIDC JWT."""
     if not token or not _looks_like_jwt(token):
         return None
     s = get_settings()
 
+    # Keycloak access tokens may omit `sub` (use preferred_username); still require exp.
+    _require = {"require": ["exp"]}
+
     # 1) Local HS256 (dev / automated tests)
     if s.oidc_jwt_secret:
         try:
-            opts = {"require": ["exp", "sub"]}
             kwargs: dict[str, Any] = {
                 "algorithms": ["HS256"],
-                "options": opts,
+                "options": dict(_require),
             }
             if s.oidc_issuer:
                 kwargs["issuer"] = s.oidc_issuer.rstrip("/")
-            aud = s.oidc_audience or s.oidc_client_id
-            if aud:
-                kwargs["audience"] = aud
+            kwargs.update(_audience_kw(s))
             claims = jwt.decode(token, s.oidc_jwt_secret, **kwargs)
             return principal_from_claims(claims, auth_via="oidc")
         except jwt.PyJWTError as exc:
@@ -212,18 +233,16 @@ def validate_bearer_jwt(token: str) -> Optional[Principal]:
     try:
         from app.auth.mock_idp import is_mock_issuer, public_key_pem
 
-        kwargs: dict[str, Any] = {
+        kwargs = {
             "algorithms": ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
             "issuer": s.oidc_issuer.rstrip("/"),
-            "options": {"require": ["exp", "sub"]},
+            "options": dict(_require),
         }
-        aud = s.oidc_audience or s.oidc_client_id
-        if aud:
-            kwargs["audience"] = aud
+        kwargs.update(_audience_kw(s))
 
         if is_mock_issuer(s.oidc_issuer):
             claims = jwt.decode(token, public_key_pem(), **kwargs)
-            return principal_from_claims(claims, auth_via="oidc")
+            return _principal_with_azp_check(claims, s)
 
         disc = get_discovery()
         jwks_uri = disc.get("jwks_uri")
@@ -232,10 +251,24 @@ def validate_bearer_jwt(token: str) -> Optional[Principal]:
         jwks_client = PyJWKClient(jwks_uri, cache_keys=True, lifespan=3600)
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         claims = jwt.decode(token, signing_key.key, **kwargs)
-        return principal_from_claims(claims, auth_via="oidc")
+        return _principal_with_azp_check(claims, s)
     except Exception as exc:  # noqa: BLE001
         logger.debug("JWKS JWT reject: %s", exc)
         return None
+
+
+def _principal_with_azp_check(claims: dict[str, Any], settings: Any) -> Principal:
+    """When audience is skipped, optionally require azp == client_id (Keycloak)."""
+    principal = principal_from_claims(claims, auth_via="oidc")
+    raw_aud = getattr(settings, "oidc_audience", None)
+    skip_aud = raw_aud is not None and str(raw_aud).strip() in ("", "*")
+    client_id = getattr(settings, "oidc_client_id", None)
+    if skip_aud and client_id:
+        azp = claims.get("azp")
+        if azp and azp != client_id:
+            logger.debug("azp mismatch: %s != %s", azp, client_id)
+            raise jwt.InvalidTokenError(f"azp mismatch: {azp}")
+    return principal
 
 
 def mint_local_jwt(

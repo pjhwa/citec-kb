@@ -1,0 +1,49 @@
+2026-07-21 09:42:58,137 INFO httpx HTTP Request: GET http://testserver/v1/auth/me "HTTP/1.1 200 OK"
+2026-07-21 09:42:58,457 INFO httpx HTTP Request: POST http://testserver/v1/insights "HTTP/1.1 200 OK"
+{
+  "issuer": "http://localhost:8576/realms/citec",
+  "client_id": "citec-kb",
+  "username": "senior",
+  "discovery_ok": true,
+  "token_endpoint": "http://localhost:8576/realms/citec/protocol/openid-connect/token",
+  "jwks_uri": "http://localhost:8576/realms/citec/protocol/openid-connect/certs",
+  "token_ok": true,
+  "token_type": "Bearer",
+  "expires_in": 300,
+  "api": {
+    "principal_from_jwt": {
+      "sub": "senior",
+      "name": "Senior Reviewer",
+      "roles": [
+        "author",
+        "senior",
+        "viewer"
+      ],
+      "auth_via": "oidc"
+    },
+    "me": {
+      "principal": {
+        "sub": "senior",
+        "name": "Senior Reviewer",
+        "roles": [
+          "author",
+          "senior",
+          "viewer"
+        ],
+        "auth_via": "oidc"
+      },
+      "auth_mode": "oidc"
+    },
+    "insight_create_status": 200,
+    "insight_id": "47d3c725-8469-4294-9a0e-08eb19d0304b",
+    "roles": [
+      "author",
+      "senior",
+      "viewer"
+    ],
+    "audience_mode": "*"
+  },
+  "audience_used": "*",
+  "rbac_ok": true,
+  "pass": true
+}

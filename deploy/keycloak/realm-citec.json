@@ -1,0 +1,95 @@
+{
+  "realm": "citec",
+  "enabled": true,
+  "displayName": "CI-TEC Knowledge",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "sslRequired": "none",
+  "roles": {
+    "realm": [
+      { "name": "viewer", "description": "Read access" },
+      { "name": "author", "description": "Create/edit insights" },
+      { "name": "senior", "description": "Approve insights" },
+      { "name": "admin", "description": "Admin / jobs" },
+      { "name": "offline_access" },
+      { "name": "uma_authorization" },
+      { "name": "default-roles-citec", "composite": true, "composites": { "realm": ["viewer", "offline_access", "uma_authorization"] } }
+    ]
+  },
+  "defaultRoles": ["default-roles-citec"],
+  "clients": [
+    {
+      "clientId": "citec-kb",
+      "name": "CI-TEC Knowledge Platform",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "citec-kb-secret",
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:8573/v1/auth/callback",
+        "http://127.0.0.1:8573/v1/auth/callback",
+        "http://localhost:8572/*"
+      ],
+      "webOrigins": [
+        "http://localhost:8572",
+        "http://127.0.0.1:8572",
+        "http://localhost:8573",
+        "+"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:8572/*##http://localhost:8572/login.html"
+      },
+      "fullScopeAllowed": true,
+      "defaultClientScopes": ["web-origins", "acr", "profile", "roles", "email"],
+      "optionalClientScopes": ["address", "phone", "offline_access"]
+    }
+  ],
+  "users": [
+    {
+      "username": "viewer",
+      "enabled": true,
+      "email": "viewer@citec.local",
+      "emailVerified": true,
+      "firstName": "View",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "viewer", "temporary": false }],
+      "realmRoles": ["viewer", "default-roles-citec"]
+    },
+    {
+      "username": "author",
+      "enabled": true,
+      "email": "author@citec.local",
+      "emailVerified": true,
+      "firstName": "Author",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "author", "temporary": false }],
+      "realmRoles": ["viewer", "author", "default-roles-citec"]
+    },
+    {
+      "username": "senior",
+      "enabled": true,
+      "email": "senior@citec.local",
+      "emailVerified": true,
+      "firstName": "Senior",
+      "lastName": "Reviewer",
+      "credentials": [{ "type": "password", "value": "senior", "temporary": false }],
+      "realmRoles": ["viewer", "author", "senior", "default-roles-citec"]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@citec.local",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+      "realmRoles": ["viewer", "author", "senior", "admin", "default-roles-citec"]
+    }
+  ]
+}
