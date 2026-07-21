@@ -16,7 +16,10 @@ router = APIRouter(prefix="/v1/analytics", tags=["analytics"])
 
 @router.get("/tickets")
 def analytics_tickets(
-    group_by: str = Query("year", description="year|month|component|status|assignee|total"),
+    group_by: str = Query(
+        "year",
+        description="year|month|component|issue_type|status|assignee|total",
+    ),
     source_type: str = Query("support_history"),
     date_field: str = Query("Created"),
     date_from: Optional[date] = Query(None),

@@ -8,14 +8,24 @@ from typing import Any, Optional
 
 from sqlalchemy import select
 
+from app.analytics.issue_type import classify_issue_type
 from app.db.models import Document
 from app.db.session import session_scope
 from app.tickets.query import parse_meta_date
 
-_GROUP_BY = frozenset({"year", "month", "component", "status", "assignee", "total"})
+_GROUP_BY = frozenset(
+    {"year", "month", "component", "status", "assignee", "total", "issue_type"}
+)
 
 
-def _bucket_key(group_by: str, meta: dict[str, Any], dt: Optional[date]) -> str:
+def _bucket_key(
+    group_by: str,
+    meta: dict[str, Any],
+    dt: Optional[date],
+    *,
+    title: str = "",
+    body_md: str = "",
+) -> str:
     if group_by == "year":
         return str(dt.year) if dt else "(unknown)"
     if group_by == "month":
@@ -29,6 +39,8 @@ def _bucket_key(group_by: str, meta: dict[str, Any], dt: Optional[date]) -> str:
     if group_by == "assignee":
         v = meta.get("Assignee")
         return str(v).strip() if v else "(empty)"
+    if group_by == "issue_type":
+        return classify_issue_type(title, body_md)
     return "total"
 
 
@@ -47,6 +59,7 @@ def _sample_row(
         "external_id": external_id,
         "title": title or "",
         "component": str(meta.get("Component") or "").strip() or None,
+        "issue_type": classify_issue_type(title, body_md),
         "status": str(meta.get("Status") or "").strip() or None,
         "assignee": str(meta.get("Assignee") or "").strip() or None,
         "Created": meta.get("Created"),
@@ -130,7 +143,9 @@ def aggregate_tickets(
                     )
                 )
             continue
-        key = _bucket_key(gb, meta, dt)
+        key = _bucket_key(
+            gb, meta, dt, title=title or "", body_md=body_md or ""
+        )
         counter[key] += 1
         if include_samples and len(samples[key]) < sample_limit:
             samples[key].append(
@@ -176,7 +191,11 @@ def aggregate_tickets(
         "total": total,
         "buckets": buckets,
         "include_samples": include_samples,
-        "method": "metadata_aggregate",
+        "method": (
+            "issue_type_rules"
+            if gb == "issue_type"
+            else "metadata_aggregate"
+        ),
         "llm_used": False,
     }
 

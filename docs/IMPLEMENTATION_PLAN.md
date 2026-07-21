@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.26** |
+| 문서 버전 | **1.27** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.26: MD→HTML UI render (CitecMD, air-gap)** |
+| 갱신 | **2026-07-21 — v1.27: issue_type analytics (성능이슈·접속불가…)** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -698,12 +698,13 @@ POST /v1/auth/introspect
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
 4. (선택) G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.26)
-- **MD→HTML 렌더**: `apps/web/public/js/markdown.js` + `css/markdown.css` (CDN 없음)  
-  - 홈 hybrid/SI/list/analytics 상세 · Fast QA · search · si · insights  
-  - heading/bold/list/code fence(잘린 스니펫 포함)/link · XSS escape  
-- **홈 통합 질의** (v1.25): `POST /v1/query` 자동 intent · hybrid 기본 검색  
-- 선행: support-history 유형 분류+상세 · auth off pilot · Keycloak e2e · CI  
+### 완료 스냅샷 (2026-07-21 v1.27)
+- **이슈 유형 집계** (`group_by=issue_type`): 제목·본문 규칙 → 성능이슈/접속불가/서비스장애·설정/구성 등  
+  - 「지원 유형」「어떤 유형」질의는 **Jira Component(기술지원/장애지원)가 아님**  
+  - 연도 표현 `2026년`/`26년` 캘린더 필터 · 샘플+티켓 상세 유지  
+  - Component 축은 `Component 비중` 등 명시 질의만  
+- **MD→HTML 렌더** (v1.26) · 홈 통합 질의 (v1.25)  
+
 
 
 ### 현행화 체크 (매 작업 종료)
@@ -745,5 +746,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.26).**  
-MD HTML 렌더 + 통합 질의 홈 + Keycloak + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.
+**문서 끝 (v1.27).**  
+이슈 유형 집계 + MD HTML 렌더 + 통합 질의 홈 · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.

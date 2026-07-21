@@ -409,11 +409,23 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
       }
       const src = result.source_type || "support_history";
       let html = `<div class="note">
-        <strong>지원 유형 분류</strong> · source=<code>${esc(src)}</code>
+        <strong>${esc(
+          result.group_by === "issue_type"
+            ? "이슈 유형 분류"
+            : result.group_by === "component"
+              ? "업무 유형(Component) 분류"
+              : "집계 분류"
+        )}</strong>
+        · group=<code>${esc(result.group_by || "-")}</code>
+        · source=<code>${esc(src)}</code>
         · total=<strong>${esc(result.total)}</strong>
         ${result.date_from ? ` · ${esc(result.date_from)} ~ ${esc(result.date_to)}` : ""}
         ${result.range_label ? ` (${esc(result.range_label)})` : ""}
-        <br/><span class="meta">유형 키를 펼치면 샘플 건 요약 · 「상세」로 본문 확인</span>
+        <br/><span class="meta">${
+          result.group_by === "issue_type"
+            ? "제목·본문 규칙으로 분류(성능이슈·접속불가·설정/구성 등) · Component(기술지원/장애지원)와 다름"
+            : "유형 키를 펼치면 샘플 건 요약"
+        } · 「상세」로 본문 확인</span>
       </div>`;
       for (const b of buckets) {
         const pct = b.share != null ? Math.round(Number(b.share) * 1000) / 10 : "";

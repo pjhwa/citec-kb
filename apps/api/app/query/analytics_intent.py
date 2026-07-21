@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from typing import Optional
 
 from app.query.time_range import parse_relative_range
@@ -15,13 +16,21 @@ _ANALYTICS = re.compile(
     # type / category breakdown of support work
     r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
     r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
-    r"어떤\s*지원이\s*진행|지원이\s*진행된",
+    r"어떤\s*지원이\s*진행|지원이\s*진행된|이슈\s*유형|이슈\s*종류",
     re.I,
 )
-_TYPE_BREAKDOWN = re.compile(
+# Issue-kind breakdown (성능이슈·설정오류…) — NOT Jira Component work categories
+_ISSUE_TYPE_BREAKDOWN = re.compile(
     r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
     r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
-    r"어떤\s*지원이\s*진행|지원이\s*진행된|컴포넌트\s*별",
+    r"어떤\s*지원이\s*진행|지원이\s*진행된|이슈\s*유형|이슈\s*종류|"
+    r"어떤\s*(이슈|문제|장애\s*유형)|실제\s*유형",
+    re.I,
+)
+# Explicit Jira Component axis only
+_COMPONENT_AXIS = re.compile(
+    r"컴포넌트\s*별|Component\s*별|Component\s*비중|업무\s*유형|"
+    r"기술지원/?장애지원|장애지원/?기술지원|Component\s*\(",
     re.I,
 )
 # 문서 탐색은 hybrid; 제목 패턴/키워드는 title_tokens 모드
@@ -33,6 +42,11 @@ _COMPONENT = re.compile(r"컴포넌트|Component", re.I)
 _STATUS = re.compile(r"상태\s*별|Status", re.I)
 _ASSIGNEE = re.compile(r"담당|Assignee", re.I)
 _SHARE = re.compile(r"비중|비율|share", re.I)
+# Calendar year: 2026년 / 26년 / '26년
+_CALENDAR_YEAR = re.compile(
+    r"(?:(?:19|20)?(\d{2})|((?:19|20)\d{2}))\s*년",
+    re.I,
+)
 
 # Known entity aliases → search needle
 _ENTITIES: list[tuple[re.Pattern[str], str]] = [
@@ -83,20 +97,27 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         group_by = "year"
     elif _MONTH.search(t):
         group_by = "month"
-    elif _TYPE_BREAKDOWN.search(t) or _COMPONENT.search(t):
+    elif _COMPONENT_AXIS.search(t) or (
+        _COMPONENT.search(t) and not _ISSUE_TYPE_BREAKDOWN.search(t)
+    ):
+        # Explicit Component axis only
         group_by = "component"
+    elif _ISSUE_TYPE_BREAKDOWN.search(t):
+        # 「지원 유형」「어떤 유형의 이슈」→ issue-kind (성능이슈 등)
+        group_by = "issue_type"
     elif _STATUS.search(t):
         group_by = "status"
     elif _ASSIGNEE.search(t):
         group_by = "assignee"
     elif _SHARE.search(t) and not any(p.search(t) for p, _ in _ENTITIES):
-        # bare 비중 without entity → component share is most useful
+        # bare 비중 without entity → Component share is still useful
         group_by = "component"
-    # 「최근 기술지원 건 … 유형」 등 — total only is useless; default to component
+    # 「최근 기술지원 건 … 유형」 등 — total only is useless
     if group_by == "total" and (
-        _TYPE_BREAKDOWN.search(t) or re.search(r"기술\s*지원\s*건|지원\s*건들", t)
+        _ISSUE_TYPE_BREAKDOWN.search(t)
+        or re.search(r"기술\s*지원\s*건|지원\s*건들", t)
     ):
-        group_by = "component"
+        group_by = "issue_type"
 
     component = None
     for pat, name in _COMP_MAP:
@@ -122,12 +143,11 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
     if entity and group_by == "total" and mode == "aggregate" and share_like:
         mode = "entity_share"
 
-
     dr = parse_relative_range(t)
-    # 「기술지원 건」 alone is the corpus (all CITECTS), not Component filter
-    # unless user says 장애지원/진단컨설팅 etc. Explicit Component filter only
-    # when map matched and not the generic 기술지원 wording for type breakdown.
-    if group_by == "component" and component == "기술지원" and _TYPE_BREAKDOWN.search(t):
+    # 「기술지원의 유형」= whole support corpus issue-kind, not Component filter
+    if group_by == "issue_type" and component == "기술지원":
+        component = None
+    if group_by == "component" and component == "기술지원" and _ISSUE_TYPE_BREAKDOWN.search(t):
         component = None
 
     out: dict = {
@@ -138,27 +158,52 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         "date_field": "Created",
         "component": component,
         "entity": entity,
-        "include_samples": True if group_by == "component" else False,
+        "include_samples": True
+        if group_by in {"component", "issue_type"}
+        else False,
         "sample_limit": 8,
     }
     if dr:
         out["date_from"] = dr.date_from.isoformat()
         out["date_to"] = dr.date_to.isoformat()
         out["range_label"] = dr.label
-    elif re.search(r"최근", t) and mode == "aggregate":
-        # fallback if parser missed
-        from datetime import date, timedelta
-        from zoneinfo import ZoneInfo
+    else:
+        cy = _parse_calendar_year(t)
+        if cy is not None:
+            out["date_from"] = date(cy, 1, 1).isoformat()
+            out["date_to"] = date(cy, 12, 31).isoformat()
+            out["range_label"] = f"{cy}년"
+        elif re.search(r"최근", t) and mode == "aggregate":
+            from datetime import timedelta
 
-        today = date.today()  # may be UTC host; OK for pilot
-        try:
-            from app.query.time_range import _today_kst
+            today = date.today()
+            try:
+                from app.query.time_range import _today_kst
 
-            today = _today_kst()
-        except Exception:
-            pass
-        start = today - timedelta(days=89)
-        out["date_from"] = start.isoformat()
-        out["date_to"] = today.isoformat()
-        out["range_label"] = "최근 90일"
+                today = _today_kst()
+            except Exception:
+                pass
+            start = today - timedelta(days=89)
+            out["date_from"] = start.isoformat()
+            out["date_to"] = today.isoformat()
+            out["range_label"] = "최근 90일"
     return out
+
+
+def _parse_calendar_year(text: str) -> Optional[int]:
+    """Parse 2026년 / 26년 / '26년 → full year. Prefer 4-digit when present."""
+    t = text or ""
+    # Prefer explicit 4-digit years first
+    m4 = re.search(r"(?<!\d)((?:19|20)\d{2})\s*년", t)
+    if m4:
+        y = int(m4.group(1))
+        if 1990 <= y <= 2100:
+            return y
+    m2 = re.search(r"(?<!\d)'?(\d{2})\s*년", t)
+    if m2:
+        yy = int(m2.group(1))
+        # 00–89 → 2000s, 90–99 → 1900s (pilot corpus is 2020s)
+        y = 2000 + yy if yy < 90 else 1900 + yy
+        if 1990 <= y <= 2100:
+            return y
+    return None
