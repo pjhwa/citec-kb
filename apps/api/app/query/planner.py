@@ -222,8 +222,9 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
         note = "집계·건수/제목토큰 — support_history metadata COUNT (LLM 미사용)."
         if result.get("group_by") == "issue_type":
             note = (
-                "이슈 유형(성능이슈·접속불가·설정/구성 등, 제목·본문 규칙 분류) — "
-                "Jira Component(기술지원/장애지원)와 다름. "
+                "이슈 유형 세분류(타임아웃·성능저하/지연·리소스고갈·접속불가·"
+                "서비스장애/FRB·시스템Crash/Hang·설정오류·방화벽·DB…, "
+                "제목·본문 규칙) — Jira Component(기술지원/장애지원)와 다름. "
                 "source_type=support_history only. 상세: GET /v1/tickets/{external_id}"
             )
         elif result.get("group_by") == "component" and result.get("include_samples"):
