@@ -267,13 +267,13 @@
     }[c]));
 
     const EXAMPLES = [
+      "최근 기술지원 건들에 대해 어떤 유형의 지원이 진행된 것인지 확인해줘",
       "CITECTS-2502",
       "유사장애 모니모 Redis 타임아웃",
       "지난 주 지원건",
       "2주 Linux 공수",
       "연도별 지원 건수",
       "체크리스트 리눅스 hang",
-      "Redis 예방 점검",
     ];
 
     const INTENT_LABEL = {
@@ -395,10 +395,65 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
     }
 
     function renderAnalytics(result) {
-      return `<div class="card">
-        <h3>집계 결과</h3>
-        <pre class="answer meta">${esc(JSON.stringify(result, null, 2).slice(0, 5000))}</pre>
+      const buckets = result?.buckets || [];
+      if (!buckets.length) {
+        return `<div class="card">
+          <h3>집계 결과</h3>
+          <pre class="answer meta">${esc(JSON.stringify(result, null, 2).slice(0, 5000))}</pre>
+        </div>`;
+      }
+      const src = result.source_type || "support_history";
+      let html = `<div class="note">
+        <strong>지원 유형 분류</strong> · source=<code>${esc(src)}</code>
+        · total=<strong>${esc(result.total)}</strong>
+        ${result.date_from ? ` · ${esc(result.date_from)} ~ ${esc(result.date_to)}` : ""}
+        ${result.range_label ? ` (${esc(result.range_label)})` : ""}
+        <br/><span class="meta">유형 키를 펼치면 샘플 건 요약 · 「상세」로 본문 확인</span>
       </div>`;
+      for (const b of buckets) {
+        const pct = b.share != null ? Math.round(Number(b.share) * 1000) / 10 : "";
+        const samples = b.samples || [];
+        html += `<details class="card" style="cursor:default" open>
+          <summary style="cursor:pointer;font-weight:700;font-size:1.02rem">
+            ${esc(b.key)} <span class="badge">${esc(b.count)}건</span>
+            ${pct !== "" ? `<span class="meta">${esc(pct)}%</span>` : ""}
+          </summary>`;
+        if (!samples.length) {
+          html += `<p class="meta" style="margin-top:8px">샘플 없음</p>`;
+        } else {
+          for (const s of samples) {
+            const eid = s.external_id || "";
+            html += `<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
+              <div><strong>${esc(s.title || eid)}</strong>
+                <button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}"
+                  style="padding:4px 10px;font-size:12px;margin-left:8px">상세</button>
+              </div>
+              <div class="meta">${esc(eid)} · ${esc(s.status || "-")} · ${esc(s.Created || s.date || "")}
+                · ${esc(s.assignee || "")}</div>
+              <div class="snippet">${esc((s.body_preview || "").slice(0, 360))}</div>
+              <div class="ticket-full meta" data-box="${esc(eid)}" style="display:none;margin-top:8px"></div>
+            </div>`;
+          }
+        }
+        html += `</details>`;
+      }
+      return html;
+    }
+
+    async function loadTicketDetail(eid, box) {
+      box.style.display = "block";
+      box.textContent = "로딩…";
+      try {
+        const r = await CitecAuth.apiFetch(
+          "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=support_history"
+        );
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || r.statusText);
+        box.innerHTML = `<pre class="answer" style="max-height:420px;overflow:auto">${esc(d.body_md || "(본문 없음)")}</pre>
+          <div class="meta">component=${esc(d.component)} · status=${esc(d.status)} · assignee=${esc(d.assignee)}</div>`;
+      } catch (e) {
+        box.textContent = String(e.message || e);
+      }
     }
 
     function renderGeneric(result) {
@@ -472,6 +527,14 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
         }
 
         $("out").innerHTML = html;
+        $("out").querySelectorAll("button.ticket-detail").forEach((btn) => {
+          btn.onclick = () => {
+            const eid = btn.dataset.eid;
+            const box = $("out").querySelector(`.ticket-full[data-box="${CSS.escape(eid)}"]`)
+              || $("out").querySelector(`.ticket-full[data-box="${eid}"]`);
+            if (box) loadTicketDetail(eid, box);
+          };
+        });
         $("status").textContent = `intent=${intent} · done`;
       } catch (e) {
         $("out").innerHTML = `<div class="err">${esc(e.message || e)}</div>`;

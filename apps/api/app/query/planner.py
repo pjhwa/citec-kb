@@ -198,6 +198,11 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 date_to=dt,
             )
         else:
+            include_samples = bool(
+                plan.get("include_samples")
+                or body.get("include_samples")
+                or (plan.get("group_by") == "component")
+            )
             result = aggregate_tickets(
                 source_type=plan.get("source_type") or "support_history",
                 group_by=plan.get("group_by") or "total",
@@ -207,15 +212,25 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 component=plan.get("component"),
                 entity=plan.get("entity"),
                 top_k=int(body.get("top_k") or 50),
+                include_samples=include_samples,
+                sample_limit=int(
+                    body.get("sample_limit") or plan.get("sample_limit") or 8
+                ),
             )
         if plan.get("range_label"):
             result["range_label"] = plan["range_label"]
+        note = "집계·건수/제목토큰 — support_history metadata COUNT (LLM 미사용)."
+        if result.get("group_by") == "component" and result.get("include_samples"):
+            note = (
+                "지원 유형(Component)별 건수 + 샘플 상세 — "
+                "source_type=support_history only. 상세: GET /v1/tickets/{external_id}"
+            )
         return {
             "intent": "analytics",
             "range_label": plan.get("range_label"),
             "params": plan,
             "result": result,
-            "note": "집계·건수/제목토큰 — metadata COUNT (LLM 미사용).",
+            "note": note,
         }
 
     if intent == "prevention":

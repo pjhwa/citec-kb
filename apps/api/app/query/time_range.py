@@ -39,6 +39,8 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"지난\s*(\d+)\s*일", re.I), "last_n_days"),
     (re.compile(r"최근\s*(\d+)\s*주", re.I), "last_n_weeks"),
     (re.compile(r"최근\s*한\s*달|최근\s*1\s*달|지난\s*한\s*달", re.I), "last_30"),
+    # bare "최근" (after n-day/week patterns) → default 90 days for support review
+    (re.compile(r"최근", re.I), "last_90"),
 ]
 
 
@@ -91,6 +93,9 @@ def parse_relative_range(
         if kind == "last_30":
             start = today - timedelta(days=29)
             return DateRange(start, today, "최근 30일")
+        if kind == "last_90":
+            start = today - timedelta(days=89)
+            return DateRange(start, today, "최근 90일")
         if kind == "last_n_days":
             n = int(m.group(1))
             n = max(1, min(n, 366))

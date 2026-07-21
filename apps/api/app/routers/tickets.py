@@ -9,9 +9,21 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.query.planner import plan_query, route_query
 from app.query.time_range import parse_relative_range
-from app.tickets.query import list_tickets
+from app.tickets.query import get_ticket_by_external_id, list_tickets
 
 router = APIRouter(prefix="/v1", tags=["tickets"])
+
+
+@router.get("/tickets/{external_id}")
+def get_ticket_detail(
+    external_id: str,
+    source_type: str = Query("support_history"),
+) -> dict[str, Any]:
+    """Full ticket body for drill-down from type breakdown UI."""
+    row = get_ticket_by_external_id(external_id, source_type=source_type)
+    if not row:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    return row
 
 
 @router.get("/tickets")

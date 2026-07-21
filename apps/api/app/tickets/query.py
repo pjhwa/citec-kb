@@ -29,6 +29,52 @@ def parse_meta_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+def get_ticket_by_external_id(
+    external_id: str,
+    *,
+    source_type: str = "support_history",
+) -> Optional[dict[str, Any]]:
+    """Return one support ticket document with body for detail view."""
+    eid = (external_id or "").strip()
+    if not eid:
+        return None
+    with session_scope() as session:
+        stmt = (
+            select(Document)
+            .where(Document.status == "active")
+            .where(Document.source_type == source_type)
+            .where(Document.external_id == eid)
+            .limit(1)
+        )
+        d = session.scalars(stmt).first()
+        if not d:
+            # try without source filter
+            stmt2 = (
+                select(Document)
+                .where(Document.status == "active")
+                .where(Document.external_id == eid)
+                .limit(1)
+            )
+            d = session.scalars(stmt2).first()
+        if not d:
+            return None
+        meta = d.metadata_ if isinstance(d.metadata_, dict) else {}
+        return {
+            "document_id": d.id,
+            "external_id": d.external_id,
+            "title": d.title,
+            "source_type": d.source_type,
+            "body_md": d.body_md or "",
+            "status": meta.get("Status"),
+            "component": meta.get("Component"),
+            "assignee": meta.get("Assignee"),
+            "Created": meta.get("Created"),
+            "Resolved": meta.get("Resolved"),
+            "Updated": meta.get("Updated"),
+            "metadata": meta,
+        }
+
+
 def list_tickets(
     *,
     source_type: str = "support_history",

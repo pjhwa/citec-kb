@@ -11,7 +11,17 @@ _ANALYTICS = re.compile(
     r"건수|몇\s*건|비중|통계|집계|연도별|월별|추이|규모\s*추이|티켓\s*규모|"
     r"컴포넌트\s*별|Component\s*별|Component\s*\(|"
     r"상태\s*별|담당\s*별|분포|"
-    r"차지하는.{0,8}(비중|규모)|코퍼스\s*(기준|에서)",
+    r"차지하는.{0,8}(비중|규모)|코퍼스\s*(기준|에서)|"
+    # type / category breakdown of support work
+    r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
+    r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
+    r"어떤\s*지원이\s*진행|지원이\s*진행된",
+    re.I,
+)
+_TYPE_BREAKDOWN = re.compile(
+    r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
+    r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
+    r"어떤\s*지원이\s*진행|지원이\s*진행된|컴포넌트\s*별",
     re.I,
 )
 # 문서 탐색은 hybrid; 제목 패턴/키워드는 title_tokens 모드
@@ -73,7 +83,7 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         group_by = "year"
     elif _MONTH.search(t):
         group_by = "month"
-    elif _COMPONENT.search(t):
+    elif _TYPE_BREAKDOWN.search(t) or _COMPONENT.search(t):
         group_by = "component"
     elif _STATUS.search(t):
         group_by = "status"
@@ -81,6 +91,11 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         group_by = "assignee"
     elif _SHARE.search(t) and not any(p.search(t) for p, _ in _ENTITIES):
         # bare 비중 without entity → component share is most useful
+        group_by = "component"
+    # 「최근 기술지원 건 … 유형」 등 — total only is useless; default to component
+    if group_by == "total" and (
+        _TYPE_BREAKDOWN.search(t) or re.search(r"기술\s*지원\s*건|지원\s*건들", t)
+    ):
         group_by = "component"
 
     component = None
@@ -109,6 +124,12 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
 
 
     dr = parse_relative_range(t)
+    # 「기술지원 건」 alone is the corpus (all CITECTS), not Component filter
+    # unless user says 장애지원/진단컨설팅 etc. Explicit Component filter only
+    # when map matched and not the generic 기술지원 wording for type breakdown.
+    if group_by == "component" and component == "기술지원" and _TYPE_BREAKDOWN.search(t):
+        component = None
+
     out: dict = {
         "intent": "analytics",
         "mode": mode,
@@ -117,9 +138,27 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         "date_field": "Created",
         "component": component,
         "entity": entity,
+        "include_samples": True if group_by == "component" else False,
+        "sample_limit": 8,
     }
     if dr:
         out["date_from"] = dr.date_from.isoformat()
         out["date_to"] = dr.date_to.isoformat()
         out["range_label"] = dr.label
+    elif re.search(r"최근", t) and mode == "aggregate":
+        # fallback if parser missed
+        from datetime import date, timedelta
+        from zoneinfo import ZoneInfo
+
+        today = date.today()  # may be UTC host; OK for pilot
+        try:
+            from app.query.time_range import _today_kst
+
+            today = _today_kst()
+        except Exception:
+            pass
+        start = today - timedelta(days=89)
+        out["date_from"] = start.isoformat()
+        out["date_to"] = today.isoformat()
+        out["range_label"] = "최근 90일"
     return out

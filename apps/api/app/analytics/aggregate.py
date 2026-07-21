@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Any, Optional
 
@@ -32,6 +32,30 @@ def _bucket_key(group_by: str, meta: dict[str, Any], dt: Optional[date]) -> str:
     return "total"
 
 
+def _sample_row(
+    *,
+    document_id: str,
+    external_id: str,
+    title: str,
+    body_md: str,
+    meta: dict[str, Any],
+    dt: Optional[date],
+) -> dict[str, Any]:
+    body = (body_md or "").strip()
+    return {
+        "document_id": document_id,
+        "external_id": external_id,
+        "title": title or "",
+        "component": str(meta.get("Component") or "").strip() or None,
+        "status": str(meta.get("Status") or "").strip() or None,
+        "assignee": str(meta.get("Assignee") or "").strip() or None,
+        "Created": meta.get("Created"),
+        "Resolved": meta.get("Resolved"),
+        "date": dt.isoformat() if dt else None,
+        "body_preview": body[:1200] + ("…" if len(body) > 1200 else ""),
+    }
+
+
 def aggregate_tickets(
     *,
     source_type: str = "support_history",
@@ -42,6 +66,8 @@ def aggregate_tickets(
     component: Optional[str] = None,
     entity: Optional[str] = None,
     top_k: int = 50,
+    include_samples: bool = False,
+    sample_limit: int = 8,
 ) -> dict[str, Any]:
     """Aggregate support tickets by metadata field. Numbers are SQL/Python only."""
     gb = (group_by or "year").lower().strip()
@@ -50,11 +76,12 @@ def aggregate_tickets(
     if date_field not in {"Created", "Resolved", "Updated"}:
         date_field = "Created"
     top_k = max(1, min(int(top_k), 200))
+    sample_limit = max(1, min(int(sample_limit), 30))
     entity_q = (entity or "").strip().lower() or None
     component_q = (component or "").strip() or None
 
     # Materialize fields inside the session to avoid DetachedInstanceError.
-    rows: list[tuple[dict[str, Any], Optional[str], Optional[str]]] = []
+    rows: list[tuple[dict[str, Any], Optional[str], Optional[str], str, str]] = []
     with session_scope() as session:
         stmt = (
             select(Document)
@@ -63,11 +90,14 @@ def aggregate_tickets(
         )
         for d in session.scalars(stmt).all():
             meta = d.metadata_ if isinstance(d.metadata_, dict) else {}
-            rows.append((dict(meta), d.title, d.external_id))
+            rows.append(
+                (dict(meta), d.title, d.external_id, d.id, d.body_md or "")
+            )
 
     counter: Counter[str] = Counter()
+    samples: dict[str, list[dict[str, Any]]] = defaultdict(list)
     total = 0
-    for meta, title, external_id in rows:
+    for meta, title, external_id, doc_id, body_md in rows:
         raw = meta.get(date_field)
         dt = parse_meta_date(raw if isinstance(raw, str) else None)
         # Date filter only when range given; undated rows excluded from ranged queries
@@ -88,12 +118,41 @@ def aggregate_tickets(
                 continue
         total += 1
         if gb == "total":
+            if include_samples and len(samples["total"]) < sample_limit:
+                samples["total"].append(
+                    _sample_row(
+                        document_id=doc_id,
+                        external_id=external_id or "",
+                        title=title or "",
+                        body_md=body_md,
+                        meta=meta,
+                        dt=dt,
+                    )
+                )
             continue
         key = _bucket_key(gb, meta, dt)
         counter[key] += 1
+        if include_samples and len(samples[key]) < sample_limit:
+            samples[key].append(
+                _sample_row(
+                    document_id=doc_id,
+                    external_id=external_id or "",
+                    title=title or "",
+                    body_md=body_md,
+                    meta=meta,
+                    dt=dt,
+                )
+            )
 
     if gb == "total":
-        buckets = [{"key": "total", "count": total, "share": 1.0 if total else 0.0}]
+        buckets = [
+            {
+                "key": "total",
+                "count": total,
+                "share": 1.0 if total else 0.0,
+                "samples": samples.get("total", []) if include_samples else [],
+            }
+        ]
     else:
         items = counter.most_common(top_k)
         buckets = [
@@ -101,6 +160,7 @@ def aggregate_tickets(
                 "key": k,
                 "count": n,
                 "share": round(n / total, 4) if total else 0.0,
+                "samples": samples.get(k, []) if include_samples else [],
             }
             for k, n in items
         ]
@@ -115,6 +175,7 @@ def aggregate_tickets(
         "entity": entity_q,
         "total": total,
         "buckets": buckets,
+        "include_samples": include_samples,
         "method": "metadata_aggregate",
         "llm_used": False,
     }
