@@ -233,7 +233,33 @@
     </details>
   </div>
 
-  <script src="/js/auth.js"></script>
+  <!-- Fallback first (auth disabled pilot); /js/auth.js overwrites if it loads -->
+  <script>
+    window.CitecAuth = window.CitecAuth || {
+      getToken: function () { try { return localStorage.getItem("citec_kb_token") || ""; } catch (e) { return ""; } },
+      setToken: function (t) { try { if (t) localStorage.setItem("citec_kb_token", t); else localStorage.removeItem("citec_kb_token"); } catch (e) {} },
+      clear: function () { this.setToken(""); },
+      apiFetch: function (url, opts) {
+        opts = opts || {};
+        var headers = Object.assign({}, opts.headers || {});
+        var body = opts.body;
+        var tok = this.getToken();
+        if (tok) headers["Authorization"] = "Bearer " + tok;
+        if (body != null && typeof body === "object" && !(body instanceof FormData) && !(body instanceof Blob)) {
+          if (!headers["Content-Type"] && !headers["content-type"]) headers["Content-Type"] = "application/json";
+          body = JSON.stringify(body);
+        }
+        return fetch(url, Object.assign({}, opts, { headers: headers, body: body }));
+      },
+      mountChip: function () {},
+      me: async function () {
+        var r = await this.apiFetch("/v1/auth/me");
+        var d = await r.json().catch(function () { return {}; });
+        return { ok: r.ok, status: r.status, data: d };
+      },
+    };
+  </script>
+  <script src="/js/auth.js" onerror="console.warn('auth.js load failed; using inline CitecAuth fallback')"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
