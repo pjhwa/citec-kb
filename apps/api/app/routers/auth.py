@@ -39,9 +39,16 @@ def auth_status() -> dict[str, Any]:
     """Non-secret auth configuration summary for ops."""
     settings = get_settings()
     mode = (settings.auth_mode or "off").lower()
+    enforced = mode not in ("", "off", "disabled", "none", "false", "0")
     return {
         "auth_mode": mode,
-        "enforced": mode not in ("", "off", "disabled", "none"),
+        "enforced": enforced,
+        "disabled": not enforced,
+        "message": (
+            "Auth is disabled (AUTH_MODE=off). All write APIs are open for pilot."
+            if not enforced
+            else "Auth is enforced; send Bearer token or X-API-Key."
+        ),
         "oidc": oidc_status(),
         "roles": ["viewer", "author", "senior", "admin"],
         "endpoints": {

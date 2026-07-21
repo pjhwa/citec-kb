@@ -33,9 +33,14 @@ def require_roles(*roles: str):
         )
         settings = get_settings()
         mode = (getattr(settings, "auth_mode", None) or "off").lower().strip()
-        enforced = mode not in ("", "off", "disabled", "none")
+        # Explicit disable aliases
+        enforced = mode not in ("", "off", "disabled", "none", "false", "0")
 
-        if enforced and principal.auth_via == "anonymous":
+        if not enforced:
+            # Auth disabled: never 401/403 on role gates
+            return principal
+
+        if principal.auth_via == "anonymous":
             raise HTTPException(
                 status_code=401,
                 detail="authentication required (Bearer token or X-API-Key)",

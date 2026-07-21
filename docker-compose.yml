@@ -45,6 +45,9 @@ services:
       HF_HOME: /models
       TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-0}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-intfloat/multilingual-e5-base}
+      # Pilot default: auth off (no Bearer required). Enable later via .env override only if intentional.
+      AUTH_MODE: ${AUTH_MODE:-off}
+      MOCK_OIDC_ENABLED: ${MOCK_OIDC_ENABLED:-false}
     ports:
       - "8573:8000"
     volumes:
