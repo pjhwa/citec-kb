@@ -15,6 +15,7 @@ from app.analytics.aggregate import aggregate_tickets, entity_share
 from app.analytics.title_tokens import title_token_stats
 from app.capacity.calculator import estimate_capacity
 from app.capacity.intent import detect_capacity_intent
+from app.doc_access import attach_document_access
 from app.query.analytics_intent import detect_analytics_intent
 from app.query.exhaustive import detect_exhaustive_intent, run_exhaustive
 from app.query.prevention import detect_prevention_intent, run_prevention
@@ -377,13 +378,16 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 "multi_query": meta.get("multi_query"),
                 "expanded_queries": meta.get("queries"),
                 "items": [
-                    {
-                        "external_id": r.external_id,
-                        "title": r.title,
-                        "score": r.score,
-                        "snippet": r.snippet,
-                        "source_type": getattr(r, "source_type", None),
-                    }
+                    attach_document_access(
+                        {
+                            "external_id": r.external_id,
+                            "title": r.title,
+                            "score": r.score,
+                            "snippet": r.snippet,
+                            "source_type": getattr(r, "source_type", None),
+                            "document_id": getattr(r, "document_id", None),
+                        }
+                    )
                     for r in resp.results
                 ],
             }

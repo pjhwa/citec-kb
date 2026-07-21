@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.audit.log import log_query_answer
 from app.db.session import session_scope
+from app.doc_access import attach_document_access
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 
@@ -81,24 +82,26 @@ def search(body: SearchBody) -> dict[str, Any]:
         "multi_query": mq_meta.get("multi_query"),
         "expanded_queries": mq_meta.get("queries"),
         "results": [
-            {
-                "rank": r.rank,
-                "score": r.score,
-                "document_id": r.document_id,
-                "chunk_id": r.chunk_id,
-                "title": r.title,
-                "snippet": r.snippet,
-                "source_type": r.source_type,
-                "external_id": r.external_id,
-                "evidence_grade": r.evidence_grade,
-                "domain": r.domain,
-                "environment": r.environment,
-                "work_type": r.work_type,
-                "path_l2": r.path_l2,
-                "source_uri": r.source_uri,
-                "fts_rank": r.fts_rank,
-                "vec_rank": r.vec_rank,
-            }
+            attach_document_access(
+                {
+                    "rank": r.rank,
+                    "score": r.score,
+                    "document_id": r.document_id,
+                    "chunk_id": r.chunk_id,
+                    "title": r.title,
+                    "snippet": r.snippet,
+                    "source_type": r.source_type,
+                    "external_id": r.external_id,
+                    "evidence_grade": r.evidence_grade,
+                    "domain": r.domain,
+                    "environment": r.environment,
+                    "work_type": r.work_type,
+                    "path_l2": r.path_l2,
+                    "source_uri": r.source_uri,
+                    "fts_rank": r.fts_rank,
+                    "vec_rank": r.vec_rank,
+                }
+            )
             for r in resp.results
         ],
     }

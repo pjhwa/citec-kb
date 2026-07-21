@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.analytics.issue_type import classify_issue_type
 from app.db.models import Document
 from app.db.session import session_scope
+from app.doc_access import attach_document_access
 from app.tickets.query import parse_meta_date
 
 _GROUP_BY = frozenset(
@@ -55,7 +56,7 @@ def _sample_row(
     source_type: str = "support_history",
 ) -> dict[str, Any]:
     body = (body_md or "").strip()
-    return {
+    row = {
         "document_id": document_id,
         "external_id": external_id,
         "title": title or "",
@@ -69,6 +70,7 @@ def _sample_row(
         "date": dt.isoformat() if dt else None,
         "body_preview": body[:1200] + ("…" if len(body) > 1200 else ""),
     }
+    return attach_document_access(row)
 
 
 def aggregate_tickets(

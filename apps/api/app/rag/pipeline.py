@@ -190,18 +190,22 @@ def _prepare(
         )
 
     packed = pack_chunks(enriched, max_context_tokens=max_context_tokens, per_chunk_chars=1600)
+    from app.doc_access import attach_document_access
+
     citations = [
-        {
-            "id": p.cite_id,
-            "document_id": p.document_id,
-            "chunk_id": p.chunk_id,
-            "title": p.title,
-            "external_id": p.external_id,
-            "source_type": p.source_type,
-            "snippet": p.snippet,
-            "source_uri": p.source_uri,
-            "score": p.score,
-        }
+        attach_document_access(
+            {
+                "id": p.cite_id,
+                "document_id": p.document_id,
+                "chunk_id": p.chunk_id,
+                "title": p.title,
+                "external_id": p.external_id,
+                "source_type": p.source_type,
+                "snippet": p.snippet,
+                "source_uri": p.source_uri,
+                "score": p.score,
+            }
+        )
         for p in packed
     ]
     retrieval_meta = {

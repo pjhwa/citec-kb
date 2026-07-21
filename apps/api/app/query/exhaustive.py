@@ -6,6 +6,7 @@ import re
 from typing import Any, Optional
 
 from app.db.session import session_scope
+from app.doc_access import attach_document_access
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest
 
@@ -69,14 +70,17 @@ def run_exhaustive(
         )
 
     items = [
-        {
-            "rank": r.rank,
-            "external_id": r.external_id,
-            "title": r.title,
-            "score": r.score,
-            "source_type": r.source_type,
-            "snippet": (r.snippet or "")[:240],
-        }
+        attach_document_access(
+            {
+                "rank": r.rank,
+                "external_id": r.external_id,
+                "title": r.title,
+                "score": r.score,
+                "source_type": r.source_type,
+                "document_id": getattr(r, "document_id", None),
+                "snippet": (r.snippet or "")[:240],
+            }
+        )
         for r in resp.results
     ]
     # completeness: heuristic — multi-query + top_k large; not a full corpus scan

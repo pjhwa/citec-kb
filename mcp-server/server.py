@@ -103,11 +103,22 @@ async def _search_impl(
     if not results:
         return "검색 결과가 없습니다."
 
-    lines = [f"검색 결과 {len(results)}건 (backend={data.get('backend', 'citec-kb')}):"]
+    lines = [
+        f"검색 결과 {len(results)}건 (backend={data.get('backend', 'citec-kb')}). "
+        f"원문 전체는 kb_get_document(path=…) 로 조회하세요."
+    ]
     for r in results:
+        path = r.get("path") or ""
+        body_api = r.get("body_api") or r.get("body_api_url") or ""
+        web_url = r.get("web_url") or r.get("web_path") or ""
         lines.append(
-            f"- [{r.get('section', '')}] {r.get('title', '(제목 없음)')} — {r.get('path', '')}\n"
-            f"  {r.get('snippet', '')}"
+            f"- [{r.get('section') or r.get('source_type') or ''}] "
+            f"{r.get('title', '(제목 없음)')}\n"
+            f"  path: {path}\n"
+            f"  body_api: {body_api}\n"
+            f"  web_url: {web_url}\n"
+            f"  mcp: kb_get_document(path={path!r})\n"
+            f"  snippet: {r.get('snippet', '')}"
         )
     return "\n".join(lines)
 
@@ -141,9 +152,20 @@ async def _get_document_impl(path: str) -> str:
 
     title = data.get("title") or ""
     content = data.get("content") or ""
+    acc = data.get("access") or {}
+    header_bits = []
+    if data.get("external_id"):
+        header_bits.append(f"external_id={data.get('external_id')}")
+    if data.get("source_type"):
+        header_bits.append(f"source_type={data.get('source_type')}")
+    if acc.get("web_url") or data.get("web_url"):
+        header_bits.append(f"web_url={acc.get('web_url') or data.get('web_url')}")
+    if acc.get("body_api") or data.get("body_api"):
+        header_bits.append(f"body_api={acc.get('body_api') or data.get('body_api')}")
+    meta_line = (" | ".join(header_bits) + "\n\n") if header_bits else ""
     if title:
-        return f"# {title}\n\n{content}"
-    return content
+        return f"# {title}\n{meta_line}{content}"
+    return meta_line + content
 
 
 @mcp.tool()
@@ -231,6 +253,7 @@ async def wiki_ask(query: str, template: str = "general") -> str:
 async def _ask_impl(query: str, template: str, mode: str) -> str:
     answer_parts: list[str] = []
     sources: list[str] = []
+    cite_lines: list[str] = []
     try:
         async with _client(timeout=180.0) as client:
             async with client.stream(
@@ -259,25 +282,39 @@ async def _ask_impl(query: str, template: str, mode: str) -> str:
                     elif etype == "error":
                         return f"오류: {event.get('text') or event.get('error') or '알 수 없는 오류'}"
                     elif etype == "done":
-                        # fallback if tokens empty but result present
                         result = event.get("result") or {}
                         if not answer_parts and result.get("answer"):
                             answer_parts.append(str(result.get("answer")))
-                        if not sources and result.get("citations"):
-                            for c in result["citations"]:
-                                if isinstance(c, dict):
-                                    eid = c.get("external_id") or ""
-                                    st = c.get("source_type") or ""
-                                    if eid:
-                                        sources.append(f"{st}/{eid}" if st else eid)
+                        for c in result.get("citations") or []:
+                            if not isinstance(c, dict):
+                                continue
+                            eid = c.get("external_id") or ""
+                            st = c.get("source_type") or ""
+                            path = c.get("path") or (
+                                f"{st}/{eid}.md" if eid and st else eid
+                            )
+                            web = c.get("web_url") or c.get("web_path") or ""
+                            body = c.get("body_api") or c.get("body_api_url") or ""
+                            if path:
+                                sources.append(path)
+                            cite_lines.append(
+                                f"- {c.get('id') or ''} {c.get('title') or eid}\n"
+                                f"  path: {path}\n"
+                                f"  body_api: {body}\n"
+                                f"  web_url: {web}\n"
+                                f"  mcp: kb_get_document(path={path!r})"
+                            )
     except httpx.HTTPError as e:
         return _err(e)
 
     answer = "".join(answer_parts).strip()
     if not answer:
         return "답변을 생성하지 못했습니다."
-    if sources:
-        answer += "\n\n**출처**: " + ", ".join(sources)
+    if cite_lines:
+        answer += "\n\n**출처 (원문 접근)**\n" + "\n".join(cite_lines)
+    elif sources:
+        answer += "\n\n**출처 path**: " + ", ".join(sources)
+        answer += "\n원문: kb_get_document(path=…)"
     return answer
 
 
@@ -314,14 +351,31 @@ async def kb_query(q: str, top_k: int = 10) -> str:
         )
         for b in (result.get("buckets") or [])[:15]:
             lines.append(f"- {b.get('key')}: {b.get('count')}건 (share={b.get('share')})")
+            for s in (b.get("samples") or [])[:3]:
+                if not isinstance(s, dict):
+                    continue
+                path = s.get("path") or ""
+                lines.append(
+                    f"    · {s.get('external_id')} {s.get('title', '')[:60]}\n"
+                    f"      path={path} body_api={s.get('body_api') or s.get('body_api_url') or ''}\n"
+                    f"      web_url={s.get('web_url') or s.get('web_path') or ''}\n"
+                    f"      mcp: kb_get_document(path={path!r})"
+                )
     elif intent in {"hybrid_search", "exhaustive"} or result.get("items"):
         items = result.get("items") or result.get("results") or []
-        lines.append(f"hits={result.get('total', len(items))}")
+        lines.append(
+            f"hits={result.get('total', len(items))} "
+            f"(원문: kb_get_document(path=…) 또는 body_api/web_url)"
+        )
         for it in items[:10]:
             if isinstance(it, dict):
+                path = it.get("path") or ""
                 lines.append(
                     f"- {it.get('title') or it.get('external_id')} "
-                    f"[{it.get('source_type', '')}] score={it.get('score', '')}"
+                    f"[{it.get('source_type', '')}] score={it.get('score', '')}\n"
+                    f"  path={path} body_api={it.get('body_api') or it.get('body_api_url') or ''}\n"
+                    f"  web_url={it.get('web_url') or it.get('web_path') or ''}\n"
+                    f"  mcp: kb_get_document(path={path!r})"
                 )
     elif intent == "similar_incident":
         lines.append(f"brief: {result.get('brief', '')}")

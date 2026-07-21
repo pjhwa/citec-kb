@@ -59,20 +59,24 @@ def get_ticket_by_external_id(
         if not d:
             return None
         meta = d.metadata_ if isinstance(d.metadata_, dict) else {}
-        return {
-            "document_id": d.id,
-            "external_id": d.external_id,
-            "title": d.title,
-            "source_type": d.source_type,
-            "body_md": d.body_md or "",
-            "status": meta.get("Status"),
-            "component": meta.get("Component"),
-            "assignee": meta.get("Assignee"),
-            "Created": meta.get("Created"),
-            "Resolved": meta.get("Resolved"),
-            "Updated": meta.get("Updated"),
-            "metadata": meta,
-        }
+        from app.doc_access import attach_document_access
+
+        return attach_document_access(
+            {
+                "document_id": d.id,
+                "external_id": d.external_id,
+                "title": d.title,
+                "source_type": d.source_type,
+                "body_md": d.body_md or "",
+                "status": meta.get("Status"),
+                "component": meta.get("Component"),
+                "assignee": meta.get("Assignee"),
+                "Created": meta.get("Created"),
+                "Resolved": meta.get("Resolved"),
+                "Updated": meta.get("Updated"),
+                "metadata": meta,
+            }
+        )
 
 
 def list_tickets(
@@ -134,8 +138,11 @@ def list_tickets(
         rows.sort(key=lambda r: r["_sort"], reverse=descending)
         total = len(rows)
         page = rows[offset : offset + limit]
+        from app.doc_access import attach_document_access
+
         for r in page:
             r.pop("_sort", None)
+            attach_document_access(r)
 
         return {
             "total": total,

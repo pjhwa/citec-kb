@@ -23,6 +23,7 @@ from app import __version__
 from app.audit.log import list_recent_queries, log_query_answer
 from app.db.models import Document, Feedback, Insight
 from app.db.session import session_scope
+from app.doc_access import attach_document_access, document_access
 from app.rag.pipeline import run_fast_rag, stream_rag
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
@@ -120,19 +121,21 @@ def _search_results(
         eid = r.external_id or r.document_id or ""
         path = f"{st}/{eid}.md" if eid and not str(eid).endswith(".md") else f"{st}/{eid}"
         results.append(
-            {
-                "path": path,
-                "section": st,
-                "title": r.title or eid,
-                "snippet": (r.snippet or "")[:500],
-                "area": r.domain or "",
-                "category": r.work_type or "",
-                "score": r.score,
-                "document_id": r.document_id,
-                "external_id": r.external_id,
-                "source_type": st,
-                "source_uri": r.source_uri,
-            }
+            attach_document_access(
+                {
+                    "path": path,
+                    "section": st,
+                    "title": r.title or eid,
+                    "snippet": (r.snippet or "")[:500],
+                    "area": r.domain or "",
+                    "category": r.work_type or "",
+                    "score": r.score,
+                    "document_id": r.document_id,
+                    "external_id": r.external_id,
+                    "source_type": st,
+                    "source_uri": r.source_uri,
+                }
+            )
         )
     return {
         "results": results,
@@ -357,11 +360,24 @@ def api_wiki_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
             "evidence_grade": doc.evidence_grade,
         }
     )
+    acc = document_access(
+        external_id=doc.external_id,
+        source_type=doc.source_type,
+        document_id=doc.id,
+        path=_doc_path(doc),
+        title=doc.title,
+    )
     return {
         "path": _doc_path(doc),
         "content": doc.body_md or "",
         "meta": meta,
         "title": doc.title,
+        "external_id": doc.external_id,
+        "source_type": doc.source_type,
+        "document_id": doc.id,
+        "access": acc,
+        "web_url": acc.get("web_url"),
+        "body_api": acc.get("body_api"),
     }
 
 
@@ -658,8 +674,8 @@ def v1_ext_catalog() -> dict[str, Any]:
             "GET /api/health": "lightweight health",
             "GET /api/version": "version string",
             "GET /api/wiki-stats": "corpus counts by source_type",
-            "GET /api/wiki/search": "hybrid search (q, section, area, limit)",
-            "GET /api/wiki/file": "document body by path/external_id",
+            "GET /api/wiki/search": "hybrid search (q, section, area, limit) + body_api/web_url",
+            "GET /api/wiki/file": "document body by path/external_id (+ access)",
             "POST /api/query": "SSE Q&A (query, template) — MCP wiki_ask",
             "GET /api/synthesis": "insight list (wiki synthesis stand-in)",
             "GET /api/synthesis/{slug}": "insight detail",
@@ -667,12 +683,22 @@ def v1_ext_catalog() -> dict[str, Any]:
             "GET /api/recent-questions": "recent audited queries",
         },
         "native_v1": {
-            "POST /v1/search": "hybrid search JSON",
-            "POST /v1/chat": "RAG chat JSON/SSE",
-            "POST /v1/query": "multi-intent planner",
-            "GET /v1/tickets/{external_id}": "ticket detail",
+            "POST /v1/search": "hybrid search JSON + document access fields",
+            "POST /v1/chat": "RAG chat JSON/SSE (citations include web_url/body_api)",
+            "POST /v1/query": "multi-intent planner (items/samples include access)",
+            "GET /v1/tickets/{external_id}": "full body + access",
             "GET /v1/health": "full dependency health",
             "GET /v1/external/catalog": "this catalog",
         },
+        "document_access_fields": [
+            "path",
+            "body_api",
+            "body_api_url",
+            "body_api_file",
+            "web_path",
+            "web_url",
+            "access.mcp_tool",
+            "access.mcp_args",
+        ],
         "section_map": {k: v for k, v in _SECTION_MAP.items() if k},
     }

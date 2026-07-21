@@ -108,11 +108,14 @@ claude mcp add --transport http citec-kb http://localhost:8577/mcp
 
 ## 사용 예 (에이전트 관점)
 
-1. `kb_search("모니모 Redis timeout", section="support_history")`
-2. 결과 path로 `kb_get_document("support_history/CITECTS-2502.md")`
-3. 또는 한 번에 `kb_ask("모니모 Redis 타임아웃 원인과 조치", template="support_history")`
-4. 집계: `kb_query("2026년에 지원한 기술지원의 유형을 알려줘")`
-5. 티켓 상세: `kb_ticket("CITECTS-2502")`
+1. `kb_search("모니모 Redis timeout", section="support_history")`  
+   → 각 hit에 `path` / `body_api` / `web_url` / `mcp: kb_get_document(path=…)` 포함
+2. **원문 필수**: 결과의 `path`로 `kb_get_document("support_history/CITECTS-2502.md")`
+3. 또는 한 번에 `kb_ask(...)` — 답변 하단 **출처 (원문 접근)** 에 path·body_api·web_url·mcp 안내
+4. 집계: `kb_query("올해 SCP 관련 유형 분류")` — 샘플마다 path/body_api/web_url
+5. 티켓: `kb_ticket("CITECTS-2502")`
+
+에이전트 규칙 권장: 사용자에게 문서 목록만 나열하지 말고, 필요 시 `kb_get_document`으로 원문을 가져와 인용하세요.
 
 ---
 
