@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>검색 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/markdown.css"/>
 <style>
   :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
   * { box-sizing: border-box; }
@@ -38,6 +39,7 @@
   .snip { color:#334155; font-size:13.5px; line-height:1.5; }
   .score { color:var(--muted); font-size:12px; }
   pre.err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+  .md-preview { max-height:7.5em; }
 </style>
 </head>
 <body>
@@ -88,6 +90,7 @@
   <div class="meta" id="meta">쿼리를 입력하세요.</div>
   <div id="results"></div>
 </div>
+<script src="/js/markdown.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 async function runSearch() {
@@ -126,9 +129,15 @@ async function runSearch() {
           ${hit.environment ? `<span class="badge">${escapeHtml(hit.environment)}</span>` : ""}
           ${hit.work_type ? `<span class="badge">${escapeHtml(hit.work_type)}</span>` : ""}
         </div>
-        <div class="snip">${escapeHtml(hit.snippet || "")}</div>
+        <div class="snip md-body md-preview" data-md="${escapeHtml((hit.snippet || "").slice(0, 800))}"></div>
       </div>
     `).join("");
+    if (window.CitecMD) {
+      $("results").querySelectorAll("[data-md]").forEach((el) => {
+        el.innerHTML = CitecMD.render(el.getAttribute("data-md") || "");
+        el.removeAttribute("data-md");
+      });
+    }
   } catch (e) {
     $("meta").textContent = "오류";
     $("results").innerHTML = `<pre class="err">${escapeHtml(String(e))}</pre>`;

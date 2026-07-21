@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.25** |
+| 문서 버전 | **1.26** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.25: unified home ask UI · /v1/query multi-intent UX** |
+| 갱신 | **2026-07-21 — v1.26: MD→HTML UI render (CitecMD, air-gap)** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -42,7 +42,7 @@
 | 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
-| UI | **홈 통합 질의** (`/`) · 전문 UI(search/chat/si/…) · login · admin · `/docs/` |
+| UI | **홈 통합 질의** (`/`) · 전문 UI(search/chat/si/…) · **CitecMD** (snippet/답변/티켓/Insight MD→HTML) · login · admin · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
 | 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Entra/상용 IdP 운영 연동 · 부서 오픈 |
 
@@ -698,10 +698,13 @@ POST /v1/auth/introspect
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
 4. (선택) G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.25)
-- **홈 통합 질의**: `POST /v1/query` 자동 intent · hybrid 기본 검색 실행  
-- SI 패턴 보강(비슷한 장애) · 전문 UI는 보조 링크  
-- 선행: Keycloak e2e · CI · pilot pack  
+### 완료 스냅샷 (2026-07-21 v1.26)
+- **MD→HTML 렌더**: `apps/web/public/js/markdown.js` + `css/markdown.css` (CDN 없음)  
+  - 홈 hybrid/SI/list/analytics 상세 · Fast QA · search · si · insights  
+  - heading/bold/list/code fence(잘린 스니펫 포함)/link · XSS escape  
+- **홈 통합 질의** (v1.25): `POST /v1/query` 자동 intent · hybrid 기본 검색  
+- 선행: support-history 유형 분류+상세 · auth off pilot · Keycloak e2e · CI  
+
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -742,5 +745,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.25).**  
-통합 질의 홈 + Keycloak + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.
+**문서 끝 (v1.26).**  
+MD HTML 렌더 + 통합 질의 홈 + Keycloak + CI · 잔여=사람 도메인 사인·상용 IdP · **매 작업 현행화**.

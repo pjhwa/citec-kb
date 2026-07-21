@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CI-TEC Knowledge — 통합 질의</title>
+  <link rel="stylesheet" href="/css/markdown.css"/>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -233,6 +234,7 @@
     </details>
   </div>
 
+  <script src="/js/markdown.js"></script>
   <!-- Fallback first (auth disabled pilot); /js/auth.js overwrites if it loads -->
   <script>
     window.CitecAuth = window.CitecAuth || {
@@ -343,7 +345,7 @@
           <h3>${esc(it.title || it.external_id || "(제목 없음)")}
 span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span></h3>
           <div class="meta">${esc(it.source_type || "")}</div>
-          <div class="snippet">${esc((it.snippet || "").slice(0, 420))}</div>
+          <div class="md-body md-preview" data-md="${esc((it.snippet || "").slice(0, 600))}"></div>
         </div>`;
       }
       return html;
@@ -353,15 +355,17 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
       const cases = result?.cases || [];
       let html = "";
       if (result?.brief) {
-        html += `<div class="note"><strong>브리프</strong><div class="snippet">${esc(typeof result.brief === "string" ? result.brief : JSON.stringify(result.brief))}</div></div>`;
+        const brief = typeof result.brief === "string" ? result.brief : JSON.stringify(result.brief);
+        html += `<div class="note"><strong>브리프</strong><div class="md-body" data-md="${esc(brief.slice(0, 1200))}"></div></div>`;
       }
       if (!cases.length) return html + `<p class="meta">유사 사례 없음</p>`;
       for (const c of cases.slice(0, 8)) {
         const app = c.applicability || {};
+        const snip = (c.symptom || c.summary || c.snippet || "").toString().slice(0, 500);
         html += `<div class="card">
           <h3>${esc(c.title || c.external_id || "case")}<span class="score">${esc(c.external_id || "")}</span></h3>
           <div class="meta">적용성: ${esc(app.label || "-")} · score ${esc(c.score)}</div>
-          <div class="snippet">${esc((c.symptom || c.summary || c.snippet || "").toString().slice(0, 400))}</div>
+          <div class="md-body md-preview" data-md="${esc(snip)}"></div>
         </div>`;
       }
       if (result?.actions?.length) {
@@ -376,10 +380,11 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
       let html = `<p class="meta">total=${esc(total)}</p>`;
       if (!items.length) return html + `<p class="meta">목록 없음</p>`;
       for (const it of items.slice(0, 20)) {
+        const snip = (it.snippet || it.summary || it.subject || "").toString().slice(0, 400);
         html += `<div class="card">
           <h3>${esc(it.title || it.external_id || it.code || it.subject || "(item)")}</h3>
           <div class="meta">${esc(it.external_id || it.code || "")} ${esc(it.created || it.date || "")}</div>
-          <div class="snippet">${esc((it.snippet || it.summary || it.subject || "").toString().slice(0, 300))}</div>
+          <div class="md-body md-preview" data-md="${esc(snip)}"></div>
         </div>`;
       }
       return html;
@@ -430,8 +435,8 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
               </div>
               <div class="meta">${esc(eid)} · ${esc(s.status || "-")} · ${esc(s.Created || s.date || "")}
                 · ${esc(s.assignee || "")}</div>
-              <div class="snippet">${esc((s.body_preview || "").slice(0, 360))}</div>
-              <div class="ticket-full meta" data-box="${esc(eid)}" style="display:none;margin-top:8px"></div>
+              <div class="md-body md-preview snippet-md" data-md="${esc((s.body_preview || "").slice(0, 800))}"></div>
+              <div class="ticket-full md-detail-box" data-box="${esc(eid)}" style="display:none"></div>
             </div>`;
           }
         }
@@ -449,11 +454,28 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
         );
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || r.statusText);
-        box.innerHTML = `<pre class="answer" style="max-height:420px;overflow:auto">${esc(d.body_md || "(본문 없음)")}</pre>
-          <div class="meta">component=${esc(d.component)} · status=${esc(d.status)} · assignee=${esc(d.assignee)}</div>`;
+        const mdHtml = (window.CitecMD && CitecMD.render)
+          ? CitecMD.render(d.body_md || "(본문 없음)")
+          : esc(d.body_md || "(본문 없음)");
+        box.innerHTML = `<div class="md-body">${mdHtml}</div>
+          <div class="meta" style="margin-top:8px">component=${esc(d.component)} · status=${esc(d.status)} · assignee=${esc(d.assignee)}</div>`;
       } catch (e) {
         box.textContent = String(e.message || e);
       }
+    }
+
+    function md(s) {
+      if (window.CitecMD && CitecMD.render) return CitecMD.render(s || "");
+      return esc(s || "");
+    }
+
+    function hydrateMdPreviews(root) {
+      (root || document).querySelectorAll("[data-md]").forEach((el) => {
+        const raw = el.getAttribute("data-md") || "";
+        // attribute was HTML-escaped; browser returns decoded value
+        el.innerHTML = md(raw);
+        el.removeAttribute("data-md");
+      });
     }
 
     function renderGeneric(result) {
@@ -498,7 +520,7 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
       return `<div class="card">
         <h3>Fast QA 답변</h3>
         <div class="meta">model=${esc(d.model || "")} · trust=${esc(JSON.stringify(trust).slice(0, 120))}</div>
-        <pre class="answer">${esc(answer)}</pre>
+        <div class="md-body md-detail-box">${md(answer)}</div>
       </div>`;
     }
 
@@ -527,6 +549,7 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
         }
 
         $("out").innerHTML = html;
+        hydrateMdPreviews($("out"));
         $("out").querySelectorAll("button.ticket-detail").forEach((btn) => {
           btn.onclick = () => {
             const eid = btn.dataset.eid;

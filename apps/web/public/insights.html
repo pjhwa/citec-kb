@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Insight 승인 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/markdown.css"/>
 <style>
   :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; }
   * { box-sizing: border-box; }
@@ -61,6 +62,7 @@
   </div>
   <div id="out"></div>
 </div>
+<script src="/js/markdown.js"></script>
 <script src="/js/auth.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -113,7 +115,7 @@ async function load() {
     html += `<div class="card">
       <div><span class="badge">${esc(it.status)}</span><strong>${esc(it.title)}</strong></div>
       <div class="meta">id=${esc(it.id)} · author=${esc(it.author||"-")} · reviewer=${esc(it.reviewer||"-")}</div>
-      <pre class="meta" style="white-space:pre-wrap;background:#f8fafc;padding:8px;border-radius:8px">${esc((it.body_md||"").slice(0,400))}</pre>
+      <div class="md-body md-preview" style="background:#f8fafc;padding:8px;border-radius:8px;margin:6px 0" data-md="${esc((it.body_md||"").slice(0,600))}"></div>
       <div class="row">
         ${it.status==="draft"?`<button data-a="submit" data-id="${esc(it.id)}">Submit review</button>`:""}
         ${it.status==="review"?`<button class="ok" data-a="approve" data-id="${esc(it.id)}">Approve</button>
@@ -128,6 +130,12 @@ async function load() {
     </div>`;
   }
   $("out").innerHTML = html;
+  if (window.CitecMD) {
+    $("out").querySelectorAll("[data-md]").forEach((el) => {
+      el.innerHTML = CitecMD.render(el.getAttribute("data-md") || "");
+      el.removeAttribute("data-md");
+    });
+  }
   $("out").querySelectorAll("button[data-a]").forEach(btn => {
     btn.onclick = () => {
       const id = btn.dataset.id;

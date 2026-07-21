@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.25 — CI-TEC Knowledge</title>
+<title>구현 계획 1.26 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.25</div>
-  <p class="meta">문서 버전 1.25 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-21 — v1.25: unified home ask UI · /v1/query multi-intent UX</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.26</div>
+  <p class="meta">문서 버전 1.26 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-21 — v1.26: MD→HTML UI render (CitecMD, air-gap)</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.25</strong></td>
+<td><strong>1.26</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-21 — v1.25: unified home ask UI · /v1/query multi-intent UX</strong></td>
+<td><strong>2026-07-21 — v1.26: MD→HTML UI render (CitecMD, air-gap)</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -164,7 +164,7 @@
 </tr>
 <tr>
 <td>UI</td>
-<td><strong>홈 통합 질의</strong> (<code>/</code>) · 전문 UI(search/chat/si/…) · login · admin · <code>/docs/</code></td>
+<td><strong>홈 통합 질의</strong> (<code>/</code>) · 전문 UI(search/chat/si/…) · <strong>CitecMD</strong> (snippet/답변/티켓/Insight MD→HTML) · login · admin · <code>/docs/</code></td>
 </tr>
 <tr>
 <td>alembic</td>
@@ -1567,11 +1567,13 @@ POST /v1/auth/introspect
 <li>부서 공식 오픈 · 50–100명 스모크 일정  </li>
 <li>(선택) G2 groundedness 정기 회귀 리포트  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-21 v1.25)</h3>
+<h3>완료 스냅샷 (2026-07-21 v1.26)</h3>
 <ul>
-<li><strong>홈 통합 질의</strong>: <code>POST /v1/query</code> 자동 intent · hybrid 기본 검색 실행  </li>
-<li>SI 패턴 보강(비슷한 장애) · 전문 UI는 보조 링크  </li>
-<li>선행: Keycloak e2e · CI · pilot pack  </li>
+<li><strong>MD→HTML 렌더</strong>: <code>apps/web/public/js/markdown.js</code> + <code>css/markdown.css</code> (CDN 없음)  </li>
+<li>홈 hybrid/SI/list/analytics 상세 · Fast QA · search · si · insights  </li>
+<li>heading/bold/list/code fence(잘린 스니펫 포함)/link · XSS escape  </li>
+<li><strong>홈 통합 질의</strong> (v1.25): <code>POST /v1/query</code> 자동 intent · hybrid 기본 검색  </li>
+<li>선행: support-history 유형 분류+상세 · auth off pilot · Keycloak e2e · CI  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>

@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Fast QA — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/markdown.css"/>
 <style>
   :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
   * { box-sizing: border-box; }
@@ -34,7 +35,7 @@
   .banner.abstain, .banner.empty { background:#fef2f2; border-color:#fecaca; color:#991b1b; }
   .answer {
     background:var(--card); border:1px solid var(--border); border-radius:12px;
-    padding:16px; white-space:pre-wrap; line-height:1.55; font-size:14.5px;
+    padding:16px; line-height:1.55; font-size:14.5px;
   }
   .cite {
     background:var(--card); border:1px solid var(--border); border-radius:10px;
@@ -89,6 +90,7 @@
 
   <div id="out"></div>
 </div>
+<script src="/js/markdown.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -181,16 +183,20 @@ function render(d) {
   if (t.reasons && t.reasons.length) {
     html += `<p class="meta">reasons: ${t.reasons.map(esc).join(" · ")}</p>`;
   }
-  html += `<div class="answer">${esc(d.answer || "")}</div>`;
+  const ans = d.answer_md || d.answer || "";
+  const ansHtml = (window.CitecMD && CitecMD.render) ? CitecMD.render(ans) : esc(ans);
+  html += `<div class="answer md-body">${ansHtml}</div>`;
   if (d.llm_error) html += `<p class="meta">llm_error: ${esc(d.llm_error)}</p>`;
   const ret = d.retrieval || {};
   html += `<p class="meta">retrieval hits=${ret.total} trust=${esc(ret.trust_retrieval)} vector_used=${ret.vector_used} citations_used=${esc(JSON.stringify(d.citations_used||[]))}</p>`;
   html += `<h2 style="font-size:1rem;margin:18px 0 8px">출처 (${cites.length})</h2>`;
   for (const c of cites) {
+    const snip = c.snippet || "";
+    const snipHtml = (window.CitecMD && CitecMD.render) ? CitecMD.render(snip) : esc(snip);
     html += `<div class="cite">
       <h3><span class="badge">${esc(c.id)}</span> ${esc(c.title || "")}</h3>
       <div><span class="badge">${esc(c.source_type||"")}</span> ${esc(c.external_id||"")}</div>
-      <p class="meta">${esc(c.snippet||"")}</p>
+      <div class="md-body md-preview" style="margin-top:6px">${snipHtml}</div>
     </div>`;
   }
   $("out").innerHTML = html;
