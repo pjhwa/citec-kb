@@ -403,6 +403,43 @@ async def kb_query(q: str, top_k: int = 10) -> str:
 
 
 @mcp.tool()
+async def kb_get_checkitem(code: str) -> str:
+    """PISA 체크리스트 항목 원문(구조화 필드)을 조회한다. code 예: PISAOLNX_01.04.05
+    또는 kb_search/list 결과의 path·code 사용."""
+    code = (code or "").strip()
+    if not code:
+        return "오류: code 가 비어 있습니다."
+    # allow path form checkitem/CODE.md
+    if "/" in code:
+        code = code.rstrip("/").split("/")[-1]
+    if code.endswith(".md"):
+        code = code[:-3]
+    try:
+        async with _client() as client:
+            resp = await client.get(f"/v1/checkitems/{code}")
+            if resp.status_code == 404:
+                return f"오류: 체크항목을 찾을 수 없습니다: {code}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    lines = [
+        f"# {data.get('title') or data.get('code')}",
+        f"web_url: {data.get('web_url') or ''}",
+        f"body_api: {data.get('body_api') or ''}",
+        "",
+    ]
+    for sec in data.get("sections") or []:
+        if not sec.get("value"):
+            continue
+        lines.append(f"## {sec.get('label') or sec.get('key')}")
+        lines.append(str(sec.get("value")))
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+@mcp.tool()
 async def kb_ticket(external_id: str, source_type: str = "support_history") -> str:
     """지원 티켓 전체 본문을 조회한다. 예: CITECTS-2502"""
     eid = (external_id or "").strip()

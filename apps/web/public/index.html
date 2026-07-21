@@ -590,6 +590,53 @@
       return `<div class="card"><pre class="answer meta">${esc(JSON.stringify(result, null, 2).slice(0, 6000))}</pre></div>`;
     }
 
+    function renderChecklist(result) {
+      const items = result?.items || [];
+      const total = result?.total ?? items.length;
+      let html = `<p class="meta">checkitems total=${esc(total)} · 각 항목 「원문 보기」· 필드별 구조 표시</p>`;
+      if (!items.length) return html + `<p class="meta">점검 항목 없음 (검색어를 바꿔 보세요)</p>`;
+      for (const it of items.slice(0, 40)) {
+        const code = it.code || it.external_id || "";
+        const st = it.source_type || "checkitem";
+        const title = it.title || (code ? `[${code}] ${it.subject || ""}` : it.subject || code);
+        const docLink = window.CitecDoc
+          ? CitecDoc.badgeHtml({ external_id: code, source_type: st, title })
+          : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(code)}&st=checkitem&kind=checkitem" target="_blank" rel="noopener">원문 보기</a>`;
+        html += `<div class="card checkitem-card">
+          <h3 style="margin:0 0 8px;font-size:1.05rem">${esc(title)} ${docLink}</h3>
+          <div class="meta" style="margin-bottom:10px">
+            <span class="badge">${esc(code)}</span>
+            <span class="badge muted">${esc(it.area || "")}</span>
+            ${it.category_1 || it.category ? `<span class="badge muted">${esc(it.category_1 || it.category)}</span>` : ""}
+            ${it.subcategory ? `<span class="badge muted">${esc(it.subcategory)}</span>` : ""}
+          </div>`;
+        const sections = it.sections && it.sections.length
+          ? it.sections
+          : [
+              { key: "subject", label: "점검항목", value: it.subject },
+              { key: "check_method", label: "점검방법", value: it.check_method },
+              { key: "check_criteria", label: "점검기준", value: it.check_criteria },
+              { key: "risk_if_vulnerable", label: "취약 시 문제점", value: it.risk_if_vulnerable },
+              { key: "remediation", label: "개선방안", value: it.remediation },
+            ].filter((s) => s.value);
+        html += `<div class="checkitem-sections">`;
+        for (const sec of sections) {
+          if (!sec.value) continue;
+          // skip code/area already in meta
+          if (["code", "area", "category_1", "category", "subcategory"].includes(sec.key)) continue;
+          const body = (window.CitecMD && CitecMD.render)
+            ? CitecMD.render(String(sec.value))
+            : esc(String(sec.value));
+          html += `<section class="ci-sec" style="border-top:1px solid var(--border);padding:10px 0 4px">
+            <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:4px">${esc(sec.label || sec.key)}</div>
+            <div class="md-body" style="font-size:13.5px">${body}</div>
+          </section>`;
+        }
+        html += `</div></div>`;
+      }
+      return html;
+    }
+
     function renderByIntent(intent, data, q) {
       const result = data.result;
       const label = INTENT_LABEL[intent] || intent;
@@ -604,7 +651,8 @@
 
       if (intent === "hybrid_search") html += renderHybrid(result, q);
       else if (intent === "similar_incident") html += renderSI(result);
-      else if (intent === "time_scoped_list" || intent === "checklist" || intent === "exhaustive") html += renderList(result);
+      else if (intent === "checklist") html += renderChecklist(result);
+      else if (intent === "time_scoped_list" || intent === "exhaustive") html += renderList(result);
       else if (intent === "capacity") html += renderCapacity(result);
       else if (intent === "analytics" || intent === "entity_aggregate") html += renderAnalytics(result);
       else if (intent === "prevention") html += renderGeneric(result);

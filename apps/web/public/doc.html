@@ -56,8 +56,10 @@
   const eid = (params.get("eid") || "").trim();
   const st = (params.get("st") || "support_history").trim();
   const path = (params.get("path") || "").trim();
+  const kind = (params.get("kind") || "").trim();
   const wantTitle = params.get("title") || "";
   let rawMd = "";
+  let structured = null; // checkitem sections
   let showRaw = false;
 
   $("btnBack").onclick = () => {
@@ -75,9 +77,30 @@
     );
   }
 
+  function renderCheckitemSections(sections) {
+    let html = "";
+    for (const sec of sections || []) {
+      if (!sec || sec.value == null || sec.value === "") continue;
+      const body = (window.CitecMD && CitecMD.render)
+        ? CitecMD.render(String(sec.value))
+        : esc(String(sec.value));
+      html += `<section style="border-top:1px solid var(--border);padding:12px 0 6px">
+        <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px">${esc(sec.label || sec.key)}</div>
+        <div class="md-body" style="font-size:14px">${body}</div>
+      </section>`;
+    }
+    return html || "<p class='meta'>(필드 없음)</p>";
+  }
+
   function renderBody() {
     if (showRaw) {
-      $("body").innerHTML = `<pre class="raw">${esc(rawMd || "(본문 없음)")}</pre>`;
+      if (structured && structured.sections) {
+        $("body").innerHTML = `<pre class="raw">${esc(JSON.stringify(structured, null, 2))}</pre>`;
+      } else {
+        $("body").innerHTML = `<pre class="raw">${esc(rawMd || "(본문 없음)")}</pre>`;
+      }
+    } else if (structured && structured.sections) {
+      $("body").innerHTML = renderCheckitemSections(structured.sections);
     } else if (window.CitecMD && CitecMD.render) {
       $("body").innerHTML = CitecMD.render(rawMd || "(본문 없음)");
     } else {
@@ -92,8 +115,23 @@
     let d = null;
     let apiUrl = "";
     try {
-      if (eid) {
-        apiUrl = "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=" + encodeURIComponent(st);
+      // 1) PISA checkitem structured JSON
+      if (eid && (st === "checkitem" || kind === "checkitem" || /^PISA/i.test(eid))) {
+        apiUrl = "/v1/checkitems/" + encodeURIComponent(eid);
+        let r = await api(apiUrl);
+        if (r.ok) {
+          d = await r.json();
+          structured = d;
+          rawMd = [
+            `# ${d.title || d.code}`,
+            "",
+            ...((d.sections || []).map((s) => `## ${s.label}\n${s.value || ""}`)),
+          ].join("\n");
+        }
+      }
+      // 2) tickets / documents
+      if (!d && eid) {
+        apiUrl = "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=" + encodeURIComponent(st || "support_history");
         let r = await api(apiUrl);
         if (r.ok) {
           d = await r.json();
@@ -121,20 +159,24 @@
           path: w.path || p,
         };
       }
-      rawMd = d.body_md || "";
-      const title = d.title || wantTitle || d.external_id || "문서";
+      if (!rawMd) rawMd = d.body_md || "";
+      const title = d.title || wantTitle || d.external_id || d.code || "문서";
       document.title = title + " — 원문";
       $("title").textContent = title;
-      $("navTitle").textContent = d.external_id || "";
+      $("navTitle").textContent = d.external_id || d.code || "";
       $("meta").innerHTML =
-        `<span class="badge">${esc(d.source_type || st)}</span>` +
-        `<span class="badge">${esc(d.external_id || eid || "-")}</span>` +
+        `<span class="badge">${esc(d.source_type || st || (structured ? "checkitem" : ""))}</span>` +
+        `<span class="badge">${esc(d.external_id || d.code || eid || "-")}</span>` +
+        (d.area ? ` · area=${esc(d.area)}` : "") +
         (d.component ? ` · component=${esc(d.component)}` : "") +
         (d.status ? ` · status=${esc(d.status)}` : "") +
         (d.assignee ? ` · assignee=${esc(d.assignee)}` : "") +
         (d.Created ? ` · Created=${esc(d.Created)}` : "") +
-        (d.path ? `<br/>path=<code>${esc(d.path)}</code>` : "");
+        (d.path || d.web_url ? `<br/>${d.web_url ? `<a href="${esc(d.web_url)}">${esc(d.web_url)}</a>` : `path=<code>${esc(d.path)}</code>`}` : "");
       $("btnApi").href = apiUrl;
+      $("btnToggle").textContent = structured
+        ? "구조 뷰 / JSON 원문"
+        : "Markdown / 원문 텍스트";
       renderBody();
     } catch (e) {
       $("title").textContent = "문서 로드 실패";

@@ -48,7 +48,9 @@ def document_access(
 
     # Relative API paths (preferred for same-origin / compose internal clients)
     body_api_rel = ""
-    if eid:
+    if st == "checkitem" and eid:
+        body_api_rel = f"/v1/checkitems/{quote(eid, safe='')}"
+    elif eid:
         body_api_rel = f"/v1/tickets/{quote(eid, safe='')}?source_type={quote(st, safe='')}"
     body_api_file_rel = f"/api/wiki/file?path={quote(p, safe='/')}"
     web_rel = "/doc.html?"
@@ -61,6 +63,8 @@ def document_access(
         qparts.append(f"path={quote(p, safe='')}")
     if title:
         qparts.append(f"title={quote(str(title)[:200], safe='')}")
+    if st == "checkitem":
+        qparts.append("kind=checkitem")
     web_rel += "&".join(qparts)
 
     out: dict[str, Any] = {
@@ -73,8 +77,10 @@ def document_access(
         "body_api_file": body_api_file_rel,
         "web_path": web_rel,
         # MCP / agents: which tool to call for full text
-        "mcp_tool": "kb_get_document",
-        "mcp_args": {"path": p},
+        "mcp_tool": "kb_get_checkitem" if st == "checkitem" else "kb_get_document",
+        "mcp_args": (
+            {"code": eid} if st == "checkitem" and eid else {"path": p}
+        ),
     }
     if absolute:
         if body_api_rel and api:
@@ -92,12 +98,19 @@ def attach_document_access(item: dict[str, Any], *, absolute: bool = True) -> di
     """Mutate/return item with access fields flattened + nested ``access`` object."""
     if not isinstance(item, dict):
         return item
+    st = item.get("source_type") or item.get("section")
+    eid = item.get("external_id") or item.get("code") or item.get("id")
+    # checkitem rows often only have code
+    if not st and item.get("code") and (
+        item.get("check_method") is not None or item.get("subject") is not None
+    ):
+        st = "checkitem"
     acc = document_access(
-        external_id=item.get("external_id") or item.get("code") or item.get("id"),
-        source_type=item.get("source_type") or item.get("section"),
+        external_id=eid,
+        source_type=st,
         document_id=item.get("document_id"),
         path=item.get("path"),
-        title=item.get("title"),
+        title=item.get("title") or item.get("subject"),
         absolute=absolute,
     )
     # Flatten common keys without overwriting richer existing values

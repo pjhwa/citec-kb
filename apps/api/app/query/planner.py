@@ -60,23 +60,58 @@ def detect_checklist_intent(text: str) -> Optional[dict[str, Any]]:
         area = "Oracle"
     elif re.search(r"Windows|윈도우", t, re.I):
         area = "Windows"
-    # residual free-text for checkitems q=
-    q = t
-    for noise in ("관련", "목록", "항목", "은?", "는?", "개수", "와", "과"):
-        q = q.replace(noise, " ")
-    # keep keywords
-    terms = []
+    # Topic keywords for checkitems q= (do not drop tech tokens like OOM)
+    terms: list[str] = []
     for pat, term in [
-        (r"파일\s*시스템|filesystem|fsck", "파일시스템"),
-        (r"네트워크", "네트워크"),
+        (r"파일\s*시스템|filesystem|fsck|\bFS\b", "파일시스템"),
+        (r"네트워크|network", "네트워크"),
         (r"Oracle|오라클", "Oracle"),
+        (r"\bOOM\b|Out\s*of\s*Memory|아웃\s*오브\s*메모리", "OOM"),
+        (r"메모리\s*누수|Memory\s*Leak|memory\s*leak", "Memory Leak"),
+        (r"Heap\s*Dump|힙\s*덤프", "Heap Dump"),
+        (r"kdump|crashkernel", "kdump"),
+        (r"CommitLimit|커밋\s*리밋", "CommitLimit"),
+        (r"과다\s*사용|메모리\s*과다", "메모리 과다"),
+        (r"패닉|panic", "panic"),
+        (r"디스크|disk|파일시스템", "디스크"),
     ]:
         if re.search(pat, t, re.I):
             terms.append(term)
+    # residual free-text: strip checklist boilerplate, keep remaining tokens
+    residual = t
+    for noise in (
+        r"체크\s*리스트",
+        r"체크리스트",
+        r"점검\s*항목",
+        r"진단\s*항목",
+        r"관련",
+        r"목록",
+        r"항목",
+        r"알려줘",
+        r"보여줘",
+        r"찾아줘",
+        r"은\??",
+        r"는\??",
+        r"개수",
+        r"와",
+        r"과",
+        r"에\s*대한",
+        r"중에서",
+        r"중에",
+    ):
+        residual = re.sub(noise, " ", residual, flags=re.I)
+    residual = re.sub(r"\s+", " ", residual).strip()
+    # Prefer extracted terms; fall back to residual free text (not empty noise)
+    if terms:
+        q = " ".join(dict.fromkeys(terms))  # de-dupe preserve order
+    elif residual and len(residual) >= 2:
+        q = residual
+    else:
+        q = None
     return {
         "intent": "checklist",
         "area": area,
-        "q": " ".join(terms) if terms else None,
+        "q": q,
         "endpoint": "GET /v1/checkitems",
     }
 
@@ -294,9 +329,9 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
         }
 
     if intent == "checklist":
-        from app.routers.checkitems import list_checkitems
+        from app.routers.checkitems import list_checkitems_core
 
-        result = list_checkitems(
+        result = list_checkitems_core(
             q=plan.get("q"),
             area=plan.get("area"),
             category_1=None,
@@ -307,7 +342,10 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             "intent": "checklist",
             "params": plan,
             "result": result,
-            "note": "PISA checkitems 테이블 조회.",
+            "note": (
+                "PISA checkitems 구조화 조회 — 각 항목 body_api/web_url 및 "
+                "sections(점검방법·기준·취약시문제·개선방안). 원문: GET /v1/checkitems/{code}"
+            ),
         }
 
     if intent == "similar_incident":

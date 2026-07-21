@@ -6,7 +6,7 @@ import re
 from typing import Any, Optional
 
 from app.db.session import session_scope
-from app.routers.checkitems import list_checkitems
+from app.routers.checkitems import list_checkitems_core
 from app.si.retrieve import similar_incidents
 
 _PREVENTION = re.compile(
@@ -54,7 +54,7 @@ def run_prevention(
     top_k: int = 3,
 ) -> dict[str, Any]:
     si = similar_incidents(symptom=symptom, top_k=top_k)
-    checks = list_checkitems(
+    checks = list_checkitems_core(
         q=checkitem_q or symptom[:80],
         area=area,
         category_1=None,
