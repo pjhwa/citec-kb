@@ -1,11 +1,12 @@
 /** Shared auth helper — Bearer token in localStorage (set by login.html). */
 (function (global) {
-  const KEY = "citec_kb_token";
+  "use strict";
+  var KEY = "citec_kb_token";
 
   function getToken() {
     try {
       return localStorage.getItem(KEY) || "";
-    } catch (_) {
+    } catch (e) {
       return "";
     }
   }
@@ -14,7 +15,7 @@
     try {
       if (t) localStorage.setItem(KEY, t);
       else localStorage.removeItem(KEY);
-    } catch (_) {
+    } catch (e) {
       /* ignore */
     }
   }
@@ -24,64 +25,94 @@
   }
 
   function authHeaders(extra) {
-    const h = Object ...(extra || {}) };
-    const t = getToken();
+    var h = {};
+    var k;
+    if (extra) {
+      for (k in extra) {
+        if (Object.prototype.hasOwnProperty.call(extra, k)) h[k] = extra[k];
+      }
+    }
+    var t = getToken();
     if (t) h["Authorization"] = "Bearer " + t;
     return h;
   }
 
-  async function apiFetch(url, opts) {
+  function apiFetch(url, opts) {
     opts = opts || {};
-    const headers = authHeaders(opts.headers || {});
-    let body = opts.body;
-    if (body != null && typeof body === "object" && !(body instanceof FormData) && !(body instanceof Blob)) {
+    var headers = authHeaders(opts.headers || {});
+    var body = opts.body;
+    if (
+      body != null &&
+      typeof body === "object" &&
+      !(body instanceof FormData) &&
+      !(typeof Blob !== "undefined" && body instanceof Blob)
+    ) {
       if (!headers["Content-Type"] && !headers["content-type"]) {
         headers["Content-Type"] = "application/json";
       }
       body = JSON.stringify(body);
     }
-    const r = await fetch(url, { ...opts, headers, body });
-    return r;
+    var next = {};
+    var k;
+    for (k in opts) {
+      if (Object.prototype.hasOwnProperty.call(opts, k)) next[k] = opts[k];
+    }
+    next.headers = headers;
+    next.body = body;
+    return fetch(url, next);
   }
 
-  async function me() {
-    const r = await apiFetch("/v1/auth/me");
-    const d = await r.json().catch(() => ({}));
-    return { ok: r.ok, status: r.status, data: d };
+  function me() {
+    return apiFetch("/v1/auth/me").then(function (r) {
+      return r
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (d) {
+          return { ok: r.ok, status: r.status, data: d };
+        });
+    });
   }
 
-  async function status() {
-    const r = await fetch("/v1/auth/status");
-    return r.json();
+  function status() {
+    return fetch("/v1/auth/status").then(function (r) {
+      return r.json();
+    });
   }
 
   /** Inject a small auth chip into .top nav if present. */
   function mountChip(selector) {
-    const top = document.querySelector(selector || ".top");
+    var top = document.querySelector(selector || ".top");
     if (!top || top.querySelector("[data-citec-auth-chip]")) return;
-    const el = document.createElement("span");
+    var el = document.createElement("span");
     el.setAttribute("data-citec-auth-chip", "1");
-    el.style.cssText = "margin-left:auto;font-size:12px;color:#64748b;display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
-    el.innerHTML = '<a href="/login.html" style="color:#1d4ed8;font-weight:600;text-decoration:none">Login</a><span data-role>—</span>';
+    el.style.cssText =
+      "margin-left:auto;font-size:12px;color:#64748b;display:flex;gap:8px;align-items:center;flex-wrap:wrap;";
+    el.innerHTML =
+      '<a href="/login.html" style="color:#1d4ed8;font-weight:600;text-decoration:none">Login</a><span data-role>—</span>';
     top.appendChild(el);
-    me().then(({ ok, data }) => {
-      const p = (data && data.principal) || {};
-      const role = (p.roles || []).join(",") || (ok ? "anon" : "?");
-      const label = p.sub ? p.sub + " (" + role + ")" : "anonymous";
-      const span = el.querySelector("[data-role]");
-      if (span) span.textContent = label;
-    }).catch(() => {});
+    me()
+      .then(function (res) {
+        var p = (res.data && res.data.principal) || {};
+        var role = (p.roles || []).join(",") || (res.ok ? "anon" : "?");
+        var label = p.sub ? p.sub + " (" + role + ")" : "anonymous";
+        var span = el.querySelector("[data-role]");
+        if (span) span.textContent = label;
+      })
+      .catch(function () {});
   }
 
-  global.CitecAuth = {
-    KEY,
-    getToken,
-    setToken,
-    clear,
-    authHeaders,
-    apiFetch,
-    me,
-    status,
-    mountChip,
+  var api = {
+    KEY: KEY,
+    getToken: getToken,
+    setToken: setToken,
+    clear: clear,
+    authHeaders: authHeaders,
+    apiFetch: apiFetch,
+    me: me,
+    status: status,
+    mountChip: mountChip,
   };
-})(window);
+  global.CitecAuth = api;
+})(typeof window !== "undefined" ? window : this);
