@@ -623,7 +623,7 @@
         for (const sec of sections) {
           if (!sec.value) continue;
           // skip code/area already in meta
-          if (["code", "area", "category_1", "category", "subcategory"].includes(sec.key)) continue;
+          // show all sections from API (참고·중요도·배점 등 포함)
           const body = (window.CitecMD && CitecMD.render)
             ? CitecMD.render(String(sec.value))
             : esc(String(sec.value));

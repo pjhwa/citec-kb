@@ -14,8 +14,93 @@ from app.doc_access import attach_document_access
 router = APIRouter(prefix="/v1", tags=["checkitems"])
 
 
+# PISA JSON field order (source: checkitem_list_KO_*.json).
+# All non-empty raw keys are emitted; known keys get Korean labels.
+_SECTION_SPEC: list[tuple[str, str]] = [
+    ("Code", "코드"),
+    ("Area", "Area"),
+    ("LANG", "언어"),
+    ("Cloud", "Cloud"),
+    ("Category", "Category (PISA)"),
+    ("Category_1", "Category"),
+    ("Subcategory", "Subcategory"),
+    ("Subject", "점검항목"),
+    ("중요도", "중요도"),
+    ("배점", "배점"),
+    ("점검방법", "점검방법"),
+    ("점검방법_1", "점검방법 유형"),
+    ("점검기준", "점검기준"),
+    ("점검결과", "점검결과"),
+    ("취약시 문제점", "취약 시 문제점"),
+    ("개선방안", "개선방안"),
+    ("개선시기", "개선시기"),
+    ("참고", "참고"),
+    ("장애사례", "장애사례"),
+    ("Killer Contents", "Killer Contents"),
+    ("Lookin Killer", "Lookin Killer"),
+    ("Lookin Service", "Lookin Service"),
+    ("상호연계", "상호연계"),
+    ("업무특성", "업무특성"),
+    ("자체개발여부", "자체개발여부"),
+]
+
+_RAW_FALLBACK: dict[str, str] = {
+    "Code": "code",
+    "Area": "area",
+    "LANG": "lang",
+    "Category": "category",
+    "Category_1": "category_1",
+    "Subcategory": "subcategory",
+    "Subject": "subject",
+    "점검방법": "check_method",
+    "점검기준": "check_criteria",
+    "점검결과": "check_result",
+    "취약시 문제점": "risk_if_vulnerable",
+    "개선방안": "remediation",
+}
+
+
+def _nonempty(v: Any) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, str) and not str(v).strip():
+        return False
+    return True
+
+
+def _build_sections(r: Checkitem) -> list[dict[str, Any]]:
+    """Emit every non-empty field from raw JSON (+ column fallbacks)."""
+    raw = r.raw if isinstance(r.raw, dict) else {}
+    sections: list[dict[str, Any]] = []
+    used: set[str] = set()
+
+    def add(key: str, label: str, value: Any) -> None:
+        if key in used or not _nonempty(value):
+            return
+        used.add(key)
+        sections.append({"key": key, "label": label, "value": value})
+
+    for key, label in _SECTION_SPEC:
+        val = raw.get(key)
+        if not _nonempty(val):
+            col = _RAW_FALLBACK.get(key)
+            if col:
+                val = getattr(r, col, None)
+        add(key, label, val)
+
+    # remaining raw keys in source order
+    for key, val in raw.items():
+        if key in used:
+            continue
+        add(key, str(key), val)
+
+    return sections
+
+
 def _checkitem_to_dict(r: Checkitem) -> dict[str, Any]:
-    """Structured checkitem row + original-body access handles."""
+    """Structured checkitem row + full raw fields as sections + access URLs."""
+    raw = r.raw if isinstance(r.raw, dict) else {}
+    sections = _build_sections(r)
     item: dict[str, Any] = {
         "id": r.id,
         "code": r.code,
@@ -32,23 +117,18 @@ def _checkitem_to_dict(r: Checkitem) -> dict[str, Any]:
         "check_result": r.check_result,
         "risk_if_vulnerable": r.risk_if_vulnerable,
         "remediation": r.remediation,
+        "importance": raw.get("중요도"),
+        "score_point": raw.get("배점"),
+        "cloud": raw.get("Cloud"),
+        "reference": raw.get("참고"),
+        "remediation_timing": raw.get("개선시기"),
+        "lookin_service": raw.get("Lookin Service"),
         "document_id": r.document_id,
         "source_type": "checkitem",
-        "sections": [
-            {"key": "code", "label": "코드", "value": r.code},
-            {"key": "area", "label": "Area", "value": r.area},
-            {"key": "category_1", "label": "Category", "value": r.category_1 or r.category},
-            {"key": "subcategory", "label": "Subcategory", "value": r.subcategory},
-            {"key": "subject", "label": "점검항목", "value": r.subject},
-            {"key": "check_method", "label": "점검방법", "value": r.check_method},
-            {"key": "check_criteria", "label": "점검기준", "value": r.check_criteria},
-            {"key": "risk_if_vulnerable", "label": "취약 시 문제점", "value": r.risk_if_vulnerable},
-            {"key": "remediation", "label": "개선방안", "value": r.remediation},
-        ],
+        "sections": sections,
         "snippet": _snippet(r),
-        "raw": r.raw if isinstance(r.raw, dict) else {},
+        "raw": raw,
     }
-    item["sections"] = [s for s in item["sections"] if s.get("value") not in (None, "")]
     return attach_document_access(item)
 
 
