@@ -257,13 +257,17 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
     if intent == "exhaustive":
         result = run_exhaustive(
             q=str(plan.get("q") or body.get("q") or ""),
-            top_k=int(plan.get("top_k") or body.get("top_k") or 20),
+            top_k=int(plan.get("top_k") or body.get("top_k") or 30),
+            source_type=plan.get("source_type"),
         )
         return {
             "intent": "exhaustive",
             "params": plan,
             "result": result,
-            "note": "고재현 multi-query 목록 (전량 스캔 아님 · completeness 메타 포함).",
+            "note": (
+                "고재현 multi-query 목록 (전량 스캔 아님 · completeness 메타). "
+                "UI에서 「상세(원문)」으로 본문 확인."
+            ),
         }
 
     if intent == "time_scoped_list":
@@ -329,12 +333,14 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             entity=plan.get("entity"),
             component=plan.get("component"),
             top_k=int(body.get("top_k") or 50),
+            include_samples=True,
+            sample_limit=int(body.get("sample_limit") or plan.get("sample_limit") or 8),
         )
         return {
             "intent": "entity_aggregate",
             "params": plan,
             "result": result,
-            "note": "엔티티/유형 메타 집계 (LLM 미사용).",
+            "note": "엔티티/유형 메타 집계 (LLM 미사용). UI 「상세(원문)」으로 본문 확인.",
         }
 
     if intent == "hybrid_search":

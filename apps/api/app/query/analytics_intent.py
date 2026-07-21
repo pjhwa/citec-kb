@@ -16,7 +16,8 @@ _ANALYTICS = re.compile(
     # type / category breakdown of support work
     r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
     r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
-    r"어떤\s*지원이\s*진행|지원이\s*진행된|이슈\s*유형|이슈\s*종류",
+    r"어떤\s*지원이\s*진행|지원이\s*진행된|이슈\s*유형|이슈\s*종류|"
+    r"분류|분류해|분류하|분류까|어떻게\s*분류|카테고리\s*화|그룹핑",
     re.I,
 )
 # Issue-kind breakdown (성능이슈·설정오류…) — NOT Jira Component work categories
@@ -24,7 +25,9 @@ _ISSUE_TYPE_BREAKDOWN = re.compile(
     r"유형|종류|유형별|종류별|어떤\s*유형|어떤\s*종류|"
     r"유형\s*의\s*지원|지원\s*유형|지원\s*종류|분야별|카테고리별|"
     r"어떤\s*지원이\s*진행|지원이\s*진행된|이슈\s*유형|이슈\s*종류|"
-    r"어떤\s*(이슈|문제|장애\s*유형)|실제\s*유형",
+    r"어떤\s*(이슈|문제|장애\s*유형)|실제\s*유형|"
+    r"분류|분류해|분류하|분류까|어떻게\s*분류|분류\s*까지|"
+    r"카테고리\s*화|묶어서\s*보|그룹핑|그룹\s*핑",
     re.I,
 )
 # Explicit Jira Component axis only
@@ -51,9 +54,10 @@ _CALENDAR_YEAR = re.compile(
 # Known entity aliases → search needle
 _ENTITIES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"모니모|monimo", re.I), "모니모"),
-    (re.compile(r"\bSCP\b|에스씨피", re.I), "SCP"),
+    # Avoid \b with Korean: "SCP와" has no ASCII word boundary after SCP
+    (re.compile(r"(?<![A-Za-z0-9_])SCP(?![A-Za-z0-9_])|에스씨피", re.I), "SCP"),
     (re.compile(r"오라클|Oracle", re.I), "Oracle"),
-    (re.compile(r"Redis|레디스", re.I), "Redis"),
+    (re.compile(r"(?<![A-Za-z0-9_])Redis(?![A-Za-z0-9_])|레디스", re.I), "Redis"),
 ]
 
 _COMP_MAP: list[tuple[re.Pattern[str], str]] = [
@@ -191,7 +195,7 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
 
 
 def _parse_calendar_year(text: str) -> Optional[int]:
-    """Parse 2026년 / 26년 / '26년 → full year. Prefer 4-digit when present."""
+    """Parse 2026년 / 26년 / '26년 / 올해 → full year. Prefer 4-digit when present."""
     t = text or ""
     # Prefer explicit 4-digit years first
     m4 = re.search(r"(?<!\d)((?:19|20)\d{2})\s*년", t)
@@ -206,4 +210,13 @@ def _parse_calendar_year(text: str) -> Optional[int]:
         y = 2000 + yy if yy < 90 else 1900 + yy
         if 1990 <= y <= 2100:
             return y
+    if re.search(r"올해|금년|금\s*년|이번\s*해|당해", t):
+        try:
+            from app.query.time_range import _today_kst
+
+            return _today_kst().year
+        except Exception:
+            from datetime import date as _date
+
+            return _date.today().year
     return None

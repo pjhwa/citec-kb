@@ -52,6 +52,7 @@ def _sample_row(
     body_md: str,
     meta: dict[str, Any],
     dt: Optional[date],
+    source_type: str = "support_history",
 ) -> dict[str, Any]:
     body = (body_md or "").strip()
     return {
@@ -59,6 +60,7 @@ def _sample_row(
         "external_id": external_id,
         "title": title or "",
         "component": str(meta.get("Component") or "").strip() or None,
+        "source_type": source_type or "support_history",
         "issue_type": classify_issue_type(title, body_md),
         "status": str(meta.get("Status") or "").strip() or None,
         "assignee": str(meta.get("Assignee") or "").strip() or None,
@@ -126,7 +128,7 @@ def aggregate_tickets(
             if c != component_q and component_q.lower() not in c.lower():
                 continue
         if entity_q:
-            blob = f"{title or ''} {external_id or ''}".lower()
+            blob = f"{title or ''} {external_id or ''} {(body_md or '')[:1500]}".lower()
             if entity_q not in blob:
                 continue
         total += 1
@@ -140,6 +142,7 @@ def aggregate_tickets(
                         body_md=body_md,
                         meta=meta,
                         dt=dt,
+                        source_type=source_type,
                     )
                 )
             continue
@@ -156,6 +159,7 @@ def aggregate_tickets(
                     body_md=body_md,
                     meta=meta,
                     dt=dt,
+                    source_type=source_type,
                 )
             )
 

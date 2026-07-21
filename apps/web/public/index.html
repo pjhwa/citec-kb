@@ -336,17 +336,42 @@
       return map[intent] || null;
     }
 
+    /** Card with preview + 「상세(원문)」 full body loader */
+    function renderDocCard(it, opts) {
+      opts = opts || {};
+      const eid = (it.external_id || it.code || it.id || "").toString();
+      const st = (it.source_type || opts.source_type || "support_history").toString();
+      const boxKey = `${st}::${eid}`;
+      const title = it.title || eid || opts.fallbackTitle || "(제목 없음)";
+      const snip = (it.snippet || it.summary || it.subject || it.body_preview || it.symptom || "")
+        .toString()
+        .slice(0, opts.snipLen || 600);
+      const metaExtra = opts.metaHtml || "";
+      const score = it.score != null ? ` · score ${esc(it.score)}` : "";
+      let html = `<div class="card doc-card">
+        <h3>${esc(title)}
+          <span class="score">${esc(eid)}${score}</span>
+          ${eid ? `<button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}" data-st="${esc(st)}" data-box="${esc(boxKey)}"
+            style="padding:4px 10px;font-size:12px;margin-left:8px;vertical-align:middle">상세(원문)</button>` : ""}
+        </h3>
+        <div class="meta">${esc(st)}${metaExtra}</div>`;
+      if (snip) {
+        html += `<div class="md-body md-preview" data-md="${esc(snip)}"></div>`;
+      }
+      if (eid) {
+        html += `<div class="ticket-full md-detail-box" data-box="${esc(boxKey)}" style="display:none"></div>`;
+      }
+      html += `</div>`;
+      return html;
+    }
+
     function renderHybrid(result, q) {
       const items = result?.items || [];
       if (!items.length) return `<p class="meta">검색 결과 없음</p>`;
-      let html = `<p class="meta">hits=${esc(result.total)} · multi_query=${esc(result.multi_query)} · vector=${esc(result.vector_used)}</p>`;
-      for (const it of items.slice(0, 12)) {
-        html += `<div class="card">
-          <h3>${esc(it.title || it.external_id || "(제목 없음)")}
-span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span></h3>
-          <div class="meta">${esc(it.source_type || "")}</div>
-          <div class="md-body md-preview" data-md="${esc((it.snippet || "").slice(0, 600))}"></div>
-        </div>`;
+      let html = `<p class="meta">hits=${esc(result.total)} · multi_query=${esc(result.multi_query)} · vector=${esc(result.vector_used)}
+        · <span class="meta">각 카드 「상세(원문)」으로 전체 본문 확인</span></p>`;
+      for (const it of items.slice(0, 30)) {
+        html += renderDocCard(it);
       }
       return html;
     }
@@ -359,14 +384,19 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
         html += `<div class="note"><strong>브리프</strong><div class="md-body" data-md="${esc(brief.slice(0, 1200))}"></div></div>`;
       }
       if (!cases.length) return html + `<p class="meta">유사 사례 없음</p>`;
-      for (const c of cases.slice(0, 8)) {
+      html += `<p class="meta">각 사례 「상세(원문)」으로 전체 본문 확인</p>`;
+      for (const c of cases.slice(0, 12)) {
         const app = c.applicability || {};
-        const snip = (c.symptom || c.summary || c.snippet || "").toString().slice(0, 500);
-        html += `<div class="card">
-          <h3>${esc(c.title || c.external_id || "case")}<span class="score">${esc(c.external_id || "")}</span></h3>
-          <div class="meta">적용성: ${esc(app.label || "-")} · score ${esc(c.score)}</div>
-          <div class="md-body md-preview" data-md="${esc(snip)}"></div>
-        </div>`;
+        html += renderDocCard(
+          {
+            external_id: c.external_id,
+            title: c.title,
+            source_type: c.source_type || "support_history",
+            snippet: c.symptom || c.summary || c.snippet || c.what || "",
+            score: c.score,
+          },
+          { metaHtml: ` · 적용성: ${esc(app.label || "-")}` }
+        );
       }
       if (result?.actions?.length) {
         html += `<div class="card"><h3>권장 조치</h3><ul>${result.actions.slice(0, 8).map((a) => `<li>${esc(typeof a === "string" ? a : JSON.stringify(a))}</li>`).join("")}</ul></div>`;
@@ -377,15 +407,17 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
     function renderList(result) {
       const items = result?.items || result?.tickets || [];
       const total = result?.total ?? items.length;
-      let html = `<p class="meta">total=${esc(total)}</p>`;
+      let html = `<p class="meta">total=${esc(total)} · 각 카드 「상세(원문)」으로 전체 본문 확인</p>`;
+      if (result?.completeness) {
+        html += `<div class="note meta">${esc(result.completeness.note || JSON.stringify(result.completeness).slice(0, 300))}</div>`;
+      }
       if (!items.length) return html + `<p class="meta">목록 없음</p>`;
-      for (const it of items.slice(0, 20)) {
-        const snip = (it.snippet || it.summary || it.subject || "").toString().slice(0, 400);
-        html += `<div class="card">
-          <h3>${esc(it.title || it.external_id || it.code || it.subject || "(item)")}</h3>
-          <div class="meta">${esc(it.external_id || it.code || "")} ${esc(it.created || it.date || "")}</div>
-          <div class="md-body md-preview" data-md="${esc(snip)}"></div>
-        </div>`;
+      for (const it of items.slice(0, 40)) {
+        html += renderDocCard(it, {
+          metaHtml: it.Created || it.created || it.date
+            ? ` · ${esc(it.Created || it.created || it.date || "")}`
+            : "",
+        });
       }
       return html;
     }
@@ -440,15 +472,17 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
         } else {
           for (const s of samples) {
             const eid = s.external_id || "";
+            const st = s.source_type || src || "support_history";
+            const boxKey = `${st}::${eid}`;
             html += `<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
               <div><strong>${esc(s.title || eid)}</strong>
-                <button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}"
-                  style="padding:4px 10px;font-size:12px;margin-left:8px">상세</button>
+                <button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}" data-st="${esc(st)}" data-box="${esc(boxKey)}"
+                  style="padding:4px 10px;font-size:12px;margin-left:8px">상세(원문)</button>
               </div>
               <div class="meta">${esc(eid)} · ${esc(s.status || "-")} · ${esc(s.Created || s.date || "")}
                 · ${esc(s.assignee || "")}</div>
               <div class="md-body md-preview snippet-md" data-md="${esc((s.body_preview || "").slice(0, 800))}"></div>
-              <div class="ticket-full md-detail-box" data-box="${esc(eid)}" style="display:none"></div>
+              <div class="ticket-full md-detail-box" data-box="${esc(boxKey)}" style="display:none"></div>
             </div>`;
           }
         }
@@ -457,23 +491,77 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
       return html;
     }
 
-    async function loadTicketDetail(eid, box) {
+    async function loadTicketDetail(eid, box, sourceType) {
+      if (box.dataset.loaded === "1" && box.style.display !== "none") {
+        box.style.display = "none";
+        return;
+      }
       box.style.display = "block";
       box.textContent = "로딩…";
+      const st = sourceType || "support_history";
       try {
-        const r = await CitecAuth.apiFetch(
-          "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=support_history"
+        let d = null;
+        // 1) ticket/document by external_id (+ source_type)
+        let r = await CitecAuth.apiFetch(
+          "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=" + encodeURIComponent(st)
         );
-        const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || r.statusText);
+        if (r.ok) {
+          d = await r.json();
+        } else {
+          // 2) wiki-compat path
+          r = await CitecAuth.apiFetch(
+            "/api/wiki/file?path=" + encodeURIComponent(st + "/" + eid + ".md")
+          );
+          if (!r.ok) {
+            r = await CitecAuth.apiFetch(
+              "/api/wiki/file?path=" + encodeURIComponent(eid)
+            );
+          }
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || r.statusText || "본문 조회 실패");
+          }
+          const w = await r.json();
+          d = {
+            title: w.title,
+            body_md: w.content,
+            external_id: eid,
+            source_type: st,
+            component: (w.meta || {}).component,
+            status: (w.meta || {}).status,
+            assignee: (w.meta || {}).assignee,
+          };
+        }
         const mdHtml = (window.CitecMD && CitecMD.render)
           ? CitecMD.render(d.body_md || "(본문 없음)")
           : esc(d.body_md || "(본문 없음)");
-        box.innerHTML = `<div class="md-body">${mdHtml}</div>
-          <div class="meta" style="margin-top:8px">component=${esc(d.component)} · status=${esc(d.status)} · assignee=${esc(d.assignee)}</div>`;
+        box.innerHTML = `<div class="meta" style="margin-bottom:8px">
+            <strong>${esc(d.title || eid)}</strong>
+            · ${esc(d.source_type || st)} · ${esc(d.external_id || eid)}
+          </div>
+          <div class="md-body">${mdHtml}</div>
+          <div class="meta" style="margin-top:8px">component=${esc(d.component || "-")} · status=${esc(d.status || "-")} · assignee=${esc(d.assignee || "-")}</div>`;
+        box.dataset.loaded = "1";
       } catch (e) {
         box.textContent = String(e.message || e);
+        box.dataset.loaded = "0";
       }
+    }
+
+    function bindDetailButtons(root) {
+      (root || document).querySelectorAll("button.ticket-detail").forEach((btn) => {
+        btn.onclick = () => {
+          const eid = btn.dataset.eid;
+          const st = btn.dataset.st || "support_history";
+          const boxKey = btn.dataset.box || `${st}::${eid}`;
+          const scope = root || document;
+          const box =
+            scope.querySelector(`.ticket-full[data-box="${CSS.escape(boxKey)}"]`) ||
+            scope.querySelector(`.ticket-full[data-box="${boxKey}"]`) ||
+            scope.querySelector(`.ticket-full[data-box="${CSS.escape(eid)}"]`);
+          if (box) loadTicketDetail(eid, box, st);
+        };
+      });
     }
 
     function md(s) {
@@ -562,14 +650,7 @@ span class="score">${esc(it.external_id || "")} · score ${esc(it.score)}</span>
 
         $("out").innerHTML = html;
         hydrateMdPreviews($("out"));
-        $("out").querySelectorAll("button.ticket-detail").forEach((btn) => {
-          btn.onclick = () => {
-            const eid = btn.dataset.eid;
-            const box = $("out").querySelector(`.ticket-full[data-box="${CSS.escape(eid)}"]`)
-              || $("out").querySelector(`.ticket-full[data-box="${eid}"]`);
-            if (box) loadTicketDetail(eid, box);
-          };
-        });
+        bindDetailButtons($("out"));
         $("status").textContent = `intent=${intent} · done`;
       } catch (e) {
         $("out").innerHTML = `<div class="err">${esc(e.message || e)}</div>`;

@@ -33,6 +33,8 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"이번\s*주|금주", re.I), "this_week"),
     (re.compile(r"지난\s*달|저번\s*달|전월", re.I), "last_month"),
     (re.compile(r"이번\s*달|금월", re.I), "this_month"),
+    (re.compile(r"올해|금년|금\s*년|이번\s*해|당해", re.I), "this_year"),
+    (re.compile(r"작년|지난해|전년", re.I), "last_year"),
     (re.compile(r"어제", re.I), "yesterday"),
     (re.compile(r"오늘", re.I), "today"),
     (re.compile(r"최근\s*(\d+)\s*일", re.I), "last_n_days"),
@@ -90,6 +92,12 @@ def parse_relative_range(
             end = first - timedelta(days=1)
             start = end.replace(day=1)
             return DateRange(start, end, "지난 달")
+        if kind == "this_year":
+            start = today.replace(month=1, day=1)
+            return DateRange(start, today, f"{today.year}년(올해)")
+        if kind == "last_year":
+            y = today.year - 1
+            return DateRange(date(y, 1, 1), date(y, 12, 31), f"{y}년(작년)")
         if kind == "last_30":
             start = today - timedelta(days=29)
             return DateRange(start, today, "최근 30일")
