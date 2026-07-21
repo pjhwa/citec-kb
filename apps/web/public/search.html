@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>검색 — CI-TEC Knowledge</title>
 <link rel="stylesheet" href="/css/markdown.css"/>
+<link rel="stylesheet" href="/css/doclink.css"/>
 <style>
   :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
   * { box-sizing: border-box; }
@@ -91,6 +92,7 @@
   <div id="results"></div>
 </div>
 <script src="/js/markdown.js"></script>
+<script src="/js/doclink.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 async function runSearch() {
@@ -117,10 +119,14 @@ async function runSearch() {
       $("results").innerHTML = "<p class='meta'>결과 없음 (quality gate 또는 미매칭).</p>";
       return;
     }
-    $("results").innerHTML = j.results.map((hit) => `
+    $("results").innerHTML = j.results.map((hit) => {
+      const docLink = (window.CitecDoc
+        ? CitecDoc.badgeHtml({ external_id: hit.external_id, source_type: hit.source_type, title: hit.title, path: hit.source_uri })
+        : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(hit.external_id||"")}&st=${encodeURIComponent(hit.source_type||"")}" target="_blank" rel="noopener">원문 보기</a>`);
+      return `
       <div class="hit">
         <div class="score">#${hit.rank} · score ${hit.score} · fts ${hit.fts_rank ?? "-"} · vec ${hit.vec_rank ?? "-"}</div>
-        <h3>${escapeHtml(hit.title || hit.external_id)}</h3>
+        <h3>${escapeHtml(hit.title || hit.external_id)} ${docLink}</h3>
         <div class="badges">
           <span class="badge">${escapeHtml(hit.source_type)}</span>
           <span class="badge">${escapeHtml(hit.external_id)}</span>
@@ -130,8 +136,8 @@ async function runSearch() {
           ${hit.work_type ? `<span class="badge">${escapeHtml(hit.work_type)}</span>` : ""}
         </div>
         <div class="snip md-body md-preview" data-md="${escapeHtml((hit.snippet || "").slice(0, 800))}"></div>
-      </div>
-    `).join("");
+      </div>`;
+    }).join("");
     if (window.CitecMD) {
       $("results").querySelectorAll("[data-md]").forEach((el) => {
         el.innerHTML = CitecMD.render(el.getAttribute("data-md") || "");

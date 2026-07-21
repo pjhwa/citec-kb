@@ -36,6 +36,7 @@
   th { color:var(--muted); font-weight:600; font-size:12px; }
   td a { color:var(--primary); font-weight:600; text-decoration:none; }
 </style>
+<link rel="stylesheet" href="/css/doclink.css"/>
 </head>
 <body>
 <div class="top">
@@ -115,7 +116,11 @@ function renderList(payload, note) {
   for (const it of items) {
     html += `<tr>
       <td><a href="/search.html?q=${encodeURIComponent(it.external_id||"")}">${esc(it.external_id)}</a></td>
-      <td>${esc(it.title||"")}</td>
+      <td>${esc(it.title||"")}
+        ${(window.CitecDoc
+          ? CitecDoc.badgeHtml({ external_id: it.external_id, source_type: it.source_type || "support_history", title: it.title })
+          : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(it.external_id||"")}&st=support_history" target="_blank" rel="noopener">원문 보기</a>`)}
+      </td>
       <td class="meta">${esc(it.Created||"")}</td>
       <td class="meta">${esc(it.Resolved||"")}</td>
       <td><span class="badge">${esc(it.status||"-")}</span></td>
@@ -181,6 +186,7 @@ document.querySelectorAll(".chips button").forEach(btn => {
 // auto-run demo on load
 runRoute();
 </script>
+<script src="/js/doclink.js"></script>
 <script src="/js/auth.js"></script>
 <script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>

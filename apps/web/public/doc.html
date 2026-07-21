@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>문서 원문 — CI-TEC Knowledge</title>
+  <link rel="stylesheet" href="/css/markdown.css"/>
+  <style>
+    :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.55; }
+    .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+    .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
+    .wrap { max-width:960px; margin:0 auto; padding:20px 16px 60px; }
+    h1 { font-size:1.25rem; margin:0 0 8px; }
+    .meta { color:var(--muted); font-size:13px; margin-bottom:14px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+    .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+    .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; margin-right:6px; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+    button, .btn {
+      background:var(--primary); color:#fff; border:0; border-radius:10px; padding:8px 14px;
+      font-weight:700; cursor:pointer; text-decoration:none; font-size:13px; display:inline-block;
+    }
+    button.ghost, .btn.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
+    pre.raw { white-space:pre-wrap; font-size:13px; background:#0f172a; color:#e2e8f0; padding:12px; border-radius:10px; overflow:auto; }
+  </style>
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/search.html">검색</a>
+  <a href="/chat.html">Fast QA</a>
+  <a href="/tickets.html">기간 지원건</a>
+  <a href="/docs/">문서</a>
+  <span id="navTitle" class="meta" style="margin:0"></span>
+</div>
+<div class="wrap">
+  <div class="row">
+    <button type="button" class="ghost" id="btnBack">← 뒤로</button>
+    <button type="button" class="ghost" id="btnToggle">Markdown / 원문 텍스트</button>
+    <a class="btn ghost" id="btnApi" href="#" target="_blank" rel="noopener">API JSON</a>
+  </div>
+  <h1 id="title">로딩…</h1>
+  <div class="meta" id="meta"></div>
+  <div class="card">
+    <div id="body" class="md-body">로딩…</div>
+  </div>
+</div>
+<script src="/js/markdown.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const params = new URLSearchParams(location.search);
+  const eid = (params.get("eid") || "").trim();
+  const st = (params.get("st") || "support_history").trim();
+  const path = (params.get("path") || "").trim();
+  const wantTitle = params.get("title") || "";
+  let rawMd = "";
+  let showRaw = false;
+
+  $("btnBack").onclick = () => {
+    if (history.length > 1) history.back();
+    else location.href = "/";
+  };
+  $("btnToggle").onclick = () => {
+    showRaw = !showRaw;
+    renderBody();
+  };
+
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  function renderBody() {
+    if (showRaw) {
+      $("body").innerHTML = `<pre class="raw">${esc(rawMd || "(본문 없음)")}</pre>`;
+    } else if (window.CitecMD && CitecMD.render) {
+      $("body").innerHTML = CitecMD.render(rawMd || "(본문 없음)");
+    } else {
+      $("body").textContent = rawMd || "(본문 없음)";
+    }
+  }
+
+  async function load() {
+    const api = window.CitecAuth && CitecAuth.apiFetch
+      ? (u) => CitecAuth.apiFetch(u)
+      : (u) => fetch(u);
+    let d = null;
+    let apiUrl = "";
+    try {
+      if (eid) {
+        apiUrl = "/v1/tickets/" + encodeURIComponent(eid) + "?source_type=" + encodeURIComponent(st);
+        let r = await api(apiUrl);
+        if (r.ok) {
+          d = await r.json();
+        }
+      }
+      if (!d) {
+        const p = path || (eid ? st + "/" + eid + (String(eid).endsWith(".md") ? "" : ".md") : "");
+        if (!p) throw new Error("eid 또는 path 쿼리가 필요합니다.");
+        apiUrl = "/api/wiki/file?path=" + encodeURIComponent(p);
+        const r = await api(apiUrl);
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || r.statusText || "문서를 찾을 수 없습니다");
+        }
+        const w = await r.json();
+        d = {
+          title: w.title || wantTitle || p,
+          body_md: w.content || "",
+          external_id: eid || (w.meta && w.meta.external_id) || p,
+          source_type: st || (w.meta && w.meta.source_type) || "",
+          component: w.meta && (w.meta.component || w.meta.Component),
+          status: w.meta && (w.meta.status || w.meta.Status),
+          assignee: w.meta && (w.meta.assignee || w.meta.Assignee),
+          Created: w.meta && w.meta.Created,
+          path: w.path || p,
+        };
+      }
+      rawMd = d.body_md || "";
+      const title = d.title || wantTitle || d.external_id || "문서";
+      document.title = title + " — 원문";
+      $("title").textContent = title;
+      $("navTitle").textContent = d.external_id || "";
+      $("meta").innerHTML =
+        `<span class="badge">${esc(d.source_type || st)}</span>` +
+        `<span class="badge">${esc(d.external_id || eid || "-")}</span>` +
+        (d.component ? ` · component=${esc(d.component)}` : "") +
+        (d.status ? ` · status=${esc(d.status)}` : "") +
+        (d.assignee ? ` · assignee=${esc(d.assignee)}` : "") +
+        (d.Created ? ` · Created=${esc(d.Created)}` : "") +
+        (d.path ? `<br/>path=<code>${esc(d.path)}</code>` : "");
+      $("btnApi").href = apiUrl;
+      renderBody();
+    } catch (e) {
+      $("title").textContent = "문서 로드 실패";
+      $("body").innerHTML = `<div class="err">${esc(e.message || e)}</div>`;
+    }
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

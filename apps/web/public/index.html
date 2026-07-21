@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CI-TEC Knowledge — 통합 질의</title>
   <link rel="stylesheet" href="/css/markdown.css"/>
+  <link rel="stylesheet" href="/css/doclink.css"/>
   <style>
     :root {
       --bg: #f6f8fb;
@@ -235,6 +236,7 @@
   </div>
 
   <script src="/js/markdown.js"></script>
+  <script src="/js/doclink.js"></script>
   <!-- Fallback first (auth disabled pilot); /js/auth.js overwrites if it loads -->
   <script>
     window.CitecAuth = window.CitecAuth || {
@@ -352,7 +354,8 @@
         <h3>${esc(title)}
           <span class="score">${esc(eid)}${score}</span>
           ${eid ? `<button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}" data-st="${esc(st)}" data-box="${esc(boxKey)}"
-            style="padding:4px 10px;font-size:12px;margin-left:8px;vertical-align:middle">상세(원문)</button>` : ""}
+            style="padding:4px 10px;font-size:12px;margin-left:8px;vertical-align:middle">미리보기</button>
+            ${(window.CitecDoc ? CitecDoc.badgeHtml({ external_id: eid, source_type: st, title }) : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(eid)}&st=${encodeURIComponent(st)}" target="_blank" rel="noopener">원문 보기</a>`)}` : ""}
         </h3>
         <div class="meta">${esc(st)}${metaExtra}</div>`;
       if (snip) {
@@ -369,7 +372,7 @@
       const items = result?.items || [];
       if (!items.length) return `<p class="meta">검색 결과 없음</p>`;
       let html = `<p class="meta">hits=${esc(result.total)} · multi_query=${esc(result.multi_query)} · vector=${esc(result.vector_used)}
-        · <span class="meta">각 카드 「상세(원문)」으로 전체 본문 확인</span></p>`;
+        · <span class="meta">각 카드 「원문 보기」링크 · 「미리보기」인라인</span></p>`;
       for (const it of items.slice(0, 30)) {
         html += renderDocCard(it);
       }
@@ -384,7 +387,7 @@
         html += `<div class="note"><strong>브리프</strong><div class="md-body" data-md="${esc(brief.slice(0, 1200))}"></div></div>`;
       }
       if (!cases.length) return html + `<p class="meta">유사 사례 없음</p>`;
-      html += `<p class="meta">각 사례 「상세(원문)」으로 전체 본문 확인</p>`;
+      html += `<p class="meta">각 사례 「원문 보기」링크 · 「미리보기」인라인</p>`;
       for (const c of cases.slice(0, 12)) {
         const app = c.applicability || {};
         html += renderDocCard(
@@ -407,7 +410,7 @@
     function renderList(result) {
       const items = result?.items || result?.tickets || [];
       const total = result?.total ?? items.length;
-      let html = `<p class="meta">total=${esc(total)} · 각 카드 「상세(원문)」으로 전체 본문 확인</p>`;
+      let html = `<p class="meta">total=${esc(total)} · 각 카드 「원문 보기」링크 · 「미리보기」인라인</p>`;
       if (result?.completeness) {
         html += `<div class="note meta">${esc(result.completeness.note || JSON.stringify(result.completeness).slice(0, 300))}</div>`;
       }
@@ -457,7 +460,7 @@
           result.group_by === "issue_type"
             ? "제목·본문 규칙 세분류(타임아웃·성능저하·Crash·접속불가·설정오류·방화벽·DB 등) · Component(기술지원/장애지원)와 다름"
             : "유형 키를 펼치면 샘플 건 요약"
-        } · 「상세」로 본문 확인</span>
+        } · 「원문 보기」로 전체 본문</span>
       </div>`;
       for (const b of buckets) {
         const pct = b.share != null ? Math.round(Number(b.share) * 1000) / 10 : "";
@@ -477,7 +480,8 @@
             html += `<div style="border-top:1px solid var(--border);margin-top:10px;padding-top:10px">
               <div><strong>${esc(s.title || eid)}</strong>
                 <button type="button" class="ghost ticket-detail" data-eid="${esc(eid)}" data-st="${esc(st)}" data-box="${esc(boxKey)}"
-                  style="padding:4px 10px;font-size:12px;margin-left:8px">상세(원문)</button>
+                  style="padding:4px 10px;font-size:12px;margin-left:8px">미리보기</button>
+                ${(window.CitecDoc ? CitecDoc.badgeHtml({ external_id: eid, source_type: st, title: s.title || eid }) : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(eid)}&st=${encodeURIComponent(st)}" target="_blank" rel="noopener">원문 보기</a>`)}
               </div>
               <div class="meta">${esc(eid)} · ${esc(s.status || "-")} · ${esc(s.Created || s.date || "")}
                 · ${esc(s.assignee || "")}</div>
@@ -535,9 +539,11 @@
         const mdHtml = (window.CitecMD && CitecMD.render)
           ? CitecMD.render(d.body_md || "(본문 없음)")
           : esc(d.body_md || "(본문 없음)");
+        const docHref = (window.CitecDoc ? CitecDoc.href({ external_id: d.external_id || eid, source_type: d.source_type || st, title: d.title }) : `/doc.html?eid=${encodeURIComponent(eid)}&st=${encodeURIComponent(st)}`);
         box.innerHTML = `<div class="meta" style="margin-bottom:8px">
             <strong>${esc(d.title || eid)}</strong>
             · ${esc(d.source_type || st)} · ${esc(d.external_id || eid)}
+            · <a class="doc-link-badge" href="${docHref}" target="_blank" rel="noopener">원문 페이지</a>
           </div>
           <div class="md-body">${mdHtml}</div>
           <div class="meta" style="margin-top:8px">component=${esc(d.component || "-")} · status=${esc(d.status || "-")} · assignee=${esc(d.assignee || "-")}</div>`;

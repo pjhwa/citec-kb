@@ -32,6 +32,7 @@
   .bar { height:8px; background:#dbeafe; border-radius:4px; overflow:hidden; min-width:80px; }
   .bar > i { display:block; height:100%; background:var(--primary); }
 </style>
+<link rel="stylesheet" href="/css/doclink.css"/>
 </head>
 <body>
 <div class="top">
@@ -82,6 +83,8 @@
   </div>
   <div id="out"></div>
 </div>
+<p class="meta" style="max-width:1000px;margin:0 auto;padding:0 16px 24px">집계 결과 샘플 원문은 홈 통합 질의(「유형」질의) 또는
+<a href="/doc.html">문서 뷰어</a>(eid 파라미터)를 사용하세요.</p>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -122,6 +125,24 @@ function renderAnalytics(payload) {
     </tr>`;
   }
   html += `</tbody></table></div>`;
+  // samples with permanent 원문 links
+  for (const b of buckets) {
+    const samples = b.samples || [];
+    if (!samples.length) continue;
+    html += `<div class="card"><h3 style="margin:0 0 8px;font-size:1rem">${esc(b.key)} · 샘플</h3>`;
+    for (const s of samples) {
+      const eid = s.external_id || "";
+      const st = s.source_type || r.source_type || "support_history";
+      const link = (window.CitecDoc
+        ? CitecDoc.badgeHtml({ external_id: eid, source_type: st, title: s.title })
+        : `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(eid)}&st=${encodeURIComponent(st)}" target="_blank" rel="noopener">원문 보기</a>`);
+      html += `<div style="border-top:1px solid var(--border);padding:8px 0">
+        <strong>${esc(s.title || eid)}</strong> ${link}
+        <div class="meta">${esc(eid)} · ${esc(s.Created || s.date || "")}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
   $("out").innerHTML = html;
 }
 
@@ -175,6 +196,7 @@ document.querySelectorAll(".chips button").forEach(btn => {
 });
 runRoute();
 </script>
+<script src="/js/doclink.js"></script>
 <script src="/js/auth.js"></script>
 <script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>

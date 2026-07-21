@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Fast QA — CI-TEC Knowledge</title>
 <link rel="stylesheet" href="/css/markdown.css"/>
+<link rel="stylesheet" href="/css/doclink.css"/>
 <style>
   :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; }
   * { box-sizing: border-box; }
@@ -91,6 +92,7 @@
   <div id="out"></div>
 </div>
 <script src="/js/markdown.js"></script>
+<script src="/js/doclink.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -193,8 +195,11 @@ function render(d) {
   for (const c of cites) {
     const snip = c.snippet || "";
     const snipHtml = (window.CitecMD && CitecMD.render) ? CitecMD.render(snip) : esc(snip);
+    const docLink = (window.CitecDoc
+      ? CitecDoc.badgeHtml({ external_id: c.external_id, source_type: c.source_type, title: c.title })
+      : (c.external_id ? `<a class="doc-link-badge" href="/doc.html?eid=${encodeURIComponent(c.external_id)}&st=${encodeURIComponent(c.source_type||"")}" target="_blank" rel="noopener">원문 보기</a>` : ""));
     html += `<div class="cite">
-      <h3><span class="badge">${esc(c.id)}</span> ${esc(c.title || "")}</h3>
+      <h3><span class="badge">${esc(c.id)}</span> ${esc(c.title || "")} ${docLink}</h3>
       <div><span class="badge">${esc(c.source_type||"")}</span> ${esc(c.external_id||"")}</div>
       <div class="md-body md-preview" style="margin-top:6px">${snipHtml}</div>
     </div>`;
