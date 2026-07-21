@@ -4,7 +4,7 @@
 
 - **설계:** 폐쇄망 · Docker 경량 · GLM 5.2 (dev: OpenRouter, prod: Fabrix)
 - **현재:** **P1 완료 · P2/P3 핵심 엔지니어링 강** — full planner · catalog route+answer 110/110  
-- **계획:** `docs/IMPLEMENTATION_PLAN.md` **v1.22** (Insight promote+index · feedback · ops · worker)
+- **계획:** `docs/IMPLEMENTATION_PLAN.md` **v1.23** (Insight promote+index · feedback · ops · worker)
 
 ## 빠른 시작 (개발 서버)
 
@@ -182,9 +182,13 @@ docker compose exec api alembic upgrade head
 
 ## 로드맵
 
-`docs/IMPLEMENTATION_PLAN.md` **v1.22** — Insight approve/promote/index · feedback · worker jobs · load smoke · ops.
+`docs/IMPLEMENTATION_PLAN.md` **v1.23** — Insight approve/promote/index · feedback · worker jobs · load smoke · ops.
 
 ## 보안
 
 - `.env` 는 gitignore. 키를 커밋하지 말 것.
 - 운영 폐쇄망에서는 OpenRouter 대신 Fabrix/`COMPANY_*` 사용.
+
+## CI
+
+Push to `main` runs unit tests via `.github/workflows/ci.yml` (lightweight deps, no torch).

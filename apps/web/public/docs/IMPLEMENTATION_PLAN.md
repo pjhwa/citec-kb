@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.22** |
+| 문서 버전 | **1.23** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
-| 레포 | **`~/dev/citec-kb`** |
+| 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs** |
+| 갱신 | **2026-07-21 — v1.23: pilot domain sign-off pack · GitHub Actions CI · remote origin** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -44,7 +44,7 @@
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
 | UI | search · chat · si · tickets · analytics · capacity · bundles · insights · **login** · **admin/ops** · `/docs/` |
 | alembic | `20260718_0002` (vector 768) |
-| 미완 핵심 | 파일럿 **도메인 사인** · 원격 push · Keycloak/Entra **실서버** 검증 · 부서 오픈 |
+| 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Keycloak/Entra **실서버** · 부서 오픈 |
 
 ### 성공 정의 (출시 게이트)
 
@@ -404,8 +404,8 @@ PR-01 compose ✅
 - [x] **Mock OIDC IdP** `/v1/mock-idp` RS256 · full login→callback e2e · `docs/OIDC_IDP_SETUP.md`
 - [x] Web **Bearer helper** (`/js/auth.js`) · insights/bundles · **admin.html** ops persona
 - [x] **async_index** promote · worker job `insight_reindex` · auth chip on main UIs
-- [ ] Keycloak/Entra **실서버** 연동 검증 · 파일럿 도메인 사인
-- [ ] git 원격 push (원격 미설정 상태)
+- [x] **pilot sign-off pack** · GitHub Actions CI · remote push to `pjhwa/citec-kb`
+- [ ] Keycloak/Entra **실서버** · 사람 도메인 사인 H1–H7
 ---
 
 ## 6. 데이터 모델
@@ -690,17 +690,17 @@ POST /v1/auth/introspect
 ## 15. 즉시 다음 액션
 
 ### 별도 수행 (자동 흡수 안 됨)
-1. **파일럿 1.5 도메인 사인** — 사람 워크스루 (기술 점검 `pilot_tech_check` 13/13 완료)  
-2. **원격 push** — 로컬 커밋 후 정책에 따라 push  
+1. **파일럿 1.5 도메인 사인** — 사람 워크스루 H1–H7 (`/docs/pilot-signoff.html` 증거 팩)  
+2. **Keycloak/Entra 실서버** OIDC 연동 검증  
 
 ### 제품 하드닝 (P4 잔여)
-3. **Keycloak/Entra 실서버**에 OIDC_ISSUER 연결 검증 (가이드: `docs/OIDC_IDP_SETUP.md`)  
-4. 파일럿 도메인 사인 · 원격 push  
-5. promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  
+3. 부서 공식 오픈 · 50–100명 스모크 일정  
+4. (선택) 검색/chat 전 페이지 auth 칩 강화 · G2 groundedness 정기 회귀 리포트  
 
-### 완료 스냅샷 (2026-07-21 v1.22)
-- **async promote** → queue `insight_reindex` · worker embeds · e2e done  
-- auth chip on search/chat/si/… · unit tests **87** · pilot 13/13  
+### 완료 스냅샷 (2026-07-21 v1.23)
+- **pilot_domain_signoff** 리포트 (eng 13/13 · human H1–H7 pending)  
+- **GitHub Actions CI** (unit 84 without torch) · remote `origin` → github.com/pjhwa/citec-kb  
+- 선행: async reindex · OIDC mock · load/SLA · unit 87 full docker  
 
 ### 현행화 체크 (매 작업 종료)
 - [x] §0 현재 상태 표 수치/페이즈 갱신  
@@ -740,5 +740,5 @@ POST /v1/auth/introspect
 
 ---
 
-**문서 끝 (v1.22).**  
-async reindex + Admin UI + OIDC · 잔여=도메인 사인·실 IdP·원격 push · **매 작업 현행화**.
+**문서 끝 (v1.23).**  
+pilot signoff pack + CI + remote · 잔여=사람 도메인 사인·실 IdP · **매 작업 현행화**.

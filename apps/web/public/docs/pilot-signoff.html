@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"/>
+<title>Pilot domain sign-off — CI-TEC KB</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;color:#0f172a}
+ table{border-collapse:collapse;width:100%;margin:12px 0}
+ th,td{border:1px solid #e2e8f0;padding:8px;text-align:left;font-size:14px}
+ th{background:#f8fafc}
+ .ok{color:#047857;font-weight:700} .bad{color:#b91c1c;font-weight:700}
+ .meta{color:#64748b;font-size:12px} .card{border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin:12px 0}
+ h1{font-size:1.4rem} code{background:#f1f5f9;padding:1px 4px;border-radius:4px}
+</style></head><body>
+<h1>파일럿 도메인 사인 증거 팩</h1>
+<p class="meta">generated 2026-07-21T00:29:54.196374+00:00 · engineering_pass=
+<span class="ok">True</span>
+· human items remain <strong>pending_human</strong></p>
+
+<div class="card">
+<strong>요약</strong>
+<ul>
+<li>Engineering automated: 13/13</li>
+<li>Unit tests collected: 87</li>
+<li>Load/SLA pass: True</li>
+<li>Repo: <code>https://github.com/pjhwa/citec-kb</code></li>
+</ul>
+<p class="meta">이 문서는 <strong>도메인 사인을 대체하지 않습니다</strong>. H1–H7을 담당자가 체크한 뒤 서명하세요.</p>
+</div>
+
+<div class="card">
+<strong>Engineering checks (auto)</strong>
+<table><thead><tr><th>결과</th><th>항목</th><th>detail</th></tr></thead><tbody>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>ops.status</td><td><code>ok</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>ops.pilot_engineering_ready</td><td><code></code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>worker.heartbeat</td><td><code>2</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>A1 search CITECTS-2502 top1</td><td><code>CITECTS-2502</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>A3 monimo redis hits</td><td><code>CITECTS-1898,CITECTS-526,347123074</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>route list</td><td><code>time_scoped_list</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>route capacity</td><td><code>capacity</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>route analytics</td><td><code>analytics</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>C1 SI cases</td><td><code>2</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>C1 SI has applicability</td><td><code>가능</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>job ping done</td><td><code>done</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>entities>=1</td><td><code>5</code></td></tr>
+<tr><td style='color:#047857;font-weight:700'>OK</td><td>lexicon>=1</td><td><code>10</code></td></tr>
+
+</tbody></table>
+</div>
+
+<div class="card">
+<strong>Human sign-off checklist</strong>
+<table><thead><tr><th>ID</th><th>항목</th><th>Owner</th><th>Status</th><th>Evidence</th></tr></thead><tbody>
+<tr><td>H1</td><td>검색 품질 현장 워크스루 (gold-50 / 실무 질의 10건)</td><td>도메인 전문가</td><td><em>pending_human</em></td><td class='meta'>hit@3 engineering 0.96; re-run with live queries</td></tr>
+<tr><td>H2</td><td>Fast/Deep QA groundedness 현장 사인 (G2)</td><td>도메인 전문가</td><td><em>pending_human</em></td><td class='meta'>Trust/chat runner exists; formal ≥0.95 gate not signed</td></tr>
+<tr><td>H3</td><td>유사장애 그룹장 워크스루 (G3 G01–G10)</td><td>그룹장</td><td><em>pending_human</em></td><td class='meta'>SI eval pass_rate=1.0 engineering</td></tr>
+<tr><td>H4</td><td>공수/집계 숫자 Rules-only 현장 확인 (G4)</td><td>관리자</td><td><em>pending_human</em></td><td class='meta'>capacity DB + unit tests</td></tr>
+<tr><td>H5</td><td>Insight 승인 플로우 시니어 리뷰 1회</td><td>시니어</td><td><em>pending_human</em></td><td class='meta'>API+UI+async reindex available</td></tr>
+<tr><td>H6</td><td>SSO: Keycloak/Entra 실서버 연동 (G6)</td><td>인프라</td><td><em>pending_human</em></td><td class='meta'>mock IdP e2e + docs/OIDC_IDP_SETUP.md</td></tr>
+<tr><td>H7</td><td>파일럿 사용자 온보딩 (1.5) · 50명 스모크 일정</td><td>조직</td><td><em>pending_human</em></td><td class='meta'>load/SLA report pass at c=8</td></tr>
+
+</tbody></table>
+<p>서명: _______________ 일자: _______________ 역할: _______________</p>
+</div>
+
+<div class="card">
+<strong>Load/SLA snapshot</strong>
+<pre class="meta">{
+  "pass": true,
+  "gates": {
+    "search_success": true,
+    "search_p95": true,
+    "health_success": true,
+    "health_p95": true,
+    "route_success": true,
+    "route_p95": true
+  },
+  "concurrency": 8,
+  "generated_at": "2026-07-20T11:03:31.876756+00:00"
+}</pre>
+<p class="meta">gates: {"search_success": true, "search_p95": true, "health_success": true, "health_p95": true, "route_success": true, "route_p95": true}</p>
+</div>
+
+<p class="meta"><a href="/docs/implementation-plan.html">구현 계획</a> ·
+<a href="/docs/OIDC_IDP_SETUP.md">OIDC 가이드</a> ·
+<a href="/admin.html">Admin</a> ·
+<a href="/">홈</a></p>
+</body></html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>구현 계획 1.22 — CI-TEC Knowledge</title>
+<title>구현 계획 1.23 — CI-TEC Knowledge</title>
 <style>
   :root { --bg:#f6f8fb; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#166534; --okbg:#dcfce7; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); line-height:1.65; }
@@ -36,8 +36,8 @@
   <a href="/docs/IMPLEMENTATION_PLAN.md">Markdown 원본</a>
 </div>
 <div class="wrap">
-  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.22</div>
-  <p class="meta">문서 버전 1.22 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs</p>
+  <div class="banner"><strong>현재 상태:</strong> **P1–P3 강** · **P4 Insight+index+OIDC+SLA** · 문서 1.23</div>
+  <p class="meta">문서 버전 1.23 · 레포 citec-kb · 원본 <code>docs/IMPLEMENTATION_PLAN.md</code> 렌더 · 갱신 2026-07-21 — v1.23: pilot domain sign-off pack · GitHub Actions CI · remote origin</p>
 <h1>CI-TEC 지식기반 검색 플랫폼 — 상세 구현 계획</h1>
 <div class="table-wrap"><table>
 <thead>
@@ -49,7 +49,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.22</strong></td>
+<td><strong>1.23</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -69,7 +69,7 @@
 </tr>
 <tr>
 <td>레포</td>
-<td><strong><code>~/dev/citec-kb</code></strong></td>
+<td><strong><code>~/dev/citec-kb</code></strong> · https://github.com/pjhwa/citec-kb</td>
 </tr>
 <tr>
 <td>작성일</td>
@@ -77,7 +77,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-21 — v1.22: async insight reindex job · auth chip on main UIs</strong></td>
+<td><strong>2026-07-21 — v1.23: pilot domain sign-off pack · GitHub Actions CI · remote origin</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -172,7 +172,7 @@
 </tr>
 <tr>
 <td>미완 핵심</td>
-<td>파일럿 <strong>도메인 사인</strong> · 원격 push · Keycloak/Entra <strong>실서버</strong> 검증 · 부서 오픈</td>
+<td>파일럿 <strong>도메인 사인(사람 H1–H7)</strong> · Keycloak/Entra <strong>실서버</strong> · 부서 오픈</td>
 </tr>
 </tbody>
 </table></div>
@@ -1013,8 +1013,8 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+
 <li class="check">✅ <strong>Mock OIDC IdP</strong> <code>/v1/mock-idp</code> RS256 · full login→callback e2e · <code>docs/OIDC_IDP_SETUP.md</code></li>
 <li class="check">✅ Web <strong>Bearer helper</strong> (<code>/js/auth.js</code>) · insights/bundles · <strong>admin.html</strong> ops persona</li>
 <li class="check">✅ <strong>async_index</strong> promote · worker job <code>insight_reindex</code> · auth chip on main UIs</li>
-<li class="check">☐ Keycloak/Entra <strong>실서버</strong> 연동 검증 · 파일럿 도메인 사인</li>
-<li class="check">☐ git 원격 push (원격 미설정 상태)</li>
+<li class="check">✅ <strong>pilot sign-off pack</strong> · GitHub Actions CI · remote push to <code>pjhwa/citec-kb</code></li>
+<li class="check">☐ Keycloak/Entra <strong>실서버</strong> · 사람 도메인 사인 H1–H7</li>
 </ul>
 <hr>
 <h2>6. 데이터 모델</h2>
@@ -1558,19 +1558,19 @@ POST /v1/auth/introspect
 <h2>15. 즉시 다음 액션</h2>
 <h3>별도 수행 (자동 흡수 안 됨)</h3>
 <ol>
-<li><strong>파일럿 1.5 도메인 사인</strong> — 사람 워크스루 (기술 점검 <code>pilot_tech_check</code> 13/13 완료)  </li>
-<li><strong>원격 push</strong> — 로컬 커밋 후 정책에 따라 push  </li>
+<li><strong>파일럿 1.5 도메인 사인</strong> — 사람 워크스루 H1–H7 (<code>/docs/pilot-signoff.html</code> 증거 팩)  </li>
+<li><strong>Keycloak/Entra 실서버</strong> OIDC 연동 검증  </li>
 </ol>
 <h3>제품 하드닝 (P4 잔여)</h3>
 <ol start="3">
-<li><strong>Keycloak/Entra 실서버</strong>에 OIDC_ISSUER 연결 검증 (가이드: <code>docs/OIDC_IDP_SETUP.md</code>)  </li>
-<li>파일럿 도메인 사인 · 원격 push  </li>
-<li>promote embed 비동기 · 검색/chat 전 페이지 auth 칩 확대 — 선택  </li>
+<li>부서 공식 오픈 · 50–100명 스모크 일정  </li>
+<li>(선택) 검색/chat 전 페이지 auth 칩 강화 · G2 groundedness 정기 회귀 리포트  </li>
 </ol>
-<h3>완료 스냅샷 (2026-07-21 v1.22)</h3>
+<h3>완료 스냅샷 (2026-07-21 v1.23)</h3>
 <ul>
-<li><strong>async promote</strong> → queue <code>insight_reindex</code> · worker embeds · e2e done  </li>
-<li>auth chip on search/chat/si/… · unit tests <strong>87</strong> · pilot 13/13  </li>
+<li><strong>pilot_domain_signoff</strong> 리포트 (eng 13/13 · human H1–H7 pending)  </li>
+<li><strong>GitHub Actions CI</strong> (unit 84 without torch) · remote <code>origin</code> → github.com/pjhwa/citec-kb  </li>
+<li>선행: async reindex · OIDC mock · load/SLA · unit 87 full docker  </li>
 </ul>
 <h3>현행화 체크 (매 작업 종료)</h3>
 <ul>
@@ -1672,8 +1672,8 @@ POST /v1/auth/introspect
 </tbody>
 </table></div>
 <hr>
-<p><strong>문서 끝 (v1.22).</strong><br>
-async reindex + Admin UI + OIDC · 잔여=도메인 사인·실 IdP·원격 push · <strong>매 작업 현행화</strong>.</p>
+<p><strong>문서 끝 (v1.23).</strong><br>
+pilot signoff pack + CI + remote · 잔여=사람 도메인 사인·실 IdP · <strong>매 작업 현행화</strong>.</p>
 </div>
 </body>
 </html>

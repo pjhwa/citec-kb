@@ -41,3 +41,5 @@ data/backups/
 
 # load/sla reports (keep latest optionally)
 data/reports/load_sla_20*.json
+
+data/reports/pilot_signoff_20*.json

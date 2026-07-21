@@ -1,0 +1,358 @@
+{
+  "generated_at": "2026-07-21T00:29:54.196374+00:00",
+  "base": "http://127.0.0.1:8573",
+  "repo": "https://github.com/pjhwa/citec-kb",
+  "engineering": {
+    "total": 13,
+    "passed": 13,
+    "failed": 0,
+    "pass": true,
+    "checks": [
+      {
+        "name": "ops.status",
+        "ok": true,
+        "detail": "ok"
+      },
+      {
+        "name": "ops.pilot_engineering_ready",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "worker.heartbeat",
+        "ok": true,
+        "detail": "2"
+      },
+      {
+        "name": "A1 search CITECTS-2502 top1",
+        "ok": true,
+        "detail": "CITECTS-2502"
+      },
+      {
+        "name": "A3 monimo redis hits",
+        "ok": true,
+        "detail": "CITECTS-1898,CITECTS-526,347123074"
+      },
+      {
+        "name": "route list",
+        "ok": true,
+        "detail": "time_scoped_list"
+      },
+      {
+        "name": "route capacity",
+        "ok": true,
+        "detail": "capacity"
+      },
+      {
+        "name": "route analytics",
+        "ok": true,
+        "detail": "analytics"
+      },
+      {
+        "name": "C1 SI cases",
+        "ok": true,
+        "detail": "2"
+      },
+      {
+        "name": "C1 SI has applicability",
+        "ok": true,
+        "detail": "가능"
+      },
+      {
+        "name": "job ping done",
+        "ok": true,
+        "detail": "done"
+      },
+      {
+        "name": "entities>=1",
+        "ok": true,
+        "detail": "5"
+      },
+      {
+        "name": "lexicon>=1",
+        "ok": true,
+        "detail": "10"
+      }
+    ],
+    "ops": {
+      "status": "ok",
+      "version": "0.2.0",
+      "checks": {
+        "postgres": {
+          "ok": true,
+          "counts": {
+            "documents": 9440,
+            "embeddings": 54430,
+            "entities": 5,
+            "document_entities": 549,
+            "issue_frames": 2280,
+            "capacity_rules": 10,
+            "lexicon_terms": 10,
+            "queries_logged": 17
+          }
+        },
+        "worker": {
+          "ok": true,
+          "heartbeat": 1784593783,
+          "age_sec": 2
+        },
+        "auth": {
+          "ok": true,
+          "mode": "off",
+          "enforced": false,
+          "oidc_configured": false
+        },
+        "seeds": {
+          "ok": true,
+          "entities": 5,
+          "capacity_rules": 10,
+          "lexicon_terms": 10,
+          "issue_frames": 2280
+        },
+        "env": {
+          "app_env": "dev",
+          "llm_backend": "openrouter",
+          "version": "0.2.0"
+        }
+      },
+      "pilot_engineering_ready": true,
+      "note": "도메인 파일럿 사인은 별도 체크리스트 필요 (engineering ready만 판정)"
+    }
+  },
+  "load_sla": {
+    "generated_at": "2026-07-20T11:03:31.876756+00:00",
+    "base": "http://127.0.0.1:8573",
+    "concurrency": 8,
+    "scenarios": {
+      "search": {
+        "n": 40,
+        "ok": 40,
+        "fail": 0,
+        "success_rate": 1.0,
+        "wall_ms": 10744.5,
+        "rps": 3.72,
+        "latency_ms": {
+          "p50": 1720.4,
+          "p95": 3926.9,
+          "p99": 4454.9,
+          "mean": 1913.2,
+          "max": 4454.9
+        },
+        "p95_max_ms": 15000,
+        "concurrency": 8
+      },
+      "health": {
+        "n": 20,
+        "ok": 20,
+        "fail": 0,
+        "success_rate": 1.0,
+        "wall_ms": 3119.3,
+        "rps": 6.41,
+        "latency_ms": {
+          "p50": 1181.2,
+          "p95": 1305.1,
+          "p99": 1305.1,
+          "mean": 1027.8,
+          "max": 1305.1
+        },
+        "p95_max_ms": 2000
+      },
+      "planner_route": {
+        "n": 10,
+        "ok": 10,
+        "fail": 0,
+        "success_rate": 1.0,
+        "wall_ms": 2239.6,
+        "rps": 4.47,
+        "latency_ms": {
+          "p50": 975.5,
+          "p95": 2024.2,
+          "p99": 2024.2,
+          "mean": 945.6,
+          "max": 2024.2
+        },
+        "p95_max_ms": 15000
+      }
+    },
+    "stress_search": {
+      "n": 10,
+      "ok": 10,
+      "fail": 0,
+      "success_rate": 1.0,
+      "wall_ms": 2842.2,
+      "rps": 3.52,
+      "latency_ms": {
+        "p50": 2092.1,
+        "p95": 2835.4,
+        "p99": 2835.4,
+        "mean": 2083.8,
+        "max": 2835.4
+      },
+      "concurrency": 20,
+      "informational": true
+    },
+    "gates": {
+      "search_success": true,
+      "search_p95": true,
+      "health_success": true,
+      "health_p95": true,
+      "route_success": true,
+      "route_p95": true
+    },
+    "pass": true,
+    "notes": [
+      "Gate target: concurrent search default 8 (e5-base query embed saturation above ~10–20)",
+      "stress_search is informational only (concurrency 20 sample)",
+      "search multi_query=false for stable p95 under concurrency",
+      "planner_route uses POST /v1/query (capacity/analytics/list/SI/hybrid)",
+      "SSO: AUTH_MODE=off in dev; use apikey/oidc_stub for enforcement tests"
+    ]
+  },
+  "unit_tests": {
+    "collected": 87,
+    "ok": true,
+    "raw_tail": [
+      "tests/test_trust.py::test_weak_weak_abstains",
+      "",
+      "87 tests collected in 2.60s"
+    ]
+  },
+  "auth": {
+    "auth_mode": "off",
+    "enforced": false,
+    "oidc": {
+      "issuer": null,
+      "client_id": null,
+      "audience": null,
+      "redirect_uri": "http://localhost:8573/v1/auth/callback",
+      "scopes": "openid profile email",
+      "jwt_secret_configured": false,
+      "client_secret_configured": false,
+      "configured": false,
+      "discovery_ok": false,
+      "discovery_error": null,
+      "authorization_endpoint": null,
+      "token_endpoint": null,
+      "jwks_uri": null,
+      "role_claim": "roles",
+      "mock_idp": {
+        "path": "/v1/mock-idp",
+        "enabled_default": "APP_ENV=dev|local|test",
+        "hint": "OIDC_ISSUER=http://localhost:8573/v1/mock-idp CLIENT_ID=citec-kb SECRET=mock-secret"
+      },
+      "note": "AUTH_MODE=oidc accepts validated JWT (+ API keys). Set OIDC_ISSUER+CLIENT_ID for IdP, OIDC_JWT_SECRET for HS256, or use mock IdP at /v1/mock-idp for local RS256 e2e."
+    },
+    "roles": [
+      "viewer",
+      "author",
+      "senior",
+      "admin"
+    ],
+    "endpoints": {
+      "me": "/v1/auth/me",
+      "login": "/v1/auth/login",
+      "callback": "/v1/auth/callback",
+      "logout": "/v1/auth/logout",
+      "dev_token": "/v1/auth/dev/token"
+    },
+    "protected_when_enforced": [
+      "POST /v1/insights (author+)",
+      "POST /v1/insights/*/submit (author+)",
+      "POST /v1/insights/*/approve|reject|reopen|reindex (senior+)",
+      "POST /v1/jobs (admin)"
+    ]
+  },
+  "health": {
+    "status": "ok",
+    "version": "0.2.0",
+    "env": "dev",
+    "checks": {
+      "redis": {
+        "ok": true
+      },
+      "postgres": {
+        "ok": true,
+        "alembic_revision": "20260718_0002",
+        "public_tables": 19,
+        "documents_count": 9440
+      },
+      "raw_dir": {
+        "ok": true,
+        "path": "/data/raw",
+        "exists": true,
+        "total_files": 5007,
+        "sources": {
+          "checkitems": 3,
+          "confluence_docs": 4,
+          "incident_reports": 0,
+          "support_history": 2280,
+          "tech_repo": 2709,
+          "tuning_ai": 11,
+          "vendor_docs": 0
+        }
+      },
+      "llm": {
+        "ok": true,
+        "backend": "openrouter",
+        "profile": "glm-5.2",
+        "openrouter_model": "z-ai/glm-5.2",
+        "max_context_tokens": 130000
+      }
+    }
+  },
+  "human_checklist": [
+    {
+      "id": "H1",
+      "title": "검색 품질 현장 워크스루 (gold-50 / 실무 질의 10건)",
+      "owner": "도메인 전문가",
+      "status": "pending_human",
+      "evidence": "hit@3 engineering 0.96; re-run with live queries"
+    },
+    {
+      "id": "H2",
+      "title": "Fast/Deep QA groundedness 현장 사인 (G2)",
+      "owner": "도메인 전문가",
+      "status": "pending_human",
+      "evidence": "Trust/chat runner exists; formal ≥0.95 gate not signed"
+    },
+    {
+      "id": "H3",
+      "title": "유사장애 그룹장 워크스루 (G3 G01–G10)",
+      "owner": "그룹장",
+      "status": "pending_human",
+      "evidence": "SI eval pass_rate=1.0 engineering"
+    },
+    {
+      "id": "H4",
+      "title": "공수/집계 숫자 Rules-only 현장 확인 (G4)",
+      "owner": "관리자",
+      "status": "pending_human",
+      "evidence": "capacity DB + unit tests"
+    },
+    {
+      "id": "H5",
+      "title": "Insight 승인 플로우 시니어 리뷰 1회",
+      "owner": "시니어",
+      "status": "pending_human",
+      "evidence": "API+UI+async reindex available"
+    },
+    {
+      "id": "H6",
+      "title": "SSO: Keycloak/Entra 실서버 연동 (G6)",
+      "owner": "인프라",
+      "status": "pending_human",
+      "evidence": "mock IdP e2e + docs/OIDC_IDP_SETUP.md"
+    },
+    {
+      "id": "H7",
+      "title": "파일럿 사용자 온보딩 (1.5) · 50명 스모크 일정",
+      "owner": "조직",
+      "status": "pending_human",
+      "evidence": "load/SLA report pass at c=8"
+    }
+  ],
+  "domain_signoff_complete": false,
+  "note": "Engineering auto-pass does not equal domain sign-off. Complete H1–H7 with humans.",
+  "engineering_ready": true,
+  "ready_for_human_review": true
+}

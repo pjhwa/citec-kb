@@ -1,0 +1,15 @@
+# Lightweight deps for CI unit tests (no torch / sentence-transformers)
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+pydantic==2.11.4
+pydantic-settings==2.9.1
+httpx==0.28.1
+psycopg[binary]==3.2.6
+redis==5.2.1
+python-dotenv==1.1.0
+SQLAlchemy==2.0.40
+alembic==1.15.2
+pgvector==0.4.1
+PyJWT[crypto]==2.10.1
+pytest==9.1.1
+anyio==4.14.2
