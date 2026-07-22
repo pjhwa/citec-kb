@@ -49,6 +49,19 @@ scripts/in.sh --help
 
 상세: [`docs/DEPLOY.md`](docs/DEPLOY.md) · 번들 `~/tmp/citec-kb-*.tar.gz`
 
+### AI / MCP (Claude 등)
+
+| 문서 | 내용 |
+|------|------|
+| **[docs/AI_AGENT_GUIDE.md](docs/AI_AGENT_GUIDE.md)** | 에이전트용 상세 가이드 (도구 선택·기간조회·집계·시나리오·안티패턴) |
+| [docs/MCP.md](docs/MCP.md) | MCP 설치·도구 표·클라이언트 설정 |
+| [docs/EXTERNAL_API.md](docs/EXTERNAL_API.md) | REST `/v1/*` · `/api/*` |
+
+```bash
+docker compose up -d mcp   # :8577
+# Claude: streamable-http → http://localhost:8577/mcp
+```
+
 ### 호스트 포트 (할당 대역 8572–8580)
 
 | 호스트 포트 | 서비스 |

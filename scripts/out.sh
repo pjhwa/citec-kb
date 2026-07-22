@@ -376,7 +376,7 @@ build_source_bundle() {
 
   mkdir -p "$dest/docs"
   local f
-  for f in DEPLOY.md EXTERNAL_API.md MCP.md OIDC_IDP_SETUP.md; do
+  for f in DEPLOY.md EXTERNAL_API.md MCP.md AI_AGENT_GUIDE.md OIDC_IDP_SETUP.md; do
     [[ -f "${SOURCE_PATH}/docs/${f}" ]] && cp -a "${SOURCE_PATH}/docs/${f}" "$dest/docs/"
   done
 

@@ -3,6 +3,9 @@
 > 기준: [citec-wiki-qa](https://github.com/pjhwa/citec-wiki-qa) 외부 연동 표면  
 > (MCP `wiki_search` / `wiki_get_document` / `wiki_list_synthesis` / `wiki_get_synthesis` / `wiki_ask`)
 
+> **LLM/Claude 에이전트:** MCP 도구 선택·기간조회·집계 패턴은  
+> [AI_AGENT_GUIDE.md](./AI_AGENT_GUIDE.md) · [MCP.md](./MCP.md) 를 우선 참고.
+
 citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 마이그레이션을 위해  
 **호환 경로 `/api/*`** 를 제공합니다.
 

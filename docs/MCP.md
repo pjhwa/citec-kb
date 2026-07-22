@@ -5,6 +5,9 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 
 구조: **경량 프록시** → citec-kb REST (`/api/*`, `/v1/*`). 검색·LLM 로직은 API에 두고 MCP는 프로토콜 어댑터만 담당합니다.
 
+> **AI 에이전트(Claude 등)용 상세 가이드:** [AI_AGENT_GUIDE.md](./AI_AGENT_GUIDE.md)  
+> 도구 선택 트리 · 파라미터 · 시나리오 · 안티패턴 · REST 요약
+
 ---
 
 ## 도구 목록
