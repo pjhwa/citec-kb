@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>CI-TEC 지식기반 검색 플랫폼 설계서 v2</title>
+<title>CI-TEC 지식기반 검색 플랫폼 설계서 v2.4</title>
 <style>
   :root {
     --bg: #f6f8fb;
@@ -317,7 +317,7 @@
 <body>
 <div class="page">
   <aside class="sidebar">
-    <div class="brand">CI-TEC · Design Spec v2.3</div>
+    <div class="brand">CI-TEC · Design Spec v2.4</div>
     <h1>신뢰 우선 지식검색 플랫폼<br/>(경량 Docker)</h1>
     <nav class="nav">
       <div class="nav-section">개요</div>
@@ -339,7 +339,7 @@
       <a href="#s7">7. 경량 아키텍처</a>
       <a href="#s8">8. Docker 구성</a>
       <a href="#s9">9. 검색·답변 파이프라인</a>
-      <a href="#s10">10. 130k · GLM 운용</a>
+      <a href="#s10">10. LLM 운용</a>
       <a href="#s11">11. 지식 환류</a>
 
       <div class="nav-section">검증·실행</div>
@@ -348,16 +348,17 @@
       <a href="#s14">14. 로드맵·PR</a>
       <a href="#s15">15. 결론·권고</a>
       <a href="#s16">16. v1→v2 변경</a>
+      <a href="#s17">17. As-Built (2026-07)</a>
     </nav>
   </aside>
 
   <main class="main">
     <header class="hero">
       <div class="badge-row">
-        <span class="badge blue">Design Document v2.3</span>
+        <span class="badge blue">Design Document v2.4</span>
         <span class="badge green">Trust-First · 경량 Docker</span>
-        <span class="badge teal">50–100 users</span>
-        <span class="badge purple">GLM 5.2 AWQ 4bit · 130k</span>
+        <span class="badge teal">50–100 users · Implemented</span>
+        <span class="badge purple">GLM 5.2 · e5-base 768</span>
         <span class="badge amber">CSP · MSP · On-Prem</span>
         <span class="badge red">Precision &gt; Coverage</span>
       </div>
@@ -366,21 +367,24 @@
         CSP·MSP·레거시 온프레미스 기술지원 전문 부서를 위한 시스템.
         <strong>틀린 답 한 건이 장애 확대로 이어질 수 있으므로</strong>, 화려한 생성보다
         <strong>정확한 검색·근거 투명성·근거 부족 시 침묵(abstention)</strong>을 최우선으로 한다.
-        Docker 4–5 컨테이너로 가볍게 운영하고, 승인된 인사이트만 지식으로 환류한다.
+        Docker 6서비스(+옵션 Keycloak)로 가볍게 운영하고, 승인된 인사이트만 지식으로 환류한다.
+        <strong>v2.4</strong>는 설계뿐 아니라 <strong>2026-07 As-Built</strong>(하이브리드 검색·플래너·MCP·폐쇄망 배포)를 문서화한다.
       </p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">조직</div><div class="value">CI-TEC 기술지원</div></div>
-        <div class="meta-card"><div class="label">환경</div><div class="value">폐쇄망 · Docker</div></div>
+        <div class="meta-card"><div class="label">환경</div><div class="value">폐쇄망 · Docker Compose</div></div>
         <div class="meta-card"><div class="label">규모</div><div class="value">50–100 사용자</div></div>
-        <div class="meta-card"><div class="label">LLM</div><div class="value">GLM 5.2 · 130k</div></div>
+        <div class="meta-card"><div class="label">LLM / Embed</div><div class="value">GLM 5.2 외부 · e5-base</div></div>
         <div class="meta-card"><div class="label">운영 철학</div><div class="value">Precision &gt; Recall</div></div>
       </div>
     </header>
 
     <div class="rev-banner">
-      <strong>v2.3: 그룹장 ‘유사장애·해결적용성’ 파이프라인. v2.2: 역할별 예상질문 100 · 코퍼스 테스트 · Analytics/Capacity/Bundle 보완. v2.1: raw 코퍼스 전수 분석 기반 질의 실현성 검증 · 엔티티/이슈프레임/질의플래너 보완. v2 요지:</strong> (1) 경량 Docker 스택으로 축소 · (2) 50–100명 동시성 현실화 ·
-      (3) <em>신뢰도 표시에 대한 설계 통찰</em> 전면 반영 · (4) CSP/MSP/On-Prem 도메인 택소노미 ·
-      (5) “정확·신뢰”를 위한 검색 품질 게이트·기권 정책 강화 · (6) 무거운 컴포넌트(OpenSearch 클러스터, 별도 Qdrant 필수화 등) 제거.
+      <strong>v2.4 (2026-07): As-Built 반영</strong> — multi-service compose(web/api/worker/postgres/redis/mcp±keycloak) ·
+      hybrid FTS+pgvector + multi-query 고DF 억제 · Query Planner(기간/집계/SI/체크리스트/용량) ·
+      MCP 전면 도구 · 원문 access 필드 · 폐쇄망 out/in 분리 번들·clean PG restore · 프로젝트 로컬 models · AI Agent Guide.
+      <br/><strong>v2.3:</strong> 그룹장 유사장애·적용성. <strong>v2.2:</strong> 질문 100·Analytics/Capacity. <strong>v2.1:</strong> 코퍼스 분석·Planner 보완.
+      <strong>v2:</strong> Postgres 일체형 경량 Docker · Trust-First · Precision&gt;Coverage.
     </div>
 
     <!-- 0 -->
@@ -1831,28 +1835,29 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
           <div class="layer">
             <div class="layer-label" style="background:#6d28d9">Intel</div>
             <div class="layer-body">
-              <span class="chip">GLM 5.2 130k (사내)</span>
-              <span class="chip">BGE-M3 embed</span>
+              <span class="chip">GLM 5.2 (사내 Fabrix / dev OpenRouter)</span>
+              <span class="chip">multilingual-e5-base 768d</span>
               <span class="chip">Rerank (옵션 경량)</span>
             </div>
           </div>
           <div class="layer">
             <div class="layer-label" style="background:#b45309">Retrieve</div>
             <div class="layer-body">
-              <span class="chip">PG Full-Text (BM25성)</span>
+              <span class="chip">PG FTS (simple)</span>
               <span class="chip">pgvector</span>
-              <span class="chip">RRF</span>
-              <span class="chip">Parent expand</span>
-              <span class="chip">Quality gate</span>
+              <span class="chip">RRF + multi-query</span>
+              <span class="chip">Planner 라우트</span>
+              <span class="chip">Quality / Trust gate</span>
             </div>
           </div>
           <div class="layer">
-            <div class="layer-label" style="background:#334155">Data</div>
+            <div class="layer-label" style="background:#334155">Data · Edge</div>
             <div class="layer-body">
               <span class="chip">Postgres 16+pgvector</span>
               <span class="chip">Redis</span>
-              <span class="chip">raw volume</span>
+              <span class="chip">raw + models host mount</span>
               <span class="chip">worker jobs</span>
+              <span class="chip">MCP 8577</span>
             </div>
           </div>
         </div>
@@ -1901,18 +1906,23 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
         </div>
         <div class="decision">
           <div class="q">KD-3. 임베딩 서빙</div>
-          <div class="a"><strong>worker 내 배치 추론 또는 얇은 embed 컨테이너 (요청 시 scale)</strong></div>
-          <div class="why">질의 시 쿼리 임베딩만 필요(ms~수십ms). 대량 임베딩은 비동기. 상시 대형 추론 서버 불필요.</div>
+          <div class="a"><strong>api 프로세스 + 호스트 마운트 HF 캐시 (<code>./models</code>, e5-base)</strong></div>
+          <div class="why">질의 시 쿼리 임베딩만 필요. 대량 임베딩은 CLI/잡. 타 프로젝트 경로 참조 금지(폐쇄망 번들 단위).</div>
         </div>
         <div class="decision">
           <div class="q">KD-4. LLM</div>
-          <div class="a"><strong>사내 GLM 엔드포인트 외부 의존 (compose 밖)</strong></div>
-          <div class="why">이미 인프라 존재. 앱 스택을 가볍게 유지. 장애 시 검색-only degraded mode.</div>
+          <div class="a"><strong>사내 Fabrix / dev OpenRouter — compose 밖</strong></div>
+          <div class="why">앱 스택을 가볍게. 장애 시 검색-only degraded mode.</div>
         </div>
         <div class="decision">
           <div class="q">KD-5. 신뢰 UX</div>
           <div class="a"><strong>4단 Trust Banner + 설명형 근거 (단일 % 기본 노출 금지)</strong></div>
           <div class="why">§5. 과신 방지.</div>
+        </div>
+        <div class="decision">
+          <div class="q">KD-6. 에이전트 연동</div>
+          <div class="a"><strong>MCP thin proxy (8577) + REST <code>/v1/*</code> · <code>/api/*</code></strong></div>
+          <div class="why">검색 로직은 API에 유지. Claude 등은 도구로 기간·집계·SI·원문 접근.</div>
         </div>
       </div>
     </section>
@@ -1921,23 +1931,74 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
     <section id="s8">
       <div class="section-card">
         <h2><span class="num">8</span> Docker 구성 — 가볍게, 충분히</h2>
-        <p class="section-sub">목표: 노트북/단일 VM에서도 compose up 가능 · 운영은 1인-day 수준</p>
+        <p class="section-sub">As-Built: 단일 compose · 호스트 포트 8572–8577 · 코드 마운트로 일상 재빌드 최소화</p>
 
         <div class="compose-box">
-          <div class="cnode core"><div class="t">web</div><div class="s">nginx + static SPA</div><div class="m">~32–64MB</div></div>
-          <div class="cnode core"><div class="t">api</div><div class="s">FastAPI · gunicorn</div><div class="m">~200–400MB</div></div>
-          <div class="cnode core"><div class="t">worker</div><div class="s">ingest · embed jobs</div><div class="m">~300–800MB*</div></div>
-          <div class="cnode data"><div class="t">postgres</div><div class="s">16 + pgvector</div><div class="m">~512MB–2GB</div></div>
-          <div class="cnode data"><div class="t">redis</div><div class="s">queue · cache</div><div class="m">~32–64MB</div></div>
+          <div class="cnode core"><div class="t">web</div><div class="s">nginx · static · :8572</div><div class="m">nginx alpine</div></div>
+          <div class="cnode core"><div class="t">api</div><div class="s">FastAPI · alembic · :8573</div><div class="m">citec-kb-api</div></div>
+          <div class="cnode core"><div class="t">worker</div><div class="s">jobs · Redis consumer</div><div class="m">citec-kb-worker</div></div>
+          <div class="cnode data"><div class="t">postgres</div><div class="s">pgvector:pg16 · :8574</div><div class="m">pgdata volume</div></div>
+          <div class="cnode data"><div class="t">redis</div><div class="s">queue · :8575</div><div class="m">7-alpine</div></div>
+          <div class="cnode core"><div class="t">mcp</div><div class="s">Claude/Cursor · :8577</div><div class="m">citec-kb-mcp</div></div>
         </div>
-        <p style="font-size:12.5px;color:var(--text-muted)">* worker 메모리: 임베딩 모델을 워커에 올리면 증가. 대안: 사내 공용 embed API 사용 시 worker 경량화.</p>
+        <p style="font-size:12.5px;color:var(--text-muted)">옵션 profile <code>keycloak</code> :8576. LLM·임베딩 가중치는 compose 밖 또는 <code>MODELS_HOST_DIR=./models</code>.</p>
 
         <div class="cnode ext" style="margin:12px 0;text-align:left;padding:14px">
-          <div class="t">compose 외부 (사내 공용)</div>
-          <div class="s" style="margin-top:6px">GLM 5.2 AWQ 4bit 서빙 (vLLM 등) · (옵션) 공용 Embedding endpoint · SSO IdP</div>
+          <div class="t">compose 외부</div>
+          <div class="s" style="margin-top:6px">Fabrix / OpenRouter GLM · 호스트 HF 캐시(models/) · (옵션) 사내 IdP 또는 Keycloak profile</div>
         </div>
 
-        <h3>8.1 리소스 가이드 (초기 100명)</h3>
+        <h3>8.1 호스트 포트 (조직 할당 8572–8580)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>포트</th><th>서비스</th><th>비고</th></tr></thead>
+            <tbody>
+              <tr><td><strong>8572</strong></td><td>web</td><td>UI · /docs</td></tr>
+              <tr><td><strong>8573</strong></td><td>api</td><td><code>/v1/*</code> · <code>/api/*</code></td></tr>
+              <tr><td><strong>8574</strong></td><td>postgres</td><td>pgvector</td></tr>
+              <tr><td><strong>8575</strong></td><td>redis</td><td>job queue</td></tr>
+              <tr><td><strong>8576</strong></td><td>keycloak</td><td>profile 옵션</td></tr>
+              <tr><td><strong>8577</strong></td><td>mcp</td><td>streamable-http</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.2 코드 마운트 (일상 배포 = 이미지 재빌드 없음)</h3>
+        <ul>
+          <li><code>apps/api/app</code>, <code>alembic</code> → api</li>
+          <li><code>apps/worker/app</code> → worker</li>
+          <li><code>apps/web/public</code> + nginx.conf → web</li>
+          <li><code>mcp-server/server.py</code> → mcp (pip 변경 시에만 docker-mcp 번들)</li>
+          <li><code>config/</code>, <code>data/</code>, <code>MODELS_HOST_DIR</code></li>
+        </ul>
+
+        <h3>8.3 폐쇄망 패키징 (out.sh / in.sh)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>번들</th><th>내용</th><th>언제</th></tr></thead>
+            <tbody>
+              <tr><td><code>code</code></td><td>소스·설정·스크립트</td><td>일상 (마운트 반영)</td></tr>
+              <tr><td><code>docker</code></td><td>api/worker + nginx/redis/pgvector</td><td>Dockerfile·requirements</td></tr>
+              <tr><td><code>docker-mcp</code></td><td>MCP 이미지</td><td>MCP deps</td></tr>
+              <tr><td><code>data</code> / <code>--pg-only</code></td><td>raw 및/또는 PG 덤프</td><td>코퍼스·인덱스 복제</td></tr>
+              <tr><td><code>model</code></td><td>HF e5 캐시 (프로젝트 models/)</td><td>최초·모델 교체</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <div class="icon">!</div>
+          <div>
+            <div class="title">PG restore 규약</div>
+            <div class="body">
+              검색 인덱스는 <strong>pgdata</strong>에 있다. 덤프 복원은 <strong>api(alembic) 기동 전</strong>
+              <code>DROP SCHEMA public</code> 후 quiet restore·건수 검증(<code>in.sh --restore-pg</code>).
+              alembic 스키마 위에 dump를 얹으면 FK/CREATE ERROR로 chunks·embeddings가 비는 사고가 난다.
+              대용량 덤프(embeddings ~5만)는 10–40분 소요 — screen/tmux 권장.
+            </div>
+          </div>
+        </div>
+
+        <h3>8.4 리소스 가이드 (초기 100명)</h3>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1949,43 +2010,31 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
                 <td>4 vCPU</td>
                 <td>8–12 GB</td>
                 <td>40 GB</td>
-                <td>embed는 CPU 또는 외부 API</td>
+                <td>e5 CPU 추론</td>
               </tr>
               <tr>
                 <td>권장</td>
                 <td>8 vCPU</td>
                 <td>16–24 GB</td>
                 <td>80 GB</td>
-                <td>로컬 BGE-M3 배치 여유</td>
+                <td>로컬 e5 + 여유 pgdata</td>
               </tr>
               <tr>
                 <td>여유</td>
                 <td>8 + GPU(선택)</td>
                 <td>32 GB</td>
                 <td>100 GB+</td>
-                <td>리랭크·대량 재색인 가속</td>
+                <td>대량 재색인 가속</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h3>8.2 compose 스케치</h3>
-<pre><code>services:
-  web:      # nginx → api, static
-  api:      # uvicorn workers=2~4  (100명 burst 충분)
-  worker:   # arq/celery concurrency=2
-  postgres: # pgvector image, volume, shared_buffers 튜닝
-  redis:    # appendonly no (캐시·큐), volume optional
-
-# 올리지 않는 것: kafka, opensearch, milvus, jaeger full suite,
-# 다중 replica DB, service mesh
-</code></pre>
-
-        <h3>8.3 부하 추정 (보수적)</h3>
+        <h3>8.5 부하 추정 (보수적)</h3>
         <ul>
           <li>100명 중 동시 활성 ~10–20, 동시 RAG ~2–5.</li>
           <li>검색 QPS 피크 &lt; 20 → Postgres FTS+pgvector 여유.</li>
-          <li>병목은 거의 항상 <strong>GLM 장문 생성</strong> → 앱 쪽 동시성 세마포어(예: deep=2, fast=6).</li>
+          <li>병목은 거의 항상 <strong>외부 LLM 장문 생성</strong>.</li>
         </ul>
 
         <div class="callout ok">
@@ -1994,8 +2043,7 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
             <div class="title">경량화 원칙</div>
             <div class="body">
               “마이크로서비스 수”가 아니라 <strong>장애 지점 수</strong>를 줄인다.
-              백업 대상은 Postgres 볼륨 하나(+raw). 관측은 로그 + 기본 메트릭으로 시작.
-              무거워지는 순간은 측정 후 — 추측으로 컴포넌트를 추가하지 않는다.
+              백업 대상: Postgres 볼륨(+raw, +models 번들). 일상 배포는 code 번들만.
             </div>
           </div>
         </div>
@@ -2018,9 +2066,27 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
           <li>FTS 문서 + embedding 배치. 실패는 DLQ, 부분 성공 표시.</li>
         </ol>
 
-        <h3>9.2 Search path (고정밀)</h3>
+        <h3>9.2 Search path (고정밀 · As-Built)</h3>
         <ol>
-          <li>질의 정규화 + 티켓키/파라미터 exact 패턴 추출.</li>
+          <li>질의 정규화 + 티켓키/파라미터 exact 패턴 추출. 존재 의문형 껍질 제거(「…가 있는가?」).</li>
+          <li>사용자 필터 (environment, domain, work_type, source_type).</li>
+          <li><strong>multi-query</strong>: 원문·구문 우선. 단독 고DF 토큰(SCP, Multi-AZ, 연도 alone)은 헤드에서 배제·가중 하향 — 오염 방지.</li>
+          <li>병렬: FTS + vector. exact_id 히트는 강제 상위.</li>
+          <li>RRF 융합 + grade boost + 확장 쿼리 가중 병합.</li>
+          <li><strong>Quality gate / Trust</strong>: 근거 약하면 기권·약함 배너. 모든 hit에 path·body_api·web_url 부착.</li>
+        </ol>
+
+        <h3>9.2b Query Planner 라우트</h3>
+        <p>우선순위: capacity → analytics → time_scoped_list → SI → prevention → exhaustive → checklist → entity_aggregate → hybrid_search.</p>
+        <ul>
+          <li>기간 목록: <code>GET /v1/tickets?relative=</code></li>
+          <li>집계: <code>GET /v1/analytics/tickets?group_by=year|issue_type|…</code></li>
+          <li>유사장애: <code>POST /v1/similar-incident</code></li>
+          <li>통합 NL: <code>POST /v1/query</code> · UI/MCP 동일</li>
+        </ul>
+
+        <h3>9.2c (설계 원문 유지) 게이트 상세</h3>
+        <ol>
           <li>사용자 필터 (environment, domain, work_type, source, 기간).</li>
           <li>병렬: FTS top 40 + vector top 40. exact_id 히트는 강제 상위.</li>
           <li>RRF 융합 + grade boost + env boost.</li>
@@ -2063,7 +2129,7 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
     <!-- 10 -->
     <section id="s10">
       <div class="section-card">
-        <h2><span class="num">10</span> GLM 5.2 · 130k 운용</h2>
+        <h2><span class="num">10</span> LLM 운용 (GLM 5.2 · 외부 엔드포인트)</h2>
         <p class="section-sub">긴 컨텍스트 = 다중 사례 교차 검증 예산</p>
 
         <div class="legend">
@@ -2417,21 +2483,129 @@ else map to HIGH / MEDIUM / LOW by calibrated thresholds
                 <td>—</td>
                 <td><strong>similar_incident 4슬롯 · 적용성 판정 · War-room 1분 브리핑 · G01–G10</strong></td>
               </tr>
+              <tr>
+                <td>As-Built (v2.4)</td>
+                <td>설계 중심</td>
+                <td><strong>구현 스택·MCP·플래너·폐쇄망 배포·검색 품질 패치·AI Agent Guide</strong> (§17)</td>
+              </tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
+    <!-- 17 As-Built -->
+    <section id="s17">
+      <div class="section-card">
+        <h2><span class="num">17</span> As-Built 구현 현황 (2026-07)</h2>
+        <p class="section-sub">설계 목표 대비 실제로 동작하는 제품 표면. 저장소: <code>citec-kb</code> · 문서: <code>docs/AI_AGENT_GUIDE.md</code>, <code>docs/MCP.md</code>, <code>docs/DEPLOY.md</code></p>
+
+        <div class="callout ok">
+          <div class="icon">✓</div>
+          <div>
+            <div class="title">GO 유지 · 설계→제품 이행 완료(핵심 경로)</div>
+            <div class="body">
+              Trust-First 하이브리드 검색, Query Planner, SI, Analytics/Capacity/Checkitems,
+              웹 UI, MCP, 폐쇄망 분리 번들 배포가 한 compose로 운영 가능하다.
+              남은 과제는 도메인 gold 상시 평가·상용 IdP 정착·용량 규칙 현행화 등 운영 성숙도.
+            </div>
+          </div>
+        </div>
+
+        <h3>17.1 런타임 스택 (구현됨)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>구성요소</th><th>구현</th><th>비고</th></tr></thead>
+            <tbody>
+              <tr><td>API</td><td>FastAPI · Alembic · <code>/v1/*</code> + <code>/api/*</code></td><td>포트 8573 · AUTH off 파일럿 가능</td></tr>
+              <tr><td>Web</td><td>정적 SPA + nginx reverse</td><td>8572 · MD→HTML · 원문 링크</td></tr>
+              <tr><td>Worker</td><td>Redis 기반 잡</td><td>ingest/embed 파이프라인</td></tr>
+              <tr><td>Store</td><td>Postgres 16 + pgvector · Redis</td><td>FTS+vector · 인덱스=pgdata</td></tr>
+              <tr><td>Embed</td><td>intfloat/multilingual-e5-base (768)</td><td>프로젝트 <code>models/</code> only</td></tr>
+              <tr><td>LLM</td><td>OpenRouter(dev) / Fabrix(prod)</td><td>compose 외부</td></tr>
+              <tr><td>MCP</td><td>FastMCP streamable-http</td><td>8577 · thin proxy</td></tr>
+              <tr><td>Auth</td><td>off · apikey · oidc · mock IdP · Keycloak profile</td><td>운영 <code>APP_ENV=prod</code> 권장</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>17.2 검색·질의 품질 (구현 패치 요지)</h3>
+        <ul>
+          <li><strong>Hybrid multi-query</strong>: 원문·기술 구문 우선. 단독 <code>SCP</code>/<code>2026년</code>/<code>Multi-AZ</code> 헤드 검색으로 정답 문서가 밀리던 문제 수정 (예: CITECTS-2386 SCP v2 Multi-AZ 가용성 테스트).</li>
+          <li><strong>이슈 유형(issue_type)</strong> 분석: Jira Component가 아닌 규칙 기반 세분류(성능/설정오류 등).</li>
+          <li><strong>원문 접근 필드</strong>: 모든 hit에 path · body_api · web_url · mcp_args — UI/API/MCP 동일 계약.</li>
+          <li><strong>체크리스트</strong>: PISA 구조화 섹션(참고 포함) · OOM 등 키워드 목록.</li>
+          <li><strong>Planner</strong>: 기간 목록 · 집계 · SI · 체크리스트 · 용량 · hybrid — <code>POST /v1/query</code> = 홈/MCP 공통.</li>
+        </ul>
+
+        <h3>17.3 MCP 도구 맵 (Claude 등)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>의도</th><th>MCP tool</th><th>API</th></tr></thead>
+            <tbody>
+              <tr><td>NL 통합</td><td><code>kb_query</code></td><td><code>POST /v1/query</code></td></tr>
+              <tr><td>하이브리드 검색</td><td><code>kb_search</code></td><td><code>POST /v1/search</code></td></tr>
+              <tr><td>기간 티켓 목록</td><td><code>kb_list_tickets</code></td><td><code>GET /v1/tickets?relative=</code></td></tr>
+              <tr><td>집계</td><td><code>kb_analytics</code> · <code>kb_entity_share</code> · <code>kb_title_tokens</code></td><td><code>/v1/analytics/*</code></td></tr>
+              <tr><td>유사장애</td><td><code>kb_similar_incident</code></td><td><code>POST /v1/similar-incident</code></td></tr>
+              <tr><td>체크리스트</td><td><code>kb_list_checkitems</code> · <code>kb_get_checkitem</code></td><td><code>/v1/checkitems</code></td></tr>
+              <tr><td>RAG 답변</td><td><code>kb_ask</code></td><td><code>POST /api/query</code> · chat</td></tr>
+              <tr><td>원문</td><td><code>kb_get_document</code> · <code>kb_ticket</code></td><td>file / tickets</td></tr>
+              <tr><td>용량</td><td><code>kb_capacity_estimate</code></td><td><code>POST /v1/capacity/estimate</code></td></tr>
+              <tr><td>가이드</td><td><code>kb_tools_help</code></td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>에이전트 상세 규칙·안티패턴·시나리오: <strong><code>docs/AI_AGENT_GUIDE.md</code></strong> (웹: <code>/docs/AI_AGENT_GUIDE.md</code>).</p>
+
+        <h3>17.4 폐쇄망 배포 (As-Built)</h3>
+        <ol>
+          <li>개발: <code>scripts/out.sh --code</code> / <code>--pg-only</code> / <code>--docker</code> …</li>
+          <li>전송: <code>~/citec-kb-*.tar.gz</code> → 운영 홈</li>
+          <li>운영: <code>scripts/in.sh --code -y</code> (일상) · 최초/인덱스: <code>--data --restore-pg -y</code></li>
+          <li>restore: postgres only → <code>DROP SCHEMA public</code> → quiet dump → docs/chunks/emb 검증 → 전체 up</li>
+          <li>모델: 반드시 프로젝트 <code>models/</code> (citec-wiki-qa 경로 참조 금지)</li>
+        </ol>
+
+        <h3>17.5 코퍼스·인덱스 규모 (개발 스냅샷 예)</h3>
+        <div class="stat-row">
+          <div class="stat"><div class="n">~5k+</div><div class="l">raw 파일</div></div>
+          <div class="stat"><div class="n">~9.4k</div><div class="l">documents (인덱싱)</div></div>
+          <div class="stat"><div class="n">~54k</div><div class="l">chunks · embeddings</div></div>
+          <div class="stat"><div class="n">~2.2k+</div><div class="l">support tickets</div></div>
+          <div class="stat"><div class="n">e5-768</div><div class="l">vector dim</div></div>
+        </div>
+
+        <h3>17.6 남은 권고 (설계 유지)</h3>
+        <ul>
+          <li>Gold 100 상시 회귀 (catalog route/answer).</li>
+          <li>운영 IdP(Entra/Keycloak) 정식 연결 시 <code>APP_ENV=prod</code> · mock 비활성.</li>
+          <li>Capacity 규칙 시즌별 시드 갱신.</li>
+          <li>대용량 PG restore는 screen/tmux · heartbeat 확인.</li>
+        </ul>
+
+        <h3>17.7 관련 문서 인덱스</h3>
+        <ul>
+          <li><code>docs/AI_AGENT_GUIDE.md</code> — Claude/MCP/REST 에이전트 가이드</li>
+          <li><code>docs/MCP.md</code> · <code>docs/EXTERNAL_API.md</code></li>
+          <li><code>docs/DEPLOY.md</code> — out/in · restore</li>
+          <li><code>docs/IMPLEMENTATION_PLAN.md</code> — 구현 계획 현행</li>
+          <li><code>docs/OIDC_IDP_SETUP.md</code> — SSO</li>
+        </ul>
+      </div>
+    </section>
+
     <footer>
       <p>
-        <strong>CI-TEC 신뢰 우선 지식기반 검색 플랫폼 설계서</strong> · v2.3 · 2026-07-18 · 그룹장 유사장애 질의 포함 ·
-        환경: 폐쇄망 Docker · LLM: GLM 5.2 AWQ 4bit 130k · 사용자: 50–100 ·
-        코퍼스: raw/ ~5k docs · 파일: <code>design/CI-TEC_Knowledge_Platform_Design.html</code>
+        <strong>CI-TEC 신뢰 우선 지식기반 검색 플랫폼 설계서</strong> · <strong>v2.4</strong> · 2026-07-22 ·
+        As-Built · MCP · 폐쇄망 배포 · 그룹장 SI ·
+        환경: 폐쇄망 Docker Compose · LLM: GLM 5.2 (외부) · Embed: multilingual-e5-base ·
+        사용자: 50–100 · 파일: <code>docs/CI-TEC_Knowledge_Platform_Design.html</code>
       </p>
       <p>
         본 문서는 기술지원 조직의 의사결정 비용을 최우선으로 고려하여,
         “이상적 데모”보다 “현장 mid-incident에서 틀리지 않는 도구”를 설계 목표로 삼았다.
+        v2.4는 동일 목표 하에 <strong>구현·운영 가능한 형태</strong>를 설계서에 고정한다.
       </p>
     </footer>
   </main>
