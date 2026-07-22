@@ -71,7 +71,7 @@ services:
       - ./apps/api/alembic:/app/alembic:ro
       - ./apps/api/alembic.ini:/app/alembic.ini:ro
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
-      # Prefer project ./models (in.sh sets MODELS_HOST_DIR). Dev may override to shared HF cache.
+      # Project-local HF cache only (./models). Never share paths with other repos.
       - ${MODELS_HOST_DIR:-./models}:/models:ro
     depends_on:
       postgres:

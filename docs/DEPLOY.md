@@ -44,7 +44,7 @@ citec-kb 는 **multi-service + Postgres(pgvector)** 이므로, wiki-qa 의 `db/v
 | `mcp-server/server.py` | mcp | 로직 변경 (pip deps 는 docker-mcp) |
 | `config/` | api/worker | `models.json` 은 in.sh 가 운용값 보존 |
 | `data/`, `data/raw` | api/worker | 코퍼스 |
-| `models/` (`MODELS_HOST_DIR`) | api | HF 캐시 |
+| `models/` (`MODELS_HOST_DIR=./models`) | api | HF 캐시 (**이 레포 전용**, 타 프로젝트 경로 금지) |
 
 **이미지 재빌드가 필요한 것:** requirements / Dockerfile / torch 등.
 
@@ -171,6 +171,23 @@ TRANSFORMERS_OFFLINE=1
 HF_HUB_OFFLINE=1
 EMBEDDING_MODEL=intfloat/multilingual-e5-base
 ```
+
+### 임베딩 모델 (프로젝트 전용)
+
+- **위치:** 항상 `citec-kb/models/` (compose 기본 `MODELS_HOST_DIR=./models`)
+- **금지:** `citec-wiki-qa` 등 다른 레포 경로를 `MODELS_HOST_DIR` 로 지정·심볼릭 링크
+- **개발 준비:** 다른 곳에 있는 HF 캐시는 **복사** 후 사용
+
+```bash
+# 개발 레포에서 (예시)
+mkdir -p models
+rsync -a /path/to/hf-cache/hub/ models/hub/
+# 패키징
+scripts/out.sh --model
+```
+
+`out.sh --model` 은 `SOURCE_PATH/models` 만 읽습니다. 레포 밖·`citec-wiki-qa` 경로는 거부합니다.
+
 
 ---
 

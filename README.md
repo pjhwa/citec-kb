@@ -12,8 +12,12 @@
 cd ~/dev/citec-kb
 
 # API 키 (한 번)
-cp ~/tmp/citec-wiki-qa/.env .env   # 이미 있으면 스킵
-# 또는: cp .env.example .env  후 OPENROUTER_API_KEY 설정
+cp .env.example .env
+# OPENROUTER_API_KEY / Fabrix 등 설정
+
+# 임베딩 모델: 반드시 이 레포 models/ 아래 (다른 프로젝트 경로 참조 금지)
+# 예) rsync -a /path/to/hf-cache/ models/
+#     MODELS_HOST_DIR=./models
 
 # 지식 코퍼스: data/raw (등록 완료). 다른 경로를 쓸 때만:
 # export RAW_HOST_DIR=/path/to/raw

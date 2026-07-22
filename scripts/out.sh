@@ -182,17 +182,34 @@ resolve_version() {
   echo "$version"
 }
 
-# Resolve models directory (compose MODELS_HOST_DIR / .env / defaults)
+# Models live ONLY under this repo: SOURCE_PATH/models
+# Never reference other projects (e.g. citec-wiki-qa). Copy HF cache into ./models if needed.
 resolve_models_dir() {
+  local proj="${SOURCE_PATH}/models"
   local m=""
-  if [[ -f "${SOURCE_PATH}/.env" ]]; then
-    m=$(grep -E '^MODELS_HOST_DIR=' "${SOURCE_PATH}/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d ' "' || true)
+  if [[ -n "${MODELS_HOST_DIR:-}" ]]; then
+    m="${MODELS_HOST_DIR}"
+  elif [[ -f "${SOURCE_PATH}/.env" ]]; then
+    m=$(grep -E '^MODELS_HOST_DIR=' "${SOURCE_PATH}/.env" 2>/dev/null \
+      | head -1 | cut -d= -f2- | tr -d ' "' || true)
   fi
-  m="${MODELS_HOST_DIR:-$m}"
-  if [[ -n "$m" && -d "$m" ]]; then echo "$m"; return; fi
-  if [[ -d "${SOURCE_PATH}/models/hub" ]]; then echo "${SOURCE_PATH}/models"; return; fi
-  if [[ -d "${HOME}/tmp/citec-wiki-qa/models/hub" ]]; then echo "${HOME}/tmp/citec-wiki-qa/models"; return; fi
-  echo "${SOURCE_PATH}/models"
+  if [[ -n "$m" ]]; then
+    [[ "$m" != /* ]] && m="${SOURCE_PATH}/${m#./}"
+    if [[ -d "$m" ]]; then
+      m="$(cd "$m" && pwd)"
+    fi
+    if [[ "$m" == *citec-wiki-qa* ]]; then
+      err "MODELS_HOST_DIR 가 citec-wiki-qa 를 가리킵니다: $m"
+      err "복사: rsync -a <src>/ ${SOURCE_PATH}/models/   후  MODELS_HOST_DIR=./models"
+      exit 1
+    fi
+    if [[ "$m" == "${SOURCE_PATH}/models" || "$m" == "${SOURCE_PATH}/models/"* ]]; then
+      echo "$m"
+      return
+    fi
+    warn "MODELS_HOST_DIR 이 이 레포 models/ 가 아닙니다 ($m) — ${proj} 사용"
+  fi
+  echo "$proj"
 }
 
 embedding_model_name() {
@@ -566,7 +583,9 @@ build_model_bundle() {
 
   if [[ ! -d "${models_dir}/hub" ]]; then
     err "models/hub 없음: ${models_dir}"
-    err "HF 캐시를 준비하거나 MODELS_HOST_DIR 을 지정하세요"
+    err "이 프로젝트 models/ 에 HF 캐시를 복사하세요 (다른 프로젝트 경로 참조 금지)."
+    err "  예: rsync -a /path/to/hf-cache/hub/ ${SOURCE_PATH}/models/hub/"
+    err "  또는 prepare_offline_model 등으로 ${SOURCE_PATH}/models 에 적재"
     exit 1
   fi
 

@@ -13,13 +13,10 @@ logger = logging.getLogger("citec.embed")
 MODEL_ID = "intfloat/multilingual-e5-base"
 EMBEDDING_DIM = 768
 
-# Prefer local snapshot path for air-gapped / offline dev hosts.
+# Prefer container-local snapshot under HF_HOME=/models (compose mount: ./models).
+# Never fall back to other projects' paths — models must live under this repo's models/.
 _DEFAULT_SNAP = (
     "/models/hub/models--intfloat--multilingual-e5-base/"
-    "snapshots/d128750597153bb5987e10b1c3493a34e5a4502a"
-)
-_HOST_SNAP = (
-    "/home/citec/tmp/citec-wiki-qa/models/hub/models--intfloat--multilingual-e5-base/"
     "snapshots/d128750597153bb5987e10b1c3493a34e5a4502a"
 )
 
@@ -30,8 +27,22 @@ def _resolve_load_path() -> str:
         return env
     if os.path.isdir(_DEFAULT_SNAP):
         return _DEFAULT_SNAP
-    if os.path.isdir(_HOST_SNAP):
-        return _HOST_SNAP
+    # Host-side tests without compose: repo-relative models/ only
+    _repo_snap = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "..",
+        "..",
+        "models",
+        "hub",
+        "models--intfloat--multilingual-e5-base",
+        "snapshots",
+        "d128750597153bb5987e10b1c3493a34e5a4502a",
+    )
+    _repo_snap = os.path.normpath(_repo_snap)
+    if os.path.isdir(_repo_snap):
+        return _repo_snap
     return MODEL_ID
 
 
