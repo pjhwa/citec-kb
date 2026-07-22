@@ -322,7 +322,9 @@ start_postgres_only() {
   sudo docker compose up -d postgres redis
   local i
   for i in $(seq 1 60); do
-    if sudo docker compose exec -T postgres pg_isready -U citec &>/dev/null; then
+    # Must use -d citec_knowledge: default DB name = user "citec" does not exist → FATAL spam
+    if sudo docker compose exec -T postgres \
+         pg_isready -U citec -d citec_knowledge &>/dev/null; then
       log "postgres ready"
       return 0
     fi
@@ -555,16 +557,17 @@ SET maintenance_work_mem = '512MB';
 SQL
 
   log "[2/4] dump 적용 (quiet · ON_ERROR_STOP) — 수 분~수십 분 소요 가능"
-  info "진행 확인(다른 터미널): sudo docker logs -f citec-kb-postgres-1"
-  info "  또는: sudo docker exec citec-kb-postgres-1 psql -U citec -d citec_knowledge -c 'SELECT count(*) FROM pg_stat_activity;'"
+  info "진행: 30초마다 heartbeat. 다른 터미널: sudo docker logs --tail 20 citec-kb-postgres-1"
+  info "  (embeddings vacuum/checkpoint 메시지는 복원 중 정상)"
 
   local errf statusf
   errf="${PROJECT_DIR}/data/backups/restore-errors-$(date +%Y%m%d_%H%M%S).log"
   statusf="${PROJECT_DIR}/data/backups/.restore_status"
   mkdir -p "${PROJECT_DIR}/data/backups"
+  : > "$errf"
   echo "running $(date -Iseconds) dump=$(basename "$sql")" > "$statusf"
 
-  # Heartbeat so SSH session does not look frozen
+  # Heartbeat: must query pg_stat_activity (bare "state" is invalid → ERROR spam)
   local hb_pid=""
   (
     n=0
@@ -572,21 +575,29 @@ SQL
       sleep 30
       n=$((n + 30))
       act=$(sudo docker exec "$cid" psql -U citec -d citec_knowledge -t -A -c \
-        "SELECT coalesce(max(left(state,12)),'idle')" \
-        2>/dev/null | tr -d '\r' | head -c 40 || echo "?")
-      echo "[$(date '+%H:%M:%S')] restore 진행 중… ${n}s  pg_state=${act}"
+        "SELECT coalesce(
+           (SELECT left(coalesce(state,'?')||':'||coalesce(wait_event_type,''), 40)
+            FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND pid <> pg_backend_pid()
+              AND state IS NOT NULL
+            ORDER BY query_start NULLS LAST
+            LIMIT 1),
+           'idle');" 2>/dev/null | tr -d '\r' | head -c 48 || echo "ok")
+      echo "[$(date '+%H:%M:%S')] restore 진행 중… ${n}s  pg=${act}"
     done
   ) &
   hb_pid=$!
 
-  # -q: suppress SET/COPY chatter (prevents SSH/TTY flood)
-  # Do NOT pass --single-transaction (flag has no =off; and we want multi-statement bulk load)
+  # -q + discard stdout: dump contains SELECT setval() which still prints tables without full quiet
+  # stderr → errf only for real ERROR/FATAL
   set +e
   gunzip -c "$sql" | sudo docker exec -i "$cid" \
     psql -U citec -d citec_knowledge \
       -v ON_ERROR_STOP=1 \
       -q \
-    2>"$errf"
+      -o /dev/null \
+    2>>"$errf"
   local rc=$?
   set -e
 
@@ -595,7 +606,7 @@ SQL
 
   local err_n=0
   if [[ -s "$errf" ]]; then
-    err_n=$(grep -cE 'ERROR:|FATAL:' "$errf" 2>/dev/null || true)
+    err_n=$(grep -cE '^ERROR:|^FATAL:|ERROR:  ' "$errf" 2>/dev/null || true)
     err_n=${err_n//$'\n'/}
     err_n=${err_n:-0}
   fi
@@ -606,7 +617,7 @@ SQL
     exit 1
   fi
   echo "ok $(date -Iseconds)" > "$statusf"
-  log "psql 완료 (exit=0, ERROR=0)  stderr_log=$errf"
+  log "psql 완료 (exit=0, ERROR=0)"
 
   log "[3/4] 건수 검증"
   local counts docs chunks emb
