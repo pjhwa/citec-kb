@@ -42,13 +42,12 @@ async def main() -> int:
     check("kb_search", not sr.startswith("오류:"), sr)
     check("kb_search has results or empty msg", "검색 결과" in sr or "없습니다" in sr, sr)
 
-    if " — " in sr:
-        first = next(l for l in sr.splitlines() if l.startswith("- ["))
-        path = first.split(" — ", 1)[1].strip()
+    path_line = next((l for l in sr.splitlines() if l.strip().startswith("path:")), "")
+    if path_line:
+        path = path_line.split("path:", 1)[1].strip()
         doc = await server.kb_get_document(path)
         check("kb_get_document", not doc.startswith("오류:") and len(doc) > 10, doc[:100])
 
-    # wiki-qa aliases
     alias = await server.wiki_search("Redis", limit=2)
     check("wiki_search alias", not alias.startswith("오류:"), alias)
 
@@ -60,6 +59,21 @@ async def main() -> int:
 
     q = await server.kb_query("연도별 지원 건수", top_k=5)
     check("kb_query", not q.startswith("오류:") and "intent=" in q, q[:200])
+
+    lt = await server.kb_list_tickets(relative="올해", limit=5)
+    check("kb_list_tickets", not lt.startswith("오류:") and "tickets" in lt, lt[:200])
+
+    an = await server.kb_analytics(group_by="year", top_k=5)
+    check("kb_analytics", not an.startswith("오류:") and "analytics" in an, an[:200])
+
+    si = await server.kb_similar_incident("Redis timeout", top_k=2)
+    check("kb_similar_incident", not si.startswith("오류:"), si[:200])
+
+    ci = await server.kb_list_checkitems(q="OOM", area="Linux", limit=5)
+    check("kb_list_checkitems", not ci.startswith("오류:"), ci[:200])
+
+    help_t = await server.kb_tools_help()
+    check("kb_tools_help", "kb_list_tickets" in help_t, help_t[:100])
 
     # connection failure
     server.CITEC_KB_BASE_URL = "http://127.0.0.1:1"
