@@ -60,6 +60,18 @@ _STOPWORDS = frozenset(
         "진단",
         "점검항목",
         "점검",
+        # existence / interrogative shells (dilute AND FTS)
+        "있는가",
+        "있나요",
+        "있습니까",
+        "있나",
+        "있는지",
+        "유무",
+        "여부",
+        "존재",
+        "알려줘",
+        "뭐야",
+        "무엇",
     }
 )
 
@@ -86,6 +98,19 @@ _PHRASE_SYNONYMS: list[tuple[re.Pattern[str], list[str]]] = [
     (
         re.compile(r"체크\s*리스트|점검\s*항목|진단\s*항목|check\s*list", re.I),
         [],  # intent only — do not require these tokens in FTS AND
+    ),
+    # SCP topology / availability phrasing (hyphen vs space variants)
+    (
+        re.compile(r"Multi[\s\-]?AZ|멀티\s*AZ|\bMAZ\b", re.I),
+        ["Multi-AZ", "Multi AZ", "멀티AZ"],
+    ),
+    (
+        re.compile(r"SCP\s*v?\s*2|SCPv2|SCP\s*V2", re.I),
+        ["SCP v2", "SCPv2", "SCP V2"],
+    ),
+    (
+        re.compile(r"가용성\s*테스트|가용성\s*점검", re.I),
+        ["가용성 테스트", "가용성 점검"],
     ),
 ]
 
