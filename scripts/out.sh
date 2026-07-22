@@ -8,8 +8,8 @@
 #   docker         core 5 이미지: api worker nginx redis pgvector
 #   docker-mcp     citec-kb-mcp:latest
 #   docker-keycloak  (선택) Keycloak 26
-#   data           data/raw + seeds (+ 선택 --pg-dump)
-#   model          HF 임베딩 캐시 (MODELS_HOST_DIR)
+#   data           data/raw + seeds (+ 선택 --pg-dump / --pg-only)
+#   model          HF 임베딩 캐시 (이 레포 models/)
 #
 # 출력 (기본 ~/tmp):
 #   citec-kb-code-v<N>.tar.gz
@@ -19,8 +19,8 @@
 #   citec-kb-data-d<N>.tar.gz
 #   citec-kb-model.tar.gz
 #
-# 주의: 인덱스/임베딩은 Postgres 볼륨(pgdata). data 번들만으로는 검색 불가.
-#       최초 구축: in 후 ingest+embed 또는 --pg-dump 로 덤프 포함.
+# 주의: 검색 인덱스는 Postgres. 파일 data 만으로는 검색 불가.
+#       DB 복제: --pg-dump 또는 --pg-only → 운용 in.sh --restore-pg (스키마 초기화 후 복원).
 set -euo pipefail
 
 usage() {
@@ -54,14 +54,15 @@ USAGE
   --out DIR                       출력 (기본: ~/tmp)
 
 데이터:
-  --pg-dump                       data 에 PG 논리 덤프 포함 (검색 인덱스 포함 복제)
+  --pg-dump                       data 번들에 PG 논리 덤프 포함 (검색 인덱스 복제)
+  --pg-only                       data 번들 = PG 덤프 위주 (raw 제외, data 자동 포함)
   --no-raw                        raw 제외 (seeds 만)
 
 예시:
-  scripts/out.sh --code                          # 일상
+  scripts/out.sh --code                          # 일상 (마운트 코드만)
+  scripts/out.sh --code --pg-only                # 코드 + DB 스냅샷 (운영 인덱스 재동기화)
   scripts/out.sh --code --docker --docker-mcp    # requirements/Dockerfile 변경
-  scripts/out.sh --docker-mcp                    # MCP deps 변경
-  scripts/out.sh --data --pg-dump                # 코퍼스 + DB 스냅샷
+  scripts/out.sh --data --pg-dump                # raw + DB
   scripts/out.sh --model
   scripts/out.sh --regen                         # 최초 전체
 EOF
@@ -109,7 +110,7 @@ CODE_VER_ARG=""; DATA_VER_ARG=""
 REGEN=false
 FORCE_CODE=false; FORCE_DOCKER=false; FORCE_DOCKER_MCP=false
 FORCE_DATA=false; FORCE_MODEL=false
-PG_DUMP=false; INCLUDE_RAW=true
+PG_DUMP=false; INCLUDE_RAW=true; PG_ONLY=false
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -135,6 +136,7 @@ while [[ $# -gt 0 ]]; do
     --source) SOURCE_PATH="${2:-}"; shift 2 ;;
     --out) OUT_DIR="${2:-}"; shift 2 ;;
     --pg-dump) PG_DUMP=true; shift ;;
+    --pg-only) PG_ONLY=true; PG_DUMP=true; INCLUDE_RAW=false; DATA_STATE=yes; shift ;;
     --no-raw) INCLUDE_RAW=false; shift ;;
     -h|--help) usage; exit 0 ;;
     *) err "알 수 없는 옵션: $1"; usage; exit 1 ;;
@@ -143,6 +145,11 @@ done
 
 SOURCE_PATH="$(cd "$SOURCE_PATH" && pwd)"
 mkdir -p "$OUT_DIR"
+
+# --pg-dump alone implies data bundle
+if $PG_DUMP && [[ "$DATA_STATE" != "no" ]]; then
+  DATA_STATE=yes
+fi
 
 HAS_YES=false
 [[ "$SOURCE_STATE" == "yes" || "$DOCKER_STATE" == "yes" || "$DOCKER_MCP_STATE" == "yes" || \
@@ -165,6 +172,7 @@ DO_MODEL=false; [[ "$MODEL_STATE" == "yes" ]] && DO_MODEL=true
 if ! $DO_SOURCE && ! $DO_DOCKER && ! $DO_DOCKER_MCP && ! $DO_DOCKER_KC && ! $DO_DATA && ! $DO_MODEL; then
   err "생성할 번들이 없습니다."; exit 1
 fi
+$PG_ONLY && info "PG-only data 번들 (raw 제외, 검색 인덱스 덤프)"
 
 resolve_version() {
   local ver_file="$1" prefix="$2" ver_arg="${3:-}"
@@ -527,13 +535,16 @@ build_data_bundle() {
     cp -a "${SOURCE_PATH}/data/raw_manifest.json" "$staging/data/"
 
   if $PG_DUMP; then
-    log "Postgres 덤프 (인덱스·임베딩 포함 복제용)"
+    log "Postgres 덤프 (인덱스·임베딩 포함 복제용, --no-owner --no-acl)"
     mkdir -p "$staging/data/backups"
     local dump_file="$staging/data/backups/citec_knowledge-${TS}.sql.gz"
     local dumped=false
+    local pg_user="${POSTGRES_USER:-citec}"
+    local pg_db="${POSTGRES_DB:-citec_knowledge}"
+    # dump flags: portable restore after DROP SCHEMA on ops
     if docker compose -f "${SOURCE_PATH}/docker-compose.yml" ps --status running 2>/dev/null | grep -q postgres; then
       if (cd "$SOURCE_PATH" && docker compose exec -T postgres \
-            pg_dump -U "${POSTGRES_USER:-citec}" "${POSTGRES_DB:-citec_knowledge}") \
+            pg_dump --no-owner --no-acl -U "$pg_user" "$pg_db") \
           | gzip > "$dump_file"; then
         dumped=true
       fi
@@ -543,14 +554,39 @@ build_data_bundle() {
       if command -v pg_dump >/dev/null 2>&1; then
         PGPASSWORD="${POSTGRES_PASSWORD:-citec}" pg_dump \
           -h 127.0.0.1 -p "$host_port" \
-          -U "${POSTGRES_USER:-citec}" "${POSTGRES_DB:-citec_knowledge}" \
+          --no-owner --no-acl \
+          -U "$pg_user" "$pg_db" \
           | gzip > "$dump_file" && dumped=true || true
       fi
     fi
     if $dumped && [[ -s "$dump_file" ]]; then
       log "덤프: $(basename "$dump_file") ($(du -sh "$dump_file" | cut -f1))"
+      # side counts for ops verification
+      local counts=""
+      if (cd "$SOURCE_PATH" && docker compose exec -T postgres \
+            psql -U "$pg_user" -d "$pg_db" -t -A -c \
+            "SELECT 'documents='||count(*) FROM documents;
+             SELECT 'chunks='||count(*) FROM chunks WHERE is_active;
+             SELECT 'embeddings='||count(*) FROM embeddings;" 2>/dev/null); then
+        counts=$(cd "$SOURCE_PATH" && docker compose exec -T postgres \
+          psql -U "$pg_user" -d "$pg_db" -t -A -c \
+          "SELECT 'documents='||(SELECT count(*) FROM documents)||
+                  ' chunks='||(SELECT count(*) FROM chunks WHERE is_active)||
+                  ' embeddings='||(SELECT count(*) FROM embeddings);" 2>/dev/null | tr -d '\r' | head -1)
+      fi
+      {
+        echo "dump_file=$(basename "$dump_file")"
+        echo "created=$(date -Iseconds)"
+        echo "counts=${counts:-unknown}"
+        echo "restore=in.sh --data --restore-pg   # drops public schema first"
+      } > "$staging/data/backups/citec_knowledge-${TS}.meta.txt"
+      [[ -n "$counts" ]] && log "DB 건수: $counts"
     else
-      warn "PG 덤프 실패 — raw/seeds 만 포함. 스택 기동 후 재시도 또는 수동 pg_dump"
+      if $PG_ONLY || ! $INCLUDE_RAW; then
+        err "PG 덤프 실패 — postgres 기동 여부 확인 후 재시도"
+        exit 1
+      fi
+      warn "PG 덤프 실패 — raw/seeds 만 포함"
       rm -f "$dump_file"
     fi
   fi
@@ -562,11 +598,11 @@ build_data_bundle() {
     echo "raw_files: $(find "$staging/data/raw" -type f 2>/dev/null | wc -l)"
     echo "raw_size: $(du -sh "$staging/data/raw" 2>/dev/null | cut -f1)"
     echo "pg_dump: $PG_DUMP"
+    echo "pg_only: $PG_ONLY"
     echo ""
-    echo "NOTE: 파일 코퍼스만으로는 검색 불가. 벡터/FTS 는 Postgres(pgdata)."
-    echo "  복원: gunzip -c data/backups/*.sql.gz | docker compose exec -T postgres psql -U citec citec_knowledge"
-    echo "  또는: docker compose exec api python -m app.ingest.cli --raw-dir /data/raw"
-    echo "       docker compose exec api python -m app.embed.cli"
+    echo "NOTE: 파일 코퍼스만으로는 검색 불가. 벡터/FTS 는 Postgres."
+    echo "  권장 복원: scripts/in.sh --data --restore-pg -y"
+    echo "  (api 기동 전 schema drop → dump → 전체 up, 건수 검증)"
   } > "$staging/data/manifest.txt"
 
   (cd "$staging" && tar czf "$output_tgz" data/)

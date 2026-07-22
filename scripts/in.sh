@@ -33,7 +33,8 @@ USAGE
   --no-restart          컨테이너 재시작 생략
   --yes, -y             확인 생략
   --dry-run, -n         계획만
-  --restore-pg          data 번들 안 PG 덤프가 있으면 자동 복원 시도
+  --restore-pg          PG 덤프 깨끗이 복원 (public 스키마 DROP 후,
+                        api 기동 전 복원 · 건수 검증). 최초/인덱스 동기화 시 필수
 
 버전:
   --code-ver VER
@@ -49,7 +50,8 @@ USAGE
 예시:
   in.sh -y
   in.sh --code -y
-  in.sh --code --docker --docker-mcp -y
+  # 코드 + DB 인덱스 재동기화 (운영 깨진 restore 복구)
+  in.sh --code --data --restore-pg -y
   in.sh --data --restore-pg -y
   in.sh --model -y
 EOF
@@ -259,42 +261,71 @@ stop_all_containers() {
     (cd "${PROJECT_DIR}" && sudo docker compose down --remove-orphans) || true
   fi
 }
+ensure_env_file() {
+  if [[ ! -f "${PROJECT_DIR}/.env" ]]; then
+    if [[ -f "${PROJECT_DIR}/.env.example" ]]; then
+      warn ".env 없음 — .env.example 복사 (키 값은 직접 설정 필요)"
+      cp "${PROJECT_DIR}/.env.example" "${PROJECT_DIR}/.env"
+      chown "$OWNER" "${PROJECT_DIR}/.env" 2>/dev/null || true
+    else
+      err ".env 없음: ${PROJECT_DIR}/.env"; exit 1
+    fi
+  fi
+  if ! grep -q '^MODELS_HOST_DIR=' "${PROJECT_DIR}/.env" 2>/dev/null; then
+    echo "MODELS_HOST_DIR=${PROJECT_DIR}/models" >> "${PROJECT_DIR}/.env"
+  fi
+  if ! grep -q '^TRANSFORMERS_OFFLINE=' "${PROJECT_DIR}/.env" 2>/dev/null; then
+    echo "TRANSFORMERS_OFFLINE=1" >> "${PROJECT_DIR}/.env"
+  fi
+  if ! grep -q '^HF_HUB_OFFLINE=' "${PROJECT_DIR}/.env" 2>/dev/null; then
+    echo "HF_HUB_OFFLINE=1" >> "${PROJECT_DIR}/.env"
+  fi
+}
+
+compose_profile_args() {
+  local profile_args=()
+  if $DEPLOY_DOCKER_KC && [[ -f "${PROJECT_DIR}/deploy/keycloak/realm-citec.json" ]]; then
+    profile_args+=(--profile keycloak)
+  fi
+  printf '%s\n' "${profile_args[@]}"
+}
+
 start_all_containers() {
   $NO_RESTART && { warn "--no-restart — 시작 생략"; return; }
-  if $CONTAINERS_WERE_RUNNING || $DEPLOY_SOURCE || $DEPLOY_DOCKER || $DEPLOY_DOCKER_MCP || $DEPLOY_DOCKER_KC || $DEPLOY_MODEL; then
-    if [[ ! -f "${PROJECT_DIR}/.env" ]]; then
-      if [[ -f "${PROJECT_DIR}/.env.example" ]]; then
-        warn ".env 없음 — .env.example 복사 (키 값은 직접 설정 필요)"
-        cp "${PROJECT_DIR}/.env.example" "${PROJECT_DIR}/.env"
-        chown "$OWNER" "${PROJECT_DIR}/.env" 2>/dev/null || true
-      else
-        err ".env 없음: ${PROJECT_DIR}/.env"; exit 1
-      fi
-    fi
-    # ensure offline + models path for air-gap
-    if ! grep -q '^MODELS_HOST_DIR=' "${PROJECT_DIR}/.env" 2>/dev/null; then
-      echo "MODELS_HOST_DIR=${PROJECT_DIR}/models" >> "${PROJECT_DIR}/.env"
-    fi
-    if ! grep -q '^TRANSFORMERS_OFFLINE=' "${PROJECT_DIR}/.env" 2>/dev/null; then
-      echo "TRANSFORMERS_OFFLINE=1" >> "${PROJECT_DIR}/.env"
-    fi
-    if ! grep -q '^HF_HUB_OFFLINE=' "${PROJECT_DIR}/.env" 2>/dev/null; then
-      echo "HF_HUB_OFFLINE=1" >> "${PROJECT_DIR}/.env"
-    fi
+  local force_start="${1:-false}"
+  if $CONTAINERS_WERE_RUNNING || $DEPLOY_SOURCE || $DEPLOY_DOCKER || $DEPLOY_DOCKER_MCP || \
+     $DEPLOY_DOCKER_KC || $DEPLOY_MODEL || $DEPLOY_DATA || [[ "$force_start" == "true" ]]; then
+    ensure_env_file
     cd "${PROJECT_DIR}"
     local profile_args=()
-    if $DEPLOY_DOCKER_KC || docker image inspect quay.io/keycloak/keycloak:26.0 &>/dev/null; then
-      # only auto profile if realm file present and user had keycloak deploy
-      if $DEPLOY_DOCKER_KC && [[ -f deploy/keycloak/realm-citec.json ]]; then
-        profile_args+=(--profile keycloak)
-      fi
-    fi
+    mapfile -t profile_args < <(compose_profile_args)
     log "docker compose up -d ${profile_args[*]:-}"
-    sudo docker compose "${profile_args[@]}" up -d
+    if [[ ${#profile_args[@]} -gt 0 ]]; then
+      sudo docker compose "${profile_args[@]}" up -d
+    else
+      sudo docker compose up -d
+    fi
     sudo docker compose ps 2>/dev/null || true
   else
-    warn "원래 중지 상태 — 시작 생략 (data-only 등)"
+    warn "원래 중지 상태 — 시작 생략"
   fi
+}
+
+start_postgres_only() {
+  ensure_env_file
+  cd "${PROJECT_DIR}"
+  log "postgres (+ redis) 만 기동 — api 기동 전 DB 복원용"
+  sudo docker compose up -d postgres redis
+  local i
+  for i in $(seq 1 60); do
+    if sudo docker compose exec -T postgres pg_isready -U citec &>/dev/null; then
+      log "postgres ready"
+      return 0
+    fi
+    sleep 2
+  done
+  err "postgres 기동 타임아웃"
+  exit 1
 }
 
 stop_all_containers
@@ -414,16 +445,15 @@ deploy_data() {
   latest_sql=$(ls -1t "${PROJECT_DIR}/data/backups/"*.sql.gz 2>/dev/null | head -1 || true)
   if [[ -n "$latest_sql" ]]; then
     if $RESTORE_PG; then
-      log "PG 복원 예약: $(basename "$latest_sql") (스택 기동 후)"
+      log "PG 복원 예약: $(basename "$latest_sql") (api 기동 전 · schema drop)"
       echo "$latest_sql" > "${PROJECT_DIR}/data/backups/.pending_restore"
     else
       info "PG 덤프 발견: $(basename "$latest_sql")"
-      info "  자동 복원: in.sh --data --restore-pg -y"
-      info "  수동: gunzip -c data/backups/...sql.gz | docker compose exec -T postgres psql -U citec citec_knowledge"
-      info "  또는 재인덱스: docker compose exec api python -m app.ingest.cli --raw-dir /data/raw"
+      info "  깨끗이 복원: in.sh --data --restore-pg -y"
+      info "  (alembic 스키마 위에 얹지 말고 --restore-pg 사용)"
     fi
   else
-    info "파일 코퍼스만 배포됨 — 검색 인덱스(Postgres)는 별도 ingest/embed 또는 dump 필요"
+    info "파일 코퍼스만 배포됨 — 검색 인덱스는 --pg-only 덤프 또는 ingest/embed 필요"
   fi
 
   mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
@@ -472,28 +502,84 @@ deploy_model() {
   log "✅ model ${model_name}"
 }
 
-maybe_restore_pg() {
+find_pg_dump() {
+  # prefer pending, else newest sql.gz under data/backups
   local pending="${PROJECT_DIR}/data/backups/.pending_restore"
-  [[ -f "$pending" ]] || return 0
-  local sql
-  sql=$(cat "$pending")
-  [[ -f "$sql" ]] || { rm -f "$pending"; return 0; }
-  banner "Postgres 복원  $(basename "$sql")"
-  # wait for postgres healthy
-  local i
-  for i in $(seq 1 30); do
-    if (cd "$PROJECT_DIR" && sudo docker compose exec -T postgres pg_isready -U citec) &>/dev/null; then
-      break
-    fi
-    sleep 2
-  done
-  log "restore..."
-  if gunzip -c "$sql" | (cd "$PROJECT_DIR" && sudo docker compose exec -T postgres psql -U citec citec_knowledge); then
-    log "✅ PG 복원 완료"
-    rm -f "$pending"
-  else
-    err "PG 복원 실패 — 수동 확인"
+  local sql=""
+  if [[ -f "$pending" ]]; then
+    sql=$(cat "$pending" | tr -d '\r\n')
+    [[ -f "$sql" ]] && { echo "$sql"; return; }
   fi
+  ls -1t "${PROJECT_DIR}/data/backups/"*.sql.gz 2>/dev/null | head -1 || true
+}
+
+restore_pg_clean() {
+  # Clean restore: postgres only → DROP SCHEMA → psql dump → verify counts.
+  # Must run BEFORE api (alembic) starts, otherwise CREATE/FK errors.
+  local sql="$1"
+  [[ -f "$sql" ]] || { err "덤프 없음: $sql"; exit 1; }
+
+  banner "Postgres 깨끗이 복원  $(basename "$sql")"
+  info "순서: postgres only → DROP SCHEMA public → restore → 건수 검증 → 전체 up"
+  warn "기존 DB 데이터는 삭제됩니다"
+
+  start_postgres_only
+  cd "${PROJECT_DIR}"
+
+  log "[1/4] public 스키마 초기화"
+  sudo docker compose exec -T postgres psql -U citec -d citec_knowledge -v ON_ERROR_STOP=1 <<'SQL'
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO citec;
+GRANT ALL ON SCHEMA public TO public;
+SQL
+
+  log "[2/4] dump 적용 (ON_ERROR_STOP)"
+  local logf
+  logf=$(mktemp)
+  set +e
+  gunzip -c "$sql" | sudo docker compose exec -T postgres \
+    psql -U citec -d citec_knowledge -v ON_ERROR_STOP=1 >"$logf" 2>&1
+  local rc=$?
+  set -e
+  local err_n=0
+  err_n=$(grep -c '^ERROR:' "$logf" 2>/dev/null || true)
+  err_n=${err_n//$'\n'/}
+  err_n=${err_n:-0}
+  if [[ "$rc" -ne 0 ]] || [[ "$err_n" -gt 0 ]]; then
+    tail -40 "$logf" || true
+    err "PG 복원 실패 (exit=$rc ERROR줄=${err_n}). 로그: $logf"
+    exit 1
+  fi
+  rm -f "$logf"
+  log "psql 완료 (ERROR 0)"
+
+  log "[3/4] 건수 검증"
+  local counts docs chunks emb
+  counts=$(sudo docker compose exec -T postgres psql -U citec -d citec_knowledge -t -A -c \
+    "SELECT (SELECT count(*) FROM documents)||' '||
+            (SELECT count(*) FROM chunks WHERE is_active)||' '||
+            (SELECT count(*) FROM embeddings);" 2>/dev/null | tr -d '\r' | head -1)
+  docs=$(echo "$counts" | awk '{print $1}')
+  chunks=$(echo "$counts" | awk '{print $2}')
+  emb=$(echo "$counts" | awk '{print $3}')
+  docs=${docs:-0}; chunks=${chunks:-0}; emb=${emb:-0}
+  log "documents=$docs  chunks=$chunks  embeddings=$emb"
+  if [[ "$docs" -lt 100 ]]; then
+    err "documents=$docs — 복원이 비정상적으로 작습니다"
+    exit 1
+  fi
+  if [[ "$chunks" -lt 100 ]] || [[ "$emb" -lt 100 ]]; then
+    err "chunks/embeddings 부족 (chunks=$chunks emb=$emb) — 검색 불가 상태"
+    exit 1
+  fi
+  log "✅ PG 복원·검증 완료"
+
+  rm -f "${PROJECT_DIR}/data/backups/.pending_restore"
+  echo "$docs $chunks $emb" > "${PROJECT_DIR}/data/backups/.last_restore_counts"
+
+  log "[4/4] 전체 스택 기동"
+  start_all_containers true
 }
 
 $DEPLOY_SOURCE && deploy_source
@@ -503,8 +589,23 @@ $DEPLOY_DOCKER_KC && deploy_docker_keycloak
 $DEPLOY_DATA && deploy_data
 $DEPLOY_MODEL && deploy_model
 
-start_all_containers
-maybe_restore_pg
+# PG restore: if --restore-pg, find dump (from this deploy or already on disk)
+DO_CLEAN_RESTORE=false
+RESTORE_SQL=""
+if $RESTORE_PG; then
+  RESTORE_SQL=$(find_pg_dump)
+  if [[ -z "$RESTORE_SQL" || ! -f "$RESTORE_SQL" ]]; then
+    err "--restore-pg 인데 덤프(*.sql.gz) 없음. out.sh --pg-only 후 data 번들을 먼저 두세요."
+    exit 1
+  fi
+  DO_CLEAN_RESTORE=true
+fi
+
+if $DO_CLEAN_RESTORE; then
+  restore_pg_clean "$RESTORE_SQL"
+else
+  start_all_containers
+fi
 
 echo ""
 echo "════════════════════════════════════════════════"
@@ -515,6 +616,7 @@ $DEPLOY_DOCKER_MCP && echo "  docker-mcp: $DOCKER_MCP_AVAIL"
 $DEPLOY_DOCKER_KC && echo "  keycloak:   $DOCKER_KC_AVAIL"
 $DEPLOY_DATA && echo "  data:       $DATA_AVAIL"
 $DEPLOY_MODEL && echo "  model:      $MODEL_AVAIL"
+$DO_CLEAN_RESTORE && echo "  pg-restore: $(basename "$RESTORE_SQL") (clean)"
 echo "  이력: cat ~/bin/.citec_kb_*_deployed"
 echo "  웹:   http://localhost:8572"
 echo "  API:  http://localhost:8573/v1/health"

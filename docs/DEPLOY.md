@@ -58,15 +58,33 @@ citec-kb 는 **multi-service + Postgres(pgvector)** 이므로, wiki-qa 의 `db/v
 
 ```bash
 # A) 개발 DB 복제 (권장 — 검색 즉시 가능)
-scripts/out.sh --data --pg-dump
-# 운용:
-scripts/in.sh --data --restore-pg -y
+scripts/out.sh --data --pg-dump          # raw + dump
+# 또는 인덱스만 (raw 이미 운영에 있을 때):
+scripts/out.sh --code --pg-only
+
+# 운용 — 반드시 --restore-pg (스키마 DROP 후 api 기동 전 복원)
+scripts/in.sh --code --data --restore-pg -y
 
 # B) 파일만 배포 후 재인덱싱
 scripts/out.sh --data
 scripts/in.sh --data -y
 docker compose exec api python -m app.ingest.cli --raw-dir /data/raw
 docker compose exec api python -m app.embed.cli
+```
+
+### 운영 깨진 PG restore 복구 (code + dump 만)
+
+원인: api(alembic) 기동 **후** dump를 얹으면 CREATE/FK ERROR 폭주.
+
+```bash
+# 개발
+scripts/out.sh --code --pg-only
+scp ~/tmp/citec-kb-code-v*.tar.gz ~/tmp/citec-kb-data-d*.tar.gz user@prod:~/
+
+# 운영
+cd ~/citec-kb
+scripts/in.sh --code --data --restore-pg -y
+# 내부: postgres only → DROP SCHEMA public → restore → 건수 검증 → 전체 up
 ```
 
 ---
