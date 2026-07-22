@@ -83,9 +83,18 @@ scp ~/tmp/citec-kb-code-v*.tar.gz ~/tmp/citec-kb-data-d*.tar.gz user@prod:~/
 
 # 운영
 cd ~/citec-kb
+# 권장: SSH 끊김 대비 screen/tmux
+screen -S kb-restore   # 또는 tmux
 scripts/in.sh --code --data --restore-pg -y
-# 내부: postgres only → DROP SCHEMA public → restore → 건수 검증 → 전체 up
+# 내부: postgres only → DROP SCHEMA → quiet restore(수 분~수십 분) → 건수 검증 → 전체 up
 ```
+
+**대용량 덤프(~200MB gzip / embeddings 5만+) 복원은 10~40분 걸릴 수 있습니다.**  
+터미널이 조용해도 정상이며, 30초마다 heartbeat 가 출력됩니다.  
+다른 세션에서: `sudo docker logs -f citec-kb-postgres-1` (checkpoint / lock 메시지).
+
+복원 중 SSH가 끊기면 프로세스만 죽을 수 있음 → `screen`/`tmux` 사용 권장.  
+중간 실패 시 스키마가 반쯤만 있을 수 있으므로 **같은 명령으로 재실행**하면 됩니다.
 
 ---
 

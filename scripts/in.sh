@@ -258,7 +258,17 @@ stop_all_containers() {
   if sudo docker compose -f "${PROJECT_DIR}/docker-compose.yml" ps 2>/dev/null | grep -qE "Up|running"; then
     CONTAINERS_WERE_RUNNING=true
     log "컨테이너 중지"
-    (cd "${PROJECT_DIR}" && sudo docker compose down --remove-orphans) || true
+    # network Removing 단계가 가끔 무한 대기 → timeout + stop 폴백
+    (
+      cd "${PROJECT_DIR}"
+      if command -v timeout >/dev/null 2>&1; then
+        timeout 90 sudo docker compose down --remove-orphans \
+          || timeout 30 sudo docker compose stop \
+          || true
+      else
+        sudo docker compose down --remove-orphans || sudo docker compose stop || true
+      fi
+    ) || true
   fi
 }
 ensure_env_file() {
@@ -513,50 +523,101 @@ find_pg_dump() {
   ls -1t "${PROJECT_DIR}/data/backups/"*.sql.gz 2>/dev/null | head -1 || true
 }
 
+pg_cid() {
+  (cd "${PROJECT_DIR}" && sudo docker compose ps -q postgres | head -1)
+}
+
 restore_pg_clean() {
   # Clean restore: postgres only → DROP SCHEMA → psql dump → verify counts.
   # Must run BEFORE api (alembic) starts, otherwise CREATE/FK errors.
+  #
+  # Large dumps (embeddings + HNSW, ~200MB+ gzip) take many minutes.
+  # Quiet mode + docker exec -i avoids flooding the SSH TTY (which looks like a hang).
   local sql="$1"
   [[ -f "$sql" ]] || { err "덤프 없음: $sql"; exit 1; }
 
-  banner "Postgres 깨끗이 복원  $(basename "$sql")"
-  info "순서: postgres only → DROP SCHEMA public → restore → 건수 검증 → 전체 up"
+  local sz
+  sz=$(du -sh "$sql" 2>/dev/null | cut -f1 || echo "?")
+  banner "Postgres 깨끗이 복원  $(basename "$sql") (${sz})"
+  info "순서: postgres only → DROP SCHEMA → quiet restore → 건수 검증 → 전체 up"
   warn "기존 DB 데이터는 삭제됩니다"
+  warn "대용량 덤프는 10~40분 걸릴 수 있습니다. 출력을 최소화합니다 — 멈춰 있어도 정상일 수 있음."
 
   start_postgres_only
   cd "${PROJECT_DIR}"
 
+  local cid
+  cid=$(pg_cid)
+  [[ -n "$cid" ]] || { err "postgres 컨테이너 ID 없음"; exit 1; }
+
   log "[1/4] public 스키마 초기화"
-  sudo docker compose exec -T postgres psql -U citec -d citec_knowledge -v ON_ERROR_STOP=1 <<'SQL'
+  sudo docker exec -i "$cid" psql -U citec -d citec_knowledge -v ON_ERROR_STOP=1 -q <<'SQL'
 DROP SCHEMA IF EXISTS public CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO citec;
 GRANT ALL ON SCHEMA public TO public;
+-- speed up bulk load / index build during restore
+SET maintenance_work_mem = '512MB';
 SQL
 
-  log "[2/4] dump 적용 (ON_ERROR_STOP)"
-  local logf
-  logf=$(mktemp)
+  log "[2/4] dump 적용 (quiet · ON_ERROR_STOP) — 수 분~수십 분 소요 가능"
+  info "진행 확인(다른 터미널): sudo docker logs -f citec-kb-postgres-1"
+  info "  또는: sudo docker exec citec-kb-postgres-1 psql -U citec -d citec_knowledge -c 'SELECT count(*) FROM pg_stat_activity;'"
+
+  local errf statusf
+  errf="${PROJECT_DIR}/data/backups/restore-errors-$(date +%Y%m%d_%H%M%S).log"
+  statusf="${PROJECT_DIR}/data/backups/.restore_status"
+  mkdir -p "${PROJECT_DIR}/data/backups"
+  echo "running $(date -Iseconds) dump=$(basename "$sql")" > "$statusf"
+
+  # Heartbeat so SSH session does not look frozen
+  local hb_pid=""
+  (
+    n=0
+    while true; do
+      sleep 30
+      n=$((n + 30))
+      act=$(sudo docker exec "$cid" psql -U citec -d citec_knowledge -t -A -c \
+        "SELECT coalesce(max(left(state,12)),'idle')" \
+        2>/dev/null | tr -d '\r' | head -c 40 || echo "?")
+      echo "[$(date '+%H:%M:%S')] restore 진행 중… ${n}s  pg_state=${act}"
+    done
+  ) &
+  hb_pid=$!
+
+  # -q: suppress SET/COPY chatter (prevents SSH/TTY flood)
+  # stderr only to errf; stdout discarded
   set +e
-  gunzip -c "$sql" | sudo docker compose exec -T postgres \
-    psql -U citec -d citec_knowledge -v ON_ERROR_STOP=1 >"$logf" 2>&1
+  gunzip -c "$sql" | sudo docker exec -i "$cid" \
+    psql -U citec -d citec_knowledge \
+      -v ON_ERROR_STOP=1 \
+      -q \
+      --single-transaction=off \
+    2>"$errf"
   local rc=$?
   set -e
+
+  kill "$hb_pid" 2>/dev/null || true
+  wait "$hb_pid" 2>/dev/null || true
+
   local err_n=0
-  err_n=$(grep -c '^ERROR:' "$logf" 2>/dev/null || true)
-  err_n=${err_n//$'\n'/}
-  err_n=${err_n:-0}
+  if [[ -s "$errf" ]]; then
+    err_n=$(grep -cE 'ERROR:|FATAL:' "$errf" 2>/dev/null || true)
+    err_n=${err_n//$'\n'/}
+    err_n=${err_n:-0}
+  fi
   if [[ "$rc" -ne 0 ]] || [[ "$err_n" -gt 0 ]]; then
-    tail -40 "$logf" || true
-    err "PG 복원 실패 (exit=$rc ERROR줄=${err_n}). 로그: $logf"
+    [[ -s "$errf" ]] && tail -50 "$errf" || true
+    echo "failed $(date -Iseconds) rc=$rc errors=$err_n" > "$statusf"
+    err "PG 복원 실패 (exit=$rc ERROR=${err_n}). 로그: $errf"
     exit 1
   fi
-  rm -f "$logf"
-  log "psql 완료 (ERROR 0)"
+  echo "ok $(date -Iseconds)" > "$statusf"
+  log "psql 완료 (exit=0, ERROR=0)  stderr_log=$errf"
 
   log "[3/4] 건수 검증"
   local counts docs chunks emb
-  counts=$(sudo docker compose exec -T postgres psql -U citec -d citec_knowledge -t -A -c \
+  counts=$(sudo docker exec "$cid" psql -U citec -d citec_knowledge -t -A -c \
     "SELECT (SELECT count(*) FROM documents)||' '||
             (SELECT count(*) FROM chunks WHERE is_active)||' '||
             (SELECT count(*) FROM embeddings);" 2>/dev/null | tr -d '\r' | head -1)
