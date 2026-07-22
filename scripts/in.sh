@@ -261,6 +261,7 @@ stop_all_containers() {
     # network Removing 단계가 가끔 무한 대기 → timeout + stop 폴백
     (
       cd "${PROJECT_DIR}"
+      export COMPOSE_PROGRESS="${COMPOSE_PROGRESS:-plain}"
       if command -v timeout >/dev/null 2>&1; then
         timeout 90 sudo docker compose down --remove-orphans \
           || timeout 30 sudo docker compose stop \
@@ -292,14 +293,6 @@ ensure_env_file() {
   fi
 }
 
-compose_profile_args() {
-  local profile_args=()
-  if $DEPLOY_DOCKER_KC && [[ -f "${PROJECT_DIR}/deploy/keycloak/realm-citec.json" ]]; then
-    profile_args+=(--profile keycloak)
-  fi
-  printf '%s\n' "${profile_args[@]}"
-}
-
 start_all_containers() {
   $NO_RESTART && { warn "--no-restart — 시작 생략"; return; }
   local force_start="${1:-false}"
@@ -307,12 +300,13 @@ start_all_containers() {
      $DEPLOY_DOCKER_KC || $DEPLOY_MODEL || $DEPLOY_DATA || [[ "$force_start" == "true" ]]; then
     ensure_env_file
     cd "${PROJECT_DIR}"
-    local profile_args=()
-    mapfile -t profile_args < <(compose_profile_args)
-    log "docker compose up -d ${profile_args[*]:-}"
-    if [[ ${#profile_args[@]} -gt 0 ]]; then
-      sudo docker compose "${profile_args[@]}" up -d
+    # Avoid empty-array mapfile → docker compose "" (unknown command "compose ")
+    export COMPOSE_PROGRESS="${COMPOSE_PROGRESS:-plain}"
+    if $DEPLOY_DOCKER_KC && [[ -f "${PROJECT_DIR}/deploy/keycloak/realm-citec.json" ]]; then
+      log "docker compose --profile keycloak up -d"
+      sudo docker compose --profile keycloak up -d
     else
+      log "docker compose up -d"
       sudo docker compose up -d
     fi
     sudo docker compose ps 2>/dev/null || true
@@ -586,13 +580,12 @@ SQL
   hb_pid=$!
 
   # -q: suppress SET/COPY chatter (prevents SSH/TTY flood)
-  # stderr only to errf; stdout discarded
+  # Do NOT pass --single-transaction (flag has no =off; and we want multi-statement bulk load)
   set +e
   gunzip -c "$sql" | sudo docker exec -i "$cid" \
     psql -U citec -d citec_knowledge \
       -v ON_ERROR_STOP=1 \
       -q \
-      --single-transaction=off \
     2>"$errf"
   local rc=$?
   set -e
