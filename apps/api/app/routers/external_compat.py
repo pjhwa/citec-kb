@@ -915,6 +915,12 @@ def v1_ext_catalog() -> dict[str, Any]:
             "GET /api/synthesis/{slug}": "insight detail",
             "POST /api/feedback": "rating/verdict feedback",
             "GET /api/recent-questions": "recent audited queries",
+            "POST /api/upload": (
+                "single-file upload (support_history/tech_repo/tuning_ai + aliases) "
+                "→ background ingest, returns job_id"
+            ),
+            "GET /api/ingest-status/{job_id}": "SSE ingest progress for /api/upload job",
+            "POST /api/upload-multiple": "multi-file upload, field 'files', shared source_type",
         },
         "native_v1": {
             "POST /v1/search": "hybrid search JSON + document access fields",
