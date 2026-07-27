@@ -232,6 +232,34 @@ def api_upload(
     return _enqueue_upload(background, file, source_type)
 
 
+@router.get("/api/ingest-status/{job_id}")
+def api_ingest_status(job_id: str) -> StreamingResponse:
+    """wiki-qa `GET /api/ingest-status/{job_id}` compat — SSE progress."""
+    with session_scope() as session:
+        job = session.get(IngestJob, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="job를 찾을 수 없습니다.")
+
+    def event_gen():
+        for _ in range(120):
+            with session_scope() as session:
+                job = session.get(IngestJob, job_id)
+                status = job.status if job else "failed"
+                error = job.error if job else "job not found"
+                stats = dict(job.stats or {}) if job else {}
+            if status == "success":
+                yield _sse({"type": "done", "status": "done", **stats})
+                return
+            if status == "failed":
+                yield _sse({"type": "error", "text": error or "ingest failed", "error": error})
+                return
+            yield _sse({"type": "log", "text": f"📥 ingest 진행 중… ({status})"})
+            time.sleep(1)
+        yield _sse({"type": "log", "text": "⏳ 상태 확인 시간 초과 — 다시 폴링하세요."})
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
+
+
 def _map_section(section: str | None) -> Optional[str]:
     if not section:
         return None
