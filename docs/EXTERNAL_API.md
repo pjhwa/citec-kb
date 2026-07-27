@@ -111,11 +111,16 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 | `tech_repo`, `confluence_docs`, `confluence`, `techrepo`, `tech-repo` | `tech_repo` |
 | `tuning_ai`, `sql_tuning`, `sql`, `issue_analysis`, `dbms_tuning`, `dbms-tuning`, `tuning-ai` | `tuning_ai` |
 
-허용 확장자: `.md`, `.txt`.
+허용 확장자: `.md`, `.txt` (전체 재구축 스캔도 두 확장자 모두 포함). 최대 파일 크기: **20MB**
+(초과 시 `413 Request Entity Too Large`).
 
 > **범위 제외 (이번 라운드)**: `vendor_docs`(`vendor`)와 `checkitems`(`.xls`/`.xlsx`)는 citec-kb에
 > 대응 파서가 아직 없어 `501 Not Implemented`로 거부됩니다. 그 외 알 수 없는 `source_type` 값은
 > 기존과 동일하게 `400 Bad Request`.
+
+반영 시 문서 upsert(FTS) 직후 **임베딩까지 자동 생성**되어 시맨틱 검색에도 즉시 반영됩니다
+(임베딩 실패는 job을 `failed`로 만들지 않고 `done` 이벤트의 `embed.error`로만 표시 — 문서 자체는
+정상 반영됨).
 
 **요청 예시**
 
@@ -144,7 +149,7 @@ curl -X POST http://<host>/api/upload \
 ```bash
 curl -N http://<host>/api/ingest-status/a1b2c3d4-...
 # data: {"type":"log","text":"📥 ingest 진행 중… (running)"}
-# data: {"type":"done","status":"done","document_id":"...","action":"inserted"}
+# data: {"type":"done","status":"done","document_id":"...","action":"inserted","embed":{"embedded":1,"errors":0,...}}
 ```
 
 ### Q&A (SSE) — MCP `wiki_ask`
