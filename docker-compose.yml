@@ -70,7 +70,8 @@ services:
       # Migrations also mount so schema changes ride with code bundle
       - ./apps/api/alembic:/app/alembic:ro
       - ./apps/api/alembic.ini:/app/alembic.ini:ro
-      - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
+      # RW: POST /api/upload writes new files under raw_dir/<source_type>/
+      - ${RAW_HOST_DIR:-./data/raw}:/data/raw
       # Project-local HF cache only (./models). Never share paths with other repos.
       - ${MODELS_HOST_DIR:-./models}:/models:ro
     depends_on:
