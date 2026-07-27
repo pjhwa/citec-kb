@@ -49,6 +49,30 @@ def _clip(s: str | None, n: int) -> str:
     return t[: n - 1] + "…"
 
 
+def parse_support_history_file(path: Path) -> DocumentDraft:
+    raw = _read(path)
+    title_m = re.search(r"^#\s+(.+)$", raw, re.M)
+    title = title_m.group(1).strip() if title_m else path.stem
+    meta: dict[str, Any] = {"filename": path.name}
+    for m in _META_LINE.finditer(raw):
+        meta[m.group(1).strip()] = m.group(2).strip()
+    issue_key = meta.get("Issue Key") or path.stem
+    body = clean_md(raw)
+    grade = "A" if meta.get("Status") in ("닫힘", "Resolved", "Done") else "B"
+    work = meta.get("Component")
+    return DocumentDraft(
+        source_type="support_history",
+        external_id=str(issue_key),
+        title=_clip(title, 1000),
+        body_md=body,
+        metadata=meta,
+        source_uri=f"file://support_history/{path.name}",
+        evidence_grade=grade,
+        work_type=work,
+        environment="csp" if re.search(r"SCP|클라우드", title + body[:2000], re.I) else None,
+    ).finalize()
+
+
 def iter_support_history(root: Path) -> Iterator[DocumentDraft]:
     d = root / "support_history"
     if not d.is_dir():
@@ -56,27 +80,49 @@ def iter_support_history(root: Path) -> Iterator[DocumentDraft]:
     for path in sorted(d.glob("*.md")):
         if path.name.startswith("."):
             continue
-        raw = _read(path)
-        title_m = re.search(r"^#\s+(.+)$", raw, re.M)
-        title = title_m.group(1).strip() if title_m else path.stem
-        meta: dict[str, Any] = {"filename": path.name}
-        for m in _META_LINE.finditer(raw):
-            meta[m.group(1).strip()] = m.group(2).strip()
-        issue_key = meta.get("Issue Key") or path.stem
-        body = clean_md(raw)
-        grade = "A" if meta.get("Status") in ("닫힘", "Resolved", "Done") else "B"
-        work = meta.get("Component")
-        yield DocumentDraft(
-            source_type="support_history",
-            external_id=str(issue_key),
-            title=_clip(title, 1000),
-            body_md=body,
-            metadata=meta,
-            source_uri=f"file://support_history/{path.name}",
-            evidence_grade=grade,
-            work_type=work,
-            environment="csp" if re.search(r"SCP|클라우드", title + body[:2000], re.I) else None,
-        ).finalize()
+        yield parse_support_history_file(path)
+
+
+def parse_tech_repo_file(path: Path) -> DocumentDraft:
+    raw = _read(path)
+    meta: dict[str, Any] = {"filename": path.name}
+    body = raw
+    fm = _FRONT_YAML.match(raw)
+    if fm:
+        for line in fm.group(1).splitlines():
+            if ":" in line or "：" in line:
+                # "구분 : 컨플루언스"
+                parts = re.split(r"[:：]", line, maxsplit=1)
+                if len(parts) == 2:
+                    meta[parts[0].strip()] = parts[1].strip()
+        body = raw[fm.end() :]
+    page_id = meta.get("Page ID") or path.stem.replace("confluence_", "")
+    title = meta.get("제목") or ""
+    if not title or len(title) < 2:
+        h = re.search(r"^#{1,3}\s+(.+)$", body, re.M)
+        title = h.group(1).strip() if h else path.stem
+    # Never use huge log lines as title
+    if len(title) > 200:
+        title = title[:200]
+    directory = meta.get("디렉토리") or ""
+    path_parts = [p.strip() for p in directory.split(">") if p.strip()]
+    path_l2 = path_parts[2] if len(path_parts) >= 3 else (path_parts[-1] if path_parts else None)
+    path_l3 = (
+        f"{path_parts[2]} > {path_parts[3]}" if len(path_parts) >= 4 else path_l2
+    )
+    body = clean_md(body)
+    return DocumentDraft(
+        source_type="tech_repo",
+        external_id=str(page_id),
+        title=_clip(title or path.stem, 1000),
+        body_md=body,
+        metadata=meta,
+        source_uri=meta.get("URL") or f"file://tech_repo/{path.name}",
+        evidence_grade="A",
+        path_l2=path_l2,
+        path_l3=path_l3,
+        domain=_domain_from_path(directory),
+    ).finalize()
 
 
 def iter_tech_repo(root: Path) -> Iterator[DocumentDraft]:
@@ -84,45 +130,7 @@ def iter_tech_repo(root: Path) -> Iterator[DocumentDraft]:
     if not d.is_dir():
         return
     for path in sorted(d.glob("*.md")):
-        raw = _read(path)
-        meta: dict[str, Any] = {"filename": path.name}
-        body = raw
-        fm = _FRONT_YAML.match(raw)
-        if fm:
-            for line in fm.group(1).splitlines():
-                if ":" in line or "：" in line:
-                    # "구분 : 컨플루언스"
-                    parts = re.split(r"[:：]", line, maxsplit=1)
-                    if len(parts) == 2:
-                        meta[parts[0].strip()] = parts[1].strip()
-            body = raw[fm.end() :]
-        page_id = meta.get("Page ID") or path.stem.replace("confluence_", "")
-        title = meta.get("제목") or ""
-        if not title or len(title) < 2:
-            h = re.search(r"^#{1,3}\s+(.+)$", body, re.M)
-            title = h.group(1).strip() if h else path.stem
-        # Never use huge log lines as title
-        if len(title) > 200:
-            title = title[:200]
-        directory = meta.get("디렉토리") or ""
-        path_parts = [p.strip() for p in directory.split(">") if p.strip()]
-        path_l2 = path_parts[2] if len(path_parts) >= 3 else (path_parts[-1] if path_parts else None)
-        path_l3 = (
-            f"{path_parts[2]} > {path_parts[3]}" if len(path_parts) >= 4 else path_l2
-        )
-        body = clean_md(body)
-        yield DocumentDraft(
-            source_type="tech_repo",
-            external_id=str(page_id),
-            title=_clip(title or path.stem, 1000),
-            body_md=body,
-            metadata=meta,
-            source_uri=meta.get("URL") or f"file://tech_repo/{path.name}",
-            evidence_grade="A",
-            path_l2=path_l2,
-            path_l3=path_l3,
-            domain=_domain_from_path(directory),
-        ).finalize()
+        yield parse_tech_repo_file(path)
 
 
 def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
@@ -154,36 +162,40 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
         ).finalize()
 
 
+def parse_tuning_ai_file(path: Path) -> DocumentDraft:
+    raw = _read(path)
+    meta: dict[str, Any] = {"filename": path.name}
+    body = raw
+    fm = _FRONT_YAML.match(raw)
+    if fm:
+        # YAML-ish key: value
+        for line in fm.group(1).splitlines():
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip()] = v.strip().strip('"')
+        body = raw[fm.end() :]
+    issue_id = meta.get("issue_id") or path.stem
+    title_m = re.search(r"^#\s+(.+)$", body, re.M)
+    title = title_m.group(1).strip() if title_m else path.stem
+    return DocumentDraft(
+        source_type="tuning_ai",
+        external_id=str(issue_id),
+        title=_clip(title, 1000),
+        body_md=clean_md(body),
+        metadata=meta,
+        source_uri=f"file://tuning_ai/{path.name}",
+        evidence_grade="A-",
+        domain=meta.get("domain"),
+        environment=None,
+    ).finalize()
+
+
 def iter_tuning_ai(root: Path) -> Iterator[DocumentDraft]:
     d = root / "tuning_ai"
     if not d.is_dir():
         return
     for path in sorted(d.glob("*.md")):
-        raw = _read(path)
-        meta: dict[str, Any] = {"filename": path.name}
-        body = raw
-        fm = _FRONT_YAML.match(raw)
-        if fm:
-            # YAML-ish key: value
-            for line in fm.group(1).splitlines():
-                if ":" in line:
-                    k, v = line.split(":", 1)
-                    meta[k.strip()] = v.strip().strip('"')
-            body = raw[fm.end() :]
-        issue_id = meta.get("issue_id") or path.stem
-        title_m = re.search(r"^#\s+(.+)$", body, re.M)
-        title = title_m.group(1).strip() if title_m else path.stem
-        yield DocumentDraft(
-            source_type="tuning_ai",
-            external_id=str(issue_id),
-            title=_clip(title, 1000),
-            body_md=clean_md(body),
-            metadata=meta,
-            source_uri=f"file://tuning_ai/{path.name}",
-            evidence_grade="A-",
-            domain=meta.get("domain"),
-            environment=None,
-        ).finalize()
+        yield parse_tuning_ai_file(path)
 
 
 def iter_checkitems_json(root: Path) -> Iterator[DocumentDraft]:
