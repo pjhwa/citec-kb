@@ -92,6 +92,61 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 적용 엔드포인트: `POST /v1/search` · `POST /v1/query` items · `POST /v1/chat` citations ·
 `GET /api/wiki/search` · analytics samples · `GET /v1/tickets` 목록/상세.
 
+### 업로드 — wiki-qa `POST /api/upload` 호환
+
+기술지원이력 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는 경로입니다.
+
+| Method | Path | 설명 |
+|--------|------|------|
+| POST | `/api/upload` | 파일 1개 업로드 → `job_id` 즉시 반환, 백그라운드 ingest |
+| GET | `/api/ingest-status/{job_id}` | SSE로 ingest 진행상황 추적 |
+| POST | `/api/upload-multiple` | 파일 여러 개(`files` 필드), 동일 `source_type` 적용 |
+
+**`source_type` 지원 값 / 별칭** (citec-wiki-qa README 별칭 표와 동일):
+
+| 값/별칭 | citec-kb 내부 source_type |
+|---------|---------------------------|
+| `support_history`, `support` | `support_history` |
+| `incident_reports`, `incident` | `support_history` |
+| `tech_repo`, `confluence_docs`, `confluence`, `techrepo`, `tech-repo` | `tech_repo` |
+| `tuning_ai`, `sql_tuning`, `sql`, `issue_analysis`, `dbms_tuning`, `dbms-tuning`, `tuning-ai` | `tuning_ai` |
+
+허용 확장자: `.md`, `.txt`.
+
+> **범위 제외 (이번 라운드)**: `vendor_docs`(`vendor`)와 `checkitems`(`.xls`/`.xlsx`)는 citec-kb에
+> 대응 파서가 아직 없어 `501 Not Implemented`로 거부됩니다. 그 외 알 수 없는 `source_type` 값은
+> 기존과 동일하게 `400 Bad Request`.
+
+**요청 예시**
+
+```bash
+curl -X POST http://<host>/api/upload \
+     -F "file=@CITECTS-1234.md" \
+     -F "source_type=support_history"
+
+curl -X POST http://<host>/api/upload \
+     -F "file=@148554390_kernel_params.txt" \
+     -F "source_type=tech_repo"
+
+curl -X POST http://<host>/api/upload \
+     -F "file=@ISS-5678.md" \
+     -F "source_type=tuning_ai"
+```
+
+**응답**
+
+```json
+{ "job_id": "a1b2c3d4-...", "filename": "148554390_kernel_params.txt", "status": "queued" }
+```
+
+**진행상황 추적**
+
+```bash
+curl -N http://<host>/api/ingest-status/a1b2c3d4-...
+# data: {"type":"log","text":"📥 ingest 진행 중… (running)"}
+# data: {"type":"done","status":"done","document_id":"...","action":"inserted"}
+```
+
 ### Q&A (SSE) — MCP `wiki_ask`
 
 ```http
