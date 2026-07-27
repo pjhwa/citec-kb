@@ -264,6 +264,28 @@ def api_ingest_status(job_id: str) -> StreamingResponse:
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
+@router.post("/api/upload-multiple")
+def api_upload_multiple(
+    background: BackgroundTasks,
+    files: list[UploadFile] = File(...),
+    source_type: str = Form(default="support_history"),
+) -> dict[str, Any]:
+    """wiki-qa `POST /api/upload-multiple` compat — same source_type for all files."""
+    jobs: list[dict[str, Any]] = []
+    for f in files:
+        try:
+            jobs.append(_enqueue_upload(background, f, source_type))
+        except HTTPException as exc:
+            jobs.append(
+                {
+                    "filename": f.filename,
+                    "status": "rejected",
+                    "error": exc.detail,
+                }
+            )
+    return {"jobs": jobs}
+
+
 def _map_section(section: str | None) -> Optional[str]:
     if not section:
         return None
