@@ -1,6 +1,16 @@
 """Unit tests for wiki-qa external compat helpers (no live LLM)."""
 
-from app.routers.external_compat import _map_section, _SECTION_MAP, _VERDICT_RATING
+import pytest
+from fastapi import HTTPException
+
+from app.routers.external_compat import (
+    _map_section,
+    _resolve_upload_source_type,
+    _safe_upload_filename,
+    _SECTION_MAP,
+    _validate_upload_extension,
+    _VERDICT_RATING,
+)
 
 
 def test_section_map_checkitems():
@@ -34,16 +44,6 @@ def test_section_map_keys_cover_mcp_templates():
         "synthesis",
     ):
         assert t in _SECTION_MAP
-
-
-import pytest
-from fastapi import HTTPException
-
-from app.routers.external_compat import (
-    _resolve_upload_source_type,
-    _safe_upload_filename,
-    _validate_upload_extension,
-)
 
 
 def test_resolve_upload_source_type_aliases():

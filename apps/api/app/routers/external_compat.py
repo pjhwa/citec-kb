@@ -81,6 +81,16 @@ _TEMPLATE_LABELS = {
 
 # wiki-qa upload alias table (README "별칭" 절) → citec-kb internal source_type.
 # NOTE: distinct from _SECTION_MAP above, which is for *search* section names.
+# INTENTIONAL DIVERGENCE: _SECTION_MAP maps "confluence_docs" -> "confluence_docs"
+# (its own internal source_type, used only for filtering search results), but here
+# "confluence_docs"/"confluence" -> "tech_repo". This table mirrors the citec-wiki-qa
+# README alias table verbatim, where "confluence_docs" is just another name callers
+# use for what citec-kb parses/stores as "tech_repo" (there is no separate
+# "confluence_docs" parser or storage bucket on the upload path). So a file uploaded
+# with source_type=confluence_docs is parsed by parse_tech_repo_file and persisted
+# with source_type="tech_repo", not "confluence_docs" — do not "fix" this to match
+# _SECTION_MAP without checking whether citec-kb should first gain a distinct
+# confluence_docs parser.
 _UPLOAD_ALIASES: dict[str, str] = {
     "support_history": "support_history",
     "support": "support_history",
@@ -125,7 +135,7 @@ def _resolve_upload_source_type(source_type: str) -> str:
         raise HTTPException(
             status_code=501,
             detail=(
-                f"source_type '{key}' 은(는) 이 호환 엔드포인트에서 아직 지원하지 않습니다."
+                f"source_type '{key}'은(는) 이 호환 엔드포인트에서 아직 지원하지 않습니다."
             ),
         )
     internal = _UPLOAD_ALIASES.get(key)
