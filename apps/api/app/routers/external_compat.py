@@ -11,19 +11,35 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
 from app import __version__
 from app.audit.log import list_recent_queries, log_query_answer
-from app.db.models import Document, Feedback, Insight
+from app.db.models import Document, Feedback, IngestJob, Insight
 from app.db.session import session_scope
 from app.doc_access import attach_document_access, document_access
+from app.ingest.adapters import (
+    parse_support_history_file,
+    parse_tech_repo_file,
+    parse_tuning_ai_file,
+)
+from app.ingest.pipeline import upsert_document_from_draft
 from app.rag.pipeline import run_fast_rag, stream_rag
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
@@ -59,6 +75,83 @@ _TEMPLATE_LABELS = {
     "tuning_ai": "DBMS튜닝",
     "synthesis": "Insight/합성지식",
 }
+
+
+# ── Upload (wiki-qa POST /api/upload compat) ────────────────────────
+
+# wiki-qa upload alias table (README "별칭" 절) → citec-kb internal source_type.
+# NOTE: distinct from _SECTION_MAP above, which is for *search* section names.
+_UPLOAD_ALIASES: dict[str, str] = {
+    "support_history": "support_history",
+    "support": "support_history",
+    "incident_reports": "support_history",
+    "incident": "support_history",
+    "tech_repo": "tech_repo",
+    "confluence_docs": "tech_repo",
+    "confluence": "tech_repo",
+    "techrepo": "tech_repo",
+    "tech-repo": "tech_repo",
+    "tuning_ai": "tuning_ai",
+    "sql_tuning": "tuning_ai",
+    "sql": "tuning_ai",
+    "issue_analysis": "tuning_ai",
+    "dbms_tuning": "tuning_ai",
+    "dbms-tuning": "tuning_ai",
+    "tuning-ai": "tuning_ai",
+}
+
+# Known wiki-qa values with no native citec-kb parser yet — reject with 501,
+# not a generic 400, so callers can tell "typo" apart from "not built yet".
+_UPLOAD_NOT_IMPLEMENTED = {"vendor_docs", "vendor", "checkitems"}
+
+_UPLOAD_PARSERS = {
+    "support_history": parse_support_history_file,
+    "tech_repo": parse_tech_repo_file,
+    "tuning_ai": parse_tuning_ai_file,
+}
+
+_UPLOAD_RAW_SUBDIR = {
+    "support_history": "support_history",
+    "tech_repo": "tech_repo",
+    "tuning_ai": "tuning_ai",
+}
+
+_UPLOAD_ALLOWED_EXT = {".md", ".txt"}
+
+
+def _resolve_upload_source_type(source_type: str) -> str:
+    key = (source_type or "").strip().lower() or "support_history"
+    if key in _UPLOAD_NOT_IMPLEMENTED:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                f"source_type '{key}' 은(는) 이 호환 엔드포인트에서 아직 지원하지 않습니다."
+            ),
+        )
+    internal = _UPLOAD_ALIASES.get(key)
+    if not internal:
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 source_type: {source_type}")
+    return internal
+
+
+def _safe_upload_filename(filename: str | None) -> str:
+    name = Path((filename or "").strip()).name.strip()
+    if not name or name in {".", ".."}:
+        raise HTTPException(status_code=400, detail="파일명이 유효하지 않습니다.")
+    return name
+
+
+def _validate_upload_extension(filename: str) -> None:
+    ext = Path(filename).suffix.lower()
+    if ext in {".xls", ".xlsx"}:
+        raise HTTPException(
+            status_code=501,
+            detail="checkitems(XLS) 업로드는 이 호환 엔드포인트에서 아직 지원하지 않습니다.",
+        )
+    if ext not in _UPLOAD_ALLOWED_EXT:
+        raise HTTPException(
+            status_code=400, detail=f"지원하지 않는 파일 형식: {ext or '(확장자 없음)'}"
+        )
 
 
 def _map_section(section: str | None) -> Optional[str]:
