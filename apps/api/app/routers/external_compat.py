@@ -164,6 +164,71 @@ def _validate_upload_extension(filename: str) -> None:
         )
 
 
+def _run_upload_ingest_job(job_id: str, internal_type: str, path: Path) -> None:
+    with session_scope() as session:
+        job = session.get(IngestJob, job_id)
+        if job:
+            job.status = "running"
+            job.started_at = datetime.now(timezone.utc)
+
+    parser = _UPLOAD_PARSERS[internal_type]
+    try:
+        draft = parser(path)
+        result = upsert_document_from_draft(draft, source_id="api_upload")
+        with session_scope() as session:
+            job = session.get(IngestJob, job_id)
+            if job:
+                job.status = "success"
+                job.finished_at = datetime.now(timezone.utc)
+                job.stats = {**(job.stats or {}), **result}
+    except Exception as exc:  # noqa: BLE001
+        with session_scope() as session:
+            job = session.get(IngestJob, job_id)
+            if job:
+                job.status = "failed"
+                job.finished_at = datetime.now(timezone.utc)
+                job.error = str(exc)
+
+
+def _enqueue_upload(
+    background: BackgroundTasks, file: UploadFile, source_type: str
+) -> dict[str, Any]:
+    internal_type = _resolve_upload_source_type(source_type)
+    filename = _safe_upload_filename(file.filename)
+    _validate_upload_extension(filename)
+
+    settings = get_settings()
+    raw_dir = Path(settings.raw_dir) / _UPLOAD_RAW_SUBDIR[internal_type]
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    dest = raw_dir / filename
+    dest.write_bytes(file.file.read())
+
+    job_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(
+            IngestJob(
+                id=job_id,
+                source_id=None,
+                mode="upload",
+                status="pending",
+                stats={"filename": filename, "source_type": internal_type},
+            )
+        )
+
+    background.add_task(_run_upload_ingest_job, job_id, internal_type, dest)
+    return {"job_id": job_id, "filename": filename, "status": "queued"}
+
+
+@router.post("/api/upload")
+def api_upload(
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    source_type: str = Form(default="support_history"),
+) -> dict[str, Any]:
+    """wiki-qa `POST /api/upload` compat — single file, queued background ingest."""
+    return _enqueue_upload(background, file, source_type)
+
+
 def _map_section(section: str | None) -> Optional[str]:
     if not section:
         return None
