@@ -129,6 +129,7 @@ _UPLOAD_RAW_SUBDIR = {
 }
 
 _UPLOAD_ALLOWED_EXT = {".md", ".txt"}
+_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 20MB
 
 
 def _resolve_upload_source_type(source_type: str) -> str:
@@ -177,12 +178,22 @@ def _run_upload_ingest_job(job_id: str, internal_type: str, path: Path) -> None:
     try:
         draft = parser(path)
         result = upsert_document_from_draft(draft, source_id="api_upload")
+
+        from app.embed.job import embed_pending_chunks
+
+        emb: dict[str, Any]
+        try:
+            emb = embed_pending_chunks(document_id=result["document_id"], batch_size=16)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("embed after upload failed job_id=%s doc=%s", job_id, result.get("document_id"))
+            emb = {"error": str(exc), "embedded": 0, "document_id": result.get("document_id")}
+
         with session_scope() as session:
             job = session.get(IngestJob, job_id)
             if job:
                 job.status = "success"
                 job.finished_at = datetime.now(timezone.utc)
-                job.stats = {**(job.stats or {}), **result}
+                job.stats = {**(job.stats or {}), **result, "embed": emb}
     except Exception as exc:  # noqa: BLE001
         logger.exception("upload ingest failed job_id=%s path=%s", job_id, path)
         with session_scope() as session:
@@ -200,23 +211,42 @@ def _enqueue_upload(
     filename = _safe_upload_filename(file.filename)
     _validate_upload_extension(filename)
 
+    if file.size is not None:
+        if file.size > _UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"파일이 너무 큽니다 (최대 {_UPLOAD_MAX_BYTES // (1024 * 1024)}MB)",
+            )
+        content = file.file.read()
+    else:
+        content = file.file.read()
+        if len(content) > _UPLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"파일이 너무 큽니다 (최대 {_UPLOAD_MAX_BYTES // (1024 * 1024)}MB)",
+            )
+
     settings = get_settings()
     raw_dir = Path(settings.raw_dir) / _UPLOAD_RAW_SUBDIR[internal_type]
     raw_dir.mkdir(parents=True, exist_ok=True)
     dest = raw_dir / filename
-    dest.write_bytes(file.file.read())
+    dest.write_bytes(content)
 
     job_id = str(uuid.uuid4())
-    with session_scope() as session:
-        session.add(
-            IngestJob(
-                id=job_id,
-                source_id=None,
-                mode="upload",
-                status="pending",
-                stats={"filename": filename, "source_type": internal_type},
+    try:
+        with session_scope() as session:
+            session.add(
+                IngestJob(
+                    id=job_id,
+                    source_id=None,
+                    mode="upload",
+                    status="pending",
+                    stats={"filename": filename, "source_type": internal_type},
+                )
             )
-        )
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
 
     background.add_task(_run_upload_ingest_job, job_id, internal_type, dest)
     return {"job_id": job_id, "filename": filename, "status": "queued"}

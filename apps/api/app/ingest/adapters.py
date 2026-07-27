@@ -77,7 +77,7 @@ def iter_support_history(root: Path) -> Iterator[DocumentDraft]:
     d = root / "support_history"
     if not d.is_dir():
         return
-    for path in sorted(d.glob("*.md")):
+    for path in sorted(list(d.glob("*.md")) + list(d.glob("*.txt"))):
         if path.name.startswith("."):
             continue
         yield parse_support_history_file(path)
@@ -129,7 +129,7 @@ def iter_tech_repo(root: Path) -> Iterator[DocumentDraft]:
     d = root / "tech_repo"
     if not d.is_dir():
         return
-    for path in sorted(d.glob("*.md")):
+    for path in sorted(list(d.glob("*.md")) + list(d.glob("*.txt"))):
         yield parse_tech_repo_file(path)
 
 
@@ -194,7 +194,7 @@ def iter_tuning_ai(root: Path) -> Iterator[DocumentDraft]:
     d = root / "tuning_ai"
     if not d.is_dir():
         return
-    for path in sorted(d.glob("*.md")):
+    for path in sorted(list(d.glob("*.md")) + list(d.glob("*.txt"))):
         yield parse_tuning_ai_file(path)
 
 
