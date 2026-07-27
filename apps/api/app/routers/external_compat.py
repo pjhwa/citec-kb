@@ -10,6 +10,7 @@ use `/api/*` when migrating clients that already call wiki-qa.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
@@ -46,6 +47,7 @@ from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 from app.settings import get_settings
 
 router = APIRouter(tags=["external-compat (wiki-qa)"])
+logger = logging.getLogger("citec.external_compat")
 
 # wiki-qa template / section → citec-kb source_type
 _SECTION_MAP: dict[str, Optional[str]] = {
@@ -182,6 +184,7 @@ def _run_upload_ingest_job(job_id: str, internal_type: str, path: Path) -> None:
                 job.finished_at = datetime.now(timezone.utc)
                 job.stats = {**(job.stats or {}), **result}
     except Exception as exc:  # noqa: BLE001
+        logger.exception("upload ingest failed job_id=%s path=%s", job_id, path)
         with session_scope() as session:
             job = session.get(IngestJob, job_id)
             if job:

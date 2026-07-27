@@ -204,7 +204,7 @@ class IngestJob(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
     source_id: Mapped[Optional[str]] = mapped_column(ForeignKey("sources.id", ondelete="SET NULL"))
-    mode: Mapped[str] = mapped_column(String(32), nullable=False)  # full | incremental | reembed
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)  # full | incremental | reembed | upload
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default="pending"
     )  # pending | running | success | failed
