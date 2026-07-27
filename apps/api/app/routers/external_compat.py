@@ -283,6 +283,15 @@ def api_upload_multiple(
                     "error": exc.detail,
                 }
             )
+        except Exception:  # noqa: BLE001
+            logger.exception("upload-multiple failed for file=%s", f.filename)
+            jobs.append(
+                {
+                    "filename": f.filename,
+                    "status": "rejected",
+                    "error": "업로드 처리 중 오류가 발생했습니다.",
+                }
+            )
     return {"jobs": jobs}
 
 
