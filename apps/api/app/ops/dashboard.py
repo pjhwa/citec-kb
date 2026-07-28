@@ -17,6 +17,11 @@ from typing import Any, Optional
 
 logger = logging.getLogger("citec.ops.dashboard")
 
+# Manifest key naming doesn't always match Document.source_type — confirmed
+# mismatch for checkitems (manifest, plural) vs checkitem (Document.source_type,
+# singular, see app/ingest/adapters.py). Add to this map if more are found.
+_MANIFEST_ALIASES = {"checkitems": "checkitem"}
+
 
 def read_raw_manifest(path: str) -> dict[str, int]:
     """Source -> raw file count from data/raw_manifest.json. {} if missing/invalid."""
@@ -45,7 +50,14 @@ def progress_row(
     embeddings: int,
 ) -> dict[str, Any]:
     """One source_type's ingest/embed progress row. embed_pct is over active chunks."""
-    embed_pct = 100 if chunks_active == 0 else round(embeddings / chunks_active * 100)
+    if chunks_active == 0:
+        # Nothing active to embed. If there are known raw files but nothing has
+        # been ingested yet, that's "not started", not "done" — only treat as
+        # 100% complete when there's genuinely nothing pending (no raw files, or
+        # raw file count unknown).
+        embed_pct = 100 if not raw_files else 0
+    else:
+        embed_pct = round(embeddings / chunks_active * 100)
     return {
         "raw_files": raw_files,
         "documents": documents,
@@ -64,12 +76,15 @@ def resource_snapshot(disk_path: str) -> dict[str, Any]:
     snap: dict[str, Any] = {}
 
     try:
-        import resource as _resource
-
-        rss_kb = _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
-        # Linux reports KB; macOS reports bytes. This app only ships on Linux containers.
-        snap["process_rss_mb"] = round(rss_kb / 1024, 1)
-    except (ImportError, AttributeError, OSError):
+        with open("/proc/self/status", encoding="utf-8") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    kb = int(line.split()[1])
+                    snap["process_rss_mb"] = round(kb / 1024, 1)
+                    break
+            else:
+                snap["process_rss_mb"] = None
+    except (OSError, ValueError, IndexError):
         snap["process_rss_mb"] = None
 
     try:
@@ -157,8 +172,10 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
         ).all()
     )
 
+    raw_totals_norm = {_MANIFEST_ALIASES.get(k, k): v for k, v in raw_totals.items()}
+
     source_types = sorted(
-        set(raw_totals)
+        set(raw_totals_norm)
         | set(doc_counts)
         | set(chunk_counts)
         | set(chunk_active_counts)
@@ -178,7 +195,7 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
     rows: dict[str, Any] = {}
     for st in source_types:
         rows[st] = progress_row(
-            raw_files=raw_totals.get(st),
+            raw_files=raw_totals_norm.get(st),
             documents=int(doc_counts.get(st, 0)),
             chunks=int(chunk_counts.get(st, 0)),
             chunks_active=int(chunk_active_counts.get(st, 0)),

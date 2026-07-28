@@ -74,6 +74,17 @@ def test_progress_row_raw_files_none_when_manifest_missing():
     assert row["embed_pct"] == 100
 
 
+def test_progress_row_not_yet_ingested_is_0_pct():
+    row = progress_row(
+        raw_files=50,
+        documents=0,
+        chunks=0,
+        chunks_active=0,
+        embeddings=0,
+    )
+    assert row["embed_pct"] == 0
+
+
 def test_resource_snapshot_shape(tmp_path):
     snap = resource_snapshot(str(tmp_path))
     assert "process_rss_mb" in snap
