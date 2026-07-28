@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger("citec.ops.dashboard")
@@ -39,6 +40,26 @@ def read_raw_manifest(path: str) -> dict[str, int]:
             except (TypeError, ValueError):
                 continue
     return out
+
+
+def resolve_raw_manifest_path(raw_dir: str) -> str:
+    """Locate data/raw_manifest.json across the container vs. local-dev layouts.
+
+    In docker-compose, `raw_dir` (RAW_DIR, typically "/data/raw") and the repo's
+    `data/` directory (which holds raw_manifest.json) are two DIFFERENT bind
+    mounts (`/data/raw` vs `/app/data`) — the manifest is NOT a sibling of
+    raw_dir at runtime, even though it is one in the repo checkout. Try the
+    known container location first, then fall back to the sibling-of-raw_dir
+    layout for local/non-compose runs.
+    """
+    candidates = [
+        Path("/app/data/raw_manifest.json"),
+        Path(raw_dir).parent / "raw_manifest.json",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return str(candidates[-1])
 
 
 def progress_row(

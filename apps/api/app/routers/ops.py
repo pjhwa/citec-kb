@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -24,7 +23,13 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.jobs.queue import list_jobs, worker_status
-from app.ops.dashboard import ingest_progress, query_stats, read_raw_manifest, resource_snapshot
+from app.ops.dashboard import (
+    ingest_progress,
+    query_stats,
+    read_raw_manifest,
+    resolve_raw_manifest_path,
+    resource_snapshot,
+)
 from app.settings import get_settings
 
 router = APIRouter(prefix="/v1/ops", tags=["ops"])
@@ -135,7 +140,7 @@ def ops_dashboard(
     }
 
     try:
-        manifest_path = str(Path(settings.raw_dir).parent / "raw_manifest.json")
+        manifest_path = resolve_raw_manifest_path(settings.raw_dir)
         raw_totals = read_raw_manifest(manifest_path)
         with session_scope() as session:
             result["ingest_progress"] = ingest_progress(session, raw_totals)

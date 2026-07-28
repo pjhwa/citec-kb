@@ -3,6 +3,7 @@ import json
 from app.ops.dashboard import (
     progress_row,
     read_raw_manifest,
+    resolve_raw_manifest_path,
     resource_snapshot,
     truncate_query_text,
 )
@@ -113,3 +114,21 @@ def test_truncate_query_text_truncates_with_ellipsis():
 
 def test_truncate_query_text_none_becomes_empty():
     assert truncate_query_text(None) == ""
+
+
+def test_resolve_raw_manifest_path_falls_back_to_raw_dir_sibling(tmp_path):
+    # /app/data/raw_manifest.json won't exist in the test sandbox, so this
+    # should fall back to the sibling-of-raw_dir candidate.
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    manifest = tmp_path / "raw_manifest.json"
+    manifest.write_text("{}", encoding="utf-8")
+    result = resolve_raw_manifest_path(str(raw_dir))
+    assert result == str(manifest)
+
+
+def test_resolve_raw_manifest_path_returns_last_candidate_when_none_exist(tmp_path):
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    result = resolve_raw_manifest_path(str(raw_dir))
+    assert result == str(tmp_path / "raw_manifest.json")
