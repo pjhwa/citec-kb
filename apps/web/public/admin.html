@@ -139,6 +139,7 @@
 <script src="/js/auth.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function badge(el, ok, text) {
   el.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
   el.textContent = text;
@@ -216,7 +217,7 @@ async function refreshDashboard() {
 
   const ip = d.ingest_progress || {};
   if (ip.error) {
-    $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">' + ip.error + '</td></tr>';
+    $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">' + esc(ip.error) + '</td></tr>';
   } else {
     const sources = Object.keys(ip).sort();
     $("ingestBody").innerHTML = sources.length
@@ -224,9 +225,9 @@ async function refreshDashboard() {
           const row = ip[s];
           const job = row.last_job;
           const jobLabel = job
-            ? '<span class="badge ' + jobBadgeClass(job.status) + '">' + job.status + '</span> ' + fmtTs(job.finished_at || job.started_at)
+            ? '<span class="badge ' + jobBadgeClass(job.status) + '">' + esc(job.status) + '</span> ' + fmtTs(job.finished_at || job.started_at)
             : '<span class="meta">—</span>';
-          return '<tr><td>' + s + '</td><td>' + (row.raw_files != null ? row.raw_files : '—') +
+          return '<tr><td>' + esc(s) + '</td><td>' + (row.raw_files != null ? row.raw_files : '—') +
             '</td><td>' + row.documents + '</td><td>' + row.chunks_active +
             '</td><td>' + row.embeddings +
             '</td><td><div class="pb"><div class="pb-f" style="width:' + row.embed_pct + '%"></div></div>' + row.embed_pct + '%</td>' +
@@ -247,9 +248,9 @@ async function refreshDashboard() {
     const items = jobs.items || [];
     $("jobList").innerHTML = items.length
       ? items.slice(0, 8).map((j) => {
-          return '<div class="job-c"><div class="job-top"><span>' + (j.type || j.id || "—") +
-            '</span><span class="badge ' + jobBadgeClass(j.status) + '">' + (j.status || "—") + '</span></div>' +
-            '<div class="meta">' + (j.id || "") + (j.error ? " · " + j.error : "") + '</div></div>';
+          return '<div class="job-c"><div class="job-top"><span>' + esc(j.type || j.id || "—") +
+            '</span><span class="badge ' + jobBadgeClass(j.status) + '">' + esc(j.status || "—") + '</span></div>' +
+            '<div class="meta">' + esc(j.id || "") + (j.error ? " · " + esc(j.error) : "") + '</div></div>';
         }).join("")
       : '<div class="meta">활성 잡 없음</div>';
   }
@@ -257,9 +258,9 @@ async function refreshDashboard() {
   const qb = (d.queries || {}).recent || [];
   $("queryBody").innerHTML = qb.length
     ? qb.map((r) => {
-        return '<tr><td>' + fmtTs(r.created_at) + '</td><td>' + (r.mode || "—") +
+        return '<tr><td>' + fmtTs(r.created_at) + '</td><td>' + esc(r.mode || "—") +
           '</td><td>' + (r.latency_ms != null ? r.latency_ms + "ms" : "—") +
-          '</td><td>' + (r.query || "") + '</td></tr>';
+          '</td><td>' + esc(r.query || "") + '</td></tr>';
       }).join("")
     : '<tr><td colspan="4" class="meta">기록 없음</td></tr>';
 }
