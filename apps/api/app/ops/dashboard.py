@@ -112,6 +112,16 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
     Source row (there is no per-source_type Source row to join on), take the
     single most recent IngestJob and, for each source_type, surface its
     entry from that job's by_source stats if present.
+
+    Only jobs with mode in ("full", "incremental") are considered: those are
+    the modes run_ingest() uses, and the only ones whose stats dict has a
+    "by_source" key. Other IngestJob modes use unrelated stats shapes —
+    "upload" (per-file uploads, app/routers/external_compat.py) stores
+    {"filename": ..., "source_type": ...} and "reembed"
+    (app/embed/job.py::embed_pending_chunks) stores embed-batch counters —
+    neither has "by_source". Since uploads happen frequently, picking the
+    single most recent IngestJob across all modes would usually pick an
+    upload row and silently blank out this whole section.
     """
     from sqlalchemy import func, select
 
@@ -156,7 +166,10 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
     )
 
     latest_job = session.execute(
-        select(IngestJob).order_by(IngestJob.started_at.desc().nullslast()).limit(1)
+        select(IngestJob)
+        .where(IngestJob.mode.in_(("full", "incremental")))
+        .order_by(IngestJob.started_at.desc().nullslast())
+        .limit(1)
     ).scalar_one_or_none()
     by_source_stats = {}
     if latest_job and isinstance(latest_job.stats, dict):
