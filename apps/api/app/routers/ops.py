@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 
 from app import __version__
+from app.auth.deps import require_roles
+from app.auth.principal import Principal
 from app.db.models import (
     CapacityRule,
     Document,
@@ -116,3 +119,46 @@ def ops_status() -> dict[str, Any]:
         "pilot_engineering_ready": ok,
         "note": "도메인 파일럿 사인은 별도 체크리스트 필요 (engineering ready만 판정)",
     }
+
+
+@router.get("/dashboard")
+def ops_dashboard(
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    """Aggregated real-time view for the admin dashboard (admin-only)."""
+    _ = principal
+    from pathlib import Path
+
+    from app.ops.dashboard import ingest_progress, query_stats, read_raw_manifest, resource_snapshot
+    from app.jobs.queue import list_jobs
+
+    settings = get_settings()
+    result: dict[str, Any] = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    try:
+        manifest_path = str(Path(settings.raw_dir).parent / "raw_manifest.json")
+        raw_totals = read_raw_manifest(manifest_path)
+        with session_scope() as session:
+            result["ingest_progress"] = ingest_progress(session, raw_totals)
+    except Exception as exc:  # noqa: BLE001
+        result["ingest_progress"] = {"error": str(exc)}
+
+    try:
+        result["jobs"] = list_jobs(limit=20)
+    except Exception as exc:  # noqa: BLE001
+        result["jobs"] = {"error": str(exc)}
+
+    try:
+        result["resources"] = resource_snapshot(settings.raw_dir)
+    except Exception as exc:  # noqa: BLE001
+        result["resources"] = {"error": str(exc)}
+
+    try:
+        with session_scope() as session:
+            result["queries"] = query_stats(session)
+    except Exception as exc:  # noqa: BLE001
+        result["queries"] = {"error": str(exc)}
+
+    return result
