@@ -57,6 +57,11 @@ scripts/in.sh --help
 | [docs/MCP.md](docs/MCP.md) | MCP 설치·도구 표·클라이언트 설정 |
 | [docs/EXTERNAL_API.md](docs/EXTERNAL_API.md) | REST `/v1/*` · `/api/*` |
 
+모든 `docs/*.md`는 웹에서 바로 볼 수 있도록 HTML로도 렌더된다 (`http://localhost:8572/docs/` 문서 허브). 소스는 `docs/*.md`이며, 수정 후 아래 스크립트로 재생성한다 — 생성된 `apps/web/public/docs/*.html`은 직접 편집하지 않는다:
+```bash
+.venv/bin/python scripts/render_docs_html.py
+```
+
 ```bash
 docker compose up -d mcp   # :8577
 # Claude: streamable-http → http://localhost:8577/mcp

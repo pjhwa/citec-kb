@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>외부 연동 API — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/EXTERNAL_API.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>citec-kb 외부 연동 API</h1>
+    <nav class="nav">
+      <a href="#citec-kb-api">citec-kb 외부 연동 API</a>
+      <a href="#1-wiki-qa-api">1. wiki-qa 호환 (/api/*)</a>
+      <a href="#health-meta" style="padding-left:20px;font-size:12px">Health / meta</a>
+      <a href="#_1" style="padding-left:20px;font-size:12px">검색 · 문서</a>
+      <a href="#wiki-qa-post-apiupload" style="padding-left:20px;font-size:12px">업로드 — wiki-qa POST /api/upload 호환</a>
+      <a href="#qa-sse-mcp-wiki_ask" style="padding-left:20px;font-size:12px">Q&amp;A (SSE) — MCP wiki_ask</a>
+      <a href="#synthesis-insight" style="padding-left:20px;font-size:12px">Synthesis ≈ Insight</a>
+      <a href="#feedback" style="padding-left:20px;font-size:12px">Feedback</a>
+      <a href="#2-v1">2. 네이티브 외부 연동 (/v1/*)</a>
+      <a href="#3-mcp-claude">3. MCP 서버 (Claude 등)</a>
+      <a href="#4">4. 인증</a>
+      <a href="#5-curl">5. curl 스모크</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>citec-kb 외부 연동 API</h1>
+      <p class="lead">citec-wiki-qa 호환 /api/* 레이어</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/EXTERNAL_API.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-27</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-api">citec-kb 외부 연동 API</h1>
+<blockquote>
+<p>기준: <a href="https://github.com/pjhwa/citec-wiki-qa">citec-wiki-qa</a> 외부 연동 표면<br>
+(MCP <code>wiki_search</code> / <code>wiki_get_document</code> / <code>wiki_list_synthesis</code> / <code>wiki_get_synthesis</code> / <code>wiki_ask</code>)</p>
+<p><strong>LLM/Claude 에이전트:</strong> MCP 도구 선택·기간조회·집계 패턴은<br>
+<a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a> · <a href="./MCP.md">MCP.md</a> 를 우선 참고.</p>
+</blockquote>
+<p>citec-kb는 자체 <strong><code>/v1/*</code></strong> API를 유지하면서, wiki-qa 클라이언트 마이그레이션을 위해<br>
+<strong>호환 경로 <code>/api/*</code></strong> 를 제공합니다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>용도</th>
+<th>권장</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>신규 연동</td>
+<td><strong><code>/v1/*</code></strong> (스키마·Trust·Planner 완전)</td>
+</tr>
+<tr>
+<td>wiki-qa / MCP 기존 클라이언트</td>
+<td><strong><code>/api/*</code></strong> 호환 레이어</td>
+</tr>
+</tbody>
+</table></div>
+<p>기본 베이스: <code>http://localhost:8573</code></p>
+<hr>
+<h2 id="1-wiki-qa-api">1. wiki-qa 호환 (<code>/api/*</code>)</h2>
+<h3 id="health-meta">Health / meta</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/health</code></td>
+<td>경량 헬스 <code>{ok, ts, version}</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/version</code></td>
+<td>버전·환경</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/wiki-stats</code></td>
+<td>소스 타입별 문서 수</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/recent-questions</code></td>
+<td>최근 질의 감사 로그</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_1">검색 · 문서</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/wiki/search?q=&amp;section=&amp;area=&amp;limit=</code></td>
+<td>하이브리드 검색 (wiki_search)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/wiki/search/facets</code></td>
+<td>section/area/category 목록</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/wiki/file?path=</code></td>
+<td>본문 조회 (wiki_get_document)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>section → source_type 매핑</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>wiki-qa section</th>
+<th>citec-kb source_type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>checkitems</code></td>
+<td><code>checkitem</code></td>
+</tr>
+<tr>
+<td><code>support_history</code></td>
+<td><code>support_history</code></td>
+</tr>
+<tr>
+<td><code>incident_reports</code></td>
+<td><code>support_history</code></td>
+</tr>
+<tr>
+<td><code>tech_repo</code></td>
+<td><code>tech_repo</code></td>
+</tr>
+<tr>
+<td><code>tuning_ai</code> / <code>sql_tuning</code></td>
+<td><code>tuning_ai</code></td>
+</tr>
+<tr>
+<td><code>vendor_docs</code></td>
+<td><code>vendor_docs</code></td>
+</tr>
+<tr>
+<td><code>synthesis</code></td>
+<td><code>insight</code></td>
+</tr>
+<tr>
+<td><code>general</code> / 빈값</td>
+<td>(전체)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>path 해석</strong> (<code>/api/wiki/file</code>):<br>
+<code>support_history/CITECTS-2502.md</code>, <code>CITECTS-2502</code>, document UUID, <code>source_uri</code> 부분 일치.</p>
+<p>검색·질의 응답의 <strong>모든 문서 hit</strong> 에는 원문 접근 필드가 포함됩니다<br>
+(<code>app.doc_access.attach_document_access</code>):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>필드</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td><code>source_type/external_id.md</code></td>
+</tr>
+<tr>
+<td><code>body_api</code></td>
+<td>상대 경로 <code>GET /v1/tickets/{eid}?source_type=</code></td>
+</tr>
+<tr>
+<td><code>body_api_url</code></td>
+<td>절대 URL (PUBLIC_API_BASE)</td>
+</tr>
+<tr>
+<td><code>body_api_file</code> / <code>_url</code></td>
+<td><code>GET /api/wiki/file?path=</code></td>
+</tr>
+<tr>
+<td><code>web_path</code> / <code>web_url</code></td>
+<td>브라우저 <code>/doc.html?eid=&amp;st=</code> (PUBLIC_WEB_BASE)</td>
+</tr>
+<tr>
+<td><code>access</code></td>
+<td>위 필드 묶음 + <code>mcp_tool</code> / <code>mcp_args</code></td>
+</tr>
+<tr>
+<td><code>mcp_tool</code></td>
+<td>항상 <code>kb_get_document</code></td>
+</tr>
+<tr>
+<td><code>mcp_args</code></td>
+<td><code>{ "path": "…" }</code></td>
+</tr>
+</tbody>
+</table></div>
+<pre><code class="language-json">{
+  &quot;results&quot;: [
+    {
+      &quot;path&quot;: &quot;support_history/CITECTS-2502.md&quot;,
+      &quot;section&quot;: &quot;support_history&quot;,
+      &quot;title&quot;: &quot;…&quot;,
+      &quot;snippet&quot;: &quot;…&quot;,
+      &quot;score&quot;: 0.42,
+      &quot;external_id&quot;: &quot;CITECTS-2502&quot;,
+      &quot;body_api&quot;: &quot;/v1/tickets/CITECTS-2502?source_type=support_history&quot;,
+      &quot;body_api_url&quot;: &quot;http://localhost:8573/v1/tickets/CITECTS-2502?source_type=support_history&quot;,
+      &quot;web_url&quot;: &quot;http://localhost:8572/doc.html?eid=CITECTS-2502&amp;st=support_history&amp;path=…&quot;,
+      &quot;access&quot;: { &quot;mcp_tool&quot;: &quot;kb_get_document&quot;, &quot;mcp_args&quot;: { &quot;path&quot;: &quot;support_history/CITECTS-2502.md&quot; } }
+    }
+  ],
+  &quot;total&quot;: 1,
+  &quot;fts_ready&quot;: true,
+  &quot;backend&quot;: &quot;citec-kb&quot;
+}
+</code></pre>
+<p>적용 엔드포인트: <code>POST /v1/search</code> · <code>POST /v1/query</code> items · <code>POST /v1/chat</code> citations ·<br>
+<code>GET /api/wiki/search</code> · analytics samples · <code>GET /v1/tickets</code> 목록/상세.</p>
+<h3 id="wiki-qa-post-apiupload">업로드 — wiki-qa <code>POST /api/upload</code> 호환</h3>
+<p>기술지원이력 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는 경로입니다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/upload</code></td>
+<td>파일 1개 업로드 → <code>job_id</code> 즉시 반환, 백그라운드 ingest</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/ingest-status/{job_id}</code></td>
+<td>SSE로 ingest 진행상황 추적</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/upload-multiple</code></td>
+<td>파일 여러 개(<code>files</code> 필드), 동일 <code>source_type</code> 적용</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong><code>source_type</code> 지원 값 / 별칭</strong> (citec-wiki-qa README 별칭 표와 동일):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>값/별칭</th>
+<th>citec-kb 내부 source_type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>support_history</code>, <code>support</code></td>
+<td><code>support_history</code></td>
+</tr>
+<tr>
+<td><code>incident_reports</code>, <code>incident</code></td>
+<td><code>support_history</code></td>
+</tr>
+<tr>
+<td><code>tech_repo</code>, <code>confluence_docs</code>, <code>confluence</code>, <code>techrepo</code>, <code>tech-repo</code></td>
+<td><code>tech_repo</code></td>
+</tr>
+<tr>
+<td><code>tuning_ai</code>, <code>sql_tuning</code>, <code>sql</code>, <code>issue_analysis</code>, <code>dbms_tuning</code>, <code>dbms-tuning</code>, <code>tuning-ai</code></td>
+<td><code>tuning_ai</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>허용 확장자: <code>.md</code>, <code>.txt</code> (전체 재구축 스캔도 두 확장자 모두 포함). 최대 파일 크기: <strong>20MB</strong><br>
+(초과 시 <code>413 Request Entity Too Large</code>).</p>
+<blockquote>
+<p><strong>범위 제외 (이번 라운드)</strong>: <code>vendor_docs</code>(<code>vendor</code>)와 <code>checkitems</code>(<code>.xls</code>/<code>.xlsx</code>)는 citec-kb에<br>
+대응 파서가 아직 없어 <code>501 Not Implemented</code>로 거부됩니다. 그 외 알 수 없는 <code>source_type</code> 값은<br>
+기존과 동일하게 <code>400 Bad Request</code>.</p>
+</blockquote>
+<p>반영 시 문서 upsert(FTS) 직후 <strong>임베딩까지 자동 생성</strong>되어 시맨틱 검색에도 즉시 반영됩니다<br>
+(임베딩 실패는 job을 <code>failed</code>로 만들지 않고 <code>done</code> 이벤트의 <code>embed.error</code>로만 표시 — 문서 자체는<br>
+정상 반영됨).</p>
+<p><strong>요청 예시</strong></p>
+<pre><code class="language-bash">curl -X POST http://&lt;host&gt;/api/upload \
+     -F &quot;file=@CITECTS-1234.md&quot; \
+     -F &quot;source_type=support_history&quot;
+
+curl -X POST http://&lt;host&gt;/api/upload \
+     -F &quot;file=@148554390_kernel_params.txt&quot; \
+     -F &quot;source_type=tech_repo&quot;
+
+curl -X POST http://&lt;host&gt;/api/upload \
+     -F &quot;file=@ISS-5678.md&quot; \
+     -F &quot;source_type=tuning_ai&quot;
+</code></pre>
+<p><strong>응답</strong></p>
+<pre><code class="language-json">{ &quot;job_id&quot;: &quot;a1b2c3d4-...&quot;, &quot;filename&quot;: &quot;148554390_kernel_params.txt&quot;, &quot;status&quot;: &quot;queued&quot; }
+</code></pre>
+<p><strong>진행상황 추적</strong></p>
+<pre><code class="language-bash">curl -N http://&lt;host&gt;/api/ingest-status/a1b2c3d4-...
+# data: {&quot;type&quot;:&quot;log&quot;,&quot;text&quot;:&quot;📥 ingest 진행 중… (running)&quot;}
+# data: {&quot;type&quot;:&quot;done&quot;,&quot;status&quot;:&quot;done&quot;,&quot;document_id&quot;:&quot;...&quot;,&quot;action&quot;:&quot;inserted&quot;,&quot;embed&quot;:{&quot;embedded&quot;:1,&quot;errors&quot;:0,...}}
+</code></pre>
+<h3 id="qa-sse-mcp-wiki_ask">Q&amp;A (SSE) — MCP <code>wiki_ask</code></h3>
+<pre><code class="language-http">POST /api/query
+Content-Type: application/json
+
+{&quot;query&quot;: &quot;모니모 Redis 타임아웃&quot;, &quot;template&quot;: &quot;support_history&quot;}
+</code></pre>
+<p>SSE 이벤트 (wiki-qa 호환):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>type</th>
+<th>필드</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td><code>text</code></td>
+<td>진행 메시지</td>
+</tr>
+<tr>
+<td><code>sources</code></td>
+<td><code>files[]</code></td>
+<td>경로 목록</td>
+</tr>
+<tr>
+<td><code>token</code></td>
+<td><code>text</code></td>
+<td>토큰 스트리밍</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td><code>text</code> / <code>error</code></td>
+<td>오류</td>
+</tr>
+<tr>
+<td><code>done</code></td>
+<td><code>result</code></td>
+<td>최종 결과 (citec-kb trust·citations 포함)</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>stream: false</code> 이면 JSON 한 번에 반환.</p>
+<p><code>template</code>: <code>general</code> · <code>checkitems</code> · <code>support_history</code> · <code>tech_repo</code> · <code>tuning_ai</code> · <code>synthesis</code> …</p>
+<h3 id="synthesis-insight">Synthesis ≈ Insight</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/synthesis?limit=&amp;offset=</code></td>
+<td>Insight 목록 (slug=id)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/synthesis/{slug}</code></td>
+<td>Insight 상세 (<code>answer</code>=body_md)</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p>wiki-qa의 파일 기반 synthesis 대신 <strong>Insight 승인 플로우</strong> 데이터를 노출합니다.</p>
+</blockquote>
+<h3 id="feedback">Feedback</h3>
+<pre><code class="language-http">POST /api/feedback
+{&quot;verdict&quot;: &quot;helpful&quot;, &quot;target_type&quot;: &quot;answer&quot;, &quot;target_id&quot;: &quot;&lt;query_or_answer_id&gt;&quot;}
+</code></pre>
+<p>또는 citec-kb 네이티브: <code>{"rating": 1, "target_type": "answer", "target_id": "…"}</code><br>
+verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code> | <code>failed</code> | <code>edited</code></p>
+<hr>
+<h2 id="2-v1">2. 네이티브 외부 연동 (<code>/v1/*</code>)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/v1/health</code></td>
+<td>Redis/PG/LLM 포함 상세 헬스</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/search</code></td>
+<td>하이브리드 검색 (필터·multi_query)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/chat</code></td>
+<td>Fast/Deep RAG (JSON 또는 SSE)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/query</code></td>
+<td>의도 분류 + 검색/집계/SI 등</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/tickets/{external_id}</code></td>
+<td>티켓 전체 본문</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/analytics/tickets</code></td>
+<td>기간·유형 집계</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/similar-incident</code></td>
+<td>유사장애</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/insights</code></td>
+<td>Insight CRUD 계열</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/external/catalog</code></td>
+<td>이 문서의 기계 가독 카탈로그</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/external/search</code></td>
+<td>간단 GET 검색</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/external/document?path=</code></td>
+<td>문서 본문</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/external/health</code></td>
+<td><code>/api/health</code> 동일</td>
+</tr>
+</tbody>
+</table></div>
+<p>OpenAPI: <code>http://localhost:8573/docs</code></p>
+<hr>
+<h2 id="3-mcp-claude">3. MCP 서버 (Claude 등)</h2>
+<p>citec-kb 전용 MCP 서버: <strong><code>mcp-server/</code></strong> · 문서 <strong><code>docs/MCP.md</code></strong></p>
+<pre><code class="language-bash">docker compose up -d --build mcp   # http://localhost:8577
+</code></pre>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>MCP tool</th>
+<th>REST</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_search</code> / <code>wiki_search</code></td>
+<td><code>GET /api/wiki/search</code></td>
+</tr>
+<tr>
+<td><code>kb_get_document</code> / <code>wiki_get_document</code></td>
+<td><code>GET /api/wiki/file</code></td>
+</tr>
+<tr>
+<td><code>kb_list_insights</code> / <code>wiki_list_synthesis</code></td>
+<td><code>GET /api/synthesis</code></td>
+</tr>
+<tr>
+<td><code>kb_get_insight</code> / <code>wiki_get_synthesis</code></td>
+<td><code>GET /api/synthesis/{slug}</code></td>
+</tr>
+<tr>
+<td><code>kb_ask</code> / <code>wiki_ask</code></td>
+<td><code>POST /api/query</code> SSE</td>
+</tr>
+<tr>
+<td><code>kb_query</code></td>
+<td><code>POST /v1/query</code></td>
+</tr>
+<tr>
+<td><code>kb_ticket</code></td>
+<td><code>GET /v1/tickets/{id}</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Claude Desktop 예시: <code>mcp-server/claude_desktop_config.example.json</code></p>
+<hr>
+<h2 id="4">4. 인증</h2>
+<p>파일럿 기본 <code>AUTH_MODE=off</code> — Bearer 불필요.<br>
+<code>apikey</code> / <code>oidc</code> 모드에서는 <code>/v1/*</code> 와 동일하게 게이트가 적용될 수 있습니다 (호환 <code>/api/*</code> 는 현재 공개 연동용으로 게이트 없음; 운영 시 리버스 프록시·API 키를 권장).</p>
+<hr>
+<h2 id="5-curl">5. curl 스모크</h2>
+<pre><code class="language-bash">curl -s http://localhost:8573/api/health | jq .
+curl -s 'http://localhost:8573/api/wiki/search?q=Redis&amp;section=support_history&amp;limit=3' | jq .
+curl -s 'http://localhost:8573/api/wiki/file?path=CITECTS-2502' | jq '.title,.path'
+curl -s -N -X POST http://localhost:8573/api/query \
+  -H 'Content-Type: application/json' \
+  -d '{&quot;query&quot;:&quot;Redis timeout&quot;,&quot;template&quot;:&quot;support_history&quot;}'
+curl -s http://localhost:8573/v1/external/catalog | jq .
+</code></pre>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

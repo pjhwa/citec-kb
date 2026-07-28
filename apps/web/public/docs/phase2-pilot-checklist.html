@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Phase 2 파일럿 체크리스트 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/PHASE2_PILOT_CHECKLIST.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>Phase 2+ 파일럿 체크리스트 (G2/G3 사인오프)</h1>
+    <nav class="nav">
+      <a href="#phase-2-g2g3">Phase 2+ 파일럿 체크리스트 (G2/G3 사인오프)</a>
+      <a href="#_1">사전 상태 (엔지니어링 — 자동화 가능)</a>
+      <a href="#_2" style="padding-left:20px;font-size:12px">자동 기술 점검 (사인 전 필수)</a>
+      <a href="#_3">시나리오 워크스루 (사람)</a>
+      <a href="#a" style="padding-left:20px;font-size:12px">A. 검색</a>
+      <a href="#b-fast-qa" style="padding-left:20px;font-size:12px">B. Fast QA</a>
+      <a href="#c" style="padding-left:20px;font-size:12px">C. 유사장애 · 번들</a>
+      <a href="#d-phase-3" style="padding-left:20px;font-size:12px">D. Phase 3 관리자 질의</a>
+      <a href="#_4">합격 기준 (파일럿)</a>
+      <a href="#_5">사인</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>Phase 2+ 파일럿 체크리스트 (G2/G3 사인오프)</h1>
+      <p class="lead">G2/G3 사인오프 항목</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/PHASE2_PILOT_CHECKLIST.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-20</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="phase-2-g2g3">Phase 2+ 파일럿 체크리스트 (G2/G3 사인오프)</h1>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>내용</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>목적</td>
+<td>Fast QA Trust + 유사장애 + Phase3 planner 엔지니어링 완료 후 <strong>도메인 워크스루</strong></td>
+</tr>
+<tr>
+<td>대상</td>
+<td>지원 엔지니어 5–10명 · 그룹장 1명</td>
+</tr>
+<tr>
+<td>환경</td>
+<td><code>http://localhost:8572</code> · API <code>8573</code></td>
+</tr>
+<tr>
+<td>일자</td>
+<td>(작성)</td>
+</tr>
+<tr>
+<td>계획 문서</td>
+<td><code>IMPLEMENTATION_PLAN.md</code> v1.15+</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="_1">사전 상태 (엔지니어링 — 자동화 가능)</h2>
+<ul>
+<li>✅ Hybrid 검색 hit@3 ≥ 0.90</li>
+<li>✅ Fast/Deep QA + Trust 배너 + citation + multi_query</li>
+<li>✅ SSE stream</li>
+<li>✅ Issue frames 전량 적재</li>
+<li>✅ SI API/UI + gold eval</li>
+<li>✅ War-room 번들 + <strong>쓰기 API</strong></li>
+<li>✅ Planner (list/analytics/capacity/prevention/exhaustive)</li>
+<li>✅ Entity/capacity/lexicon DB 시드</li>
+<li>✅ Worker job queue + audit log</li>
+</ul>
+<h3 id="_2">자동 기술 점검 (사인 전 필수)</h3>
+<pre><code class="language-bash">cd ~/dev/citec-kb
+# 운영 readiness
+curl -s localhost:8573/v1/ops/status | jq '{status,pilot_engineering_ready,worker:.checks.worker,seeds:.checks.seeds}'
+# 시나리오 자동 스모크
+.venv/bin/python scripts/pilot_tech_check.py
+# 회귀
+export PYTHONPATH=apps/api DATABASE_URL=postgresql+psycopg://citec:citec@127.0.0.1:8574/citec_knowledge
+.venv/bin/python -m pytest apps/api/tests -q
+.venv/bin/python -m app.eval.si_eval --gold data/gold/si_g01_g10.json
+.venv/bin/python scripts/load_smoke.py --n 24 --concurrency 6
+</code></pre>
+<ul>
+<li>☐ <code>pilot_tech_check.py</code> exit 0</li>
+<li>☐ <code>ops/status</code> pilot_engineering_ready=true</li>
+</ul>
+<h2 id="_3">시나리오 워크스루 (사람)</h2>
+<h3 id="a">A. 검색</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>질의</th>
+<th>기대</th>
+<th>결과 (O/X)</th>
+<th>메모</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A1</td>
+<td>CITECTS-2502</td>
+<td>해당 티켓 top1</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A2</td>
+<td>리눅스 파일시스템 체크리스트</td>
+<td>PISA/FS 관련</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A3</td>
+<td>모니모 Redis</td>
+<td>관련 지원이력</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>A4</td>
+<td>서비스 base M/M FAQ</td>
+<td>QRB FAQ 상위</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="b-fast-qa">B. Fast QA</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>질의</th>
+<th>기대</th>
+<th>결과</th>
+<th>메모</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>B1</td>
+<td>CITECTS-2502 원인과 조치</td>
+<td>[C#] 인용 + 원인/조치</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B2</td>
+<td>존재하지 않는 이슈</td>
+<td>기권/약한 근거</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>B3</td>
+<td>deep 모드</td>
+<td>더 긴 구조화 답</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="c">C. 유사장애 · 번들</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>증상</th>
+<th>기대</th>
+<th>결과</th>
+<th>메모</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>모니모 Redis 타임아웃</td>
+<td>유사 사례 + 적용성</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C2</td>
+<td>soft lockup hang</td>
+<td>linux-hang 번들 힌트</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>C3</td>
+<td>Oracle tablespace 부족</td>
+<td>Redis 사례 적용성=가능 금지</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="d-phase-3">D. Phase 3 관리자 질의</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>질의</th>
+<th>기대</th>
+<th>결과</th>
+<th>메모</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>지난 주 지원건</td>
+<td>목록 total≥0</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D2</td>
+<td>연도별 지원 건수</td>
+<td>analytics buckets</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D3</td>
+<td>2주 Linux 대수</td>
+<td>capacity units=40</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>D4</td>
+<td>장애지원 제목 패턴</td>
+<td>title_tokens</td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="_4">합격 기준 (파일럿)</h2>
+<ul>
+<li>☐ A–D 시나리오 중 ≥ 80% O</li>
+<li>☐ 기권 시 단정 조치 문구 0건</li>
+<li>☐ 그룹장 1회 워크스루 코멘트 기록</li>
+<li>☐ 치명 이슈 0건</li>
+</ul>
+<h2 id="_5">사인</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>역할</th>
+<th>이름</th>
+<th>일자</th>
+<th>서명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>BE</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>도메인 시니어</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td>그룹장</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+</tbody>
+</table></div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

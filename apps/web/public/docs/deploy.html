@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>폐쇄망 배포 가이드 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/DEPLOY.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>citec-kb 폐쇄망 배포 가이드</h1>
+    <nav class="nav">
+      <a href="#citec-kb">citec-kb 폐쇄망 배포 가이드</a>
+      <a href="#_1">번들 구성</a>
+      <a href="#docker-compose-ps" style="padding-left:20px;font-size:12px">docker compose ps ↔ 번들</a>
+      <a href="#code" style="padding-left:20px;font-size:12px">호스트 마운트 (code 번들만으로 반영)</a>
+      <a href="#vs-wiki-qa" style="padding-left:20px;font-size:12px">데이터 vs 검색 인덱스 (wiki-qa 와의 차이)</a>
+      <a href="#pg-restore-code-dump" style="padding-left:20px;font-size:12px">운영 깨진 PG restore 복구 (code + dump 만)</a>
+      <a href="#_2">개발: 패키징</a>
+      <a href="#_3">전송</a>
+      <a href="#_4">운용: 배포</a>
+      <a href="#_5">권장 워크플로</a>
+      <a href="#env">운용 .env (비밀키는 번들 밖)</a>
+      <a href="#_6" style="padding-left:20px;font-size:12px">임베딩 모델 (프로젝트 전용)</a>
+      <a href="#_7">체크리스트 (최초 폐쇄망)</a>
+      <a href="#_8">설계 메모</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>citec-kb 폐쇄망 배포 가이드</h1>
+      <p class="lead">분리 번들 · 버전 추적 · 변경분만 배포</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/DEPLOY.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-22</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb">citec-kb 폐쇄망 배포 가이드</h1>
+<p>wiki-qa <code>out.sh</code> / <code>in.sh</code> 와 같은 <strong>분리 번들 + 버전 추적 + 변경분만 배포</strong> 패턴입니다.<br>
+citec-kb 는 <strong>multi-service + Postgres(pgvector)</strong> 이므로, wiki-qa 의 <code>db/vec.db</code> 와 달리 <strong>인덱스는 PG 볼륨</strong>에 있습니다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>스크립트</th>
+<th>실행 위치</th>
+<th>역할</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>scripts/out.sh</code></td>
+<td>개발</td>
+<td>패키징</td>
+</tr>
+<tr>
+<td><code>scripts/in.sh</code></td>
+<td>운용</td>
+<td>배포 적용</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="_1">번들 구성</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>번들</th>
+<th>파일명</th>
+<th>언제</th>
+<th>크기</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>code</strong></td>
+<td><code>citec-kb-code-vN.tar.gz</code></td>
+<td>앱/웹/설정/마이그레이션 수정</td>
+<td>작음 (일상)</td>
+</tr>
+<tr>
+<td><strong>docker</strong></td>
+<td><code>citec-kb-docker-vN.tar.gz</code></td>
+<td>Dockerfile·requirements 변경</td>
+<td>큼</td>
+</tr>
+<tr>
+<td><strong>docker-mcp</strong></td>
+<td><code>citec-kb-docker-mcp-vN.tar.gz</code></td>
+<td>MCP pip deps 변경</td>
+<td>중</td>
+</tr>
+<tr>
+<td><strong>docker-keycloak</strong></td>
+<td><code>citec-kb-docker-keycloak-vN.tar.gz</code></td>
+<td>OIDC 로컬 IdP (선택)</td>
+<td>중</td>
+</tr>
+<tr>
+<td><strong>data</strong></td>
+<td><code>citec-kb-data-dN.tar.gz</code></td>
+<td>raw/seeds (+ <code>--pg-dump</code>)</td>
+<td>코퍼스 따라</td>
+</tr>
+<tr>
+<td><strong>model</strong></td>
+<td><code>citec-kb-model.tar.gz</code></td>
+<td>임베딩 모델 최초/교체</td>
+<td>큼 (~1GB)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="docker-compose-ps"><code>docker compose ps</code> ↔ 번들</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Image</th>
+<th>번들</th>
+<th>기본</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>postgres</td>
+<td><code>pgvector/pgvector:pg16</code></td>
+<td>docker</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>redis</td>
+<td><code>redis:7-alpine</code></td>
+<td>docker</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>web</td>
+<td><code>nginx:1.27-alpine</code></td>
+<td>docker</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>api</td>
+<td><code>citec-kb-api:latest</code></td>
+<td>docker</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>worker</td>
+<td><code>citec-kb-worker:latest</code></td>
+<td>docker</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>mcp</td>
+<td><code>citec-kb-mcp:latest</code></td>
+<td>docker-mcp</td>
+<td>✅</td>
+</tr>
+<tr>
+<td>keycloak</td>
+<td><code>quay.io/keycloak/keycloak:26.0</code></td>
+<td>docker-keycloak</td>
+<td>opt-in</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="code">호스트 마운트 (code 번들만으로 반영)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>경로</th>
+<th>서비스</th>
+<th>비고</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>apps/api/app</code></td>
+<td>api</td>
+<td>Python 앱</td>
+</tr>
+<tr>
+<td><code>apps/api/alembic</code> (+ ini)</td>
+<td>api</td>
+<td>스키마 마이그레이션</td>
+</tr>
+<tr>
+<td><code>apps/worker/app</code></td>
+<td>worker</td>
+<td></td>
+</tr>
+<tr>
+<td><code>apps/web/public</code> + <code>nginx.conf</code></td>
+<td>web</td>
+<td>정적 UI</td>
+</tr>
+<tr>
+<td><code>mcp-server/server.py</code></td>
+<td>mcp</td>
+<td>로직 변경 (pip deps 는 docker-mcp)</td>
+</tr>
+<tr>
+<td><code>config/</code></td>
+<td>api/worker</td>
+<td><code>models.json</code> 은 in.sh 가 운용값 보존</td>
+</tr>
+<tr>
+<td><code>data/</code>, <code>data/raw</code></td>
+<td>api/worker</td>
+<td>코퍼스</td>
+</tr>
+<tr>
+<td><code>models/</code> (<code>MODELS_HOST_DIR=./models</code>)</td>
+<td>api</td>
+<td>HF 캐시 (<strong>이 레포 전용</strong>, 타 프로젝트 경로 금지)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>이미지 재빌드가 필요한 것:</strong> requirements / Dockerfile / torch 등.</p>
+<h3 id="vs-wiki-qa">데이터 vs 검색 인덱스 (wiki-qa 와의 차이)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>wiki-qa</th>
+<th>citec-kb</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>지식 파일</td>
+<td><code>wiki/</code> + <code>raw/</code></td>
+<td><code>data/raw</code></td>
+</tr>
+<tr>
+<td>임베딩/FTS</td>
+<td><code>db/vec.db</code> (data 번들에 포함)</td>
+<td><strong>Postgres <code>pgdata</code> 볼륨</strong></td>
+</tr>
+<tr>
+<td>최초 검색 가능 상태</td>
+<td>data 배포만으로 OK</td>
+<td><strong>PG 덤프 복원</strong> 또는 <strong>ingest + embed</strong></td>
+</tr>
+</tbody>
+</table></div>
+<pre><code class="language-bash"># A) 개발 DB 복제 (권장 — 검색 즉시 가능)
+scripts/out.sh --data --pg-dump          # raw + dump
+# 또는 인덱스만 (raw 이미 운영에 있을 때):
+scripts/out.sh --code --pg-only
+
+# 운용 — 반드시 --restore-pg (스키마 DROP 후 api 기동 전 복원)
+scripts/in.sh --code --data --restore-pg -y
+
+# B) 파일만 배포 후 재인덱싱
+scripts/out.sh --data
+scripts/in.sh --data -y
+docker compose exec api python -m app.ingest.cli --raw-dir /data/raw
+docker compose exec api python -m app.embed.cli
+</code></pre>
+<h3 id="pg-restore-code-dump">운영 깨진 PG restore 복구 (code + dump 만)</h3>
+<p>원인: api(alembic) 기동 <strong>후</strong> dump를 얹으면 CREATE/FK ERROR 폭주.</p>
+<pre><code class="language-bash"># 개발
+scripts/out.sh --code --pg-only
+scp ~/tmp/citec-kb-code-v*.tar.gz ~/tmp/citec-kb-data-d*.tar.gz user@prod:~/
+
+# 운영
+cd ~/citec-kb
+# 권장: SSH 끊김 대비 screen/tmux
+screen -S kb-restore   # 또는 tmux
+scripts/in.sh --code --data --restore-pg -y
+# 내부: postgres only → DROP SCHEMA → quiet restore(수 분~수십 분) → 건수 검증 → 전체 up
+</code></pre>
+<p><strong>대용량 덤프(~200MB gzip / embeddings 5만+) 복원은 10~40분 걸릴 수 있습니다.</strong><br>
+터미널이 조용해도 정상이며, 30초마다 heartbeat 가 출력됩니다.<br>
+다른 세션에서: <code>sudo docker logs -f citec-kb-postgres-1</code> (checkpoint / lock 메시지).</p>
+<p>복원 중 SSH가 끊기면 프로세스만 죽을 수 있음 → <code>screen</code>/<code>tmux</code> 사용 권장.<br>
+중간 실패 시 스키마가 반쯤만 있을 수 있으므로 <strong>같은 명령으로 재실행</strong>하면 됩니다.</p>
+<hr>
+<h2 id="_2">개발: 패키징</h2>
+<pre><code class="language-bash">cd ~/dev/citec-kb   # 레포 루트
+
+scripts/out.sh --help
+
+# 일상 코드
+scripts/out.sh --code
+
+# MCP 로직만 (server.py 마운트) → code 로 충분
+# MCP pip/requirements 변경 시:
+scripts/out.sh --docker-mcp
+
+# Dockerfile / requirements
+scripts/out.sh --code --docker --docker-mcp
+
+# 지식 + DB 스냅샷
+scripts/out.sh --data --pg-dump
+
+# 임베딩 모델
+scripts/out.sh --model
+
+# 최초 전체
+scripts/out.sh --regen
+# (DB 포함 시) scripts/out.sh --regen --pg-dump
+</code></pre>
+<p>출력: <code>~/tmp/citec-kb-*.tar.gz</code></p>
+<p>버전 추적 (개발 <code>~/bin/</code>):</p>
+<ul>
+<li><code>.citec_kb_code_version</code> / <code>.citec_kb_data_version</code></li>
+<li><code>.citec_kb_model_name</code></li>
+</ul>
+<hr>
+<h2 id="_3">전송</h2>
+<pre><code class="language-bash">scp ~/tmp/citec-kb-code-v*.tar.gz \
+    ~/tmp/citec-kb-docker-v*.tar.gz \
+    ~/tmp/citec-kb-docker-mcp-v*.tar.gz \
+    ~/tmp/citec-kb-data-d*.tar.gz \
+    ~/tmp/citec-kb-model.tar.gz \
+    user@prod:~/
+</code></pre>
+<hr>
+<h2 id="_4">운용: 배포</h2>
+<pre><code class="language-bash">cd ~/citec-kb   # 최초 code 추출 후, 또는 기존 프로젝트
+
+scripts/in.sh --help
+scripts/in.sh              # 계획 + 확인
+scripts/in.sh -y           # 변경분만
+scripts/in.sh --code -y
+scripts/in.sh --data --restore-pg -y
+</code></pre>
+<p>적용 순서: 컨테이너 중지 → 번들 적용 → <code>docker compose up -d</code><br>
+<code>.env</code> / <code>config/models.json</code> 은 운용 값을 <strong>보존</strong>합니다.</p>
+<p>운용 추적 (<code>~/bin/</code>):</p>
+<ul>
+<li><code>.citec_kb_code_deployed</code> / <code>_docker_deployed</code> / <code>_docker_mcp_deployed</code></li>
+<li><code>_docker_keycloak_deployed</code> / <code>_data_deployed</code> / <code>_model_deployed</code></li>
+</ul>
+<hr>
+<h2 id="_5">권장 워크플로</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>변경 내용</th>
+<th>out</th>
+<th>in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Python/HTML/JS/alembic/MCP 로직</td>
+<td><code>--code</code></td>
+<td><code>--code -y</code></td>
+</tr>
+<tr>
+<td>MCP requirements</td>
+<td><code>--docker-mcp</code></td>
+<td><code>--docker-mcp -y</code></td>
+</tr>
+<tr>
+<td>api/worker Dockerfile·pip</td>
+<td><code>--code --docker --docker-mcp</code></td>
+<td>동일 <code>-y</code></td>
+</tr>
+<tr>
+<td>raw 코퍼스 (+ 검색 복제)</td>
+<td><code>--data --pg-dump</code></td>
+<td><code>--data --restore-pg -y</code></td>
+</tr>
+<tr>
+<td>raw 만 (재인덱싱 예정)</td>
+<td><code>--data</code></td>
+<td><code>--data -y</code> + ingest/embed</td>
+</tr>
+<tr>
+<td>임베딩 모델</td>
+<td><code>--model</code></td>
+<td><code>--model -y</code></td>
+</tr>
+<tr>
+<td>Keycloak</td>
+<td><code>--docker-keycloak</code></td>
+<td><code>--docker-keycloak -y</code></td>
+</tr>
+<tr>
+<td>최초 구축</td>
+<td><code>--regen</code> (+ <code>--pg-dump</code>)</td>
+<td><code>in.sh -y</code> (+ <code>--restore-pg</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<p>포트: <strong>web 8572 · api 8573 · postgres 8574 · redis 8575 · keycloak 8576 · mcp 8577</strong></p>
+<hr>
+<h2 id="env">운용 <code>.env</code> (비밀키는 번들 밖)</h2>
+<pre><code class="language-bash">cp .env.example .env
+# Fabrix / OpenRouter 키 설정
+# 폐쇄망 기본값 (in.sh 가 없으면 추가):
+MODELS_HOST_DIR=/home/&lt;user&gt;/citec-kb/models
+TRANSFORMERS_OFFLINE=1
+HF_HUB_OFFLINE=1
+EMBEDDING_MODEL=intfloat/multilingual-e5-base
+</code></pre>
+<h3 id="_6">임베딩 모델 (프로젝트 전용)</h3>
+<ul>
+<li><strong>위치:</strong> 항상 <code>citec-kb/models/</code> (compose 기본 <code>MODELS_HOST_DIR=./models</code>)</li>
+<li><strong>금지:</strong> <code>citec-wiki-qa</code> 등 다른 레포 경로를 <code>MODELS_HOST_DIR</code> 로 지정·심볼릭 링크</li>
+<li><strong>개발 준비:</strong> 다른 곳에 있는 HF 캐시는 <strong>복사</strong> 후 사용</li>
+</ul>
+<pre><code class="language-bash"># 개발 레포에서 (예시)
+mkdir -p models
+rsync -a /path/to/hf-cache/hub/ models/hub/
+# 패키징
+scripts/out.sh --model
+</code></pre>
+<p><code>out.sh --model</code> 은 <code>SOURCE_PATH/models</code> 만 읽습니다. 레포 밖·<code>citec-wiki-qa</code> 경로는 거부합니다.</p>
+<hr>
+<h2 id="_7">체크리스트 (최초 폐쇄망)</h2>
+<ol>
+<li>☐ code + docker + docker-mcp + model 전송·적용  </li>
+<li>☐ data (<code>--pg-dump</code> 권장) 적용  </li>
+<li>☐ <code>.env</code> LLM 키  </li>
+<li>☐ <code>curl -s localhost:8573/v1/health</code>  </li>
+<li>☐ 웹 http://localhost:8572 검색 스모크  </li>
+<li>☐ (선택) keycloak profile  </li>
+</ol>
+<hr>
+<h2 id="_8">설계 메모</h2>
+<ol>
+<li>접두사 <strong><code>citec-kb-</code></strong> — wiki-qa <code>citec-</code> 와 구분  </li>
+<li><code>api</code>/<code>worker</code> 는 compose 에 <strong>명시적 <code>image:</code></strong> 태그 (폐쇄망 load 후 build 금지)  </li>
+<li>model 번들은 <strong>실파일 복사</strong> (symlink tar 금지)  </li>
+<li>비밀키·<code>.env</code> 는 번들 제외, 운용 보존  </li>
+<li><code>rebuild.sh</code> 는 개발용 — 운용에서는 <code>run_stack.sh</code> / <code>in.sh</code> 사용  </li>
+</ol>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Agent Guide — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/AI_AGENT_GUIDE.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>citec-kb — AI Agent Guide (Claude / MCP / REST)</h1>
+    <nav class="nav">
+      <a href="#citec-kb-ai-agent-guide-claude-mcp-rest">citec-kb — AI Agent Guide (Claude / MCP / REST)</a>
+      <a href="#1-what-citec-kb-is">1. What citec-kb is</a>
+      <a href="#default-ports-host" style="padding-left:20px;font-size:12px">Default ports (host)</a>
+      <a href="#2-hard-rules-for-agents-do-this-every-time">2. Hard rules for agents (do this every time)</a>
+      <a href="#21-evidence-before-claims" style="padding-left:20px;font-size:12px">2.1 Evidence before claims</a>
+      <a href="#22-always-use-access-fields" style="padding-left:20px;font-size:12px">2.2 Always use access fields</a>
+      <a href="#23-prefer-the-planner-for-vague-nl" style="padding-left:20px;font-size:12px">2.3 Prefer the planner for vague NL</a>
+      <a href="#24-tool-budget" style="padding-left:20px;font-size:12px">2.4 Tool budget</a>
+      <a href="#3-decision-tree-which-tool">3. Decision tree (which tool?)</a>
+      <a href="#4-mcp-tool-reference-complete">4. MCP tool reference (complete)</a>
+      <a href="#41-kb_query-unified-planner-recommended-entry" style="padding-left:20px;font-size:12px">4.1 kb_query — unified planner (recommended entry)</a>
+      <a href="#42-kb_search-wiki_search" style="padding-left:20px;font-size:12px">4.2 kb_search / wiki_search</a>
+      <a href="#43-kb_get_document-wiki_get_document" style="padding-left:20px;font-size:12px">4.3 kb_get_document / wiki_get_document</a>
+      <a href="#44-kb_list_tickets-period-listing" style="padding-left:20px;font-size:12px">4.4 kb_list_tickets — period listing</a>
+      <a href="#45-kb_analytics" style="padding-left:20px;font-size:12px">4.5 kb_analytics</a>
+      <a href="#46-kb_entity_share" style="padding-left:20px;font-size:12px">4.6 kb_entity_share</a>
+      <a href="#47-kb_title_tokens" style="padding-left:20px;font-size:12px">4.7 kb_title_tokens</a>
+      <a href="#48-kb_similar_incident" style="padding-left:20px;font-size:12px">4.8 kb_similar_incident</a>
+      <a href="#49-checklist" style="padding-left:20px;font-size:12px">4.9 Checklist</a>
+      <a href="#410-kb_capacity_estimate" style="padding-left:20px;font-size:12px">4.10 kb_capacity_estimate</a>
+      <a href="#411-kb_ticket" style="padding-left:20px;font-size:12px">4.11 kb_ticket</a>
+      <a href="#412-insights" style="padding-left:20px;font-size:12px">4.12 Insights</a>
+      <a href="#413-kb_ask-wiki_ask" style="padding-left:20px;font-size:12px">4.13 kb_ask / wiki_ask</a>
+      <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
+      <a href="#5-time-expressions-relative">5. Time expressions (relative)</a>
+      <a href="#6-source-types-path-conventions">6. Source types &amp; path conventions</a>
+      <a href="#7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</a>
+      <a href="#71-search-rag" style="padding-left:20px;font-size:12px">7.1 Search &amp; RAG</a>
+      <a href="#72-tickets-time" style="padding-left:20px;font-size:12px">7.2 Tickets &amp; time</a>
+      <a href="#73-analytics" style="padding-left:20px;font-size:12px">7.3 Analytics</a>
+      <a href="#74-checkitems-capacity" style="padding-left:20px;font-size:12px">7.4 Checkitems &amp; capacity</a>
+      <a href="#75-wiki-qa-compatible-api" style="padding-left:20px;font-size:12px">7.5 wiki-qa compatible (/api/*)</a>
+      <a href="#8-worked-scenarios-multi-step">8. Worked scenarios (multi-step)</a>
+      <a href="#scenario-a-2026-scp-v2-multi-az" style="padding-left:20px;font-size:12px">Scenario A — “2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?”</a>
+      <a href="#scenario-b" style="padding-left:20px;font-size:12px">Scenario B — “지난 주 지원 목록 요약”</a>
+      <a href="#scenario-c-scp" style="padding-left:20px;font-size:12px">Scenario C — “올해 SCP 이슈 유형 비중”</a>
+      <a href="#scenario-d-redis-timeout" style="padding-left:20px;font-size:12px">Scenario D — “Redis timeout 과거 유사 장애와 조치”</a>
+      <a href="#scenario-e-linux-oom" style="padding-left:20px;font-size:12px">Scenario E — “Linux OOM 관련 점검 항목”</a>
+      <a href="#scenario-f-rag-narrative" style="padding-left:20px;font-size:12px">Scenario F — RAG narrative</a>
+      <a href="#9-anti-patterns-avoid">9. Anti-patterns (avoid)</a>
+      <a href="#10-output-format-suggested-for-user-facing-answers">10. Output format suggested for user-facing answers</a>
+      <a href="#11-reliability-notes-retrieval">11. Reliability notes (retrieval)</a>
+      <a href="#12-mcp-client-setup-short">12. MCP client setup (short)</a>
+      <a href="#13-quick-checklist-for-the-agent-before-final-answer">13. Quick checklist for the agent (before final answer)</a>
+      <a href="#14-versioning">14. Versioning</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>citec-kb — AI Agent Guide (Claude / MCP / REST)</h1>
+      <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-22</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-ai-agent-guide-claude-mcp-rest">citec-kb — AI Agent Guide (Claude / MCP / REST)</h1>
+<p><strong>Audience:</strong> Claude Desktop, Claude Code, Cursor, and other LLM agents that call <strong>MCP tools</strong> or <strong>HTTP APIs</strong>.<br>
+<strong>Goal:</strong> Choose the right tool, fetch evidence correctly, and answer with citations—not guesses.</p>
+<p>Related docs:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Doc</th>
+<th>Focus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="./MCP.md">MCP.md</a></td>
+<td>MCP install, tool table, client config</td>
+</tr>
+<tr>
+<td><a href="./EXTERNAL_API.md">EXTERNAL_API.md</a></td>
+<td>REST <code>/api/*</code> + <code>/v1/*</code> compatibility</td>
+</tr>
+<tr>
+<td><a href="./DEPLOY.md">DEPLOY.md</a></td>
+<td>Air-gap packaging (ops, not for Q&amp;A)</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="1-what-citec-kb-is">1. What citec-kb is</h2>
+<p>CI-TEC internal knowledge platform:</p>
+<ul>
+<li><strong>Corpus:</strong> support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, insights  </li>
+<li><strong>Search:</strong> hybrid <strong>PostgreSQL FTS + pgvector</strong> (multilingual-e5-base, 768-d)  </li>
+<li><strong>Planner:</strong> natural language → intent (time list, analytics, similar incident, checklist, capacity, hybrid search, RAG)  </li>
+<li><strong>LLM:</strong> external only (OpenRouter / Fabrix)—not embedded in MCP  </li>
+</ul>
+<p><strong>MCP server is a thin proxy.</strong> It does not re-implement search; it calls the API and formats text for the model.</p>
+<h3 id="default-ports-host">Default ports (host)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Port</th>
+<th>Service</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>8572</strong></td>
+<td>Web UI (nginx)</td>
+</tr>
+<tr>
+<td><strong>8573</strong></td>
+<td>API (FastAPI)</td>
+</tr>
+<tr>
+<td><strong>8574</strong></td>
+<td>Postgres</td>
+</tr>
+<tr>
+<td><strong>8575</strong></td>
+<td>Redis</td>
+</tr>
+<tr>
+<td><strong>8577</strong></td>
+<td>MCP (streamable-http)</td>
+</tr>
+</tbody>
+</table></div>
+<p>API base examples:</p>
+<ul>
+<li>From host: <code>http://localhost:8573</code>  </li>
+<li>From MCP container: <code>http://api:8000</code>  </li>
+</ul>
+<p>Auth (pilot often <strong>off</strong>): if <code>AUTH_MODE=apikey|oidc</code>, send <code>Authorization: Bearer &lt;token&gt;</code> (MCP: env <code>CITEC_KB_TOKEN</code>).</p>
+<hr>
+<h2 id="2-hard-rules-for-agents-do-this-every-time">2. Hard rules for agents (do this every time)</h2>
+<h3 id="21-evidence-before-claims">2.1 Evidence before claims</h3>
+<ol>
+<li><strong>Search or list first</strong> (<code>kb_query</code> / <code>kb_search</code> / <code>kb_list_tickets</code> / …).  </li>
+<li>For any document you cite, <strong>load full text</strong> with <code>kb_get_document(path=…)</code> or <code>kb_ticket(external_id=…)</code> when snippet is insufficient.  </li>
+<li>Prefer answers grounded in returned titles, snippets, bodies, and <strong>external_id</strong> (e.g. <code>CITECTS-2386</code>).  </li>
+<li>If retrieval is empty or weak: say you could not find it; suggest alternate queries—<strong>do not invent tickets</strong>.</li>
+</ol>
+<h3 id="22-always-use-access-fields">2.2 Always use access fields</h3>
+<p>Every hit should expose (or MCP text will print):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>Pass to <code>kb_get_document</code></td>
+</tr>
+<tr>
+<td><code>body_api</code> / <code>body_api_url</code></td>
+<td>Direct GET of ticket/checkitem JSON/body</td>
+</tr>
+<tr>
+<td><code>web_url</code> / <code>web_path</code></td>
+<td>Human-readable UI link</td>
+</tr>
+<tr>
+<td><code>external_id</code></td>
+<td>Ticket key / page id / checkitem code</td>
+</tr>
+<tr>
+<td><code>source_type</code></td>
+<td><code>support_history</code>, <code>tech_repo</code>, <code>checkitem</code>, …</td>
+</tr>
+</tbody>
+</table></div>
+<p>When answering users, include at least: <strong>title + external_id + path or web_url</strong>.</p>
+<h3 id="23-prefer-the-planner-for-vague-nl">2.3 Prefer the planner for vague NL</h3>
+<p>If the user speaks Korean natural language with <strong>time, counts, types, “is there…?”, similar incidents, checklists</strong>, start with:</p>
+<pre><code class="language-text">kb_query(q=&quot;&lt;user question&gt;&quot;)
+</code></pre>
+<p>Use specialized tools when you already know the structured parameters (dates, group_by, area).</p>
+<h3 id="24-tool-budget">2.4 Tool budget</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Approach</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>One clear fact question</td>
+<td><code>kb_query</code> or <code>kb_search</code> → 1–2 <code>kb_get_document</code></td>
+</tr>
+<tr>
+<td>Period list</td>
+<td><code>kb_list_tickets</code> (not N full-text searches)</td>
+</tr>
+<tr>
+<td>Counts / breakdown</td>
+<td><code>kb_analytics</code> (not LLM counting)</td>
+</tr>
+<tr>
+<td>“Similar past outage”</td>
+<td><code>kb_similar_incident</code></td>
+</tr>
+<tr>
+<td>Full narrative answer</td>
+<td><code>kb_ask</code> after optional search</td>
+</tr>
+</tbody>
+</table></div>
+<p>Avoid: calling <code>kb_search</code> 10 times with tiny paraphrases when <code>kb_query</code> or analytics already answers.</p>
+<hr>
+<h2 id="3-decision-tree-which-tool">3. Decision tree (which tool?)</h2>
+<pre><code>User question
+│
+├─ Health / corpus size? ──────────────► kb_health / kb_stats
+│
+├─ Natural language, unclear type? ────► kb_query(q)
+│     (period, counts, SI, checklist, capacity, search)
+│
+├─ Explicit period list
+│     &quot;지난 주&quot;, &quot;올해&quot;, &quot;2026-01-01~03-31&quot;
+│     ──────────────────────────────────► kb_list_tickets
+│
+├─ Explicit aggregates
+│     &quot;연도별&quot;, &quot;유형별&quot;, &quot;월별 건수&quot;, &quot;SCP 비중&quot;
+│     ──────────────────────────────────► kb_analytics
+│                                         kb_entity_share
+│                                         kb_title_tokens
+│
+├─ Keyword / topical document find
+│     &quot;Multi-AZ 가용성&quot;, &quot;Redis timeout&quot;
+│     ──────────────────────────────────► kb_search
+│                                         then kb_get_document
+│
+├─ RAG prose answer with citations ────► kb_ask
+│
+├─ Similar incident / past case ───────► kb_similar_incident
+│
+├─ PISA checklist ─────────────────────► kb_list_checkitems
+│                                         kb_get_checkitem
+│
+├─ Known ticket id CITECTS-#### ───────► kb_ticket
+│
+├─ Capacity / 공수 estimate ───────────► kb_capacity_estimate
+│
+└─ Unsure which tool ──────────────────► kb_tools_help
+</code></pre>
+<hr>
+<h2 id="4-mcp-tool-reference-complete">4. MCP tool reference (complete)</h2>
+<p>Base MCP: FastMCP over <strong>streamable-http</strong> (<code>http://localhost:8577/mcp</code>) or <strong>stdio</strong>.</p>
+<h3 id="41-kb_query-unified-planner-recommended-entry">4.1 <code>kb_query</code> — unified planner (recommended entry)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>When</strong></td>
+<td>User NL; time + topic; “있나?”; type breakdown; similar cases mixed with search</td>
+</tr>
+<tr>
+<td><strong>Args</strong></td>
+<td><code>q</code> (string), <code>top_k</code> (default 10)</td>
+</tr>
+<tr>
+<td><strong>API</strong></td>
+<td><code>POST /v1/query</code> <code>{"q", "include_search": true, "top_k"}</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Intents you may see in the response:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>intent</th>
+<th>Meaning</th>
+<th>Follow-up</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>time_scoped_list</code></td>
+<td>Tickets in a date range</td>
+<td>Open top tickets with <code>kb_ticket</code> / path</td>
+</tr>
+<tr>
+<td><code>analytics</code></td>
+<td>Counts by year/month/component/issue_type/…</td>
+<td>Cite buckets; sample paths</td>
+</tr>
+<tr>
+<td><code>hybrid_search</code></td>
+<td>Ranked documents</td>
+<td><code>kb_get_document</code> on path</td>
+</tr>
+<tr>
+<td><code>similar_incident</code></td>
+<td>SI cases</td>
+<td>Ticket bodies if needed</td>
+</tr>
+<tr>
+<td><code>checklist</code></td>
+<td>PISA items</td>
+<td><code>kb_get_checkitem</code></td>
+</tr>
+<tr>
+<td><code>capacity</code></td>
+<td>Staffing/cost rules</td>
+<td>Numbers only from result</td>
+</tr>
+<tr>
+<td><code>exhaustive</code> / <code>prevention</code></td>
+<td>Broader / prevention packs</td>
+<td>Paths as given</td>
+</tr>
+<tr>
+<td><code>entity_aggregate</code></td>
+<td>Entity-oriented buckets</td>
+<td>Same as analytics samples</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Example <code>q</code> values that work well:</strong></p>
+<ul>
+<li><code>지난 주 지원건</code></li>
+<li><code>올해 SCP 관련 유형 분류</code></li>
+<li><code>2026년 지원 건수 연도별</code> / <code>연도별 지원 건수</code></li>
+<li><code>2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?</code></li>
+<li><code>모니모 Redis 타임아웃 유사 장애</code></li>
+<li><code>Linux OOM 체크리스트</code></li>
+</ul>
+<h3 id="42-kb_search-wiki_search">4.2 <code>kb_search</code> / <code>wiki_search</code></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>When</strong></td>
+<td>Topical hybrid search with optional filters</td>
+</tr>
+<tr>
+<td><strong>API</strong></td>
+<td>Default <code>POST /v1/search</code> (<code>use_v1=true</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>query</code></td>
+<td>str</td>
+<td>Search string</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td>str</td>
+<td>→ <code>source_type</code>: <code>support_history</code>, <code>tech_repo</code>, <code>tuning_ai</code>, <code>checkitems</code>, <code>confluence_docs</code>, …</td>
+</tr>
+<tr>
+<td><code>area</code></td>
+<td>str</td>
+<td>→ domain filter (<code>os</code>, <code>dbms</code>, <code>network</code>, <code>cloud</code>, <code>storage</code>, …)</td>
+</tr>
+<tr>
+<td><code>category</code></td>
+<td>str</td>
+<td>wiki-compat only when <code>use_v1=false</code></td>
+</tr>
+<tr>
+<td><code>limit</code></td>
+<td>int</td>
+<td>1–50</td>
+</tr>
+<tr>
+<td><code>environment</code></td>
+<td>str</td>
+<td>e.g. <code>csp</code></td>
+</tr>
+<tr>
+<td><code>work_type</code></td>
+<td>str</td>
+<td>e.g. 기술지원 / 장애지원</td>
+</tr>
+<tr>
+<td><code>multi_query</code></td>
+<td>bool</td>
+<td>Expand synonyms/phrases (default true)</td>
+</tr>
+<tr>
+<td><code>use_v1</code></td>
+<td>bool</td>
+<td>false → <code>GET /api/wiki/search</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Tips:</strong></p>
+<ul>
+<li>Existence questions: prefer full NL in <code>query</code> (and/or <code>kb_query</code>); avoid only <code>SCP</code> or only <code>Multi-AZ</code>.  </li>
+<li>After hits: always use printed <code>path</code> for <code>kb_get_document</code>.</li>
+</ul>
+<h3 id="43-kb_get_document-wiki_get_document">4.3 <code>kb_get_document</code> / <code>wiki_get_document</code></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>path</code></td>
+<td>From search: <code>support_history/CITECTS-2386.md</code>, or short <code>CITECTS-2386</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Returns markdown body + access meta. <strong>Primary way to quote full text.</strong></p>
+<h3 id="44-kb_list_tickets-period-listing">4.4 <code>kb_list_tickets</code> — period listing</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>relative</code></td>
+<td>See §5 time expressions</td>
+</tr>
+<tr>
+<td><code>date_from</code> / <code>date_to</code></td>
+<td>ISO <code>YYYY-MM-DD</code></td>
+</tr>
+<tr>
+<td><code>date_field</code></td>
+<td><code>Created</code> (default), <code>Resolved</code>, <code>Updated</code></td>
+</tr>
+<tr>
+<td><code>source_type</code></td>
+<td>default <code>support_history</code></td>
+</tr>
+<tr>
+<td><code>limit</code> / <code>offset</code> / <code>order</code></td>
+<td>pagination</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>API:</strong> <code>GET /v1/tickets?...</code></p>
+<p>Use this instead of inventing lists from memory. Combine with <code>kb_ticket</code> for full body.</p>
+<h3 id="45-kb_analytics">4.5 <code>kb_analytics</code></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>group_by</code></td>
+<td><code>year</code> | <code>month</code> | <code>component</code> | <code>issue_type</code> | <code>status</code> | <code>assignee</code> | <code>total</code></td>
+</tr>
+<tr>
+<td><code>relative</code> / <code>date_from</code> / <code>date_to</code> / <code>date_field</code></td>
+<td>time scope</td>
+</tr>
+<tr>
+<td><code>source_type</code></td>
+<td>default <code>support_history</code></td>
+</tr>
+<tr>
+<td><code>component</code></td>
+<td>Jira component filter</td>
+</tr>
+<tr>
+<td><code>entity</code></td>
+<td>title ILIKE (e.g. <code>SCP</code>, <code>모니모</code>)</td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td>max buckets</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>API:</strong> <code>GET /v1/analytics/tickets</code><br>
+<strong>Never</strong> invent counts—only report returned buckets.</p>
+<h3 id="46-kb_entity_share">4.6 <code>kb_entity_share</code></h3>
+<p>Share of tickets matching <code>entity</code> in a period.<br>
+<strong>API:</strong> <code>GET /v1/analytics/entity_share</code></p>
+<h3 id="47-kb_title_tokens">4.7 <code>kb_title_tokens</code></h3>
+<p>Title token frequency (optional <code>component</code>).<br>
+<strong>API:</strong> <code>GET /v1/analytics/title_tokens</code></p>
+<h3 id="48-kb_similar_incident">4.8 <code>kb_similar_incident</code></h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>symptom</code></td>
+<td>Free-text symptom (required)</td>
+</tr>
+<tr>
+<td><code>environment</code> / <code>product</code> / <code>service</code></td>
+<td>optional context</td>
+</tr>
+<tr>
+<td><code>top_k</code></td>
+<td>1–10</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>API:</strong> <code>POST /v1/similar-incident</code><br>
+Report applicability labels; load ticket body for resolution details.</p>
+<h3 id="49-checklist">4.9 Checklist</h3>
+<ul>
+<li><code>kb_list_checkitems(q=, area=, category_1=, limit=)</code> → <code>GET /v1/checkitems</code>  </li>
+<li><code>kb_get_checkitem(code=)</code> → <code>GET /v1/checkitems/{code}</code>  </li>
+</ul>
+<p><code>area</code> examples: <code>Linux</code>, <code>Oracle</code>, <code>Windows</code>.<br>
+<code>code</code> examples: <code>PISAOLNX_01.04.05</code>.</p>
+<h3 id="410-kb_capacity_estimate">4.10 <code>kb_capacity_estimate</code></h3>
+<p>Rule-based capacity/pricing (no LLM).<br>
+<strong>API:</strong> <code>POST /v1/capacity/estimate</code><br>
+Args: <code>period_days</code>, <code>basis</code> (e.g. <code>1안</code>), <code>include_pricing</code>.</p>
+<h3 id="411-kb_ticket">4.11 <code>kb_ticket</code></h3>
+<p>Full ticket markdown.<br>
+<strong>API:</strong> <code>GET /v1/tickets/{external_id}?source_type=support_history</code></p>
+<h3 id="412-insights">4.12 Insights</h3>
+<ul>
+<li><code>kb_list_insights</code> / <code>wiki_list_synthesis</code>  </li>
+<li><code>kb_get_insight</code> / <code>wiki_get_synthesis</code>  </li>
+</ul>
+<h3 id="413-kb_ask-wiki_ask">4.13 <code>kb_ask</code> / <code>wiki_ask</code></h3>
+<p>RAG answer (SSE under the hood).<br>
+Args: <code>query</code>, <code>template</code> (default <code>general</code>), <code>mode</code> (<code>fast</code>|<code>deep</code>).<br>
+Use when the user wants a <strong>written answer with citations</strong>, not only a list.<br>
+Still verify important claims with <code>kb_get_document</code> if the model output looks thin.</p>
+<h3 id="414-ops">4.14 Ops</h3>
+<ul>
+<li><code>kb_health</code> — API health  </li>
+<li><code>kb_stats</code> — document counts by source  </li>
+<li><code>kb_tools_help</code> — short tool menu (also useful mid-conversation)</li>
+</ul>
+<hr>
+<h2 id="5-time-expressions-relative">5. Time expressions (<code>relative</code>)</h2>
+<p>Supported via <code>parse_relative_range</code> (Korean phrases). Common values:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>relative</th>
+<th>Meaning (approx.)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>지난 주</code> / <code>최근 7일</code></td>
+<td>last week / last 7 days</td>
+</tr>
+<tr>
+<td><code>이번 달</code> / <code>지난 달</code></td>
+<td>this / last month</td>
+</tr>
+<tr>
+<td><code>올해</code> / <code>작년</code></td>
+<td>this / last calendar year</td>
+</tr>
+<tr>
+<td><code>최근 30일</code></td>
+<td>last 30 days</td>
+</tr>
+</tbody>
+</table></div>
+<p>Also works: ISO <code>date_from</code> + <code>date_to</code> on <code>kb_list_tickets</code> / <code>kb_analytics</code>.</p>
+<p>If <code>relative</code> is unrecognized, API returns 400—retry with ISO dates or different phrasing, or use <code>kb_query</code> with full Korean sentence.</p>
+<hr>
+<h2 id="6-source-types-path-conventions">6. Source types &amp; path conventions</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>source_type / section</th>
+<th>Content</th>
+<th>path pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>support_history</code></td>
+<td>Jira-like tickets</td>
+<td><code>support_history/CITECTS-2386.md</code></td>
+</tr>
+<tr>
+<td><code>tech_repo</code></td>
+<td>Confluence tech pages</td>
+<td><code>tech_repo/{pageId}.md</code></td>
+</tr>
+<tr>
+<td><code>tuning_ai</code></td>
+<td>Tuning / SQL notes</td>
+<td><code>tuning_ai/...</code></td>
+</tr>
+<tr>
+<td><code>checkitem</code> / section <code>checkitems</code></td>
+<td>PISA items</td>
+<td>use <code>kb_get_checkitem</code> or path form</td>
+</tr>
+<tr>
+<td><code>confluence_docs</code></td>
+<td>Other confluence</td>
+<td><code>confluence_docs/...</code></td>
+</tr>
+<tr>
+<td>insights / synthesis</td>
+<td>Approved insights</td>
+<td>via insight tools</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Ticket keys:</strong> always <code>CITECTS-&lt;number&gt;</code> (case-insensitive in search; normalize to <code>CITECTS-####</code> when calling <code>kb_ticket</code>).</p>
+<hr>
+<h2 id="7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</h2>
+<p>Base: <code>http://localhost:8573</code><br>
+Headers: <code>Accept: application/json</code>, optional <code>Authorization: Bearer …</code></p>
+<h3 id="71-search-rag">7.1 Search &amp; RAG</h3>
+<pre><code class="language-http">POST /v1/search
+Content-Type: application/json
+
+{
+  &quot;q&quot;: &quot;SCP v2 Multi-AZ 가용성 테스트&quot;,
+  &quot;top_k&quot;: 10,
+  &quot;filters&quot;: {
+    &quot;source_type&quot;: &quot;support_history&quot;,
+    &quot;status&quot;: &quot;active&quot;
+  },
+  &quot;multi_query&quot;: true
+}
+</code></pre>
+<pre><code class="language-http">POST /v1/chat
+{&quot;q&quot;: &quot;…&quot;, &quot;mode&quot;: &quot;fast&quot;, &quot;top_k&quot;: 8}
+</code></pre>
+<pre><code class="language-http">POST /v1/query
+{&quot;q&quot;: &quot;지난 주 지원건&quot;, &quot;include_search&quot;: true, &quot;top_k&quot;: 10}
+</code></pre>
+<pre><code class="language-http">POST /v1/similar-incident
+{&quot;symptom&quot;: &quot;Redis timeout after deploy&quot;, &quot;top_k&quot;: 3}
+</code></pre>
+<h3 id="72-tickets-time">7.2 Tickets &amp; time</h3>
+<pre><code class="language-http">GET /v1/tickets?relative=지난%20주&amp;limit=30&amp;date_field=Created
+GET /v1/tickets?date_from=2026-01-01&amp;date_to=2026-03-31
+GET /v1/tickets/CITECTS-2386?source_type=support_history
+</code></pre>
+<h3 id="73-analytics">7.3 Analytics</h3>
+<pre><code class="language-http">GET /v1/analytics/tickets?group_by=year
+GET /v1/analytics/tickets?group_by=issue_type&amp;relative=올해&amp;entity=SCP
+GET /v1/analytics/entity_share?entity=SCP&amp;relative=올해
+GET /v1/analytics/title_tokens?component=장애지원&amp;top_k=20
+</code></pre>
+<h3 id="74-checkitems-capacity">7.4 Checkitems &amp; capacity</h3>
+<pre><code class="language-http">GET /v1/checkitems?q=OOM&amp;area=Linux&amp;limit=30
+GET /v1/checkitems/PISAOLNX_01.04.05
+POST /v1/capacity/estimate
+{&quot;period_days&quot;: 7, &quot;basis&quot;: &quot;1안&quot;, &quot;include_pricing&quot;: true}
+</code></pre>
+<h3 id="75-wiki-qa-compatible-api">7.5 wiki-qa compatible (<code>/api/*</code>)</h3>
+<pre><code class="language-http">GET /api/health
+GET /api/wiki-stats
+GET /api/wiki/search?q=Redis&amp;section=support_history&amp;limit=10
+GET /api/wiki/file?path=support_history/CITECTS-2502.md
+POST /api/query
+{&quot;q&quot;: &quot;…&quot;, &quot;stream&quot;: true}
+</code></pre>
+<p>Full field tables: <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a>.</p>
+<hr>
+<h2 id="8-worked-scenarios-multi-step">8. Worked scenarios (multi-step)</h2>
+<h3 id="scenario-a-2026-scp-v2-multi-az">Scenario A — “2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?”</h3>
+<ol>
+<li><code>kb_query("2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?")</code><br>
+<strong>or</strong> <code>kb_search(query=..., section="support_history")</code>  </li>
+<li>Expect strong hit <strong>CITECTS-2386</strong> (그룹26-5 성능/가용성 테스트).  </li>
+<li><code>kb_get_document(path="support_history/CITECTS-2386.md")</code>  </li>
+<li>Answer: yes/no + schedule + target (SCP v2 Multi-AZ) + link/path.  </li>
+<li>Do <strong>not</strong> stop at old Multi-AZ network tickets (e.g. CITECTS-282) if 2386 ranks and matches.</li>
+</ol>
+<h3 id="scenario-b">Scenario B — “지난 주 지원 목록 요약”</h3>
+<ol>
+<li><code>kb_list_tickets(relative="지난 주", limit=50)</code>  </li>
+<li>Optionally group by component in your reasoning (or <code>kb_analytics</code> with same relative).  </li>
+<li>For 2–3 important tickets: <code>kb_ticket("CITECTS-…")</code>.  </li>
+<li>Summarize with ids and dates; offer deep dive.</li>
+</ol>
+<h3 id="scenario-c-scp">Scenario C — “올해 SCP 이슈 유형 비중”</h3>
+<ol>
+<li><code>kb_analytics(group_by="issue_type", relative="올해", entity="SCP")</code>  </li>
+<li>Report bucket keys and counts only from response.  </li>
+<li>Optional samples: open path via <code>kb_get_document</code>.</li>
+</ol>
+<h3 id="scenario-d-redis-timeout">Scenario D — “Redis timeout 과거 유사 장애와 조치”</h3>
+<ol>
+<li><code>kb_similar_incident(symptom="Redis timeout …", product="모니모")</code>  </li>
+<li>For top case: <code>kb_ticket(external_id)</code>  </li>
+<li>Structure answer: symptom match → root cause → resolution → applicability.</li>
+</ol>
+<h3 id="scenario-e-linux-oom">Scenario E — “Linux OOM 관련 점검 항목”</h3>
+<ol>
+<li><code>kb_list_checkitems(q="OOM", area="Linux")</code>  </li>
+<li><code>kb_get_checkitem(code="…")</code> for full structured sections (including 참고).  </li>
+<li>Present checklist-style steps from structured fields.</li>
+</ol>
+<h3 id="scenario-f-rag-narrative">Scenario F — RAG narrative</h3>
+<ol>
+<li>Optional: <code>kb_search</code> to pre-check corpus.  </li>
+<li><code>kb_ask(query="…", mode="fast")</code>  </li>
+<li>If answer abstains or looks weak: fall back to search + document read and answer yourself with citations.</li>
+</ol>
+<hr>
+<h2 id="9-anti-patterns-avoid">9. Anti-patterns (avoid)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Anti-pattern</th>
+<th>Why</th>
+<th>Do instead</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Answer from model memory only</td>
+<td>Hallucinated CITECTS ids</td>
+<td>Always tool call</td>
+</tr>
+<tr>
+<td>Count tickets with LLM</td>
+<td>Wrong numbers</td>
+<td><code>kb_analytics</code></td>
+</tr>
+<tr>
+<td>Search only <code>SCP</code> or only <code>2026</code></td>
+<td>High-DF noise</td>
+<td>Multi-token query / <code>kb_query</code></td>
+</tr>
+<tr>
+<td>List paths but never open body</td>
+<td>Thin answers</td>
+<td><code>kb_get_document</code> / <code>kb_ticket</code></td>
+</tr>
+<tr>
+<td>Ignore <code>intent=</code> from <code>kb_query</code></td>
+<td>Wrong follow-up</td>
+<td>Branch on intent</td>
+</tr>
+<tr>
+<td>Use <code>kb_ask</code> for pure “list last week”</td>
+<td>Overkill / weaker lists</td>
+<td><code>kb_list_tickets</code></td>
+</tr>
+<tr>
+<td>Assume English-only</td>
+<td>Corpus is KO+EN</td>
+<td>Keep Korean query text</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="10-output-format-suggested-for-user-facing-answers">10. Output format suggested for user-facing answers</h2>
+<pre><code class="language-markdown">## 결론
+- …
+
+## 근거
+1. **CITECTS-####** — 제목  
+   - 요약 (본문 기준 1–3문장)  
+   - path: `support_history/….md`  
+   - (선택) web_url
+
+## 추가 확인
+- 더 볼 티켓 / 기간 재조회 제안
+</code></pre>
+<p>If no evidence:</p>
+<pre><code class="language-markdown">## 결론
+코퍼스에서 확인하지 못했습니다.
+
+## 시도한 조회
+- tools + queries used
+
+## 제안
+- 다른 키워드 / 기간 / source_type
+</code></pre>
+<hr>
+<h2 id="11-reliability-notes-retrieval">11. Reliability notes (retrieval)</h2>
+<ul>
+<li>Hybrid search uses <strong>multi-query expansion</strong> carefully: bare high-DF tokens (<code>SCP</code>, <code>Multi-AZ</code>, year alone) are down-weighted; prefer full phrases.  </li>
+<li>Planner may route “있나?” questions to hybrid search—still open the top document before asserting.  </li>
+<li>Vectors offline: ops must ship model + embeddings (<code>--pg-only</code> / full data); empty embeddings → FTS-only or weak vector path.  </li>
+<li><code>AUTH_MODE=off</code> pilot: tools work without token; production may require Bearer.</li>
+</ul>
+<hr>
+<h2 id="12-mcp-client-setup-short">12. MCP client setup (short)</h2>
+<p><strong>Streamable HTTP (Docker MCP on 8577):</strong></p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;citec-kb&quot;: {
+      &quot;url&quot;: &quot;http://localhost:8577/mcp&quot;,
+      &quot;transport&quot;: &quot;streamable-http&quot;
+    }
+  }
+}
+</code></pre>
+<p><strong>stdio:</strong> see <code>mcp-server/claude_desktop_stdio.example.json</code> with <code>CITEC_KB_BASE_URL=http://localhost:8573</code>.</p>
+<p>After code deploy: <code>docker compose restart mcp</code> (server.py is bind-mounted).</p>
+<hr>
+<h2 id="13-quick-checklist-for-the-agent-before-final-answer">13. Quick checklist for the agent (before final answer)</h2>
+<ul>
+<li>☐ Correct tool chosen (tree in §3)  </li>
+<li>☐ At least one retrieval call succeeded  </li>
+<li>☐ Existence/count/list claims match tool output  </li>
+<li>☐ Citations include external_id and path or web_url  </li>
+<li>☐ Full body loaded when quoting resolution/cause  </li>
+<li>☐ Uncertainties stated if rank is weak or conflicting  </li>
+</ul>
+<hr>
+<h2 id="14-versioning">14. Versioning</h2>
+<p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code>.<br>
+If a tool name is missing in the live server, call <code>kb_tools_help</code> or fall back to <code>kb_query</code> + REST in <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a>.</p>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

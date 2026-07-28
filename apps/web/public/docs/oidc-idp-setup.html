@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OIDC / IdP 연동 가이드 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/OIDC_IDP_SETUP.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>OIDC / IdP 연동 가이드 (citec-kb)</h1>
+    <nav class="nav">
+      <a href="#oidc-idp-citec-kb">OIDC / IdP 연동 가이드 (citec-kb)</a>
+      <a href="#_1">모드 요약</a>
+      <a href="#mock-idp-rs256-jwks">로컬 mock IdP (RS256 JWKS) — 권장 개발 경로</a>
+      <a href="#env" style="padding-left:20px;font-size:12px">예시 .env</a>
+      <a href="#_2" style="padding-left:20px;font-size:12px">플로우 확인</a>
+      <a href="#keycloak-compose-profile-idp">로컬 Keycloak (compose profile) — 실 IdP 경로 검증</a>
+      <a href="#keycloak">Keycloak 실서버 체크리스트</a>
+      <a href="#entra-id-azure-ad">Entra ID (Azure AD) 요약</a>
+      <a href="#api">API 엔드포인트</a>
+      <a href="#enforced">보호 경로 (enforced 모드)</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>OIDC / IdP 연동 가이드 (citec-kb)</h1>
+      <p class="lead">Keycloak 및 외부 IdP 연동 모드</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/OIDC_IDP_SETUP.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-21</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="oidc-idp-citec-kb">OIDC / IdP 연동 가이드 (citec-kb)</h1>
+<h2 id="_1">모드 요약</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>AUTH_MODE</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>off</code></td>
+<td>오픈 파일럿 (기본). 쓰기 API 무인증 허용</td>
+</tr>
+<tr>
+<td><code>apikey</code></td>
+<td><code>config/auth.json</code> / <code>AUTH_TOKENS_JSON</code> + JWT</td>
+</tr>
+<tr>
+<td><code>oidc_stub</code></td>
+<td><code>stub:user:roles</code> + JWT</td>
+</tr>
+<tr>
+<td><code>oidc</code></td>
+<td><strong>JWT 필수</strong> (API key도 서비스 계정용으로 허용)</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="mock-idp-rs256-jwks">로컬 mock IdP (RS256 JWKS) — 권장 개발 경로</h2>
+<p>API가 내장 mock IdP를 제공합니다.</p>
+<ul>
+<li>Discovery: <code>GET /v1/mock-idp/.well-known/openid-configuration</code></li>
+<li>Authorize / Token / JWKS: <code>/v1/mock-idp/authorize|token|jwks</code></li>
+<li>기본 활성: <code>APP_ENV=dev|local|test</code> 또는 <code>MOCK_OIDC_ENABLED=true</code></li>
+</ul>
+<h3 id="env">예시 <code>.env</code></h3>
+<pre><code class="language-bash">AUTH_MODE=oidc
+MOCK_OIDC_ENABLED=true
+OIDC_ISSUER=http://localhost:8573/v1/mock-idp
+OIDC_CLIENT_ID=citec-kb
+OIDC_CLIENT_SECRET=mock-secret
+OIDC_AUDIENCE=citec-kb
+OIDC_REDIRECT_URI=http://localhost:8573/v1/auth/callback
+PUBLIC_WEB_BASE=http://localhost:8572
+PUBLIC_API_BASE=http://localhost:8573
+# OIDC_JWT_SECRET 는 비워 두어 RS256/JWKS 경로를 강제
+</code></pre>
+<h3 id="_2">플로우 확인</h3>
+<pre><code class="language-bash"># 단위·e2e (컨테이너)
+docker compose exec -T api python -m pytest /app/tests/test_mock_idp_e2e.py -q
+
+# 인프로세스 스크립트
+docker compose exec -T api python /app/../scripts/oidc_idp_e2e.py
+# 또는 호스트에서 tests 경로로 pytest
+</code></pre>
+<p>브라우저: http://localhost:8572/login.html → <strong>OIDC 로그인</strong><br>
+(서버에 위 env가 적용된 경우)</p>
+<p>Authorize 시 쿼리로 사용자 지정 가능:</p>
+<pre><code>.../authorize?...&amp;sub=alice&amp;roles=viewer,author,senior
+</code></pre>
+<h2 id="keycloak-compose-profile-idp">로컬 Keycloak (compose profile) — 실 IdP 경로 검증</h2>
+<p>포트 범위 내 <strong>8576</strong>. mock IdP와 달리 실제 Keycloak JWKS/토큰을 사용합니다.</p>
+<pre><code class="language-bash"># 기동
+docker compose --profile keycloak up -d keycloak
+
+# 준비 대기 후 e2e (discovery · password grant · JWT · API RBAC)
+.venv/bin/python scripts/keycloak_oidc_e2e.py --wait 180
+</code></pre>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin console</td>
+<td>http://localhost:8576 (admin / admin)</td>
+</tr>
+<tr>
+<td>Issuer</td>
+<td><code>http://localhost:8576/realms/citec</code></td>
+</tr>
+<tr>
+<td>Client</td>
+<td><code>citec-kb</code> / secret <code>citec-kb-secret</code></td>
+</tr>
+<tr>
+<td>Users</td>
+<td><code>viewer</code>/<code>author</code>/<code>senior</code>/<code>admin</code> (비밀번호=username)</td>
+</tr>
+<tr>
+<td>Realm import</td>
+<td><code>deploy/keycloak/realm-citec.json</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>API를 Keycloak에 붙이려면 (선택, 기본 stack은 <code>AUTH_MODE=off</code> 유지):</p>
+<pre><code class="language-bash"># .env 또는 compose override
+AUTH_MODE=oidc
+OIDC_ISSUER=http://localhost:8576/realms/citec
+OIDC_CLIENT_ID=citec-kb
+OIDC_CLIENT_SECRET=citec-kb-secret
+OIDC_AUDIENCE=*
+OIDC_REDIRECT_URI=http://localhost:8573/v1/auth/callback
+# Access token에 aud 가 없을 수 있음 → OIDC_AUDIENCE=* 후 azp=client_id 검증
+</code></pre>
+<p>브라우저: Keycloak 로그인 UI → <code>http://localhost:8572/login.html</code> (API에 OIDC env 적용 후).</p>
+<h2 id="keycloak">Keycloak 실서버 체크리스트</h2>
+<ol>
+<li>Realm 생성 (예: <code>citec</code>)</li>
+<li>Client <code>citec-kb</code><br>
+   - Access type: confidential (또는 public + PKCE 추후)<br>
+   - Valid redirect URIs: <code>http://localhost:8573/v1/auth/callback</code><br>
+   - Web origins: <code>http://localhost:8572</code></li>
+<li>Client roles 또는 realm roles: <code>viewer</code>, <code>author</code>, <code>senior</code>, <code>admin</code><br>
+   (또는 <code>kb-admin</code> 등 — API가 매핑)</li>
+<li>사용자에게 role assign</li>
+<li><code>.env</code>:</li>
+</ol>
+<pre><code class="language-bash">AUTH_MODE=oidc
+OIDC_ISSUER=https://keycloak.example.com/realms/citec
+OIDC_CLIENT_ID=citec-kb
+OIDC_CLIENT_SECRET=...
+OIDC_AUDIENCE=citec-kb   # 또는 account / 비우면 client_id
+OIDC_REDIRECT_URI=http://localhost:8573/v1/auth/callback
+OIDC_ROLE_CLAIM=roles    # Keycloak realm: realm_access.roles 자동 fallback
+</code></pre>
+<ol start="6">
+<li>확인</li>
+</ol>
+<pre><code class="language-bash">curl -sS $API/v1/auth/status | jq .oidc
+# discovery_ok=true 여야 함
+open http://localhost:8572/login.html
+</code></pre>
+<h2 id="entra-id-azure-ad">Entra ID (Azure AD) 요약</h2>
+<ul>
+<li>Issuer: <code>https://login.microsoftonline.com/&lt;tenant&gt;/v2.0</code></li>
+<li>App registration redirect: <code>.../v1/auth/callback</code></li>
+<li>Optional claims / App roles → <code>roles</code> claim</li>
+<li><code>OIDC_AUDIENCE</code> = Application (client) ID URI 또는 client id</li>
+</ul>
+<h2 id="api">API 엔드포인트</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/v1/auth/status</code></td>
+<td>모드·discovery 상태</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/auth/me</code></td>
+<td>Bearer principal</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/auth/login</code></td>
+<td>IdP redirect 또는 JSON URL</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/auth/callback</code></td>
+<td>code 교환 후 web fragment</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/auth/logout</code></td>
+<td>end_session 또는 web</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/auth/dev/token</code></td>
+<td>HS256 mint (<code>OIDC_JWT_SECRET</code>)</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="enforced">보호 경로 (enforced 모드)</h2>
+<ul>
+<li>Insight 작성/제출: <code>author+</code></li>
+<li>Insight 승인/거절/reindex: <code>senior+</code></li>
+<li><code>POST /v1/jobs</code>: <code>admin</code></li>
+</ul>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

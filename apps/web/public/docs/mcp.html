@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MCP 서버 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/MCP.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>citec-kb MCP 서버</h1>
+    <nav class="nav">
+      <a href="#citec-kb-mcp">citec-kb MCP 서버</a>
+      <a href="#_1">도구 목록</a>
+      <a href="#_2" style="padding-left:20px;font-size:12px">자연어 통합 (권장 엔트리)</a>
+      <a href="#_3" style="padding-left:20px;font-size:12px">문서 검색 · 원문</a>
+      <a href="#_4" style="padding-left:20px;font-size:12px">기간 조회 · 티켓 목록</a>
+      <a href="#_5" style="padding-left:20px;font-size:12px">집계 · 분석</a>
+      <a href="#_6" style="padding-left:20px;font-size:12px">유사장애 · 체크리스트 · 용량</a>
+      <a href="#insight" style="padding-left:20px;font-size:12px">Insight · 상태</a>
+      <a href="#_7">사용 예 (에이전트)</a>
+      <a href="#docker">Docker로 기동</a>
+      <a href="#claude-desktop-claude-code">Claude Desktop / Claude Code</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>citec-kb MCP 서버</h1>
+      <p class="lead">Claude / Cursor용 kb_search · kb_ask · kb_query</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/MCP.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-22</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-mcp">citec-kb MCP 서버</h1>
+<p>Claude Desktop / Claude Code / Cursor 등 MCP 클라이언트에서<br>
+CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·티켓·Insight)를 tool로 사용합니다.</p>
+<p>구조: <strong>경량 프록시</strong> → citec-kb REST (<code>/api/*</code>, <code>/v1/*</code>). 검색·LLM 로직은 API에 두고 MCP는 프로토콜 어댑터만 담당합니다.</p>
+<blockquote>
+<p><strong>AI 에이전트(Claude 등)용 상세 가이드:</strong> <a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a><br>
+도구 선택 트리 · 파라미터 · 시나리오 · 안티패턴 · REST 요약</p>
+</blockquote>
+<hr>
+<h2 id="_1">도구 목록</h2>
+<h3 id="_2">자연어 통합 (권장 엔트리)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>kb_query</code></strong></td>
+<td>의도 자동 분기: 기간 목록·집계·유사장애·체크리스트·용량·검색</td>
+<td><code>POST /v1/query</code></td>
+</tr>
+<tr>
+<td><code>kb_tools_help</code></td>
+<td>도구 선택 가이드</td>
+<td>(로컬)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_3">문서 검색 · 원문</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_search</code> / <code>wiki_search</code></td>
+<td>하이브리드 FTS+vector (section/area/environment/work_type)</td>
+<td><code>POST /v1/search</code> (기본)</td>
+</tr>
+<tr>
+<td><code>kb_get_document</code> / <code>wiki_get_document</code></td>
+<td>문서 본문</td>
+<td><code>GET /api/wiki/file</code></td>
+</tr>
+<tr>
+<td><code>kb_ask</code> / <code>wiki_ask</code></td>
+<td>RAG 답변 (SSE)</td>
+<td><code>POST /api/query</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_4">기간 조회 · 티켓 목록</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>kb_list_tickets</code></strong></td>
+<td><code>relative</code> / <code>date_from</code>·<code>date_to</code> 기간 목록</td>
+<td><code>GET /v1/tickets</code></td>
+</tr>
+<tr>
+<td><code>kb_ticket</code></td>
+<td>티켓 전체 본문</td>
+<td><code>GET /v1/tickets/{id}</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_5">집계 · 분석</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong><code>kb_analytics</code></strong></td>
+<td>year/month/component/issue_type 등 그룹 집계</td>
+<td><code>GET /v1/analytics/tickets</code></td>
+</tr>
+<tr>
+<td><code>kb_entity_share</code></td>
+<td>키워드 점유율</td>
+<td><code>GET /v1/analytics/entity_share</code></td>
+</tr>
+<tr>
+<td><code>kb_title_tokens</code></td>
+<td>제목 토큰 빈도</td>
+<td><code>GET /v1/analytics/title_tokens</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="_6">유사장애 · 체크리스트 · 용량</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_similar_incident</code></td>
+<td>증상 기반 SI</td>
+<td><code>POST /v1/similar-incident</code></td>
+</tr>
+<tr>
+<td><code>kb_list_checkitems</code></td>
+<td>PISA 항목 검색</td>
+<td><code>GET /v1/checkitems</code></td>
+</tr>
+<tr>
+<td><code>kb_get_checkitem</code></td>
+<td>PISA 항목 상세</td>
+<td><code>GET /v1/checkitems/{code}</code></td>
+</tr>
+<tr>
+<td><code>kb_capacity_estimate</code></td>
+<td>공수/용량 규칙 추정</td>
+<td><code>POST /v1/capacity/estimate</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="insight">Insight · 상태</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_list_insights</code> / <code>wiki_list_synthesis</code></td>
+<td>Insight 목록</td>
+<td><code>GET /api/synthesis</code></td>
+</tr>
+<tr>
+<td><code>kb_get_insight</code> / <code>wiki_get_synthesis</code></td>
+<td>Insight 상세</td>
+<td><code>GET /api/synthesis/{id}</code></td>
+</tr>
+<tr>
+<td><code>kb_health</code></td>
+<td>API 헬스</td>
+<td><code>/api/health</code> + <code>/v1/health</code></td>
+</tr>
+<tr>
+<td><code>kb_stats</code></td>
+<td>코퍼스 통계</td>
+<td><code>GET /api/wiki-stats</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code>wiki_*</code> 이름은 <a href="https://github.com/pjhwa/citec-wiki-qa">citec-wiki-qa</a> MCP와 호환됩니다.</p>
+<hr>
+<h2 id="_7">사용 예 (에이전트)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>사용자 의도</th>
+<th>도구</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>“지난 주 지원건 목록”</td>
+<td><code>kb_list_tickets(relative="지난 주")</code> 또는 <code>kb_query("지난 주 지원건")</code></td>
+</tr>
+<tr>
+<td>“2026년 1~3월 장애지원”</td>
+<td><code>kb_list_tickets(date_from="2026-01-01", date_to="2026-03-31")</code> + search filter</td>
+</tr>
+<tr>
+<td>“올해 SCP 유형 분류”</td>
+<td><code>kb_analytics(group_by="issue_type", relative="올해", entity="SCP")</code></td>
+</tr>
+<tr>
+<td>“연도별 건수”</td>
+<td><code>kb_analytics(group_by="year")</code> 또는 <code>kb_query("연도별 지원 건수")</code></td>
+</tr>
+<tr>
+<td>“Multi-AZ 가용성 테스트 있나”</td>
+<td><code>kb_search</code> / <code>kb_query</code> / <code>kb_ask</code></td>
+</tr>
+<tr>
+<td>“Redis timeout 유사 장애”</td>
+<td><code>kb_similar_incident(symptom="...")</code></td>
+</tr>
+<tr>
+<td>“Linux OOM 체크리스트”</td>
+<td><code>kb_list_checkitems(q="OOM", area="Linux")</code></td>
+</tr>
+<tr>
+<td>원문 인용</td>
+<td>결과의 <code>path</code> → <code>kb_get_document</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>에이전트 규칙: 목록만 나열하지 말고 필요 시 <code>kb_get_document</code> / <code>kb_ticket</code> 으로 원문을 가져와 인용하세요.</p>
+<hr>
+<h2 id="docker">Docker로 기동</h2>
+<p>호스트 포트 <strong>8577</strong> (할당 대역 8572–8580).</p>
+<pre><code class="language-bash">cd ~/dev/citec-kb
+docker compose up -d mcp
+# server.py 는 호스트 마운트 — code 배포 후 compose restart mcp
+
+CITEC_KB_BASE_URL=http://localhost:8573 python3 mcp-server/test_smoke.py
+</code></pre>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>변수</th>
+<th>기본</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CITEC_KB_BASE_URL</code></td>
+<td><code>http://api:8000</code> (compose 내부)</td>
+<td>API 베이스</td>
+</tr>
+<tr>
+<td><code>MCP_HOST</code> / <code>MCP_PORT</code></td>
+<td><code>0.0.0.0</code> / <code>8100</code></td>
+<td>컨테이너 리스닝</td>
+</tr>
+<tr>
+<td><code>MCP_TRANSPORT</code></td>
+<td><code>streamable-http</code></td>
+<td>또는 <code>stdio</code></td>
+</tr>
+<tr>
+<td><code>CITEC_KB_TOKEN</code></td>
+<td>(빈값)</td>
+<td>AUTH 켠 경우 Bearer</td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="claude-desktop-claude-code">Claude Desktop / Claude Code</h2>
+<p>Streamable HTTP:</p>
+<pre><code class="language-json">{
+  &quot;mcpServers&quot;: {
+    &quot;citec-kb&quot;: {
+      &quot;url&quot;: &quot;http://localhost:8577/mcp&quot;,
+      &quot;transport&quot;: &quot;streamable-http&quot;
+    }
+  }
+}
+</code></pre>
+<p>stdio 예시는 <code>mcp-server/claude_desktop_stdio.example.json</code> 참고.</p>
+<pre><code class="language-bash">claude mcp add --transport http citec-kb http://localhost:8577/mcp
+</code></pre>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
