@@ -55,5 +55,7 @@ def test_dashboard_allowed_when_auth_off_reaches_db_call(monkeypatch):
     body = r.json()
     assert "error" in body["ingest_progress"]
     assert "error" in body["queries"]
-    # resources has no DB dependency, so it should succeed normally.
+    # jobs/resources don't depend on the (here, unreachable) DATABASE_URL — jobs uses
+    # Redis (may be reachable in dev even when DATABASE_URL isn't) and resources has
+    # no external dependency at all, so neither is asserted to contain "error" here.
     assert "error" not in body["resources"]

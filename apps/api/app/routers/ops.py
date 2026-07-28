@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -22,7 +23,8 @@ from app.db.models import (
     QueryLog,
 )
 from app.db.session import session_scope
-from app.jobs.queue import worker_status
+from app.jobs.queue import list_jobs, worker_status
+from app.ops.dashboard import ingest_progress, query_stats, read_raw_manifest, resource_snapshot
 from app.settings import get_settings
 
 router = APIRouter(prefix="/v1/ops", tags=["ops"])
@@ -127,11 +129,6 @@ def ops_dashboard(
 ) -> dict[str, Any]:
     """Aggregated real-time view for the admin dashboard (admin-only)."""
     _ = principal
-    from pathlib import Path
-
-    from app.ops.dashboard import ingest_progress, query_stats, read_raw_manifest, resource_snapshot
-    from app.jobs.queue import list_jobs
-
     settings = get_settings()
     result: dict[str, Any] = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
