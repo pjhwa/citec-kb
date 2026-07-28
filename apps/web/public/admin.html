@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Admin / Ops — CI-TEC Knowledge</title>
 <style>
-  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; }
+  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1d4ed8; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; --warn:#b45309; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
-  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; }
+  .top { background:#fff; border-bottom:1px solid var(--border); padding:12px 20px; display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
   .top a { color:var(--primary); text-decoration:none; font-weight:600; font-size:14px; }
-  .wrap { max-width:1000px; margin:0 auto; padding:24px 16px 60px; }
+  .wrap { max-width:1200px; margin:0 auto; padding:24px 16px 60px; }
   h1 { font-size:1.4rem; margin:0 0 8px; }
   .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
@@ -18,6 +18,7 @@
   .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:4px; }
   .ok { background:#d1fae5; color:var(--ok); }
   .bad { background:#fee2e2; color:var(--bad); }
+  .warn { background:#fef3c7; color:var(--warn); }
   .na { background:#f1f5f9; color:var(--muted); }
   button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:8px 14px; font-weight:700; cursor:pointer; margin:4px 4px 4px 0; }
   button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
@@ -26,6 +27,14 @@
   .row { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
   .row:last-child { border-bottom:0; }
   a.link { color:var(--primary); font-weight:600; }
+  table.tbl { width:100%; border-collapse:collapse; font-size:12px; }
+  table.tbl th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border); color:var(--muted); font-size:11px; }
+  table.tbl td { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  .pb { height:6px; background:#eef2f7; border-radius:3px; overflow:hidden; min-width:80px; }
+  .pb-f { height:100%; border-radius:3px; background:var(--primary); }
+  .job-c { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+  .job-top { display:flex; justify-content:space-between; margin-bottom:4px; }
+  label.toggle { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
@@ -45,7 +54,8 @@
   <div style="margin-bottom:12px">
     <button type="button" id="btnRefresh">전체 새로고침</button>
     <button type="button" class="ghost" id="btnPing">Job ping</button>
-    <button type="button" class="ghost" id="btnPilot">Job status poll</button>
+    <button type="button" class="ghost" id="btnJob">Job status poll</button>
+    <label class="toggle"><input type="checkbox" id="chkAuto" checked/> 자동 갱신 (10s)</label>
     <span id="msg" class="meta"></span>
   </div>
 
@@ -67,6 +77,15 @@
       <div class="row"><span>Pilot ready</span><span id="hpilot" class="badge na">…</span></div>
     </div>
     <div class="card">
+      <strong>리소스 (API 프로세스 기준)</strong>
+      <div class="row"><span>RSS 메모리</span><span id="rRss" class="meta">…</span></div>
+      <div class="row"><span>Load avg (1m)</span><span id="rLoad" class="meta">…</span></div>
+      <div class="row"><span>디스크 (raw_dir)</span><span id="rDiskPct" class="meta">…</span></div>
+      <div class="pb"><div class="pb-f" id="rDiskBar" style="width:0%"></div></div>
+      <div class="row"><span>쿼리 (1h / 24h)</span><span id="qCounts" class="meta">…</span></div>
+      <div class="row"><span>평균 지연 (24h)</span><span id="qLatency" class="meta">…</span></div>
+    </div>
+    <div class="card">
       <strong>Quick links</strong>
       <p class="meta" style="line-height:1.8">
         <a class="link" href="/insights.html">Insight 승인</a><br/>
@@ -77,6 +96,30 @@
         <a class="link" href="/docs/pilot-signoff.html">도메인 사인 증거 팩</a><br/>
         <a class="link" href="/api/docs" target="_blank">Swagger</a>
       </p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <strong>인제스트 / 임베딩 진행률</strong>
+    <table class="tbl">
+      <thead><tr><th>소스</th><th>raw 파일</th><th>문서</th><th>청크(활성)</th><th>임베딩</th><th>진행률</th><th>최근 잡</th></tr></thead>
+      <tbody id="ingestBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="grid" style="margin-top:12px">
+    <div class="card">
+      <strong>작업 큐</strong>
+      <div class="row"><span>queue_length</span><span id="jQueueLen" class="meta">…</span></div>
+      <div class="row"><span>worker heartbeat</span><span id="jWorker" class="badge na">…</span></div>
+      <div id="jobList" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <strong>최근 쿼리 (최대 10건)</strong>
+      <table class="tbl">
+        <thead><tr><th>시각</th><th>모드</th><th>지연</th><th>쿼리</th></tr></thead>
+        <tbody id="queryBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -99,6 +142,16 @@ const $ = (id) => document.getElementById(id);
 function badge(el, ok, text) {
   el.className = "badge " + (ok === true ? "ok" : ok === false ? "bad" : "na");
   el.textContent = text;
+}
+function fmtTs(iso) {
+  if (!iso) return "—";
+  try { return new Date(iso).toLocaleString("ko-KR"); } catch (e) { return iso; }
+}
+function jobBadgeClass(status) {
+  if (status === "success" || status === "done" || status === "completed") return "ok";
+  if (status === "failed" || status === "error") return "bad";
+  if (status === "running" || status === "in_progress" || status === "queued") return "warn";
+  return "na";
 }
 
 async function refresh() {
@@ -129,10 +182,86 @@ async function refresh() {
     badge($("hworker"), !!(w && w.ok), w && w.ok ? "up" : "down");
     badge($("hpilot"), !!ops.pilot_engineering_ready, ops.pilot_engineering_ready ? "ready" : "no");
 
+    await refreshDashboard();
+
     $("msg").textContent = "ok " + new Date().toLocaleTimeString();
   } catch (e) {
     $("msg").textContent = String(e);
   }
+}
+
+async function refreshDashboard() {
+  const dr = await CitecAuth.apiFetch("/v1/ops/dashboard");
+  if (dr.status === 401 || dr.status === 403) {
+    $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">관리자 권한 필요 (로그인 후 admin 역할 필요)</td></tr>';
+    $("queryBody").innerHTML = '<tr><td colspan="4" class="meta">관리자 권한 필요</td></tr>';
+    return;
+  }
+  const d = await dr.json();
+
+  const res = d.resources || {};
+  $("rRss").textContent = res.process_rss_mb != null ? res.process_rss_mb + " MB" : "—";
+  $("rLoad").textContent = (res.load_avg && res.load_avg.length) ? res.load_avg[0].toFixed(2) : "—";
+  const disk = res.disk || {};
+  if (disk.pct != null) {
+    $("rDiskPct").textContent = disk.used_gb + " / " + disk.total_gb + " GB (" + disk.pct + "%)";
+    $("rDiskBar").style.width = disk.pct + "%";
+  } else {
+    $("rDiskPct").textContent = disk.error || "—";
+  }
+
+  const q = d.queries || {};
+  $("qCounts").textContent = (q.count_1h != null ? q.count_1h : "—") + " / " + (q.count_24h != null ? q.count_24h : "—");
+  $("qLatency").textContent = q.avg_latency_ms_24h != null ? q.avg_latency_ms_24h + " ms" : "—";
+
+  const ip = d.ingest_progress || {};
+  if (ip.error) {
+    $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">' + ip.error + '</td></tr>';
+  } else {
+    const sources = Object.keys(ip).sort();
+    $("ingestBody").innerHTML = sources.length
+      ? sources.map((s) => {
+          const row = ip[s];
+          const job = row.last_job;
+          const jobLabel = job
+            ? '<span class="badge ' + jobBadgeClass(job.status) + '">' + job.status + '</span> ' + fmtTs(job.finished_at || job.started_at)
+            : '<span class="meta">—</span>';
+          return '<tr><td>' + s + '</td><td>' + (row.raw_files != null ? row.raw_files : '—') +
+            '</td><td>' + row.documents + '</td><td>' + row.chunks_active +
+            '</td><td>' + row.embeddings +
+            '</td><td><div class="pb"><div class="pb-f" style="width:' + row.embed_pct + '%"></div></div>' + row.embed_pct + '%</td>' +
+            '<td>' + jobLabel + '</td></tr>';
+        }).join("")
+      : '<tr><td colspan="7" class="meta">데이터 없음</td></tr>';
+  }
+
+  const jobs = d.jobs || {};
+  if (jobs.error) {
+    $("jQueueLen").textContent = jobs.error;
+    badge($("jWorker"), false, "error");
+    $("jobList").innerHTML = "";
+  } else {
+    $("jQueueLen").textContent = jobs.queue_length != null ? jobs.queue_length : "—";
+    const w = jobs.worker || {};
+    badge($("jWorker"), !!w.ok, w.ok ? "up (" + (w.age_sec != null ? w.age_sec + "s ago" : "—") + ")" : "down");
+    const items = jobs.items || [];
+    $("jobList").innerHTML = items.length
+      ? items.slice(0, 8).map((j) => {
+          return '<div class="job-c"><div class="job-top"><span>' + (j.type || j.id || "—") +
+            '</span><span class="badge ' + jobBadgeClass(j.status) + '">' + (j.status || "—") + '</span></div>' +
+            '<div class="meta">' + (j.id || "") + (j.error ? " · " + j.error : "") + '</div></div>';
+        }).join("")
+      : '<div class="meta">활성 잡 없음</div>';
+  }
+
+  const qb = (d.queries || {}).recent || [];
+  $("queryBody").innerHTML = qb.length
+    ? qb.map((r) => {
+        return '<tr><td>' + fmtTs(r.created_at) + '</td><td>' + (r.mode || "—") +
+          '</td><td>' + (r.latency_ms != null ? r.latency_ms + "ms" : "—") +
+          '</td><td>' + (r.query || "") + '</td></tr>';
+      }).join("")
+    : '<tr><td colspan="4" class="meta">기록 없음</td></tr>';
 }
 
 let lastJobId = null;
@@ -155,8 +284,18 @@ $("btnJob").onclick = async () => {
   $("job").textContent = JSON.stringify(d, null, 2);
 };
 $("btnRefresh").onclick = () => refresh();
+
+let _timer = null;
+function scheduleAuto() {
+  if (_timer) clearInterval(_timer);
+  if (!$("chkAuto").checked) return;
+  _timer = setInterval(refresh, 10000);
+}
+$("chkAuto").onchange = scheduleAuto;
+
 CitecAuth.mountChip(".top");
 refresh();
+scheduleAuto();
 </script>
 </body>
 </html>
