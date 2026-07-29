@@ -62,6 +62,8 @@ _SECTION_MAP: dict[str, Optional[str]] = {
     "tuning_ai": "tuning_ai",
     "sql_tuning": "tuning_ai",
     "confluence_docs": "confluence_docs",
+    "failure_bucket": "failure_bucket",
+    "failure_buckets": "failure_bucket",
     "synthesis": "insight",
     "insight": "insight",
     "insights": "insight",
@@ -75,6 +77,7 @@ _TEMPLATE_LABELS = {
     "vendor_docs": "벤더 문서",
     "tech_repo": "테크리포",
     "tuning_ai": "DBMS튜닝",
+    "failure_bucket": "실패 패턴 라이브러리",
     "synthesis": "Insight/합성지식",
 }
 
@@ -432,6 +435,7 @@ def _resolve_document(path: str) -> Optional[Document]:
         "vendor_docs",
         "insight",
         "incident_reports",
+        "failure_bucket",
     }:
         if source_type == "incident_reports":
             source_type = "support_history"
