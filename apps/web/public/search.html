@@ -44,19 +44,7 @@
 </style>
 </head>
 <body>
-<div class="top">
-  <a href="/">홈</a>
-  <a href="/search.html">검색</a>
-  <a href="/chat.html">Fast QA</a>
-  <a href="/si.html">유사장애</a>
-  <a href="/tickets.html">기간 지원건</a>
-  <a href="/analytics.html">집계</a>
-  <a href="/capacity.html">공수·대수</a>
-  <a href="/admin.html">Admin</a>
-  <a href="/login.html">Login</a>
-  <a href="/docs/">문서</a>
-  <a href="/api/docs" target="_blank">API</a>
-</div>
+<div class="top" id="topNav" data-page="search"></div>
 <div class="wrap">
   <h1>지식 통합 검색</h1>
   <div class="search-box">
@@ -91,6 +79,7 @@
   <div class="meta" id="meta">쿼리를 입력하세요.</div>
   <div id="results"></div>
 </div>
+<script src="/js/nav.js"></script>
 <script src="/js/markdown.js"></script>
 <script src="/js/doclink.js"></script>
 <script>
@@ -160,6 +149,5 @@ const params = new URLSearchParams(location.search);
 if (params.get("q")) { $("q").value = params.get("q"); runSearch(); }
 </script>
 <script src="/js/auth.js"></script>
-<script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>
 </html>
