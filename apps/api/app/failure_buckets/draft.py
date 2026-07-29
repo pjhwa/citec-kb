@@ -74,5 +74,9 @@ def bucket_draft(row: Any) -> DocumentDraft:
         },
         evidence_grade="machine",
         source_uri=f"failure_bucket://{row.id}",
-        domain=(row.protocol or "").lower() or None,
+        # domain is intentionally left unset here: app.taxonomy.infer_domain has a
+        # dedicated `source_type == "failure_bucket"` branch (from metadata["protocol"])
+        # that the ingest pipeline (enrich_draft_fields) calls via `domain or infer_domain(...)`.
+        # Setting a truthy domain here would shadow that branch and duplicate its logic.
+        domain=None,
     ).finalize()

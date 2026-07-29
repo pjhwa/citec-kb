@@ -30,8 +30,8 @@ def test_bucket_body_md_includes_signals():
     assert "LB 세션 idle timeout" in body
 
 
-def test_bucket_draft_hash_stable_when_only_counts_change():
-    row = SimpleNamespace(
+def _make_row(**overrides):
+    base = dict(
         id="abcdef12-3456-7890-abcd-ef1234567890",
         bucket_name="LB idle-timeout RST",
         protocol="TCP",
@@ -40,11 +40,21 @@ def test_bucket_draft_hash_stable_when_only_counts_change():
         counter_signals=[],
         root_cause="원인",
         recommended_action="조치",
+        confidence=0.5,
+        support_count=0,
+        counter_count=0,
     )
-    draft_a = bucket_draft(row)
-    draft_b = bucket_draft(row)  # unrelated confidence/count bump wouldn't touch row's draft-relevant fields
+    base.update(overrides)
+    return SimpleNamespace(**base)
+
+
+def test_bucket_draft_hash_stable_when_only_counts_change():
+    row_a = _make_row(confidence=0.5, support_count=0, counter_count=0)
+    row_b = _make_row(confidence=0.75, support_count=2, counter_count=0)
+    draft_a = bucket_draft(row_a)
+    draft_b = bucket_draft(row_b)
     assert draft_a.content_hash == draft_b.content_hash
     assert draft_a.source_type == "failure_bucket"
     assert draft_a.external_id == "FB-abcdef12"
-    assert draft_a.domain == "tcp"
+    assert draft_a.domain is None
     assert draft_a.evidence_grade == "machine"
