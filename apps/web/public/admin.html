@@ -124,6 +124,14 @@
   </div>
 
   <div class="card" style="margin-top:12px">
+    <strong>최근 등록된 실패 버킷 (failure_bucket)</strong>
+    <table class="tbl">
+      <thead><tr><th>이름</th><th>프로토콜</th><th>신뢰도</th><th>확인/반박</th><th>등록자</th><th>갱신</th></tr></thead>
+      <tbody id="fbBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:12px">
     <strong>ops/status</strong>
     <pre id="ops">…</pre>
   </div>
@@ -196,6 +204,7 @@ async function refreshDashboard() {
   if (dr.status === 401 || dr.status === 403) {
     $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">관리자 권한 필요 (로그인 후 admin 역할 필요)</td></tr>';
     $("queryBody").innerHTML = '<tr><td colspan="4" class="meta">관리자 권한 필요</td></tr>';
+    $("fbBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
     return;
   }
   const d = await dr.json();
@@ -263,6 +272,16 @@ async function refreshDashboard() {
           '</td><td>' + esc(r.query || "") + '</td></tr>';
       }).join("")
     : '<tr><td colspan="4" class="meta">기록 없음</td></tr>';
+
+  const fb = (d.failure_buckets || {}).recent || [];
+  $("fbBody").innerHTML = fb.length
+    ? fb.map((r) => {
+        return '<tr><td>' + esc(r.bucket_name || "") + '</td><td>' + esc(r.protocol || "—") +
+          '</td><td>' + esc(String(r.confidence != null ? r.confidence : "—")) +
+          '</td><td>' + esc((r.support_count || 0) + " / " + (r.counter_count || 0)) +
+          '</td><td>' + esc(r.created_by || "—") + '</td><td>' + fmtTs(r.updated_at) + '</td></tr>';
+      }).join("")
+    : '<tr><td colspan="6" class="meta">등록된 실패 버킷 없음</td></tr>';
 }
 
 let lastJobId = null;

@@ -844,6 +844,13 @@ async def kb_tools_help() -> str:
   kb_list_checkitems(q=, area=) / kb_get_checkitem(code=)
   kb_capacity_estimate(period_days=, basis=)
 
+[실패 버킷 · 네트워크 패킷 진단]
+  kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)
+  kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)
+  kb_match_failure_bucket(observed_signals=, symptom=, protocol=)
+  kb_list_failure_buckets(protocol=, min_confidence=)
+  kb_get_failure_bucket(bucket_id=)
+
 [티켓 · Insight · 상태]
   kb_ticket(external_id=)
   kb_list_insights / kb_get_insight
@@ -887,6 +894,182 @@ async def kb_get_checkitem(code: str) -> str:
         lines.append(str(sec.get("value")))
         lines.append("")
     return "\n".join(lines).strip()
+
+
+@mcp.tool()
+async def kb_register_failure_bucket(
+    bucket_name: str,
+    symptom: str,
+    discriminating_signals: list[str],
+    root_cause: str,
+    recommended_action: str,
+    counter_signals: list[str] | None = None,
+    protocol: str = "",
+) -> str:
+    """새로운 실패 버킷(장애 패턴)을 등록한다. 즉시 검색에 노출된다.
+    예: bucket_name='LB idle-timeout RST', discriminating_signals=['RST 직전 idle 60초 이상']
+    """
+    if not bucket_name.strip():
+        return "오류: bucket_name 이 비어 있습니다."
+    if not discriminating_signals:
+        return "오류: discriminating_signals 가 비어 있습니다."
+    if not symptom.strip():
+        return "오류: symptom 이 비어 있습니다."
+    if not root_cause.strip():
+        return "오류: root_cause 가 비어 있습니다."
+    if not recommended_action.strip():
+        return "오류: recommended_action 이 비어 있습니다."
+    body: dict[str, Any] = {
+        "bucket_name": bucket_name.strip(),
+        "symptom": symptom or "",
+        "discriminating_signals": discriminating_signals,
+        "counter_signals": counter_signals or [],
+        "root_cause": root_cause or "",
+        "recommended_action": recommended_action or "",
+        "protocol": protocol.strip() or None,
+    }
+    try:
+        async with _client() as client:
+            resp = await client.post("/v1/failure-buckets", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return (
+        f"등록됨: {data.get('bucket_name')} (id={data.get('id')}, "
+        f"confidence={data.get('confidence')})"
+    )
+
+
+@mcp.tool()
+async def kb_refine_failure_bucket(
+    bucket_id: str,
+    add_signal: str = "",
+    add_counter_signal: str = "",
+    confirm: bool = True,
+) -> str:
+    """실패 버킷을 정제한다 — 신호 추가 및 확인(confirm=True)/반박(confirm=False) 기록.
+    신뢰도(confidence)가 자동 재계산된다."""
+    bucket_id = (bucket_id or "").strip()
+    if not bucket_id:
+        return "오류: bucket_id 가 비어 있습니다."
+    body: dict[str, Any] = {"confirm": confirm}
+    if add_signal.strip():
+        body["add_signal"] = add_signal.strip()
+    if add_counter_signal.strip():
+        body["add_counter_signal"] = add_counter_signal.strip()
+    try:
+        async with _client() as client:
+            resp = await client.post(f"/v1/failure-buckets/{bucket_id}/refine", json=body)
+            if resp.status_code == 404:
+                return f"오류: 실패 버킷을 찾을 수 없습니다: {bucket_id}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return (
+        f"정제됨: {data.get('bucket_name')} confidence={data.get('confidence')} "
+        f"support={data.get('support_count')} counter={data.get('counter_count')}"
+    )
+
+
+@mcp.tool()
+async def kb_match_failure_bucket(
+    observed_signals: list[str],
+    symptom: str = "",
+    protocol: str = "",
+    top_k: int = 5,
+) -> str:
+    """관찰된 신호로 후보 실패 버킷을 순위화한다.
+    예: observed_signals=['RST 직전 idle 62초'], symptom='다운로드 중 연결 끓김'"""
+    if not observed_signals and not symptom.strip():
+        return "오류: observed_signals 또는 symptom 중 하나는 필요합니다."
+    body: dict[str, Any] = {
+        "observed_signals": observed_signals,
+        "symptom": symptom or "",
+        "top_k": min(max(top_k, 1), 20),
+    }
+    if protocol.strip():
+        body["protocol"] = protocol.strip()
+    try:
+        async with _client() as client:
+            resp = await client.post("/v1/failure-buckets/match", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    results = data.get("results") or []
+    if not results:
+        return "(일치하는 실패 버킷 없음)"
+    lines = [f"실패 버킷 후보 {len(results)}건:"]
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        lines.append(
+            f"- {r.get('bucket_name')} (id={r.get('bucket_id')}) "
+            f"confidence={r.get('confidence')} label={r.get('label')}\n"
+            f"  matched: {r.get('matched_signals')}\n"
+            f"  contradicted: {r.get('contradicted')}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_list_failure_buckets(
+    protocol: str = "",
+    min_confidence: float = 0.0,
+    limit: int = 20,
+) -> str:
+    """등록된 실패 버킷 목록. protocol 예: TCP|TLS|HTTP"""
+    params: dict[str, Any] = {"limit": min(max(limit, 1), 200), "min_confidence": min_confidence}
+    if protocol.strip():
+        params["protocol"] = protocol.strip()
+    try:
+        async with _client() as client:
+            resp = await client.get("/v1/failure-buckets", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    items = data.get("items") or []
+    lines = [f"failure_buckets total={data.get('total', len(items))}"]
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        lines.append(
+            f"- {it.get('bucket_name')} (id={it.get('id')}) protocol={it.get('protocol')} "
+            f"confidence={it.get('confidence')}"
+        )
+    if not items:
+        lines.append("(결과 없음)")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_get_failure_bucket(bucket_id: str) -> str:
+    """실패 버킷 상세(판별 신호/반증 신호/근본원인/조치 포함)를 조회한다."""
+    bucket_id = (bucket_id or "").strip()
+    if not bucket_id:
+        return "오류: bucket_id 가 비어 있습니다."
+    try:
+        async with _client() as client:
+            resp = await client.get(f"/v1/failure-buckets/{bucket_id}")
+            if resp.status_code == 404:
+                return f"오류: 실패 버킷을 찾을 수 없습니다: {bucket_id}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return (
+        f"# {data.get('bucket_name')} (id={data.get('id')})\n"
+        f"protocol={data.get('protocol')} confidence={data.get('confidence')} "
+        f"support={data.get('support_count')} counter={data.get('counter_count')}\n\n"
+        f"증상: {data.get('symptom')}\n"
+        f"판별 신호: {data.get('discriminating_signals')}\n"
+        f"반증 신호: {data.get('counter_signals')}\n"
+        f"근본원인: {data.get('root_cause')}\n"
+        f"조치: {data.get('recommended_action')}"
+    )
 
 
 @mcp.tool()

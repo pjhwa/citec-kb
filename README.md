@@ -99,7 +99,8 @@ docker compose up -d --build mcp
 CITEC_KB_BASE_URL=http://localhost:8573 python3 mcp-server/test_smoke.py
 ```
 
-도구: `kb_search`, `kb_get_document`, `kb_ask`, `kb_query`, `kb_ticket`, `kb_list_insights`, …  
+도구: `kb_search`, `kb_get_document`, `kb_ask`, `kb_query`, `kb_ticket`, `kb_list_insights`,
+`kb_register_failure_bucket`, `kb_refine_failure_bucket`, `kb_match_failure_bucket`, …  
 (`wiki_*` 별칭 = citec-wiki-qa MCP 호환)
 
 ### 설계·구현 문서 (웹)

@@ -28,6 +28,7 @@
       <a href="#synthesis-insight" style="padding-left:20px;font-size:12px">Synthesis ≈ Insight</a>
       <a href="#feedback" style="padding-left:20px;font-size:12px">Feedback</a>
       <a href="#2-v1">2. 네이티브 외부 연동 (/v1/*)</a>
+      <a href="#v1failure-buckets" style="padding-left:20px;font-size:12px">실패 버킷 (/v1/failure-buckets/*)</a>
       <a href="#3-mcp-claude">3. MCP 서버 (Claude 등)</a>
       <a href="#4">4. 인증</a>
       <a href="#5-curl">5. curl 스모크</a>
@@ -461,6 +462,11 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <td>Insight CRUD 계열</td>
 </tr>
 <tr>
+<td>POST/GET</td>
+<td><code>/v1/failure-buckets</code></td>
+<td>실패 버킷 등록/목록 (self-improving 진단 지식)</td>
+</tr>
+<tr>
 <td>GET</td>
 <td><code>/v1/external/catalog</code></td>
 <td>이 문서의 기계 가독 카탈로그</td>
@@ -482,6 +488,46 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 </tr>
 </tbody>
 </table></div>
+<h3 id="v1failure-buckets">실패 버킷 (<code>/v1/failure-buckets/*</code>)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>설명</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets</code></td>
+<td>신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, protocol) — 즉시 색인</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/failure-buckets</code></td>
+<td>목록 (protocol, min_confidence, limit, offset 필터)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/failure-buckets/{id}</code></td>
+<td>단건 상세</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets/{id}/refine</code></td>
+<td>신호 추가 + 확인(confirm=true)/반박(confirm=false) — 신뢰도 자동 재계산</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets/match</code></td>
+<td>observed_signals[] + symptom → 후보 버킷 순위</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><code>source_type=failure_bucket</code>은 <code>data/raw/</code> 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.</p>
+</blockquote>
 <p>OpenAPI: <code>http://localhost:8573/docs</code></p>
 <hr>
 <h2 id="3-mcp-claude">3. MCP 서버 (Claude 등)</h2>
@@ -523,6 +569,26 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td><code>kb_ticket</code></td>
 <td><code>GET /v1/tickets/{id}</code></td>
+</tr>
+<tr>
+<td><code>kb_register_failure_bucket</code></td>
+<td><code>POST /v1/failure-buckets</code></td>
+</tr>
+<tr>
+<td><code>kb_refine_failure_bucket</code></td>
+<td><code>POST /v1/failure-buckets/{id}/refine</code></td>
+</tr>
+<tr>
+<td><code>kb_match_failure_bucket</code></td>
+<td><code>POST /v1/failure-buckets/match</code></td>
+</tr>
+<tr>
+<td><code>kb_list_failure_buckets</code></td>
+<td><code>GET /v1/failure-buckets</code></td>
+</tr>
+<tr>
+<td><code>kb_get_failure_bucket</code></td>
+<td><code>GET /v1/failure-buckets/{id}</code></td>
 </tr>
 </tbody>
 </table></div>

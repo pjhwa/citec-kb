@@ -51,6 +51,16 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 | `kb_get_checkitem` | PISA 항목 상세 | `GET /v1/checkitems/{code}` |
 | `kb_capacity_estimate` | 공수/용량 규칙 추정 | `POST /v1/capacity/estimate` |
 
+### 실패 버킷 (장애 패턴)
+
+| Tool | 설명 | 백엔드 |
+|------|------|--------|
+| `kb_register_failure_bucket` | 실패 버킷(장애 패턴) 등록 — 판별 신호 포함 | `POST /v1/failure-buckets` |
+| `kb_refine_failure_bucket` | 신호 추가/확인/반박, 신뢰도 자동 재계산 | `POST /v1/failure-buckets/{id}/refine` |
+| `kb_match_failure_bucket` | 관찰 신호로 후보 버킷 순위화 | `POST /v1/failure-buckets/match` |
+| `kb_list_failure_buckets` | 등록된 버킷 목록 | `GET /v1/failure-buckets` |
+| `kb_get_failure_bucket` | 버킷 상세(신호/원인/조치) | `GET /v1/failure-buckets/{id}` |
+
 ### Insight · 상태
 
 | Tool | 설명 | 백엔드 |
@@ -76,6 +86,8 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 | “Redis timeout 유사 장애” | `kb_similar_incident(symptom="...")` |
 | “Linux OOM 체크리스트” | `kb_list_checkitems(q="OOM", area="Linux")` |
 | 원문 인용 | 결과의 `path` → `kb_get_document` |
+| "LB idle-timeout RST 패턴 등록해줘" | `kb_register_failure_bucket(bucket_name=..., discriminating_signals=[...])` |
+| "이 RST idle 62초 신호로 어떤 장애 패턴이 유력해?" | `kb_match_failure_bucket(observed_signals=["RST 직전 idle 62초"])` |
 
 에이전트 규칙: 목록만 나열하지 말고 필요 시 `kb_get_document` / `kb_ticket` 으로 원문을 가져와 인용하세요.
 

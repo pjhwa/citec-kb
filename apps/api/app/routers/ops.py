@@ -27,6 +27,7 @@ from app.ops.dashboard import (
     ingest_progress,
     query_stats,
     read_raw_manifest,
+    recent_failure_buckets,
     resolve_raw_manifest_path,
     resource_snapshot,
 )
@@ -162,5 +163,11 @@ def ops_dashboard(
             result["queries"] = query_stats(session)
     except Exception as exc:  # noqa: BLE001
         result["queries"] = {"error": str(exc)}
+
+    try:
+        with session_scope() as session:
+            result["failure_buckets"] = recent_failure_buckets(session)
+    except Exception as exc:  # noqa: BLE001
+        result["failure_buckets"] = {"error": str(exc)}
 
     return result

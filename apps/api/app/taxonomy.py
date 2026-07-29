@@ -57,6 +57,10 @@ def infer_domain(
         area = str(metadata.get("Area") or "")
         if area:
             return area.lower().replace(" ", "_")
+    if source_type == "failure_bucket" and metadata:
+        protocol = str(metadata.get("protocol") or "")
+        if protocol:
+            return protocol.lower().replace(" ", "_")
     blob = f"{title}\n{body[:3000]}"
     for pat, dom in _DOMAIN_RULES:
         if pat.search(blob):

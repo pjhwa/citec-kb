@@ -239,6 +239,34 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
     return rows
 
 
+def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
+    """Most recently registered/refined failure buckets, for the admin dashboard."""
+    from sqlalchemy import select
+
+    from app.db.models import FailureBucket
+
+    rows = list(
+        session.execute(
+            select(FailureBucket).order_by(FailureBucket.updated_at.desc()).limit(limit)
+        ).scalars()
+    )
+    return {
+        "recent": [
+            {
+                "id": r.id,
+                "bucket_name": r.bucket_name,
+                "protocol": r.protocol,
+                "confidence": r.confidence,
+                "support_count": r.support_count,
+                "counter_count": r.counter_count,
+                "created_by": r.created_by,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 def query_stats(session) -> dict[str, Any]:
     """Query volume/latency stats from QueryLog, last 1h/24h + recent 10."""
     from sqlalchemy import func, select

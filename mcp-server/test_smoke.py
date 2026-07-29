@@ -72,6 +72,38 @@ async def main() -> int:
     ci = await server.kb_list_checkitems(q="OOM", area="Linux", limit=5)
     check("kb_list_checkitems", not ci.startswith("오류:"), ci[:200])
 
+    fb_name = f"SMOKE-{os.getpid()}-LB idle-timeout RST"
+    fb_signal = f"스모크 신호 {os.getpid()}"
+    fb_reg = await server.kb_register_failure_bucket(
+        bucket_name=fb_name,
+        symptom="스모크 테스트용 임시 버킷",
+        discriminating_signals=[fb_signal],
+        root_cause="스모크 테스트",
+        recommended_action="없음",
+        protocol="TCP",
+    )
+    check("kb_register_failure_bucket", not fb_reg.startswith("오류:"), fb_reg[:200])
+
+    fb_id_line = next((l for l in fb_reg.splitlines() if "id=" in l), "")
+    fb_id = ""
+    if "id=" in fb_id_line:
+        fb_id = fb_id_line.split("id=", 1)[1].split(",")[0].split(")")[0].strip()
+
+    if fb_id:
+        fb_get = await server.kb_get_failure_bucket(fb_id)
+        check("kb_get_failure_bucket", fb_name in fb_get, fb_get[:200])
+
+        fb_match = await server.kb_match_failure_bucket(observed_signals=[fb_signal])
+        check("kb_match_failure_bucket finds it", fb_id in fb_match, fb_match[:300])
+
+        fb_refine = await server.kb_refine_failure_bucket(fb_id, confirm=True)
+        check("kb_refine_failure_bucket", "confidence=" in fb_refine, fb_refine[:200])
+    else:
+        check("kb_register_failure_bucket returned id", False, fb_reg)
+
+    fb_list = await server.kb_list_failure_buckets(protocol="TCP", limit=50)
+    check("kb_list_failure_buckets", not fb_list.startswith("오류:"), fb_list[:200])
+
     help_t = await server.kb_tools_help()
     check("kb_tools_help", "kb_list_tickets" in help_t, help_t[:100])
 
