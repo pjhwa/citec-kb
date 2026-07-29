@@ -913,6 +913,12 @@ async def kb_register_failure_bucket(
         return "오류: bucket_name 이 비어 있습니다."
     if not discriminating_signals:
         return "오류: discriminating_signals 가 비어 있습니다."
+    if not symptom.strip():
+        return "오류: symptom 이 비어 있습니다."
+    if not root_cause.strip():
+        return "오류: root_cause 가 비어 있습니다."
+    if not recommended_action.strip():
+        return "오류: recommended_action 이 비어 있습니다."
     body: dict[str, Any] = {
         "bucket_name": bucket_name.strip(),
         "symptom": symptom or "",
@@ -997,6 +1003,8 @@ async def kb_match_failure_bucket(
         return "(일치하는 실패 버킷 없음)"
     lines = [f"실패 버킷 후보 {len(results)}건:"]
     for r in results:
+        if not isinstance(r, dict):
+            continue
         lines.append(
             f"- {r.get('bucket_name')} (id={r.get('bucket_id')}) "
             f"confidence={r.get('confidence')} label={r.get('label')}\n"
@@ -1026,6 +1034,8 @@ async def kb_list_failure_buckets(
     items = data.get("items") or []
     lines = [f"failure_buckets total={data.get('total', len(items))}"]
     for it in items:
+        if not isinstance(it, dict):
+            continue
         lines.append(
             f"- {it.get('bucket_name')} (id={it.get('id')}) protocol={it.get('protocol')} "
             f"confidence={it.get('confidence')}"
