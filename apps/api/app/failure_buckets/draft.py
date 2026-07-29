@@ -61,7 +61,7 @@ def bucket_draft(row: Any) -> DocumentDraft:
     )
     return DocumentDraft(
         source_type="failure_bucket",
-        external_id=f"FB-{row.id[:8]}",
+        external_id=f"FB-{row.id}",
         title=row.bucket_name,
         body_md=body,
         metadata={

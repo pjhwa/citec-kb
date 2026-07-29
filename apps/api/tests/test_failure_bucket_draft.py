@@ -55,6 +55,6 @@ def test_bucket_draft_hash_stable_when_only_counts_change():
     draft_b = bucket_draft(row_b)
     assert draft_a.content_hash == draft_b.content_hash
     assert draft_a.source_type == "failure_bucket"
-    assert draft_a.external_id == "FB-abcdef12"
+    assert draft_a.external_id == "FB-abcdef12-3456-7890-abcd-ef1234567890"
     assert draft_a.domain is None
     assert draft_a.evidence_grade == "machine"

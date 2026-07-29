@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.models import FailureBucket
 from app.db.session import session_scope
@@ -124,13 +124,19 @@ def list_buckets(
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     with session_scope() as session:
-        stmt = select(FailureBucket).order_by(FailureBucket.updated_at.desc())
+        stmt = select(FailureBucket).order_by(FailureBucket.created_at.desc())
         if protocol:
             stmt = stmt.where(FailureBucket.protocol == protocol)
         if min_confidence:
             stmt = stmt.where(FailureBucket.confidence >= min_confidence)
+        total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
         rows = list(session.scalars(stmt.offset(offset).limit(limit)).all())
-        return {"total": len(rows), "items": [_to_dict(r) for r in rows]}
+        return {
+            "total": int(total),
+            "limit": limit,
+            "offset": offset,
+            "items": [_to_dict(r) for r in rows],
+        }
 
 
 def refine_bucket(
