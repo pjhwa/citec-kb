@@ -351,14 +351,19 @@
     }
 
     function copyText(text, btn) {
+      const orig = btn.textContent;
+      const fail = () => {
+        btn.textContent = "복사 실패";
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      };
+      if (!navigator.clipboard) {
+        fail();
+        return;
+      }
       navigator.clipboard.writeText(text).then(() => {
-        const orig = btn.textContent;
         btn.textContent = "복사됨";
         setTimeout(() => { btn.textContent = orig; }, 1200);
-      }).catch(() => {
-        btn.textContent = "복사 실패";
-        setTimeout(() => { btn.textContent = "복사"; }, 1200);
-      });
+      }).catch(fail);
     }
 
     function renderMcpGuide() {
