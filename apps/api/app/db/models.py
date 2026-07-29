@@ -350,6 +350,43 @@ class IssueFrame(Base):
     )
 
 
+class FailureBucket(Base):
+    """Self-improving failure-pattern registry (e.g. network packet diagnosis)."""
+
+    __tablename__ = "failure_buckets"
+    __table_args__ = (
+        Index("ix_failure_buckets_protocol", "protocol"),
+        Index("ix_failure_buckets_bucket_name", "bucket_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    document_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), unique=True
+    )
+    bucket_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    protocol: Mapped[Optional[str]] = mapped_column(String(32))
+    symptom: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    discriminating_signals: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
+    )
+    counter_signals: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
+    )
+    root_cause: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    recommended_action: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, server_default="0.5")
+    support_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    counter_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    evidence_grade: Mapped[str] = mapped_column(String(8), nullable=False, server_default="machine")
+    created_by: Mapped[Optional[str]] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class CapacityRule(Base):
     """Diagnostic capacity standard (e.g. 1-week field units)."""
 
