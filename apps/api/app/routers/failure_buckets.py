@@ -27,7 +27,7 @@ class FailureBucketCreate(BaseModel):
     counter_signals: list[str] = Field(default_factory=list)
     root_cause: str = Field(default="", max_length=4000)
     recommended_action: str = Field(default="", max_length=4000)
-    protocol: Optional[str] = None
+    protocol: Optional[str] = Field(default=None, max_length=32)
     created_by: Optional[str] = None
 
 
@@ -40,7 +40,7 @@ class FailureBucketRefine(BaseModel):
 class FailureBucketMatch(BaseModel):
     observed_signals: list[str] = Field(default_factory=list)
     symptom: str = Field(default="", max_length=4000)
-    protocol: Optional[str] = None
+    protocol: Optional[str] = Field(default=None, max_length=32)
     top_k: int = Field(default=5, ge=1, le=20)
 
 
