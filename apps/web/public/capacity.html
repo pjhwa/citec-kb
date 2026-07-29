@@ -32,19 +32,7 @@
 </style>
 </head>
 <body>
-<div class="top">
-  <a href="/">홈</a>
-  <a href="/search.html">검색</a>
-  <a href="/chat.html">Fast QA</a>
-  <a href="/si.html">유사장애</a>
-  <a href="/tickets.html">기간 지원건</a>
-  <a href="/analytics.html">집계</a>
-  <a href="/capacity.html">공수·대수</a>
-  <a href="/bundles.html">번들</a>
-  <a href="/admin.html">Admin</a>
-  <a href="/login.html">Login</a>
-  <a href="/docs/">문서</a>
-</div>
+<div class="top" id="topNav" data-page="capacity"></div>
 <div class="wrap">
   <h1>진단 공수 · 대수 · 단가</h1>
   <p class="sub">Phase 3 · FAQ <strong>1안</strong> rules · <code>POST /v1/capacity/estimate</code> · <strong>LLM 숫자 없음</strong></p>
@@ -74,6 +62,7 @@
   </div>
   <div id="out"></div>
 </div>
+<script src="/js/nav.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -181,6 +170,5 @@ document.querySelectorAll(".chips button").forEach(btn => {
 runRoute();
 </script>
 <script src="/js/auth.js"></script>
-<script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>
 </html>
