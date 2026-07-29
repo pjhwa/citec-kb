@@ -73,10 +73,11 @@ async def main() -> int:
     check("kb_list_checkitems", not ci.startswith("오류:"), ci[:200])
 
     fb_name = f"SMOKE-{os.getpid()}-LB idle-timeout RST"
+    fb_signal = f"스모크 신호 {os.getpid()}"
     fb_reg = await server.kb_register_failure_bucket(
         bucket_name=fb_name,
         symptom="스모크 테스트용 임시 버킷",
-        discriminating_signals=["스모크 신호 A"],
+        discriminating_signals=[fb_signal],
         root_cause="스모크 테스트",
         recommended_action="없음",
         protocol="TCP",
@@ -92,7 +93,7 @@ async def main() -> int:
         fb_get = await server.kb_get_failure_bucket(fb_id)
         check("kb_get_failure_bucket", fb_name in fb_get, fb_get[:200])
 
-        fb_match = await server.kb_match_failure_bucket(observed_signals=["스모크 신호 A"])
+        fb_match = await server.kb_match_failure_bucket(observed_signals=[fb_signal])
         check("kb_match_failure_bucket finds it", fb_id in fb_match, fb_match[:300])
 
         fb_refine = await server.kb_refine_failure_bucket(fb_id, confirm=True)
