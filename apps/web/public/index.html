@@ -172,19 +172,7 @@
   </style>
 </head>
 <body>
-  <div class="top">
-    <a href="/"><strong>홈 · 통합 질의</strong></a>
-    <a href="/search.html">검색</a>
-    <a href="/chat.html">Fast QA</a>
-    <a href="/si.html">유사장애</a>
-    <a href="/tickets.html">기간</a>
-    <a href="/analytics.html">집계</a>
-    <a href="/capacity.html">공수</a>
-    <a href="/insights.html">Insight</a>
-    <a href="/admin.html">Admin</a>
-    <a href="/login.html">Login</a>
-    <a href="/docs/">문서</a>
-  </div>
+  <div class="top" id="topNav" data-page="home"></div>
 
   <div class="wrap">
     <h1>무엇이든 물어보세요</h1>
@@ -235,6 +223,7 @@
     </details>
   </div>
 
+  <script src="/js/nav.js"></script>
   <script src="/js/markdown.js"></script>
   <script src="/js/doclink.js"></script>
   <!-- Fallback first (auth disabled pilot); /js/auth.js overwrites if it loads -->
@@ -726,7 +715,6 @@
     if (params.get("answer") === "1") $("wantAnswer").checked = true;
 
     renderChips();
-    CitecAuth.mountChip(".top");
     loadHealth();
     if (params.get("q") && params.get("auto") !== "0") ask();
   </script>
