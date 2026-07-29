@@ -208,10 +208,23 @@ verdict: `helpful` | `not_helpful` | `resolved` | `failed` | `edited`
 | GET | `/v1/analytics/tickets` | 기간·유형 집계 |
 | POST | `/v1/similar-incident` | 유사장애 |
 | GET | `/v1/insights` | Insight CRUD 계열 |
+| POST/GET | `/v1/failure-buckets` | 실패 버킷 등록/목록 (self-improving 진단 지식) |
 | GET | `/v1/external/catalog` | 이 문서의 기계 가독 카탈로그 |
 | GET | `/v1/external/search` | 간단 GET 검색 |
 | GET | `/v1/external/document?path=` | 문서 본문 |
 | GET | `/v1/external/health` | `/api/health` 동일 |
+
+### 실패 버킷 (`/v1/failure-buckets/*`)
+
+| Method | Path | 설명 |
+|--------|------|------|
+| POST | `/v1/failure-buckets` | 신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, protocol) — 즉시 색인 |
+| GET | `/v1/failure-buckets` | 목록 (protocol, min_confidence, limit, offset 필터) |
+| GET | `/v1/failure-buckets/{id}` | 단건 상세 |
+| POST | `/v1/failure-buckets/{id}/refine` | 신호 추가 + 확인(confirm=true)/반박(confirm=false) — 신뢰도 자동 재계산 |
+| POST | `/v1/failure-buckets/match` | observed_signals[] + symptom → 후보 버킷 순위 |
+
+> `source_type=failure_bucket`은 `data/raw/` 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.
 
 OpenAPI: `http://localhost:8573/docs`
 
@@ -234,6 +247,11 @@ docker compose up -d --build mcp   # http://localhost:8577
 | `kb_ask` / `wiki_ask` | `POST /api/query` SSE |
 | `kb_query` | `POST /v1/query` |
 | `kb_ticket` | `GET /v1/tickets/{id}` |
+| `kb_register_failure_bucket` | `POST /v1/failure-buckets` |
+| `kb_refine_failure_bucket` | `POST /v1/failure-buckets/{id}/refine` |
+| `kb_match_failure_bucket` | `POST /v1/failure-buckets/match` |
+| `kb_list_failure_buckets` | `GET /v1/failure-buckets` |
+| `kb_get_failure_bucket` | `GET /v1/failure-buckets/{id}` |
 
 Claude Desktop 예시: `mcp-server/claude_desktop_config.example.json`
 

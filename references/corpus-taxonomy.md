@@ -169,6 +169,16 @@
 
 ---
 
+## 4. `failure_bucket` (API/MCP로 등재되는 카테고리 — `data/raw/` 스캔 대상 아님)
+
+기존 6개 `source_type`과 달리 `failure_bucket`은 `data/raw/`의 파일을 스캔해 적재하는 것이
+아니라, `kb_register_failure_bucket` MCP 도구(→ `POST /v1/failure-buckets`)를 통해
+실시간으로 등재된다. 필드: `bucket_name`, `protocol`, `symptom`, `discriminating_signals`,
+`counter_signals`, `root_cause`, `recommended_action`, `confidence`(self-improving,
+`kb_refine_failure_bucket` 호출로 갱신). 설계 근거: `docs/superpowers/specs/2026-07-29-failure-bucket-design.md`.
+
+---
+
 ## 갱신 주기
 
 코퍼스는 매주 월요일 아침 갱신됨. 본 문서는 1회성 산출물이 아니라 **월요일 업로드 이후 재실행을 기본**으로 한다. 재실행 시 위 "생성일/대상 스냅샷"과 표 값을 갱신할 것.

@@ -285,6 +285,22 @@ Still verify important claims with `kb_get_document` if the model output looks t
 
 ---
 
+### 4.15 Failure buckets (네트워크 패킷 진단 등)
+
+- `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)` — 새 실패 패턴 등록, 즉시 검색 노출
+- `kb_match_failure_bucket(observed_signals=, symptom=, protocol=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님)
+- `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)` — 확인/반박 시 신뢰도 자동 재계산 (self-improving)
+- `kb_list_failure_buckets(protocol=)` / `kb_get_failure_bucket(bucket_id=)`
+
+**API:** `POST /v1/failure-buckets`, `POST /v1/failure-buckets/{id}/refine`,
+`POST /v1/failure-buckets/match`, `GET /v1/failure-buckets[/{id}]`
+
+패킷 분석 중 이미 알려진 패턴인지 먼저 `kb_match_failure_bucket`으로 확인하고,
+새 패턴이면 `kb_register_failure_bucket`으로 등록, 기존 패턴이 맞았거나 틀렸으면
+`kb_refine_failure_bucket(confirm=True/False)`로 되먹임한다.
+
+---
+
 ## 5. Time expressions (`relative`)
 
 Supported via `parse_relative_range` (Korean phrases). Common values:
@@ -311,6 +327,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` |
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form |
 | `confluence_docs` | Other confluence | `confluence_docs/...` |
+| `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools |
 | insights / synthesis | Approved insights | via insight tools |
 
 **Ticket keys:** always `CITECTS-<number>` (case-insensitive in search; normalize to `CITECTS-####` when calling `kb_ticket`).
