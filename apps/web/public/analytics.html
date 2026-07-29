@@ -35,19 +35,7 @@
 <link rel="stylesheet" href="/css/doclink.css"/>
 </head>
 <body>
-<div class="top">
-  <a href="/">홈</a>
-  <a href="/search.html">검색</a>
-  <a href="/chat.html">Fast QA</a>
-  <a href="/si.html">유사장애</a>
-  <a href="/tickets.html">기간 지원건</a>
-  <a href="/analytics.html">집계</a>
-  <a href="/capacity.html">공수·대수</a>
-  <a href="/bundles.html">번들</a>
-  <a href="/admin.html">Admin</a>
-  <a href="/login.html">Login</a>
-  <a href="/docs/">문서</a>
-</div>
+<div class="top" id="topNav" data-page="analytics"></div>
 <div class="wrap">
   <h1>지원 이력 집계 (Analytics)</h1>
   <p class="sub">Phase 3 · metadata COUNT only · <strong>LLM 계수 없음</strong> · <code>GET /v1/analytics/tickets</code></p>
@@ -85,6 +73,7 @@
 </div>
 <p class="meta" style="max-width:1000px;margin:0 auto;padding:0 16px 24px">집계 결과 샘플 원문은 홈 통합 질의(「유형」질의) 또는
 <a href="/doc.html">문서 뷰어</a>(eid 파라미터)를 사용하세요.</p>
+<script src="/js/nav.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -198,6 +187,5 @@ runRoute();
 </script>
 <script src="/js/doclink.js"></script>
 <script src="/js/auth.js"></script>
-<script>if(window.CitecAuth)CitecAuth.mountChip(".top");</script>
 </body>
 </html>

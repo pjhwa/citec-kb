@@ -172,19 +172,7 @@
   </style>
 </head>
 <body>
-  <div class="top">
-    <a href="/"><strong>홈 · 통합 질의</strong></a>
-    <a href="/search.html">검색</a>
-    <a href="/chat.html">Fast QA</a>
-    <a href="/si.html">유사장애</a>
-    <a href="/tickets.html">기간</a>
-    <a href="/analytics.html">집계</a>
-    <a href="/capacity.html">공수</a>
-    <a href="/insights.html">Insight</a>
-    <a href="/admin.html">Admin</a>
-    <a href="/login.html">Login</a>
-    <a href="/docs/">문서</a>
-  </div>
+  <div class="top" id="topNav" data-page="home"></div>
 
   <div class="wrap">
     <h1>무엇이든 물어보세요</h1>
@@ -204,6 +192,24 @@
         <span class="meta">특수 UI가 필요하면 상단 메뉴 · 아래 바로가기</span>
       </div>
       <div class="chips" id="chips"></div>
+    </div>
+
+    <div class="card mcp-card">
+      <h3 style="margin:0 0 6px">Claude MCP로 연결하기</h3>
+      <p class="meta" style="margin:0 0 10px">
+        이 서버를 Claude Code / Claude Desktop에 MCP 도구로 등록할 수 있습니다.
+        아래 주소는 현재 접속 중인 서버 기준으로 자동 채워집니다.
+      </p>
+      <div class="meta" style="margin-bottom:4px">Claude Code</div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px">
+        <pre class="answer" id="mcpCliCmd" style="flex:1;margin:0"></pre>
+        <button type="button" class="ghost" id="btnCopyCli" style="white-space:nowrap">복사</button>
+      </div>
+      <div class="meta" style="margin-bottom:4px">Claude Desktop (claude_desktop_config.json)</div>
+      <div style="display:flex;gap:8px;align-items:flex-start">
+        <pre class="answer" id="mcpDesktopJson" style="flex:1;margin:0"></pre>
+        <button type="button" class="ghost" id="btnCopyDesktop" style="white-space:nowrap">복사</button>
+      </div>
     </div>
 
     <div id="status" class="meta" style="margin-bottom:10px"></div>
@@ -235,6 +241,7 @@
     </details>
   </div>
 
+  <script src="/js/nav.js"></script>
   <script src="/js/markdown.js"></script>
   <script src="/js/doclink.js"></script>
   <!-- Fallback first (auth disabled pilot); /js/auth.js overwrites if it loads -->
@@ -336,6 +343,41 @@
         capacity: `/capacity.html?q=${enc}`,
       };
       return map[intent] || null;
+    }
+
+    function mcpServerUrl() {
+      const host = location.hostname || "localhost";
+      return `http://${host}:8577/mcp`;
+    }
+
+    function copyText(text, btn) {
+      const orig = btn.textContent;
+      const fail = () => {
+        btn.textContent = "복사 실패";
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      };
+      if (!navigator.clipboard) {
+        fail();
+        return;
+      }
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = "복사됨";
+        setTimeout(() => { btn.textContent = orig; }, 1200);
+      }).catch(fail);
+    }
+
+    function renderMcpGuide() {
+      const url = mcpServerUrl();
+      const cli = `claude mcp add --scope user --transport http wiki-mcp ${url}`;
+      const desktop = JSON.stringify(
+        { mcpServers: { "wiki-mcp": { url, transport: "streamable-http" } } },
+        null,
+        2
+      );
+      $("mcpCliCmd").textContent = cli;
+      $("mcpDesktopJson").textContent = desktop;
+      $("btnCopyCli").onclick = () => copyText(cli, $("btnCopyCli"));
+      $("btnCopyDesktop").onclick = () => copyText(desktop, $("btnCopyDesktop"));
     }
 
     /** Card with preview + 「상세(원문)」 full body loader */
@@ -726,7 +768,7 @@
     if (params.get("answer") === "1") $("wantAnswer").checked = true;
 
     renderChips();
-    CitecAuth.mountChip(".top");
+    renderMcpGuide();
     loadHealth();
     if (params.get("q") && params.get("auto") !== "0") ask();
   </script>

@@ -27,14 +27,8 @@
   </style>
 </head>
 <body>
-<div class="top">
-  <a href="/">홈</a>
-  <a href="/search.html">검색</a>
-  <a href="/chat.html">Fast QA</a>
-  <a href="/tickets.html">기간 지원건</a>
-  <a href="/docs/">문서</a>
-  <span id="navTitle" class="meta" style="margin:0"></span>
-</div>
+<div class="top" id="topNav" data-page="doc"></div>
+<div style="padding:4px 20px 0"><span id="navTitle" class="meta" style="margin:0"></span></div>
 <div class="wrap">
   <div class="row">
     <button type="button" class="ghost" id="btnBack">← 뒤로</button>
@@ -47,6 +41,7 @@
     <div id="body" class="md-body">로딩…</div>
   </div>
 </div>
+<script src="/js/nav.js"></script>
 <script src="/js/markdown.js"></script>
 <script src="/js/auth.js"></script>
 <script>

@@ -38,15 +38,7 @@
 </style>
 </head>
 <body>
-<div class="top">
-  <a href="/">홈</a>
-  <a href="/search.html">검색</a>
-  <a href="/insights.html">Insight</a>
-  <a href="/bundles.html">번들</a>
-  <a href="/admin.html">Admin</a>
-  <a href="/login.html">Login</a>
-  <a href="/docs/">문서</a>
-</div>
+<div class="top" id="topNav" data-page="admin"></div>
 <div class="wrap">
   <h1>Admin / Ops 대시보드</h1>
   <p class="sub">운영자 페르소나 · health · auth · worker · pilot 링크 · job ping (admin 토큰 시)</p>
@@ -144,6 +136,7 @@
     <pre id="job">—</pre>
   </div>
 </div>
+<script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -313,7 +306,6 @@ function scheduleAuto() {
 }
 $("chkAuto").onchange = scheduleAuto;
 
-CitecAuth.mountChip(".top");
 refresh();
 scheduleAuto();
 </script>
