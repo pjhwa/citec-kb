@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>패킷 분석 MCP 가이드 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/docs.css" />
+</head>
+<body>
+<div class="top">
+  <a href="/">홈</a>
+  <a href="/docs/">문서 목록</a>
+  <a href="/search.html">검색</a>
+  <span class="sep">·</span>
+  <a href="/docs/PACKET_ANALYSIS_MCP_GUIDE.md">Markdown 원본</a>
+</div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>패킷 분석 시 citec-kb MCP 활용 지침 (Claude 전용)</h1>
+    <nav class="nav">
+      <a href="#citec-kb-mcp-claude">패킷 분석 시 citec-kb MCP 활용 지침 (Claude 전용)</a>
+      <a href="#0">0. 핵심 원칙</a>
+      <a href="#1-mcp-failure_bucket">1. 사용 가능한 MCP 도구 (failure_bucket)</a>
+      <a href="#2-pre-analysis">2. 워크플로 — 분석 전 (Pre-analysis)</a>
+      <a href="#3-during-analysis">3. 워크플로 — 분석 중 (During analysis)</a>
+      <a href="#4-post-analysis">4. 워크플로 — 분석 후 (Post-analysis, 되먹임)</a>
+      <a href="#4-1" style="padding-left:20px;font-size:12px">4-1. 완전히 새로운 패턴을 발견한 경우 → 등록</a>
+      <a href="#4-2" style="padding-left:20px;font-size:12px">4-2. 기존 버킷이 맞았던 경우 → 확인 기록</a>
+      <a href="#4-3" style="padding-left:20px;font-size:12px">4-3. 기존 버킷 후보였지만 실제로는 아니었던 경우 → 반박 기록</a>
+      <a href="#5-discriminating_signals-counter_signals">5. 좋은 discriminating_signals / counter_signals 작성 기준</a>
+      <a href="#6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</a>
+      <a href="#7">7. 최소 체크리스트 (요약)</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>패킷 분석 시 citec-kb MCP 활용 지침 (Claude 전용)</h1>
+      <p class="lead">failure_bucket 검색·등록 워크플로 (Claude 전용)</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/PACKET_ANALYSIS_MCP_GUIDE.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-29</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-mcp-claude">패킷 분석 시 citec-kb MCP 활용 지침 (Claude 전용)</h1>
+<p><strong>대상:</strong> 네트워크 패킷 캡처(pcap)를 분석하는 Claude 세션.<br>
+<strong>목적:</strong> 과거에 확인된 실패 패턴(<code>failure_bucket</code>)을 citec-kb에서 놓치지 않고 검색·활용하고,<br>
+새로 발견한 패턴은 반드시 citec-kb에 등재해 다음 분석에 재사용되게 한다. <strong>분석 자체는<br>
+패킷 데이터를 직접 보고 판단</strong>하되, citec-kb는 "과거에 이미 정리된 판별 기준"을 참고/기록하는<br>
+보조 지식베이스로 취급한다.</p>
+<p>관련 문서: <a href="./MCP.md">MCP.md</a> · <a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a> §4.15 · <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a></p>
+<hr>
+<h2 id="0">0. 핵심 원칙</h2>
+<ol>
+<li><strong>분석 시작 전에 반드시 citec-kb부터 조회한다.</strong> 패킷을 열어보기 전에 이미 알려진 패턴인지<br>
+   먼저 확인하면, 알려진 판별 신호를 기준으로 캡처를 훨씬 빠르게 좁혀 들어갈 수 있다.</li>
+<li><strong>한 가지 도구만 믿지 않는다.</strong> <code>kb_match_failure_bucket</code>(구조화 매칭), <code>kb_search</code>(하이브리드<br>
+   전문/의미 검색), <code>kb_list_failure_buckets</code>(프로토콜별 목록), <code>kb_similar_incident</code>(과거 장애<br>
+   티켓)까지 상호 보완적으로 사용한다. 아래 §2를 순서대로 밟는다.</li>
+<li><strong>분석 중 신호가 추가될 때마다 재조회한다.</strong> 처음 관찰한 신호만으로 끝내지 않고, 패킷을<br>
+   더 파고들며 새 신호(예: TLS record 경계, 재전송 패턴, MSS/윈도우 값)를 확인할 때마다<br>
+<code>kb_match_failure_bucket</code>을 다시 호출해 후보를 갱신한다.</li>
+<li><strong>분석이 끝나면 반드시 citec-kb에 되먹임한다.</strong> 새 패턴이면 등록, 기존 패턴이 맞았거나<br>
+   틀렸으면 확인/반박을 기록한다. 등재하지 않으면 다음 세션이 처음부터 다시 분석해야 한다 —<br>
+   이 되먹임이 없으면 self-improving 구조가 작동하지 않는다.</li>
+<li><strong>근거 없는 등록/확정 금지.</strong> 실제 패킷에서 관찰되지 않은 신호를 지어내지 않는다. 확신이<br>
+   서지 않으면 등록을 보류하거나 <code>조건부</code>/<code>추정</code> 수준으로만 보고한다.</li>
+</ol>
+<hr>
+<h2 id="1-mcp-failure_bucket">1. 사용 가능한 MCP 도구 (failure_bucket)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>도구</th>
+<th>용도</th>
+<th>시점</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_match_failure_bucket(observed_signals=, symptom=, protocol=)</code></td>
+<td>관찰된 신호로 후보 버킷 순위화</td>
+<td>분석 전 · 분석 중 (반복)</td>
+</tr>
+<tr>
+<td><code>kb_list_failure_buckets(protocol=, min_confidence=)</code></td>
+<td>특정 프로토콜의 등록된 패턴 전체 목록</td>
+<td>분석 전 (탐색)</td>
+</tr>
+<tr>
+<td><code>kb_get_failure_bucket(bucket_id=)</code></td>
+<td>후보 버킷 상세(판별/반증 신호, 원인, 조치) 조회</td>
+<td>분석 전 · 분석 중</td>
+</tr>
+<tr>
+<td><code>kb_search(query=, section="failure_bucket", area=)</code></td>
+<td>버킷 이름·증상·조치 텍스트에 대한 하이브리드 검색</td>
+<td>정확한 신호 문구를 모를 때</td>
+</tr>
+<tr>
+<td><code>kb_similar_incident(symptom=, product=, environment=)</code></td>
+<td>과거 지원이력(장애 티켓) 중 유사 사례</td>
+<td>패턴이 아니라 특정 사고 사례가 필요할 때</td>
+</tr>
+<tr>
+<td><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)</code></td>
+<td>신규 패턴 등록 (즉시 검색 노출)</td>
+<td>분석 후 — 새 패턴 확정 시</td>
+</tr>
+<tr>
+<td><code>kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)</code></td>
+<td>신호 추가 + 확인/반박 기록 → 신뢰도 자동 재계산</td>
+<td>분석 후 — 기존 패턴 재확인/반박 시</td>
+</tr>
+</tbody>
+</table></div>
+<p>도구 시그니처와 REST 매핑 상세는 <code>docs/AI_AGENT_GUIDE.md</code> §4.15, <code>docs/MCP.md</code> 참고.</p>
+<hr>
+<h2 id="2-pre-analysis">2. 워크플로 — 분석 전 (Pre-analysis)</h2>
+<p>패킷을 열기 전, 알려진 증상 키워드와 프로토콜만으로 먼저 조회한다.</p>
+<pre><code>1) kb_match_failure_bucket(
+     observed_signals=[],              # 아직 없으면 빈 배열
+     symptom=&quot;&lt;사용자가 보고한 증상 그대로&gt;&quot;,
+     protocol=&quot;&lt;알고 있다면 TCP|TLS|HTTP 등&gt;&quot;
+   )
+2) 결과가 있으면 → kb_get_failure_bucket(bucket_id=...)로 판별 신호 전문 확인
+3) 결과가 부실하면 → kb_list_failure_buckets(protocol=...)로 해당 프로토콜의 전체 목록 훑기
+4) 그래도 부족하면 → kb_search(query=&quot;&lt;증상 키워드&gt;&quot;, section=&quot;failure_bucket&quot;)로
+   버킷 이름/조치 텍스트 전문검색 (신호 문구를 정확히 모를 때 유용)
+5) 필요하면 → kb_similar_incident(symptom=..., product=...)로 과거 장애 티켓까지 확인
+   (failure_bucket에는 없지만 support_history에 유사 사고가 있을 수 있음)
+</code></pre>
+<p>이 단계에서 후보가 나오면, 해당 버킷의 <strong>판별 신호(discriminating_signals)를 캡처 분석의<br>
+체크리스트로 그대로 사용</strong>한다 — "이 신호가 실제로 있는가?"를 확인하는 순서로 분석을<br>
+진행하면 무작정 패킷을 훑는 것보다 훨씬 빠르다.</p>
+<hr>
+<h2 id="3-during-analysis">3. 워크플로 — 분석 중 (During analysis)</h2>
+<p>패킷을 들여다보며 구체적인 신호(타이밍, 플래그, 페이로드 특징 등)를 확인할 때마다:</p>
+<pre><code>observed_signals에 새로 확인한 신호를 계속 누적하며 재호출:
+
+kb_match_failure_bucket(
+  observed_signals=[&quot;RST 직전 idle 62초&quot;, &quot;FIN 없이 RST&quot;],
+  symptom=&quot;다운로드 중 연결 끓김&quot;,
+  protocol=&quot;TCP&quot;
+)
+</code></pre>
+<ul>
+<li>응답의 <code>matched_signals</code>(부합한 신호)와 <code>contradicted</code>(반증 신호에 걸린 것)를 함께 본다.<br>
+<code>contradicted</code>가 있으면 그 버킷은 사실상 배제 대상이다(라벨 <code>비권고</code>).</li>
+<li><code>label</code>이 <code>가능</code>이면 해당 버킷의 <code>recommended_action</code>을 조치 후보로 제시하되, 반드시<br>
+<strong>현재 캡처에서 그 조치가 타당한지 재검증</strong>한다 (환경·버전 차이가 있을 수 있음).</li>
+<li>여러 버킷이 <code>조건부</code>로 걸리면, 서로를 구분 짓는 반증 신호가 무엇인지 <code>kb_get_failure_bucket</code><br>
+  으로 확인하고, 그 신호가 실제 캡처에 있는지 확인하는 방향으로 분석을 좁힌다.</li>
+<li>이 재조회는 <strong>1회로 끝내지 않는다</strong> — 새 단서가 나올 때마다 반복한다.</li>
+</ul>
+<hr>
+<h2 id="4-post-analysis">4. 워크플로 — 분석 후 (Post-analysis, 되먹임)</h2>
+<p>분석이 끝나면 아래 중 정확히 하나에 해당하는 조치를 취한다. <strong>생략하지 않는다.</strong></p>
+<h3 id="4-1">4-1. 완전히 새로운 패턴을 발견한 경우 → 등록</h3>
+<pre><code>kb_register_failure_bucket(
+  bucket_name=&quot;&lt;간결한 패턴 이름, 예: 'LB idle-timeout으로 인한 RST'&gt;&quot;,
+  symptom=&quot;&lt;사용자/운영 관점에서 관찰되는 현상&gt;&quot;,
+  discriminating_signals=[
+    &quot;&lt;이 패턴을 식별하는 구체적 신호 1&gt;&quot;,
+    &quot;&lt;신호 2&gt;&quot;
+  ],
+  counter_signals=[
+    &quot;&lt;이 패턴이 아님을 시사하는 반증 신호 — 비슷한 패턴과 구분 짓는 근거&gt;&quot;
+  ],
+  root_cause=&quot;&lt;근본 원인&gt;&quot;,
+  recommended_action=&quot;&lt;권장 조치&gt;&quot;,
+  protocol=&quot;TCP|TLS|HTTP|...&quot;
+)
+</code></pre>
+<p>작성 기준은 §5(품질 가이드) 참고. <code>discriminating_signals</code>가 비어 있으면 API가 거부한다.</p>
+<h3 id="4-2">4-2. 기존 버킷이 맞았던 경우 → 확인 기록</h3>
+<pre><code>kb_refine_failure_bucket(bucket_id=&quot;&lt;매칭된 버킷 id&gt;&quot;, confirm=true)
+</code></pre>
+<p>새로 관찰한 신호가 있고 그 버킷의 기존 신호 목록에 없다면 함께 추가:</p>
+<pre><code>kb_refine_failure_bucket(
+  bucket_id=&quot;...&quot;,
+  add_signal=&quot;&lt;이번에 새로 확인된 판별 신호&gt;&quot;,
+  confirm=true
+)
+</code></pre>
+<h3 id="4-3">4-3. 기존 버킷 후보였지만 실제로는 아니었던 경우 → 반박 기록</h3>
+<pre><code>kb_refine_failure_bucket(bucket_id=&quot;&lt;오탐이었던 버킷 id&gt;&quot;, confirm=false)
+</code></pre>
+<p>가능하면 왜 아니었는지(무엇이 그 버킷과 달랐는지)를 반증 신호로 추가한다:</p>
+<pre><code>kb_refine_failure_bucket(
+  bucket_id=&quot;...&quot;,
+  add_counter_signal=&quot;&lt;이번 사례에서 발견한, 해당 버킷을 배제시키는 신호&gt;&quot;,
+  confirm=false
+)
+</code></pre>
+<p>이 되먹임(확인/반박 누적)이 <code>confidence</code>를 자동으로 갱신시키는 self-improving 메커니즘의<br>
+핵심이다 — 누적 없이는 신뢰도가 항상 초기값(0.5)에 머문다.</p>
+<hr>
+<h2 id="5-discriminating_signals-counter_signals">5. 좋은 discriminating_signals / counter_signals 작성 기준</h2>
+<ul>
+<li><strong>관찰 가능한 구체적 조건</strong>으로 쓴다. "타임아웃 문제" ❌ / "RST 직전 idle ≥ 60초" ✅</li>
+<li><strong>측정 가능한 임계값·플래그 조합</strong>을 명시한다 (초 단위, 플래그 유무, 재전송 횟수 등).</li>
+<li><strong>다른 유사 패턴과 구분되는 지점</strong>을 counter_signals에 담는다 — 단순히 "이 패턴이 아님"이<br>
+  아니라, 왜 아닌지 판별 가능한 신호여야 다음 매칭에서 실제로 걸러진다.</li>
+<li>bucket_name은 검색·목록에서 한눈에 식별 가능하도록 "증상+원인" 형태로 짧게 쓴다<br>
+  (예: "TLS record 재조립 지연", "LB idle-timeout으로 인한 RST").</li>
+<li>protocol은 가능하면 항상 채운다 — <code>domain</code> 필터링과 <code>kb_list_failure_buckets(protocol=)</code><br>
+  조회에 쓰인다.</li>
+</ul>
+<hr>
+<h2 id="6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</h2>
+<ul>
+<li>❌ citec-kb 조회 없이 바로 분석을 시작하고 끝내는 것 (§0.1 위반)</li>
+<li>❌ 분석 중 신호가 추가됐는데도 처음 조회 결과만으로 결론 내리는 것 (§3 위반)</li>
+<li>❌ 분석 결과를 등록/확인/반박 중 아무것도 하지 않고 세션을 끝내는 것 (§4 위반)</li>
+<li>❌ 캡처에서 실제로 확인되지 않은 신호를 <code>discriminating_signals</code>에 지어내서 넣는 것</li>
+<li>❌ <code>contradicted</code>(반증 신호)가 뜬 버킷의 <code>recommended_action</code>을 검증 없이 그대로 적용하는 것</li>
+<li>❌ 이미 존재하는 버킷과 사실상 동일한 패턴을 이름만 바꿔 중복 등록하는 것 — 먼저<br>
+<code>kb_match_failure_bucket</code>/<code>kb_list_failure_buckets</code>로 기존 버킷 유무를 반드시 확인</li>
+</ul>
+<hr>
+<h2 id="7">7. 최소 체크리스트 (요약)</h2>
+<ul>
+<li>☐ 분석 착수 전 <code>kb_match_failure_bucket</code> (+ 필요 시 <code>kb_list_failure_buckets</code>,<br>
+<code>kb_search</code>, <code>kb_similar_incident</code>) 로 기존 패턴 조회 완료</li>
+<li>☐ 후보 버킷의 판별/반증 신호를 캡처 분석 체크리스트로 활용</li>
+<li>☐ 새 신호를 확인할 때마다 <code>kb_match_failure_bucket</code> 재호출</li>
+<li>☐ 분석 종료 시 <code>kb_register_failure_bucket</code> 또는 <code>kb_refine_failure_bucket</code><br>
+      (confirm=true/false) 중 하나를 반드시 호출</li>
+<li>☐ 등록/정제 내용이 실제 캡처 근거에 기반했는지 최종 확인</li>
+</ul>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

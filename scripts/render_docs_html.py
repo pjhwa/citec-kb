@@ -37,6 +37,7 @@ DOCS = [
     ("IMPLEMENTATION_PLAN.md", "implementation-plan.html", "구현 계획", "PR DAG · 백로그 · API 계약 · 게이트 G0–G6"),
     ("MCP.md", "mcp.html", "MCP 서버", "Claude / Cursor용 kb_search · kb_ask · kb_query"),
     ("OIDC_IDP_SETUP.md", "oidc-idp-setup.html", "OIDC / IdP 연동 가이드", "Keycloak 및 외부 IdP 연동 모드"),
+    ("PACKET_ANALYSIS_MCP_GUIDE.md", "packet-analysis-mcp-guide.html", "패킷 분석 MCP 가이드", "failure_bucket 검색·등록 워크플로 (Claude 전용)"),
     ("PHASE2_PILOT_CHECKLIST.md", "phase2-pilot-checklist.html", "Phase 2 파일럿 체크리스트", "G2/G3 사인오프 항목"),
     ("Query_Catalog_100_Analysis.md", "query-catalog-analysis.html", "예상 질문 100 분석", "역할별 질의 커버리지 · 답변 가능성 등급"),
 ]
