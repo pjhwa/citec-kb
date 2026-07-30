@@ -306,14 +306,3 @@
     .section-card, .hero { box-shadow: none; break-inside: avoid; }
   }
 </style>
-
-/* --- docs site nav bar (added for generated doc pages) --- */
-.top {
-  background: rgba(255,255,255,.92); backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border); padding: 10px 20px;
-  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
-  position: sticky; top: 0; z-index: 20;
-}
-.top a { color: var(--primary); font-weight: 700; font-size: 13px; text-decoration: none; }
-.top a:hover { text-decoration: underline; }
-.top .sep { color: var(--border-strong); }
