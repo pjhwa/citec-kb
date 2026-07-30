@@ -42,13 +42,7 @@ DOCS = [
     ("Query_Catalog_100_Analysis.md", "query-catalog-analysis.html", "예상 질문 100 분석", "역할별 질의 커버리지 · 답변 가능성 등급"),
 ]
 
-TOP_NAV = """<div class="top">
-  <a href="/">홈</a>
-  <a href="/docs/">문서 목록</a>
-  <a href="/search.html">검색</a>
-  <span class="sep">·</span>
-  <a href="/docs/{md_name}">Markdown 원본</a>
-</div>"""
+TOP_NAV = """<div class="top" id="topNav" data-page="doc"></div>"""
 
 
 def git_last_updated(path: Path) -> str:
@@ -106,7 +100,9 @@ def render_one(md_name: str, html_name: str, nav_title: str, subtitle: str) -> N
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{nav_title} — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css" />
 <link rel="stylesheet" href="/css/docs.css" />
+<script src="/js/nav.js"></script>
 </head>
 <body>
 {TOP_NAV.format(md_name=md_name)}
