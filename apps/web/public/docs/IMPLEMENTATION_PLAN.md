@@ -2,14 +2,14 @@
 
 | 항목 | 내용 |
 |------|------|
-| 문서 버전 | **1.31** |
+| 문서 버전 | **1.32** |
 | 기준 설계 | `CI-TEC_Knowledge_Platform_Design.html` **v2.3** |
 | 평가 세트 | gold-50 retrieval · SI G01–G10 · catalog-100 route+answer · time/list/capacity gold |
 | 환경 | 폐쇄망 지향 · Docker 경량(5 서비스) · GLM 5.2 (dev: OpenRouter) |
 | 사용자 | 초기 50–100명 |
 | 레포 | **`~/dev/citec-kb`** · https://github.com/pjhwa/citec-kb |
 | 작성일 | 2026-07-18 |
-| 갱신 | **2026-07-30 — v1.31: 웹 UI 공용 내비 통합 + 홈 MCP 연결 안내 + 헤더/타이포 리비주얼** |
+| 갱신 | **2026-07-30 — v1.32: 홈 타이틀 "CI-TEC Knowledge Portal"로 변경** |
 
 ### 문서 운영 규칙 (필수)
 
@@ -42,7 +42,7 @@
 | 검색 | Hybrid HTTP · **multi_query=true 기본** · promote 문서 FTS+vector 검색 가능 |
 | Planner | `POST /v1/query` · capacity→analytics→list→SI→**prevention→exhaustive**→checklist→entity→hybrid |
 | 품질 | retrieval hit@3 **0.96** · SI **1.0** · catalog **110/110** · unit tests **87** · pilot **13/13** · load/SLA **pass** · mock-IdP e2e |
-| UI | **홈 통합 질의** (`/`) · 전문 UI(search/chat/si/…) · **CitecMD** (snippet/답변/티켓/Insight MD→HTML) · login · admin · `/docs/` · **공용 상단 내비**(`js/nav.js`, 12개 앱 페이지+`/docs/` 통일) · **홈 Claude MCP 연결 안내** · **다크 헤더/Pretendard·JetBrains Mono 벤더 폰트** (`css/theme.css`) |
+| UI | **홈 "CI-TEC Knowledge Portal"** (`/`, 통합 질의) · 전문 UI(search/chat/si/…) · **CitecMD** (snippet/답변/티켓/Insight MD→HTML) · login · admin · `/docs/` · **공용 상단 내비**(`js/nav.js`, 12개 앱 페이지+`/docs/` 통일) · **홈 Claude MCP 연결 안내** · **다크 헤더/Pretendard·JetBrains Mono 벤더 폰트** (`css/theme.css`) |
 | alembic | `20260718_0002` (vector 768) |
 | 미완 핵심 | 파일럿 **도메인 사인(사람 H1–H7)** · Entra/상용 IdP 운영 연동 · 부서 오픈 |
 
@@ -410,6 +410,7 @@ PR-01 compose ✅
 - [x] 웹 상단 내비 통합 (`js/nav.js`) — 12개 앱 페이지 + `/docs/` 허브(생성 9개+`index.html`) 공용화, 검색 6종 드롭다운, Admin 우측 고정 구분선, Login 링크 제거(기능은 `login.html` 직접 URL로 유지)
 - [x] 홈 화면 Claude MCP 연결 안내 — `location.hostname` 자동감지 기반 `claude mcp add ...` CLI 명령 · Claude Desktop JSON, 복사 버튼(클립보드 API 미지원 origin 대응)
 - [x] 헤더/타이포 리비주얼 — 다크 네이비 헤더(`css/theme.css`) · Samsung SDS 블루(`#1428A0`) 전역 브랜드 컬러 · Pretendard/JetBrains Mono 폰트 로컬 벤더링(CDN 無, 폐쇄망 대응)
+- [x] 홈 타이틀/부제 — `<h1>CI-TEC Knowledge Portal</h1>` · 부제 "CI-TEC 기술 지식 / 노하우 KB & Search" (`<title>` 태그 동일 반영)
 ---
 
 ## 6. 데이터 모델
@@ -700,6 +701,9 @@ POST /v1/auth/introspect
 ### 제품 하드닝 (P4 잔여)
 3. 부서 공식 오픈 · 50–100명 스모크 일정  
 4. (선택) G2 groundedness 정기 회귀 리포트  
+
+### 완료 스냅샷 (2026-07-30 v1.32)
+- **홈 타이틀/부제** — `<h1>`/`<title>` "CI-TEC Knowledge Portal", 부제 "CI-TEC 기술 지식 / 노하우 KB & Search" (`apps/web/public/index.html`)
 
 ### 완료 스냅샷 (2026-07-30 v1.31)
 - **웹 상단 내비 통합** (`apps/web/public/js/nav.js`) — 12개 앱 페이지 + `/docs/` 허브 공용화 · 검색 드롭다운 · Admin 우측 고정 · Login 링크 제거 (버그 수정 포함: `<details open>` 강제 오픈 · 페이지별 `.top` CSS drift)
