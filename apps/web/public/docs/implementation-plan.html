@@ -73,6 +73,7 @@
       <a href="#15">15. 즉시 다음 액션</a>
       <a href="#_6" style="padding-left:20px;font-size:12px">별도 수행 (자동 흡수 안 됨)</a>
       <a href="#p4" style="padding-left:20px;font-size:12px">제품 하드닝 (P4 잔여)</a>
+      <a href="#2026-07-30-v131" style="padding-left:20px;font-size:12px">완료 스냅샷 (2026-07-30 v1.31)</a>
       <a href="#2026-07-21-v130" style="padding-left:20px;font-size:12px">완료 스냅샷 (2026-07-21 v1.30)</a>
       <a href="#_7" style="padding-left:20px;font-size:12px">현행화 체크 (매 작업 종료)</a>
       <a href="#16">16. 참고 산출물 맵</a>
@@ -104,7 +105,7 @@
 <tbody>
 <tr>
 <td>문서 버전</td>
-<td><strong>1.30</strong></td>
+<td><strong>1.31</strong></td>
 </tr>
 <tr>
 <td>기준 설계</td>
@@ -132,7 +133,7 @@
 </tr>
 <tr>
 <td>갱신</td>
-<td><strong>2026-07-21 — v1.30: MCP server (Claude) · port 8577</strong></td>
+<td><strong>2026-07-30 — v1.31: 웹 UI 공용 내비 통합 + 홈 MCP 연결 안내 + 헤더/타이포 리비주얼</strong></td>
 </tr>
 </tbody>
 </table></div>
@@ -219,7 +220,7 @@
 </tr>
 <tr>
 <td>UI</td>
-<td><strong>홈 통합 질의</strong> (<code>/</code>) · 전문 UI(search/chat/si/…) · <strong>CitecMD</strong> (snippet/답변/티켓/Insight MD→HTML) · login · admin · <code>/docs/</code></td>
+<td><strong>홈 통합 질의</strong> (<code>/</code>) · 전문 UI(search/chat/si/…) · <strong>CitecMD</strong> (snippet/답변/티켓/Insight MD→HTML) · login · admin · <code>/docs/</code> · <strong>공용 상단 내비</strong>(<code>js/nav.js</code>, 12개 앱 페이지+<code>/docs/</code> 통일) · <strong>홈 Claude MCP 연결 안내</strong> · <strong>다크 헤더/Pretendard·JetBrains Mono 벤더 폰트</strong> (<code>css/theme.css</code>)</td>
 </tr>
 <tr>
 <td>alembic</td>
@@ -1071,6 +1072,9 @@ W15–16 Phase 4  Flywheel·운영·하드닝 → G6   ← Insight+OIDC+mockIdP+
 <li>✅ <strong>pilot sign-off pack</strong> · GitHub Actions CI · remote push to <code>pjhwa/citec-kb</code></li>
 <li>✅ <strong>Keycloak local profile</strong> + real JWKS OIDC e2e (<code>scripts/keycloak_oidc_e2e.py</code>)</li>
 <li>☐ Entra/상용 IdP · 사람 도메인 사인 H1–H7</li>
+<li>✅ 웹 상단 내비 통합 (<code>js/nav.js</code>) — 12개 앱 페이지 + <code>/docs/</code> 허브(생성 9개+<code>index.html</code>) 공용화, 검색 6종 드롭다운, Admin 우측 고정 구분선, Login 링크 제거(기능은 <code>login.html</code> 직접 URL로 유지)</li>
+<li>✅ 홈 화면 Claude MCP 연결 안내 — <code>location.hostname</code> 자동감지 기반 <code>claude mcp add ...</code> CLI 명령 · Claude Desktop JSON, 복사 버튼(클립보드 API 미지원 origin 대응)</li>
+<li>✅ 헤더/타이포 리비주얼 — 다크 네이비 헤더(<code>css/theme.css</code>) · Samsung SDS 블루(<code>#1428A0</code>) 전역 브랜드 컬러 · Pretendard/JetBrains Mono 폰트 로컬 벤더링(CDN 無, 폐쇄망 대응)</li>
 </ul>
 <hr>
 <h2 id="6">6. 데이터 모델</h2>
@@ -1622,6 +1626,12 @@ POST /v1/auth/introspect
 <li>부서 공식 오픈 · 50–100명 스모크 일정  </li>
 <li>(선택) G2 groundedness 정기 회귀 리포트  </li>
 </ol>
+<h3 id="2026-07-30-v131">완료 스냅샷 (2026-07-30 v1.31)</h3>
+<ul>
+<li><strong>웹 상단 내비 통합</strong> (<code>apps/web/public/js/nav.js</code>) — 12개 앱 페이지 + <code>/docs/</code> 허브 공용화 · 검색 드롭다운 · Admin 우측 고정 · Login 링크 제거 (버그 수정 포함: <code>&lt;details open&gt;</code> 강제 오픈 · 페이지별 <code>.top</code> CSS drift)</li>
+<li><strong>홈 Claude MCP 연결 안내</strong> — <code>location.hostname</code> 기반 CLI/JSON 자동 생성, 클립보드 API 폴백</li>
+<li><strong>헤더/타이포 리비주얼</strong> (<code>apps/web/public/css/theme.css</code>) — 다크 헤더 · SDS 블루 <code>#1428A0</code> · Pretendard/JetBrains Mono 로컬 벤더 폰트(<code>apps/web/public/fonts/</code>, CDN 無)</li>
+</ul>
 <h3 id="2026-07-21-v130">완료 스냅샷 (2026-07-21 v1.30)</h3>
 <ul>
 <li><strong>MCP 서버</strong> (<code>mcp-server/</code>) · compose <strong>8577</strong> · FastMCP streamable-http/stdio  </li>
