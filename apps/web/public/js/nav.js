@@ -1,7 +1,7 @@
 /**
  * Shared top navigation, rendered into <div class="top" id="topNav" data-page="...">.
- * Reads --primary/--border/--muted from the host page's own :root so no
- * page-specific CSS is required.
+ * Visual styling (colors, dropdown, admin divider, fonts) lives in
+ * /css/theme.css — this file only builds the DOM structure.
  */
 (function (global) {
   "use strict";
@@ -21,23 +21,6 @@
     });
   }
 
-  function injectStyle() {
-    if (document.getElementById("nav-style")) return;
-    var style = document.createElement("style");
-    style.id = "nav-style";
-    style.textContent = [
-      ".top .nav-dd { position: relative; }",
-      ".top .nav-dd summary { cursor: pointer; color: var(--primary); font-weight: 600; font-size: 14px; list-style: none; }",
-      ".top .nav-dd summary::-webkit-details-marker { display: none; }",
-      ".top .nav-dd-menu { position: absolute; top: 100%; left: 0; margin-top: 6px; background: #fff; border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px rgba(15,23,42,0.12); padding: 6px; display: flex; flex-direction: column; min-width: 140px; z-index: 20; }",
-      ".top .nav-dd-menu a { padding: 6px 10px; border-radius: 6px; white-space: nowrap; }",
-      ".top .nav-dd-menu a:hover { background: #f1f5f9; }",
-      ".top a.nav-current, .top summary.nav-current { text-decoration: underline; }",
-      ".top .nav-admin { margin-left: auto; padding-left: 14px; border-left: 1px solid var(--border); }",
-    ].join("\n");
-    document.head.appendChild(style);
-  }
-
   function linkHtml(id, label, href, current) {
     var cls = id === current ? ' class="nav-current" aria-current="page"' : "";
     return '<a href="' + esc(href) + '"' + cls + ">" + esc(label) + "</a>";
@@ -50,7 +33,7 @@
     var html = "";
     html += linkHtml("home", "홈", "/", current);
 
-    html += '<details class="nav-dd"' + (searchCurrent ? " open" : "") + ">";
+    html += '<details class="nav-dd">';
     html += '<summary' + (searchCurrent ? ' class="nav-current" aria-current="page"' : "") + ">검색 ▾</summary>";
     html += '<div class="nav-dd-menu">';
     SEARCH_ITEMS.forEach(function (it) {
@@ -68,7 +51,6 @@
   }
 
   function init() {
-    injectStyle();
     var nodes = document.querySelectorAll("#topNav[data-page]");
     for (var i = 0; i < nodes.length; i++) render(nodes[i]);
   }
