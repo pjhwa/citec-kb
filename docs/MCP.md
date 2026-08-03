@@ -70,6 +70,14 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 | `kb_health` | API 헬스 | `/api/health` + `/v1/health` |
 | `kb_stats` | 코퍼스 통계 | `GET /api/wiki-stats` |
 
+### Confluence draw.io 다이어그램
+
+| Tool | 설명 | 백엔드 |
+|------|------|--------|
+| `kb_confluence_list_diagrams` | 페이지의 draw.io 다이어그램 목록(매크로+첨부) | `GET /v1/confluence/pages/{id}/diagrams` |
+| `kb_confluence_get_diagram` | 다이어그램 원본 XML 조회 | `GET /v1/confluence/pages/{id}/diagrams/{name}` |
+| `kb_confluence_put_diagram` | 다이어그램 XML 업로드/갱신 | `PUT /v1/confluence/pages/{id}/diagrams/{name}` |
+
 `wiki_*` 이름은 [citec-wiki-qa](https://github.com/pjhwa/citec-wiki-qa) MCP와 호환됩니다.
 
 ---
@@ -111,6 +119,10 @@ CITEC_KB_BASE_URL=http://localhost:8573 python3 mcp-server/test_smoke.py
 | `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `8100` | 컨테이너 리스닝 |
 | `MCP_TRANSPORT` | `streamable-http` | 또는 `stdio` |
 | `CITEC_KB_TOKEN` | (빈값) | AUTH 켠 경우 Bearer |
+| `CONFLUENCE_BASE_URL` | (빈값, API 서버 설정) | Confluence 베이스 URL — 미설정 시 `kb_confluence_*` 도구는 503 오류 반환 |
+| `CONFLUENCE_USERNAME` / `CONFLUENCE_PASSWORD` | (빈값, API 서버 설정) | Confluence Basic Auth 자격 증명 (PAT 아님) |
+
+`CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD`는 **API 서버**(`apps/api`) 쪽에 설정합니다 — MCP 컨테이너가 아닙니다. MCP 도구는 그 설정이 없을 때 503을 그대로 전달할 뿐입니다.
 
 ---
 
