@@ -256,7 +256,7 @@ from app.settings import Settings
 
 def test_client_raises_when_base_url_missing():
     settings = Settings(
-        confluence_base_url=None, confluence_username="u", confluence_password="p"
+        CONFLUENCE_BASE_URL=None, CONFLUENCE_USERNAME="u", CONFLUENCE_PASSWORD="p"
     )
     with pytest.raises(ConfluenceConfigError):
         ConfluenceClient(settings)
@@ -264,9 +264,9 @@ def test_client_raises_when_base_url_missing():
 
 def test_client_raises_when_username_missing():
     settings = Settings(
-        confluence_base_url="https://c.example.com",
-        confluence_username=None,
-        confluence_password="p",
+        CONFLUENCE_BASE_URL="https://c.example.com",
+        CONFLUENCE_USERNAME=None,
+        CONFLUENCE_PASSWORD="p",
     )
     with pytest.raises(ConfluenceConfigError):
         ConfluenceClient(settings)
@@ -274,9 +274,9 @@ def test_client_raises_when_username_missing():
 
 def test_client_raises_when_password_missing():
     settings = Settings(
-        confluence_base_url="https://c.example.com",
-        confluence_username="u",
-        confluence_password=None,
+        CONFLUENCE_BASE_URL="https://c.example.com",
+        CONFLUENCE_USERNAME="u",
+        CONFLUENCE_PASSWORD=None,
     )
     with pytest.raises(ConfluenceConfigError):
         ConfluenceClient(settings)
@@ -284,9 +284,9 @@ def test_client_raises_when_password_missing():
 
 def test_client_constructs_with_all_set():
     settings = Settings(
-        confluence_base_url="https://c.example.com/",
-        confluence_username="svc-citec-kb",
-        confluence_password="secret-pw",
+        CONFLUENCE_BASE_URL="https://c.example.com/",
+        CONFLUENCE_USERNAME="svc-citec-kb",
+        CONFLUENCE_PASSWORD="secret-pw",
     )
     client = ConfluenceClient(settings)
     assert client._base_url == "https://c.example.com"
