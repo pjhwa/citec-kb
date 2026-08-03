@@ -81,6 +81,9 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 
 page_id를 모를 때는 먼저 `kb_confluence_find_pages(space_key=...)`로 페이지를 찾은 뒤 그 `page_id`로 나머지 도구를 사용하세요.
 
+> **draw.io 다이어그램 읽기/쓰기 상세 가이드:** [CONFLUENCE_DRAWIO_MCP_GUIDE.md](./CONFLUENCE_DRAWIO_MCP_GUIDE.md)
+> 워크플로 · mxGraph XML 구조 · 오류 처리 · 안티패턴
+
 `wiki_*` 이름은 [citec-wiki-qa](https://github.com/pjhwa/citec-wiki-qa) MCP와 호환됩니다.
 
 ---
