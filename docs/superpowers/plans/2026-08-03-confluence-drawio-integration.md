@@ -6,13 +6,13 @@
 
 **Architecture:** New `apps/api/app/confluence/` package (macro parser + Confluence REST client + orchestration service) backing a new `apps/api/app/routers/confluence.py` FastAPI router (`/v1/confluence/*`), proxied by three new tools in `mcp-server/server.py`. Mirrors the existing `failure_buckets` package/router split.
 
-**Tech Stack:** Python, FastAPI, httpx (async), pytest, pydantic-settings. Confluence REST API v1 (`/rest/api/content/...`) with `Authorization: Bearer <PAT>`.
+**Tech Stack:** Python, FastAPI, httpx (async), pytest, pydantic-settings. Confluence REST API v1 (`/rest/api/content/...`) with HTTP Basic Auth (`username`/`password`).
 
 Spec: `docs/superpowers/specs/2026-08-03-confluence-drawio-integration-design.md`
 
 ---
 
-## Task 1: Settings — Confluence base URL + PAT
+## Task 1: Settings — Confluence base URL + Basic Auth credentials
 
 **Files:**
 - Modify: `apps/api/app/settings.py`
@@ -27,19 +27,23 @@ from app.settings import Settings, get_settings
 
 def test_confluence_settings_default_to_none(monkeypatch):
     monkeypatch.delenv("CONFLUENCE_BASE_URL", raising=False)
-    monkeypatch.delenv("CONFLUENCE_PAT", raising=False)
+    monkeypatch.delenv("CONFLUENCE_USERNAME", raising=False)
+    monkeypatch.delenv("CONFLUENCE_PASSWORD", raising=False)
     s = Settings()
     assert s.confluence_base_url is None
-    assert s.confluence_pat is None
+    assert s.confluence_username is None
+    assert s.confluence_password is None
 
 
 def test_confluence_settings_read_from_env(monkeypatch):
     monkeypatch.setenv("CONFLUENCE_BASE_URL", "https://confluence.internal.example.com")
-    monkeypatch.setenv("CONFLUENCE_PAT", "tok-abc")
+    monkeypatch.setenv("CONFLUENCE_USERNAME", "svc-citec-kb")
+    monkeypatch.setenv("CONFLUENCE_PASSWORD", "secret-pw")
     get_settings.cache_clear()
     s = Settings()
     assert s.confluence_base_url == "https://confluence.internal.example.com"
-    assert s.confluence_pat == "tok-abc"
+    assert s.confluence_username == "svc-citec-kb"
+    assert s.confluence_password == "secret-pw"
     get_settings.cache_clear()
 ```
 
@@ -54,7 +58,8 @@ In `apps/api/app/settings.py`, add after the `raw_dir` field (around line 69):
 
 ```python
     confluence_base_url: str | None = Field(default=None, alias="CONFLUENCE_BASE_URL")
-    confluence_pat: str | None = Field(default=None, alias="CONFLUENCE_PAT")
+    confluence_username: str | None = Field(default=None, alias="CONFLUENCE_USERNAME")
+    confluence_password: str | None = Field(default=None, alias="CONFLUENCE_PASSWORD")
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -66,7 +71,7 @@ Expected: PASS (2 tests)
 
 ```bash
 git add apps/api/app/settings.py apps/api/tests/test_confluence_settings.py
-git commit -m "feat(api): add CONFLUENCE_BASE_URL/CONFLUENCE_PAT settings"
+git commit -m "feat(api): add CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD settings"
 ```
 
 ---
@@ -250,24 +255,42 @@ from app.settings import Settings
 
 
 def test_client_raises_when_base_url_missing():
-    settings = Settings(confluence_base_url=None, confluence_pat="tok")
+    settings = Settings(
+        confluence_base_url=None, confluence_username="u", confluence_password="p"
+    )
     with pytest.raises(ConfluenceConfigError):
         ConfluenceClient(settings)
 
 
-def test_client_raises_when_pat_missing():
-    settings = Settings(confluence_base_url="https://c.example.com", confluence_pat=None)
+def test_client_raises_when_username_missing():
+    settings = Settings(
+        confluence_base_url="https://c.example.com",
+        confluence_username=None,
+        confluence_password="p",
+    )
     with pytest.raises(ConfluenceConfigError):
         ConfluenceClient(settings)
 
 
-def test_client_constructs_with_both_set():
+def test_client_raises_when_password_missing():
+    settings = Settings(
+        confluence_base_url="https://c.example.com",
+        confluence_username="u",
+        confluence_password=None,
+    )
+    with pytest.raises(ConfluenceConfigError):
+        ConfluenceClient(settings)
+
+
+def test_client_constructs_with_all_set():
     settings = Settings(
         confluence_base_url="https://c.example.com/",
-        confluence_pat="tok-abc",
+        confluence_username="svc-citec-kb",
+        confluence_password="secret-pw",
     )
     client = ConfluenceClient(settings)
     assert client._base_url == "https://c.example.com"
+    assert client._auth == ("svc-citec-kb", "secret-pw")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -291,29 +314,25 @@ from app.settings import Settings
 
 
 class ConfluenceConfigError(RuntimeError):
-    """CONFLUENCE_BASE_URL / CONFLUENCE_PAT not configured."""
+    """CONFLUENCE_BASE_URL / CONFLUENCE_USERNAME / CONFLUENCE_PASSWORD not configured."""
 
 
 class ConfluenceClient:
     def __init__(self, settings: Settings) -> None:
-        if not settings.confluence_base_url or not settings.confluence_pat:
+        if not settings.confluence_base_url or not settings.confluence_username or not settings.confluence_password:
             raise ConfluenceConfigError(
-                "CONFLUENCE_BASE_URL/CONFLUENCE_PAT is not configured on the API server"
+                "CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD "
+                "is not configured on the API server"
             )
         self._base_url = settings.confluence_base_url.rstrip("/")
-        self._token = settings.confluence_pat
-
-    def _headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            "Accept": "application/json",
-        }
+        self._auth = (settings.confluence_username, settings.confluence_password)
 
     def _http(self, timeout: float = 30.0) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             base_url=self._base_url,
             timeout=timeout,
-            headers=self._headers(),
+            auth=self._auth,
+            headers={"Accept": "application/json"},
         )
 
     async def get_page_body(self, page_id: str) -> str:
@@ -370,7 +389,7 @@ class ConfluenceClient:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd apps/api && python -m pytest tests/test_confluence_client.py -v`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -751,7 +770,7 @@ def _map_http_error(e: httpx.HTTPStatusError) -> HTTPException:
     if status == 404:
         return HTTPException(status_code=404, detail="confluence resource not found")
     if status in (401, 403):
-        return HTTPException(status_code=502, detail="confluence auth failed — check CONFLUENCE_PAT")
+        return HTTPException(status_code=502, detail="confluence auth failed — check CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD")
     return HTTPException(status_code=502, detail=f"confluence error: {status}")
 
 
@@ -841,7 +860,7 @@ async def kb_confluence_list_diagrams(page_id: str) -> str:
         async with _client() as client:
             resp = await client.get(f"/v1/confluence/pages/{page_id}/diagrams")
             if resp.status_code == 503:
-                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_PAT)."
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
@@ -867,7 +886,7 @@ async def kb_confluence_get_diagram(page_id: str, diagram_name: str) -> str:
         async with _client() as client:
             resp = await client.get(f"/v1/confluence/pages/{page_id}/diagrams/{diagram_name}")
             if resp.status_code == 503:
-                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_PAT)."
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
             if resp.status_code == 404:
                 return f"오류: 다이어그램을 찾을 수 없습니다: {diagram_name}"
             resp.raise_for_status()
@@ -888,7 +907,7 @@ async def kb_confluence_put_diagram(page_id: str, diagram_name: str, xml_content
                 headers={"Content-Type": "application/xml"},
             )
             if resp.status_code == 503:
-                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_PAT)."
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
@@ -941,7 +960,7 @@ In `mcp-server/test_smoke.py`, add after the `kb_tools_help` check (after line 1
     )
 ```
 
-This tolerates both states a dev/test API might be in: `CONFLUENCE_BASE_URL`/`CONFLUENCE_PAT` unset (503 → the specific Korean message) or configured against a real/reachable Confluence (any non-generic-error response).
+This tolerates both states a dev/test API might be in: `CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD` unset (503 → the specific Korean message) or configured against a real/reachable Confluence (any non-generic-error response).
 
 - [ ] **Step 2: Run the smoke test against a local dev API**
 
@@ -971,7 +990,8 @@ In `.env.example`, add a new section (after the Auth/SSO section, before whateve
 # --- Confluence (draw.io diagram read/write via MCP) ---
 # Required for kb_confluence_* MCP tools / /v1/confluence/* endpoints.
 # CONFLUENCE_BASE_URL=https://confluence.internal.example.com
-# CONFLUENCE_PAT=
+# CONFLUENCE_USERNAME=
+# CONFLUENCE_PASSWORD=
 ```
 
 - [ ] **Step 2: Document the tools in docs/MCP.md**
@@ -988,13 +1008,14 @@ In `docs/MCP.md`, add a new table row section after the "Insight · 상태" sect
 | `kb_confluence_put_diagram` | 다이어그램 XML 업로드/갱신 | `PUT /v1/confluence/pages/{id}/diagrams/{name}` |
 ```
 
-Also add the two env vars to the existing variable table (after line 113's `CITEC_KB_TOKEN` row):
+Also add the env vars to the existing variable table (after line 113's `CITEC_KB_TOKEN` row):
 
 ```markdown
 | `CONFLUENCE_BASE_URL` | (빈값, API 서버 설정) | Confluence 베이스 URL — 미설정 시 `kb_confluence_*` 도구는 503 오류 반환 |
+| `CONFLUENCE_USERNAME` / `CONFLUENCE_PASSWORD` | (빈값, API 서버 설정) | Confluence Basic Auth 자격 증명 (PAT 아님) |
 ```
 
-(Note: `CONFLUENCE_BASE_URL`/`CONFLUENCE_PAT` are set on the **API server**, not the MCP container — the MCP-side table documents this for clarity since the MCP tools are the ones surfacing the 503.)
+(Note: `CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD` are set on the **API server**, not the MCP container — the MCP-side table documents this for clarity since the MCP tools are the ones surfacing the 503.)
 
 - [ ] **Step 3: Commit**
 

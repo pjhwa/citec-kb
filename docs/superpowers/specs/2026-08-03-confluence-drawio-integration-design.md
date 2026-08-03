@@ -26,9 +26,10 @@ Claude ↔ mcp-server (proxy, new tools) ↔ apps/api /v1/confluence/* (new rout
 Add two fields, following the existing `Field(default=..., alias="ENV_VAR")` convention:
 
 - `confluence_base_url: str | None` (alias `CONFLUENCE_BASE_URL`) — e.g. `https://confluence.internal.example.com`
-- `confluence_pat: str | None` (alias `CONFLUENCE_PAT`) — Personal Access Token, sent as `Authorization: Bearer <token>`
+- `confluence_username: str | None` (alias `CONFLUENCE_USERNAME`)
+- `confluence_password: str | None` (alias `CONFLUENCE_PASSWORD`)
 
-If either is unset, the confluence router's endpoints return a clear 503 rather than failing with a confusing connection error.
+Auth is HTTP Basic (`username:password`), not a token — this org's Confluence is set up for Basic Auth, not PATs. If the base URL or either credential is unset, the confluence router's endpoints return a clear 503 rather than failing with a confusing connection error.
 
 ### 2. Confluence client (`apps/api/app/integrations/confluence_client.py`, new module)
 
@@ -39,7 +40,7 @@ A small async httpx wrapper (mirrors the style of `mcp-server/server.py`'s `_cli
 - `download_attachment(download_link) -> bytes` — fetches the raw attachment bytes.
 - `upload_attachment(page_id, filename, content, existing_attachment_id=None)` — `POST /rest/api/content/{id}/child/attachment` (create) or `POST /rest/api/content/{id}/child/attachment/{attachmentId}/data` (new version), matching Confluence's attachment API semantics — creates the version Confluence expects when a macro already references that filename.
 
-All requests carry `Authorization: Bearer {settings.confluence_pat}`.
+All requests carry HTTP Basic Auth built from `settings.confluence_username` / `settings.confluence_password` (httpx's `auth=(username, password)`).
 
 ### 3. Macro parser (same module or `apps/api/app/integrations/drawio_macro.py`)
 
@@ -75,9 +76,9 @@ Three new tools mirroring the router 1:1, following the existing `kb_*` tool con
 
 ## Error handling
 
-- Missing `CONFLUENCE_BASE_URL`/`CONFLUENCE_PAT` → 503 with a message telling the operator to set them.
+- Missing `CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD` → 503 with a message telling the operator to set them.
 - Confluence 404 (page/attachment not found) → passed through as 404 with a clear message.
-- Confluence 401/403 (bad/expired PAT) → passed through as 502 with a message pointing at the PAT config (avoid leaking the token itself in logs/errors).
+- Confluence 401/403 (bad credentials) → passed through as 502 with a message pointing at the credential config (avoid leaking the password itself in logs/errors).
 - Malformed body storage XML → macro parser fails soft (returns empty list, page's attachments are still checked for standalone `.drawio` files) rather than raising.
 
 ## Testing
@@ -88,4 +89,4 @@ Three new tools mirroring the router 1:1, following the existing `kb_*` tool con
 
 ## Config / docs
 
-- Document `CONFLUENCE_BASE_URL` / `CONFLUENCE_PAT` in `.env.example` (or wherever other integration env vars are documented) and in `docs/MCP.md`'s tool table.
+- Document `CONFLUENCE_BASE_URL` / `CONFLUENCE_USERNAME` / `CONFLUENCE_PASSWORD` in `.env.example` (or wherever other integration env vars are documented) and in `docs/MCP.md`'s tool table.
