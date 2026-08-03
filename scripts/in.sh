@@ -10,6 +10,10 @@
 #   citec-kb-model.tar.gz
 #
 # 동일 버전은 건너뜀 (--force 로 재적용).
+#
+# 적용된 번들은 ~/backup 으로 이동되며, 종류별(code/docker/docker-mcp/
+# docker-keycloak/data/model)로 최신 2개(현재 적용분 + 바로 이전분)만
+# 보관하고 그 이전 것은 자동 삭제됨.
 set -euo pipefail
 
 usage() {
@@ -62,9 +66,9 @@ REAL_HOME=$(getent passwd "$REAL_USER" 2>/dev/null | cut -d: -f6)
 REAL_HOME="${REAL_HOME:-$HOME}"
 OWNER="${REAL_USER}:$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
 REPO="citec-kb"
-TEMP_DIR="$REAL_HOME/temp"
 PROJECT_DIR="$REAL_HOME/$REPO"
 DEPLOY_TRACK_DIR="$REAL_HOME/bin"
+BACKUP_DIR="$REAL_HOME/backup"
 
 CODE_DEPLOYED_FILE="$DEPLOY_TRACK_DIR/.citec_kb_code_deployed"
 DOCKER_DEPLOYED_FILE="$DEPLOY_TRACK_DIR/.citec_kb_docker_deployed"
@@ -137,9 +141,28 @@ DO_DOCKER_KC=false; [[ "$DOCKER_KC_STATE" == "yes" ]] && DO_DOCKER_KC=true
 DO_DATA=false; [[ "$DATA_STATE" == "yes" ]] && DO_DATA=true
 DO_MODEL=false; [[ "$MODEL_STATE" == "yes" ]] && DO_MODEL=true
 
-TEMP_DIR="$REAL_HOME/temp"
 DEPLOY_TRACK_DIR="$REAL_HOME/bin"
-mkdir -p "$TEMP_DIR" "$DEPLOY_TRACK_DIR"
+mkdir -p "$DEPLOY_TRACK_DIR" "$BACKUP_DIR"
+
+# 적용된 번들을 ~/backup 으로 옮기고, 같은 종류(glob)는 최신 2개(현재+직전)만 남김
+archive_bundle() {
+  local tgz="$1" glob="$2"
+  [[ -f "$tgz" ]] || return 0
+  local base dest
+  base=$(basename "$tgz")
+  dest="$BACKUP_DIR/$base"
+  if [[ -e "$dest" ]]; then
+    dest="$BACKUP_DIR/${base%.tar.gz}-$(date +%Y%m%d_%H%M%S).tar.gz"
+  fi
+  mv "$tgz" "$dest" 2>/dev/null || true
+  chown "$OWNER" "$dest" 2>/dev/null || true
+  local files
+  mapfile -t files < <(ls -1t "$BACKUP_DIR"/$glob 2>/dev/null)
+  local i
+  for ((i = 2; i < ${#files[@]}; i++)); do
+    rm -f "${files[$i]}"
+  done
+}
 
 find_latest() {
   # Prefer exact prefix match; exclude sibling prefixes (docker vs docker-mcp)
@@ -375,7 +398,7 @@ deploy_source() {
   done
   mkdir -p "${PROJECT_DIR}/data/raw" "${PROJECT_DIR}/data/seeds" "${PROJECT_DIR}/logs" "${PROJECT_DIR}/models"
 
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-code-v*.tar.gz'
   echo "$SOURCE_AVAIL" > "$CODE_DEPLOYED_FILE"
   log "✅ code ${SOURCE_AVAIL} (마운트 반영 — 재시작 후 적용)"
   info "requirements/Dockerfile 변경 시 docker 번들도 배포"
@@ -387,7 +410,7 @@ deploy_docker() {
   [[ -f "$tgz" ]] || { err "없음: $tgz"; exit 1; }
   log "docker load"
   gunzip -c "$tgz" | sudo docker load
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-docker-v*.tar.gz'
   echo "$DOCKER_AVAIL" > "$DOCKER_DEPLOYED_FILE"
   log "✅ docker ${DOCKER_AVAIL}"
 }
@@ -397,7 +420,7 @@ deploy_docker_mcp() {
   local tgz="$REAL_HOME/citec-kb-docker-mcp-${DOCKER_MCP_AVAIL}.tar.gz"
   [[ -f "$tgz" ]] || { err "없음: $tgz"; exit 1; }
   gunzip -c "$tgz" | sudo docker load
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-docker-mcp-v*.tar.gz'
   echo "$DOCKER_MCP_AVAIL" > "$DOCKER_MCP_DEPLOYED_FILE"
   log "✅ docker-mcp ${DOCKER_MCP_AVAIL}"
 }
@@ -407,7 +430,7 @@ deploy_docker_keycloak() {
   local tgz="$REAL_HOME/citec-kb-docker-keycloak-${DOCKER_KC_AVAIL}.tar.gz"
   [[ -f "$tgz" ]] || { err "없음: $tgz"; exit 1; }
   gunzip -c "$tgz" | sudo docker load
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-docker-keycloak-v*.tar.gz'
   echo "$DOCKER_KC_AVAIL" > "$DOCKER_KC_DEPLOYED_FILE"
   log "✅ keycloak ${DOCKER_KC_AVAIL}"
 }
@@ -462,7 +485,7 @@ deploy_data() {
     info "파일 코퍼스만 배포됨 — 검색 인덱스는 --pg-only 덤프 또는 ingest/embed 필요"
   fi
 
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-data-d*.tar.gz'
   echo "$DATA_AVAIL" > "$DATA_DEPLOYED_FILE"
   log "✅ data ${DATA_AVAIL}"
 }
@@ -502,7 +525,7 @@ deploy_model() {
     fi
   fi
 
-  mv "$tgz" "$TEMP_DIR/" 2>/dev/null || true
+  archive_bundle "$tgz" 'citec-kb-model*.tar.gz'
   rm -f "$REAL_HOME/citec-kb-model.tar.gz.name"
   echo "$model_name" > "$MODEL_DEPLOYED_FILE"
   log "✅ model ${model_name}"
