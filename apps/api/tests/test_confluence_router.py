@@ -84,3 +84,23 @@ def test_put_diagram_happy_path(monkeypatch):
     )
     assert r.status_code == 200
     assert r.json() == {"attachment_id": "att1", "version": 4}
+
+
+def test_find_pages_503_when_not_configured(monkeypatch):
+    monkeypatch.setattr(confluence_router, "find_pages", _raise)
+    r = _client().get("/v1/confluence/spaces/LOOKIN/pages")
+    assert r.status_code == 503
+
+
+def test_find_pages_happy_path(monkeypatch):
+    async def _fake(space_key, title_query="", limit=25):
+        assert space_key == "LOOKIN"
+        assert title_query == "Network"
+        assert limit == 10
+        return [{"page_id": "456", "title": "Network Diagram", "web_url": "/pages/456"}]
+
+    monkeypatch.setattr(confluence_router, "find_pages", _fake)
+    r = _client().get("/v1/confluence/spaces/LOOKIN/pages", params={"title": "Network", "limit": 10})
+    assert r.status_code == 200
+    assert r.json()["total"] == 1
+    assert r.json()["items"][0]["page_id"] == "456"

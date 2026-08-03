@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from app.confluence.client import ConfluenceConfigError
 from app.confluence.service import (
     DiagramNotFoundError,
+    find_pages,
     get_diagram_xml,
     list_diagrams,
     put_diagram_xml,
@@ -25,6 +26,17 @@ def _map_http_error(e: httpx.HTTPStatusError) -> HTTPException:
     if status in (401, 403):
         return HTTPException(status_code=502, detail="confluence auth failed — check CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD")
     return HTTPException(status_code=502, detail=f"confluence error: {status}")
+
+
+@router.get("/spaces/{space_key}/pages")
+async def get_space_pages(space_key: str, title: str = "", limit: int = 25) -> dict[str, Any]:
+    try:
+        items = await find_pages(space_key, title_query=title, limit=limit)
+    except ConfluenceConfigError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
+    except httpx.HTTPStatusError as e:
+        raise _map_http_error(e) from None
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/pages/{page_id}/diagrams")

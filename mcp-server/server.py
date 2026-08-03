@@ -852,6 +852,7 @@ async def kb_tools_help() -> str:
   kb_get_failure_bucket(bucket_id=)
 
 [Confluence draw.io 다이어그램]
+  kb_confluence_find_pages(space_key=, title=)    공간명으로 페이지 검색 (page_id 모를 때 먼저 사용)
   kb_confluence_list_diagrams(page_id=)          페이지의 다이어그램 목록
   kb_confluence_get_diagram(page_id=, diagram_name=)   원본 XML 조회
   kb_confluence_put_diagram(page_id=, diagram_name=, xml_content=)   업로드/갱신
@@ -899,6 +900,34 @@ async def kb_get_checkitem(code: str) -> str:
         lines.append(str(sec.get("value")))
         lines.append("")
     return "\n".join(lines).strip()
+
+
+@mcp.tool()
+async def kb_confluence_find_pages(space_key: str, title: str = "", limit: int = 25) -> str:
+    """Confluence 공간(space) 안에서 페이지를 검색해 page_id를 찾는다 (CQL space 검색).
+    space_key는 바뀔 수 있으므로 매번 인자로 받는다. title은 부분 일치(선택)."""
+    try:
+        async with _client() as client:
+            resp = await client.get(
+                f"/v1/confluence/spaces/{space_key}/pages",
+                params={"title": title, "limit": limit},
+            )
+            if resp.status_code == 503:
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    items = data.get("items") or []
+    if not items:
+        return f"공간 {space_key}에서 조건에 맞는 페이지를 찾을 수 없습니다."
+    lines = [f"페이지 {len(items)}건:"]
+    for it in items:
+        lines.append(
+            f"- {it.get('title')} (page_id={it.get('page_id')}, web_url={it.get('web_url')})"
+        )
+    return "\n".join(lines)
 
 
 @mcp.tool()

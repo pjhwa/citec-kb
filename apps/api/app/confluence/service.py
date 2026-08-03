@@ -55,6 +55,19 @@ async def list_diagrams(page_id: str) -> list[dict[str, Any]]:
     return items
 
 
+async def find_pages(space_key: str, title_query: str = "", limit: int = 25) -> list[dict[str, Any]]:
+    client = _client()
+    results = await client.search_pages_by_space(space_key, title_query=title_query, limit=limit)
+    return [
+        {
+            "page_id": r.get("id"),
+            "title": r.get("title"),
+            "web_url": (r.get("_links") or {}).get("webui") or "",
+        }
+        for r in results
+    ]
+
+
 async def get_diagram_xml(page_id: str, diagram_name: str) -> str:
     client = _client()
     attachments = await client.list_attachments(page_id)

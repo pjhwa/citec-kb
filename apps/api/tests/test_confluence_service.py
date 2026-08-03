@@ -9,12 +9,20 @@ from app.confluence.client import ConfluenceConfigError
 class _FakeClient:
     """Stand-in for ConfluenceClient — avoids real HTTP in unit tests."""
 
-    def __init__(self, body_xml: str, attachments: list[dict], download_bytes: bytes = b""):
+    def __init__(
+        self,
+        body_xml: str,
+        attachments: list[dict],
+        download_bytes: bytes = b"",
+        search_results: list[dict] | None = None,
+    ):
         self.body_xml = body_xml
         self.attachments = attachments
         self.download_bytes = download_bytes
         self.created: list[tuple] = []
         self.updated: list[tuple] = []
+        self.search_results = search_results or []
+        self.searched: tuple | None = None
 
     async def get_page_body(self, page_id: str) -> str:
         return self.body_xml
@@ -32,6 +40,10 @@ class _FakeClient:
     async def update_attachment_data(self, page_id: str, attachment_id: str, filename: str, content: bytes) -> dict:
         self.updated.append((page_id, attachment_id, filename, content))
         return {"id": attachment_id, "version": {"number": 2}}
+
+    async def search_pages_by_space(self, space_key: str, title_query: str = "", limit: int = 25) -> list[dict]:
+        self.searched = (space_key, title_query, limit)
+        return self.search_results
 
 
 _BODY = """
@@ -104,3 +116,28 @@ def test_put_diagram_xml_creates_new_attachment_when_absent(monkeypatch):
 
     assert result == {"attachment_id": "new-att-1", "version": 1}
     assert fake.created[0][1] == "brand-new.drawio"
+
+
+def test_find_pages_returns_page_id_and_title(monkeypatch):
+    fake = _FakeClient(
+        _BODY,
+        [],
+        search_results=[
+            {"id": "456", "title": "Network Diagram", "_links": {"webui": "/pages/456/Network+Diagram"}},
+        ],
+    )
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    items = asyncio.run(service.find_pages("LOOKIN", title_query="Network", limit=10))
+
+    assert items == [{"page_id": "456", "title": "Network Diagram", "web_url": "/pages/456/Network+Diagram"}]
+    assert fake.searched == ("LOOKIN", "Network", 10)
+
+
+def test_find_pages_empty_when_no_matches(monkeypatch):
+    fake = _FakeClient(_BODY, [], search_results=[])
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    items = asyncio.run(service.find_pages("LOOKIN"))
+
+    assert items == []

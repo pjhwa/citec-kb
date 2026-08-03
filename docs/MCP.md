@@ -74,9 +74,12 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 
 | Tool | 설명 | 백엔드 |
 |------|------|--------|
+| `kb_confluence_find_pages` | 공간(space)명으로 페이지 검색해 page_id 조회 (CQL) — 공간명이 바뀌어도 매번 인자로 지정 | `GET /v1/confluence/spaces/{space_key}/pages` |
 | `kb_confluence_list_diagrams` | 페이지의 draw.io 다이어그램 목록(매크로+첨부) | `GET /v1/confluence/pages/{id}/diagrams` |
 | `kb_confluence_get_diagram` | 다이어그램 원본 XML 조회 | `GET /v1/confluence/pages/{id}/diagrams/{name}` |
 | `kb_confluence_put_diagram` | 다이어그램 XML 업로드/갱신 | `PUT /v1/confluence/pages/{id}/diagrams/{name}` |
+
+page_id를 모를 때는 먼저 `kb_confluence_find_pages(space_key=...)`로 페이지를 찾은 뒤 그 `page_id`로 나머지 도구를 사용하세요.
 
 `wiki_*` 이름은 [citec-wiki-qa](https://github.com/pjhwa/citec-wiki-qa) MCP와 호환됩니다.
 

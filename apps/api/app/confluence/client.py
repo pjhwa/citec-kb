@@ -41,6 +41,22 @@ class ConfluenceClient:
             data = resp.json()
         return ((data.get("body") or {}).get("storage") or {}).get("value") or ""
 
+    async def search_pages_by_space(
+        self, space_key: str, title_query: str = "", limit: int = 25
+    ) -> list[dict[str, Any]]:
+        cql = f'space="{space_key}" and type=page'
+        if title_query:
+            escaped = title_query.replace('"', '\\"')
+            cql += f' and title~"{escaped}"'
+        async with self._http() as client:
+            resp = await client.get(
+                "/rest/api/content/search",
+                params={"cql": cql, "limit": limit},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        return data.get("results") or []
+
     async def list_attachments(self, page_id: str) -> list[dict[str, Any]]:
         async with self._http() as client:
             resp = await client.get(
