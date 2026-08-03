@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     raw_dir: str = Field(default="/data/raw", alias="RAW_DIR")
 
+    confluence_base_url: str | None = Field(default=None, alias="CONFLUENCE_BASE_URL")
+    confluence_username: str | None = Field(default=None, alias="CONFLUENCE_USERNAME")
+    confluence_password: str | None = Field(default=None, alias="CONFLUENCE_PASSWORD")
+
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(
         default="https://openrouter.ai/api/v1",

@@ -1,0 +1,67 @@
+from app.confluence.macro import extract_drawio_diagram_names, match_attachment_for_diagram
+
+_SINGLE_MACRO_BODY = """
+<p>intro</p>
+<ac:structured-macro ac:name="drawio" ac:schema-version="1">
+  <ac:parameter ac:name="diagramName">architecture</ac:parameter>
+  <ac:parameter ac:name="revision">3</ac:parameter>
+</ac:structured-macro>
+<p>outro</p>
+"""
+
+_MULTI_MACRO_BODY = """
+<ac:structured-macro ac:name="drawio">
+  <ac:parameter ac:name="diagramName">network-topology</ac:parameter>
+</ac:structured-macro>
+<p>text between</p>
+<ac:structured-macro ac:name="drawio">
+  <ac:parameter ac:name="diagramName">deployment flow</ac:parameter>
+</ac:structured-macro>
+"""
+
+_NO_MACRO_BODY = "<p>just text, no diagrams here</p>"
+
+_MALFORMED_BODY = "<ac:structured-macro ac:name=\"drawio\"><ac:parameter ac:name=\"diagramName\">broken"
+
+
+def test_extract_single_macro():
+    assert extract_drawio_diagram_names(_SINGLE_MACRO_BODY) == ["architecture"]
+
+
+def test_extract_multiple_macros():
+    assert extract_drawio_diagram_names(_MULTI_MACRO_BODY) == [
+        "network-topology",
+        "deployment flow",
+    ]
+
+
+def test_extract_no_macros():
+    assert extract_drawio_diagram_names(_NO_MACRO_BODY) == []
+
+
+def test_extract_empty_body():
+    assert extract_drawio_diagram_names("") == []
+
+
+def test_extract_malformed_body_fails_soft():
+    assert extract_drawio_diagram_names(_MALFORMED_BODY) == []
+
+
+def test_match_attachment_exact_filename():
+    attachments = [
+        {"id": "att1", "title": "architecture.drawio"},
+        {"id": "att2", "title": "unrelated.png"},
+    ]
+    match = match_attachment_for_diagram("architecture", attachments)
+    assert match == {"id": "att1", "title": "architecture.drawio"}
+
+
+def test_match_attachment_case_insensitive_stem_fallback():
+    attachments = [{"id": "att3", "title": "Network-Topology.drawio"}]
+    match = match_attachment_for_diagram("network-topology", attachments)
+    assert match == {"id": "att3", "title": "Network-Topology.drawio"}
+
+
+def test_match_attachment_none_found():
+    attachments = [{"id": "att1", "title": "other.drawio"}]
+    assert match_attachment_for_diagram("missing", attachments) is None
