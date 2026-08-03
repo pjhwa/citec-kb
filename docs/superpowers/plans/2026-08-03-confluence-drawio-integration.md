@@ -752,7 +752,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Body, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.confluence.client import ConfluenceConfigError
 from app.confluence.service import (
@@ -799,7 +799,8 @@ async def get_page_diagram(page_id: str, diagram_name: str) -> Response:
 
 
 @router.put("/pages/{page_id}/diagrams/{diagram_name}")
-async def put_page_diagram(page_id: str, diagram_name: str, body: bytes = Body(...)) -> dict[str, Any]:
+async def put_page_diagram(page_id: str, diagram_name: str, request: Request) -> dict[str, Any]:
+    body = await request.body()
     try:
         result = await put_diagram_xml(page_id, diagram_name, body.decode("utf-8"))
     except ConfluenceConfigError as e:
