@@ -851,6 +851,11 @@ async def kb_tools_help() -> str:
   kb_list_failure_buckets(protocol=, min_confidence=)
   kb_get_failure_bucket(bucket_id=)
 
+[Confluence draw.io 다이어그램]
+  kb_confluence_list_diagrams(page_id=)          페이지의 다이어그램 목록
+  kb_confluence_get_diagram(page_id=, diagram_name=)   원본 XML 조회
+  kb_confluence_put_diagram(page_id=, diagram_name=, xml_content=)   업로드/갱신
+
 [티켓 · Insight · 상태]
   kb_ticket(external_id=)
   kb_list_insights / kb_get_insight
@@ -894,6 +899,69 @@ async def kb_get_checkitem(code: str) -> str:
         lines.append(str(sec.get("value")))
         lines.append("")
     return "\n".join(lines).strip()
+
+
+@mcp.tool()
+async def kb_confluence_list_diagrams(page_id: str) -> str:
+    """Confluence 페이지의 draw.io 다이어그램 목록을 조회한다 (본문 매크로 + 첨부파일 기준).
+    page_id는 Confluence 페이지 ID(숫자 문자열)."""
+    try:
+        async with _client() as client:
+            resp = await client.get(f"/v1/confluence/pages/{page_id}/diagrams")
+            if resp.status_code == 503:
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    items = data.get("items") or []
+    if not items:
+        return f"페이지 {page_id}에서 draw.io 다이어그램을 찾을 수 없습니다."
+    lines = [f"다이어그램 {len(items)}건:"]
+    for it in items:
+        lines.append(
+            f"- {it.get('diagram_name')} (attachment_id={it.get('attachment_id')}, "
+            f"version={it.get('version')}, inline={it.get('inline')})"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_confluence_get_diagram(page_id: str, diagram_name: str) -> str:
+    """Confluence 페이지의 draw.io 다이어그램 원본 XML을 조회한다.
+    diagram_name은 kb_confluence_list_diagrams 결과의 diagram_name 값."""
+    try:
+        async with _client() as client:
+            resp = await client.get(f"/v1/confluence/pages/{page_id}/diagrams/{diagram_name}")
+            if resp.status_code == 503:
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
+            if resp.status_code == 404:
+                return f"오류: 다이어그램을 찾을 수 없습니다: {diagram_name}"
+            resp.raise_for_status()
+            return resp.text
+    except httpx.HTTPError as e:
+        return _err(e)
+
+
+@mcp.tool()
+async def kb_confluence_put_diagram(page_id: str, diagram_name: str, xml_content: str) -> str:
+    """Claude가 생성/수정한 draw.io XML을 Confluence 페이지에 첨부파일로 업로드(갱신 또는 신규 생성)한다.
+    기존 매크로가 이 diagram_name을 참조 중이면 페이지에 바로 반영된다."""
+    try:
+        async with _client() as client:
+            resp = await client.put(
+                f"/v1/confluence/pages/{page_id}/diagrams/{diagram_name}",
+                content=xml_content.encode("utf-8"),
+                headers={"Content-Type": "application/xml"},
+            )
+            if resp.status_code == 503:
+                return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return f"업로드됨: {diagram_name} (attachment_id={data.get('attachment_id')}, version={data.get('version')})"
 
 
 @mcp.tool()
