@@ -27,6 +27,7 @@ from app.routers import analytics as analytics_router  # noqa: E402
 from app.routers import capacity as capacity_router  # noqa: E402
 from app.routers import entities as entities_router  # noqa: E402
 from app.routers import failure_buckets as failure_buckets_router  # noqa: E402
+from app.routers import confluence as confluence_router  # noqa: E402
 from app.auth import mock_idp as mock_idp_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import insights as insights_router  # noqa: E402
@@ -80,6 +81,7 @@ app.include_router(analytics_router.router)
 app.include_router(capacity_router.router)
 app.include_router(entities_router.router)
 app.include_router(failure_buckets_router.router)
+app.include_router(confluence_router.router)
 app.include_router(lexicon_router.router)
 app.include_router(jobs_router.router)
 app.include_router(ops_router.router)
