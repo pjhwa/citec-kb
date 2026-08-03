@@ -107,6 +107,15 @@ async def main() -> int:
     help_t = await server.kb_tools_help()
     check("kb_tools_help", "kb_list_tickets" in help_t, help_t[:100])
 
+    cd = await server.kb_confluence_list_diagrams("0")
+    check(
+        "kb_confluence_list_diagrams",
+        cd.startswith("오류: Confluence 연동이 설정되지 않았습니다")
+        or "다이어그램" in cd
+        or not cd.startswith("오류:"),
+        cd[:200],
+    )
+
     # connection failure
     server.CITEC_KB_BASE_URL = "http://127.0.0.1:1"
     fail = await server.kb_search("x")
