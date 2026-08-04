@@ -104,3 +104,33 @@ def test_find_pages_happy_path(monkeypatch):
     assert r.status_code == 200
     assert r.json()["total"] == 1
     assert r.json()["items"][0]["page_id"] == "456"
+
+
+def test_list_diagrams_502_on_confluence_connection_error(monkeypatch):
+    async def _fake(page_id):
+        raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(confluence_router, "list_diagrams", _fake)
+    r = _client().get("/v1/confluence/pages/123/diagrams")
+    assert r.status_code == 502
+    assert "Connection refused" in r.json()["detail"]
+
+
+def test_list_diagrams_502_on_unsupported_protocol(monkeypatch):
+    async def _fake(page_id):
+        raise httpx.UnsupportedProtocol("Request URL has an unsupported protocol 'htps://'.")
+
+    monkeypatch.setattr(confluence_router, "list_diagrams", _fake)
+    r = _client().get("/v1/confluence/pages/123/diagrams")
+    assert r.status_code == 502
+    assert "unsupported protocol" in r.json()["detail"].lower()
+
+
+def test_find_pages_502_on_confluence_connection_error(monkeypatch):
+    async def _fake(space_key, title_query="", limit=25):
+        raise httpx.ConnectError("Connection refused")
+
+    monkeypatch.setattr(confluence_router, "find_pages", _fake)
+    r = _client().get("/v1/confluence/spaces/LOOKIN/pages")
+    assert r.status_code == 502
+    assert "Connection refused" in r.json()["detail"]

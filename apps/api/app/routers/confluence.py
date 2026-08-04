@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -16,6 +17,8 @@ from app.confluence.service import (
     put_diagram_xml,
 )
 
+logger = logging.getLogger("citec.confluence")
+
 router = APIRouter(prefix="/v1/confluence", tags=["confluence"])
 
 
@@ -24,8 +27,18 @@ def _map_http_error(e: httpx.HTTPStatusError) -> HTTPException:
     if status == 404:
         return HTTPException(status_code=404, detail="confluence resource not found")
     if status in (401, 403):
+        logger.warning("confluence auth failed: %s", e)
         return HTTPException(status_code=502, detail="confluence auth failed — check CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD")
+    logger.warning("confluence returned error status %s: %s", status, e)
     return HTTPException(status_code=502, detail=f"confluence error: {status}")
+
+
+def _map_request_error(e: httpx.RequestError) -> HTTPException:
+    logger.exception("confluence request failed: %s", e)
+    return HTTPException(
+        status_code=502,
+        detail=f"confluence request failed ({type(e).__name__}): {e} — check CONFLUENCE_BASE_URL",
+    )
 
 
 @router.get("/spaces/{space_key}/pages")
@@ -36,6 +49,8 @@ async def get_space_pages(space_key: str, title: str = "", limit: int = 25) -> d
         raise HTTPException(status_code=503, detail=str(e)) from None
     except httpx.HTTPStatusError as e:
         raise _map_http_error(e) from None
+    except httpx.RequestError as e:
+        raise _map_request_error(e) from None
     return {"items": items, "total": len(items)}
 
 
@@ -47,6 +62,8 @@ async def get_page_diagrams(page_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e)) from None
     except httpx.HTTPStatusError as e:
         raise _map_http_error(e) from None
+    except httpx.RequestError as e:
+        raise _map_request_error(e) from None
     return {"items": items, "total": len(items)}
 
 
@@ -60,6 +77,8 @@ async def get_page_diagram(page_id: str, diagram_name: str) -> Response:
         raise HTTPException(status_code=404, detail=f"diagram not found: {diagram_name}") from None
     except httpx.HTTPStatusError as e:
         raise _map_http_error(e) from None
+    except httpx.RequestError as e:
+        raise _map_request_error(e) from None
     return Response(content=xml_content, media_type="text/xml")
 
 
@@ -72,4 +91,6 @@ async def put_page_diagram(page_id: str, diagram_name: str, request: Request) ->
         raise HTTPException(status_code=503, detail=str(e)) from None
     except httpx.HTTPStatusError as e:
         raise _map_http_error(e) from None
+    except httpx.RequestError as e:
+        raise _map_request_error(e) from None
     return result

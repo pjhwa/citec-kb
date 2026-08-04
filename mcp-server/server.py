@@ -49,6 +49,18 @@ def _err(e: Exception) -> str:
     return f"오류: citec-kb API에 연결할 수 없습니다 ({e})"
 
 
+def _api_error_detail(resp: httpx.Response) -> str:
+    """citec-kb API의 오류 응답에서 detail 메시지를 추출한다.
+    resp.raise_for_status()만 쓰면 이 detail이 사라지고 일반 HTTP 문구만 남는다."""
+    try:
+        data = resp.json()
+        if isinstance(data, dict) and data.get("detail"):
+            return str(data["detail"])
+    except Exception:
+        pass
+    return (resp.text or f"HTTP {resp.status_code}")[:300]
+
+
 def _access_lines(d: dict[str, Any], *, indent: str = "  ") -> str:
     path = d.get("path") or (d.get("access") or {}).get("path") or ""
     body = d.get("body_api") or d.get("body_api_url") or (d.get("access") or {}).get("body_api") or ""
@@ -914,7 +926,8 @@ async def kb_confluence_find_pages(space_key: str, title: str = "", limit: int =
             )
             if resp.status_code == 503:
                 return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                return f"오류: 페이지 검색 실패 (HTTP {resp.status_code}): {_api_error_detail(resp)}"
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
@@ -939,7 +952,8 @@ async def kb_confluence_list_diagrams(page_id: str) -> str:
             resp = await client.get(f"/v1/confluence/pages/{page_id}/diagrams")
             if resp.status_code == 503:
                 return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                return f"오류: 다이어그램 목록 조회 실패 (HTTP {resp.status_code}): {_api_error_detail(resp)}"
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
@@ -967,7 +981,8 @@ async def kb_confluence_get_diagram(page_id: str, diagram_name: str) -> str:
                 return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
             if resp.status_code == 404:
                 return f"오류: 다이어그램을 찾을 수 없습니다: {diagram_name}"
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                return f"오류: 다이어그램 조회 실패 (HTTP {resp.status_code}): {_api_error_detail(resp)}"
             return resp.text
     except httpx.HTTPError as e:
         return _err(e)
@@ -986,7 +1001,8 @@ async def kb_confluence_put_diagram(page_id: str, diagram_name: str, xml_content
             )
             if resp.status_code == 503:
                 return "오류: Confluence 연동이 설정되지 않았습니다 (CONFLUENCE_BASE_URL/CONFLUENCE_USERNAME/CONFLUENCE_PASSWORD)."
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                return f"오류: 다이어그램 업로드 실패 (HTTP {resp.status_code}): {_api_error_detail(resp)}"
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
