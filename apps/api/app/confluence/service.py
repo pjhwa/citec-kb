@@ -36,6 +36,7 @@ async def list_diagrams(page_id: str) -> list[dict[str, Any]]:
             "diagram_name": name,
             "attachment_id": att.get("id") if att else None,
             "version": ((att or {}).get("version") or {}).get("number"),
+            "media_type": ((att or {}).get("metadata") or {}).get("mediaType"),
             "inline": True,
         }
         if not att:
@@ -63,6 +64,7 @@ async def list_diagrams(page_id: str) -> list[dict[str, Any]]:
                 "diagram_name": title[: -len(".drawio")],
                 "attachment_id": att.get("id"),
                 "version": (att.get("version") or {}).get("number"),
+                "media_type": (att.get("metadata") or {}).get("mediaType"),
                 "inline": False,
             }
         )

@@ -78,4 +78,39 @@ def test_list_attachments_requests_version_expand():
         return await client.list_attachments("123")
 
     asyncio.run(_run())
-    assert captured["params"].get("expand") == "version"
+    assert "version" in captured["params"].get("expand", "").split(",")
+
+
+def test_list_attachments_requests_media_type_expand():
+    """To compare a citec-kb-uploaded attachment's Content-Type against a
+    known-working, UI-created one (diagnosing 'cannot display diagram' after
+    the revision-mismatch hypothesis was ruled out — version and macro
+    revision matched), the media type must be expanded too."""
+    settings = Settings(
+        CONFLUENCE_BASE_URL="https://c.example.com",
+        CONFLUENCE_USERNAME="u",
+        CONFLUENCE_PASSWORD="p",
+    )
+    client = ConfluenceClient(settings)
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["params"] = dict(request.url.params)
+        return httpx.Response(200, json={"results": []})
+
+    def _http(timeout: float = 30.0) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=client._base_url,
+            transport=httpx.MockTransport(handler),
+        )
+
+    client._http = _http
+
+    async def _run():
+        return await client.list_attachments("123")
+
+    asyncio.run(_run())
+    expand = captured["params"].get("expand", "")
+    assert "version" in expand.split(",")
+    assert "metadata.mediaType" in expand.split(",")

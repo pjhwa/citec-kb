@@ -57,12 +57,14 @@ _ATTACHMENTS = [
         "id": "att1",
         "title": "architecture.drawio",
         "version": {"number": 3},
+        "metadata": {"mediaType": "application/vnd.jgraph.mxfile"},
         "_links": {"download": "/download/attachments/1/architecture.drawio"},
     },
     {
         "id": "att2",
         "title": "standalone.drawio",
         "version": {"number": 1},
+        "metadata": {"mediaType": "application/vnd.jgraph.mxfile"},
         "_links": {"download": "/download/attachments/1/standalone.drawio"},
     },
 ]
@@ -77,8 +79,10 @@ def test_list_diagrams_includes_inline_and_standalone(monkeypatch):
     by_name = {i["diagram_name"]: i for i in items}
     assert by_name["architecture"]["attachment_id"] == "att1"
     assert by_name["architecture"]["inline"] is True
+    assert by_name["architecture"]["media_type"] == "application/vnd.jgraph.mxfile"
     assert by_name["standalone"]["attachment_id"] == "att2"
     assert by_name["standalone"]["inline"] is False
+    assert by_name["standalone"]["media_type"] == "application/vnd.jgraph.mxfile"
 
 
 def test_list_diagrams_surfaces_candidate_titles_when_unmatched(monkeypatch):

@@ -965,7 +965,8 @@ async def kb_confluence_list_diagrams(page_id: str) -> str:
     for it in items:
         lines.append(
             f"- {it.get('diagram_name')} (attachment_id={it.get('attachment_id')}, "
-            f"version={it.get('version')}, inline={it.get('inline')})"
+            f"version={it.get('version')}, media_type={it.get('media_type')}, "
+            f"inline={it.get('inline')})"
         )
         if it.get("attachment_id") is None:
             candidates = it.get("candidate_attachment_titles")

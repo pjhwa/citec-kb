@@ -61,10 +61,12 @@ class ConfluenceClient:
         async with self._http() as client:
             resp = await client.get(
                 f"/rest/api/content/{page_id}/child/attachment",
-                # Confluence omits the version sub-object unless explicitly
-                # expanded — without this, every attachment's version.number
-                # is missing and list_diagrams can only report version=None.
-                params={"limit": 200, "expand": "version"},
+                # Confluence omits version and metadata.mediaType unless
+                # explicitly expanded — without them, version.number is
+                # missing (list_diagrams could only report version=None) and
+                # there's no way to compare a citec-kb-uploaded attachment's
+                # Content-Type against a known-working, UI-created one.
+                params={"limit": 200, "expand": "version,metadata.mediaType"},
             )
             resp.raise_for_status()
             data = resp.json()
