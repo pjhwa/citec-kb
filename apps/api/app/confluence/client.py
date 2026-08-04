@@ -61,7 +61,10 @@ class ConfluenceClient:
         async with self._http() as client:
             resp = await client.get(
                 f"/rest/api/content/{page_id}/child/attachment",
-                params={"limit": 200},
+                # Confluence omits the version sub-object unless explicitly
+                # expanded — without this, every attachment's version.number
+                # is missing and list_diagrams can only report version=None.
+                params={"limit": 200, "expand": "version"},
             )
             resp.raise_for_status()
             data = resp.json()
