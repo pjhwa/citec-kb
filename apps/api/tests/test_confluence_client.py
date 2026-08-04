@@ -46,6 +46,25 @@ def test_client_constructs_with_all_set():
     assert client._auth == ("svc-citec-kb", "secret-pw")
 
 
+def test_http_retries_transient_connection_failures():
+    """Real ops incident: a DNS lookup blip (httpx.ConnectError) and a
+    transient 401 both self-resolved on the very next call a few seconds
+    later. A bounded connection-level retry (never touching HTTP status
+    responses like 401/403 — those must stay unretried per the 'no retry on
+    auth failure' rule) would absorb exactly the DNS/connect-failure case
+    automatically instead of surfacing a 502 that just needed one retry."""
+    settings = Settings(
+        CONFLUENCE_BASE_URL="https://c.example.com",
+        CONFLUENCE_USERNAME="u",
+        CONFLUENCE_PASSWORD="p",
+    )
+    client = ConfluenceClient(settings)
+    http_client = client._http()
+    transport = http_client._transport
+    assert isinstance(transport, httpx.AsyncHTTPTransport)
+    assert transport._pool._retries >= 1
+
+
 def test_list_attachments_requests_version_expand():
     """Confluence's REST API omits the `version` sub-object from attachment
     results unless expand=version is explicitly requested — without it,

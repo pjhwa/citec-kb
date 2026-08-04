@@ -249,6 +249,7 @@ cannot display diagram"**이 뜨는 사고가 있었다. 근본 원인 두 가�
 | diagram_name이 실제로 없음 (get) | `오류: 다이어그램을 찾을 수 없습니다: <name>` | 오탈자 가능성 우선 의심 → `kb_confluence_list_diagrams`로 실제 존재하는 이름 재확인. |
 | Confluence 인증 실패 (502) | 에러 문자열에 `confluence auth failed` 포함 | Claude가 해결할 수 없는 서버 설정 문제 — 재시도 금지, 사용자/운영자에게 보고. |
 | Confluence 쪽 리소스 자체가 없음 (502, 404 매핑) | `confluence resource not found` | page_id 자체가 잘못됐을 가능성 — `kb_confluence_find_pages`로 재확인. |
+| Confluence 연결 자체가 실패 (502) | 에러 문자열에 `confluence request failed` 포함 | DNS/TCP 연결 단계에서만 발생 — citec-kb가 자동으로 최대 2회 재시도한 뒤에도 실패한 것이므로, 일시적 블립이 아니라 지속적인 네트워크 문제일 가능성이 높다. 재시도하지 않고 보고한다. |
 | 업로드는 성공(200)했는데 브라우저에서 "Diagram attachment access error: cannot display diagram" | API 오류 아님 — citec-kb 도구는 정상 응답을 반환함 | citec-kb API/MCP 오류가 아니라 뷰어 렌더링 문제다. `kb_confluence_list_diagrams`로 `media_type`이 `application/vnd.jgraph.mxfile`인지 확인한다(§4.5) — 2026-08-04에 이 원인으로 발생한 사고가 있었고 이미 수정되었으므로, 최신 code 번들이 배포됐는지부터 확인한다. |
 
 ---

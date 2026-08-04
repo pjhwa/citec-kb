@@ -29,6 +29,14 @@ class ConfluenceClient:
             timeout=timeout,
             auth=self._auth,
             headers={"Accept": "application/json"},
+            # Retries connection-level failures only (DNS, TCP connect,
+            # TLS handshake) — never an HTTP response like 401/403. A DNS
+            # blip and a transient 401 were both observed in production,
+            # each self-resolving on the very next call seconds later; this
+            # absorbs the connection-level case automatically without ever
+            # retrying an auth failure (see the "no retry on auth failure"
+            # rule in the Confluence guide).
+            transport=httpx.AsyncHTTPTransport(retries=2),
         )
 
     async def get_page_body(self, page_id: str) -> str:
