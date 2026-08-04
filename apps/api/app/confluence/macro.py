@@ -19,6 +19,12 @@ _DIAGRAM_NAME_PARAM_RE = re.compile(
     re.DOTALL,
 )
 
+# The draw.io Confluence app stores diagram source as .drawio/.xml, but also
+# auto-generates a same-stem .png preview attachment for the page thumbnail.
+# The stem fallback below must never match those — matching a binary preview
+# instead of the XML source produces undecodable bytes for the caller.
+_DIAGRAM_SOURCE_EXTENSIONS = {"drawio", "xml"}
+
 
 def extract_drawio_diagram_names(body_storage_xml: str) -> list[str]:
     """Return diagramName values (in document order) of drawio macros in a
@@ -47,6 +53,9 @@ def match_attachment_for_diagram(diagram_name: str, attachments: list[dict]) -> 
     stem = diagram_name.strip().lower()
     for att in attachments:
         title = att.get("title") or ""
-        if "." in title and title.rsplit(".", 1)[0].lower() == stem:
+        if "." not in title:
+            continue
+        title_stem, _, ext = title.rpartition(".")
+        if ext.lower() in _DIAGRAM_SOURCE_EXTENSIONS and title_stem.lower() == stem:
             return att
     return None

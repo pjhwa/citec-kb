@@ -98,6 +98,16 @@ def test_get_diagram_xml_raises_not_found(monkeypatch):
         asyncio.run(service.get_diagram_xml("123", "does-not-exist"))
 
 
+def test_get_diagram_xml_raises_format_error_on_non_utf8_bytes(monkeypatch):
+    png_magic_bytes = b"\x89PNG\r\n\x1a\n"
+    fake = _FakeClient(_BODY, _ATTACHMENTS, download_bytes=png_magic_bytes)
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    with pytest.raises(service.DiagramFormatError) as exc_info:
+        asyncio.run(service.get_diagram_xml("123", "architecture"))
+    assert "att1" in str(exc_info.value)
+
+
 def test_put_diagram_xml_updates_existing_attachment(monkeypatch):
     fake = _FakeClient(_BODY, _ATTACHMENTS)
     monkeypatch.setattr(service, "_client", lambda: fake)

@@ -65,3 +65,23 @@ def test_match_attachment_case_insensitive_stem_fallback():
 def test_match_attachment_none_found():
     attachments = [{"id": "att1", "title": "other.drawio"}]
     assert match_attachment_for_diagram("missing", attachments) is None
+
+
+def test_match_attachment_stem_fallback_ignores_non_diagram_extensions():
+    """draw.io Confluence apps commonly generate a same-stem .png preview
+    alongside the .drawio source. If the .drawio title doesn't hit the exact
+    match (renamed, revision suffix, ...), the stem fallback must not pick
+    the binary .png/.jpg/.svg preview — that produces undecodable bytes
+    downstream and crashes the caller."""
+    attachments = [
+        {"id": "att-png", "title": "architecture.png"},
+        {"id": "att-drawio", "title": "Architecture.drawio.xml"},
+    ]
+    match = match_attachment_for_diagram("architecture", attachments)
+    assert match is None
+
+
+def test_match_attachment_stem_fallback_allows_xml_extension():
+    attachments = [{"id": "att-xml", "title": "Architecture.xml"}]
+    match = match_attachment_for_diagram("architecture", attachments)
+    assert match == {"id": "att-xml", "title": "Architecture.xml"}

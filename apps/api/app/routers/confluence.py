@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from app.confluence.client import ConfluenceConfigError
 from app.confluence.service import (
+    DiagramFormatError,
     DiagramNotFoundError,
     find_pages,
     get_diagram_xml,
@@ -75,6 +76,9 @@ async def get_page_diagram(page_id: str, diagram_name: str) -> Response:
         raise HTTPException(status_code=503, detail=str(e)) from None
     except DiagramNotFoundError:
         raise HTTPException(status_code=404, detail=f"diagram not found: {diagram_name}") from None
+    except DiagramFormatError as e:
+        logger.warning("diagram format error: %s", e)
+        raise HTTPException(status_code=502, detail=f"diagram is not readable as text: {e}") from None
     except httpx.HTTPStatusError as e:
         raise _map_http_error(e) from None
     except httpx.RequestError as e:

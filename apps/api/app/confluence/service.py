@@ -13,6 +13,11 @@ class DiagramNotFoundError(RuntimeError):
     """No attachment could be resolved for the requested diagram name."""
 
 
+class DiagramFormatError(RuntimeError):
+    """The matched attachment's bytes aren't UTF-8 text (e.g. a mismatched
+    binary preview, or a genuinely non-text-XML .drawio storage format)."""
+
+
 def _client() -> ConfluenceClient:
     return ConfluenceClient(get_settings())
 
@@ -78,7 +83,13 @@ async def get_diagram_xml(page_id: str, diagram_name: str) -> str:
     if not download_link:
         raise DiagramNotFoundError(diagram_name)
     content = await client.download_attachment(download_link)
-    return content.decode("utf-8")
+    try:
+        return content.decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise DiagramFormatError(
+            f"attachment_id={att.get('id')} title={att.get('title')!r} "
+            f"is not valid UTF-8 text ({e})"
+        ) from e
 
 
 async def put_diagram_xml(page_id: str, diagram_name: str, xml_content: str) -> dict[str, Any]:

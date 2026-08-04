@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.confluence.client import ConfluenceConfigError
-from app.confluence.service import DiagramNotFoundError
+from app.confluence.service import DiagramFormatError, DiagramNotFoundError
 from app.routers import confluence as confluence_router
 
 
@@ -69,6 +69,16 @@ def test_get_diagram_502_on_confluence_auth_error(monkeypatch):
     monkeypatch.setattr(confluence_router, "get_diagram_xml", _fake)
     r = _client().get("/v1/confluence/pages/123/diagrams/architecture")
     assert r.status_code == 502
+
+
+def test_get_diagram_502_on_format_error(monkeypatch):
+    async def _fake(page_id, diagram_name):
+        raise DiagramFormatError("attachment_id=att-png title='architecture.png' is not valid UTF-8 text")
+
+    monkeypatch.setattr(confluence_router, "get_diagram_xml", _fake)
+    r = _client().get("/v1/confluence/pages/123/diagrams/architecture")
+    assert r.status_code == 502
+    assert "architecture.png" in r.json()["detail"]
 
 
 def test_put_diagram_happy_path(monkeypatch):
