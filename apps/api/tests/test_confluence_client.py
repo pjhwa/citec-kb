@@ -114,3 +114,59 @@ def test_list_attachments_requests_media_type_expand():
     expand = captured["params"].get("expand", "")
     assert "version" in expand.split(",")
     assert "metadata.mediaType" in expand.split(",")
+
+
+def _make_client() -> ConfluenceClient:
+    settings = Settings(
+        CONFLUENCE_BASE_URL="https://c.example.com",
+        CONFLUENCE_USERNAME="u",
+        CONFLUENCE_PASSWORD="p",
+    )
+    return ConfluenceClient(settings)
+
+
+def test_create_attachment_uses_mxfile_media_type():
+    """A known-working (UI-created) diagram's media_type is
+    application/vnd.jgraph.mxfile — confirmed against real production data.
+    citec-kb was hardcoding application/xml, which is why uploaded diagrams
+    failed to render ('cannot display diagram') even though the attachment
+    content and macro revision were otherwise correct."""
+    client = _make_client()
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200, json={"id": "att-new", "version": {"number": 1}})
+
+    def _http(timeout: float = 30.0) -> httpx.AsyncClient:
+        return httpx.AsyncClient(base_url=client._base_url, transport=httpx.MockTransport(handler))
+
+    client._http = _http
+
+    async def _run():
+        return await client.create_attachment("123", "diagram", b"<mxfile></mxfile>")
+
+    asyncio.run(_run())
+    assert b"application/vnd.jgraph.mxfile" in captured["body"]
+    assert b"Content-Type: application/xml" not in captured["body"]
+
+
+def test_update_attachment_data_uses_mxfile_media_type():
+    client = _make_client()
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = request.content
+        return httpx.Response(200, json={"id": "att1", "version": {"number": 4}})
+
+    def _http(timeout: float = 30.0) -> httpx.AsyncClient:
+        return httpx.AsyncClient(base_url=client._base_url, transport=httpx.MockTransport(handler))
+
+    client._http = _http
+
+    async def _run():
+        return await client.update_attachment_data("123", "att1", "diagram", b"<mxfile></mxfile>")
+
+    asyncio.run(_run())
+    assert b"application/vnd.jgraph.mxfile" in captured["body"]
+    assert b"Content-Type: application/xml" not in captured["body"]

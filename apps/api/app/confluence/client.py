@@ -83,7 +83,7 @@ class ConfluenceClient:
             resp = await client.post(
                 f"/rest/api/content/{page_id}/child/attachment",
                 headers={"X-Atlassian-Token": "no-check"},
-                files={"file": (filename, content, "application/xml")},
+                files={"file": (filename, content, "application/vnd.jgraph.mxfile")},
             )
             resp.raise_for_status()
             data = resp.json()
@@ -97,7 +97,7 @@ class ConfluenceClient:
             resp = await client.post(
                 f"/rest/api/content/{page_id}/child/attachment/{attachment_id}/data",
                 headers={"X-Atlassian-Token": "no-check"},
-                files={"file": (filename, content, "application/xml")},
+                files={"file": (filename, content, "application/vnd.jgraph.mxfile")},
             )
             resp.raise_for_status()
             return resp.json()
