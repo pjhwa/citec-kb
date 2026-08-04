@@ -39,13 +39,14 @@ async def list_diagrams(page_id: str) -> list[dict[str, Any]]:
             "inline": True,
         }
         if not att:
-            # Diagnostic aid: show what .drawio/.xml attachments actually exist
-            # on the page, so a naming-convention mismatch is visible without
-            # extra tooling instead of a bare attachment_id=None.
+            # Diagnostic aid: show every attachment title on the page (no
+            # extension filtering — that assumption is exactly what's in
+            # question when a match fails), so a naming-convention mismatch
+            # is visible without extra tooling instead of a bare
+            # attachment_id=None. An empty list is itself the answer: there's
+            # nothing on the page to match against at all.
             item["candidate_attachment_titles"] = [
-                a.get("title")
-                for a in attachments
-                if (a.get("title") or "").lower().rsplit(".", 1)[-1] in ("drawio", "xml")
+                a.get("title") for a in attachments if a.get("title")
             ]
         items.append(item)
         if att and att.get("id"):

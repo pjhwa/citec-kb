@@ -83,9 +83,10 @@ def test_list_diagrams_includes_inline_and_standalone(monkeypatch):
 
 def test_list_diagrams_surfaces_candidate_titles_when_unmatched(monkeypatch):
     """When a macro's diagramName can't be matched to any attachment, surface
-    the actual .drawio/.xml filenames present so the naming mismatch is
-    diagnosable without extra tooling (this is the exact gap that made the
-    'attachment_id=None' report opaque)."""
+    ALL attachment titles present on the page (unfiltered by extension) so a
+    naming-convention mismatch is diagnosable without extra tooling or
+    assumptions about what extension this Confluence app actually uses (this
+    is the exact gap that made the 'attachment_id=None' report opaque)."""
     body = """
     <ac:structured-macro ac:name="drawio">
       <ac:parameter ac:name="diagramName">Architecture Diagram</ac:parameter>
@@ -106,7 +107,24 @@ def test_list_diagrams_surfaces_candidate_titles_when_unmatched(monkeypatch):
 
     item = items[0]
     assert item["attachment_id"] is None
-    assert item["candidate_attachment_titles"] == ["8f3c1e2a-91.drawio"]
+    assert item["candidate_attachment_titles"] == ["8f3c1e2a-91.drawio", "8f3c1e2a-91.png"]
+
+
+def test_list_diagrams_candidate_titles_present_even_when_no_attachments(monkeypatch):
+    """If the page truly has zero attachments, this must still show up as an
+    explicit empty list, not silently vanish — an empty result is itself the
+    diagnostic signal (nothing to match against at all)."""
+    body = """
+    <ac:structured-macro ac:name="drawio">
+      <ac:parameter ac:name="diagramName">Orphan Diagram</ac:parameter>
+    </ac:structured-macro>
+    """
+    fake = _FakeClient(body, [])
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    items = asyncio.run(service.list_diagrams("123"))
+
+    assert items[0]["candidate_attachment_titles"] == []
 
 
 def test_list_diagrams_omits_candidate_titles_when_matched(monkeypatch):
