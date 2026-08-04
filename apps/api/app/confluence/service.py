@@ -113,10 +113,17 @@ async def put_diagram_xml(page_id: str, diagram_name: str, xml_content: str) -> 
         # versions store the source with no extension at all. Forcing
         # "<diagram_name>.drawio" here would rename it out from under the
         # macro that references the original filename.
-        filename = att.get("title") or f"{diagram_name}.drawio"
+        filename = att.get("title") or diagram_name
         result = await client.update_attachment_data(page_id, att["id"], filename, content_bytes)
     else:
-        filename = f"{diagram_name}.drawio"
+        # No extension — matches this org's real draw.io Confluence app
+        # convention (confirmed against production data: working source
+        # attachments have no suffix; only the auto-generated .png preview
+        # and ~.tmp lock file do). A '.drawio'-suffixed filename was the
+        # confirmed root cause of 'cannot display diagram' on newly created
+        # attachments — Confluence re-derives the stored media type from the
+        # filename extension rather than trusting the uploaded Content-Type.
+        filename = diagram_name
         result = await client.create_attachment(page_id, filename, content_bytes)
     return {
         "attachment_id": result.get("id"),

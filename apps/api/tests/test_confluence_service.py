@@ -200,13 +200,21 @@ def test_put_diagram_xml_preserves_existing_attachment_filename(monkeypatch):
 
 
 def test_put_diagram_xml_creates_new_attachment_when_absent(monkeypatch):
+    """New attachments are created with NO extension — matching this org's
+    real draw.io Confluence app convention (confirmed against production
+    data: working source attachments have no suffix at all, only their
+    auto-generated .png preview and ~.tmp lock file do). A '.drawio'-suffixed
+    filename was the actual root cause of 'cannot display diagram' on newly
+    created test-page diagrams — Confluence appears to re-derive the stored
+    media type from the filename extension rather than trusting the
+    uploaded Content-Type."""
     fake = _FakeClient(_BODY, [])
     monkeypatch.setattr(service, "_client", lambda: fake)
 
     result = asyncio.run(service.put_diagram_xml("123", "brand-new", "<mxGraphModel/>"))
 
     assert result == {"attachment_id": "new-att-1", "version": 1}
-    assert fake.created[0][1] == "brand-new.drawio"
+    assert fake.created[0][1] == "brand-new"
 
 
 def test_find_pages_returns_page_id_and_title(monkeypatch):
