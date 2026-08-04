@@ -173,6 +173,28 @@ def test_put_diagram_xml_updates_existing_attachment(monkeypatch):
     assert fake.updated[0][1] == "att1"
 
 
+def test_put_diagram_xml_preserves_existing_attachment_filename(monkeypatch):
+    """Some draw.io Confluence app versions store the source attachment with
+    no extension at all (confirmed against real production data). Updating
+    an existing attachment must reuse its actual title, not force a
+    '<diagram_name>.drawio' filename — that would rename the attachment out
+    from under the macro that references the original name."""
+    attachments = [
+        {
+            "id": "att-bare",
+            "title": "MAZ 가용성 테스트 구성도",
+            "version": {"number": 3},
+            "_links": {"download": "/download/attachments/1/MAZ"},
+        },
+    ]
+    fake = _FakeClient(_BODY, attachments)
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    asyncio.run(service.put_diagram_xml("123", "MAZ 가용성 테스트 구성도", "<mxGraphModel/>"))
+
+    assert fake.updated[0][2] == "MAZ 가용성 테스트 구성도"
+
+
 def test_put_diagram_xml_creates_new_attachment_when_absent(monkeypatch):
     fake = _FakeClient(_BODY, [])
     monkeypatch.setattr(service, "_client", lambda: fake)

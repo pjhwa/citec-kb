@@ -42,13 +42,23 @@ def extract_drawio_diagram_names(body_storage_xml: str) -> list[str]:
 def match_attachment_for_diagram(diagram_name: str, attachments: list[dict]) -> dict | None:
     """Resolve a diagram name to its backing Confluence attachment.
 
-    Tries an exact "<diagram_name>.drawio" filename match first, then falls
-    back to a case-insensitive filename-stem comparison (Confluence can
-    normalize whitespace/case in stored attachment titles).
+    Tries, in order:
+    1. Exact "<diagram_name>.drawio" filename match.
+    2. Exact match with NO extension at all — some draw.io Confluence app
+       versions store the source attachment's title as the bare diagramName,
+       verbatim, alongside an auto-generated "<name>.png" preview and a
+       "~<name>.tmp" lock file (confirmed against real production data).
+       Because those siblings always carry a suffix, a bare exact match can't
+       accidentally hit them.
+    3. A case-insensitive filename-stem comparison restricted to .drawio/.xml
+       extensions (Confluence can normalize whitespace/case in titles).
     """
     exact = f"{diagram_name}.drawio"
     for att in attachments:
         if att.get("title") == exact:
+            return att
+    for att in attachments:
+        if att.get("title") == diagram_name:
             return att
     stem = diagram_name.strip().lower()
     for att in attachments:
