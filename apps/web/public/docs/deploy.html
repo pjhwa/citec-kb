@@ -25,6 +25,7 @@
       <a href="#_3">전송</a>
       <a href="#_4">운용: 배포</a>
       <a href="#_5">권장 워크플로</a>
+      <a href="#citec-kblogs">장애 진단 — 파일 로그 (citec-kb/logs/)</a>
       <a href="#env">운용 .env (비밀키는 번들 밖)</a>
       <a href="#_6" style="padding-left:20px;font-size:12px">임베딩 모델 (프로젝트 전용)</a>
       <a href="#_7">체크리스트 (최초 폐쇄망)</a>
@@ -398,6 +399,19 @@ scripts/in.sh --data --restore-pg -y
 </tbody>
 </table></div>
 <p>포트: <strong>web 8572 · api 8573 · postgres 8574 · redis 8575 · keycloak 8576 · mcp 8577</strong></p>
+<hr>
+<h2 id="citec-kblogs">장애 진단 — 파일 로그 (<code>citec-kb/logs/</code>)</h2>
+<p><code>api</code>/<code>worker</code> 컨테이너는 콘솔(<code>docker compose logs</code>)뿐 아니라 호스트의 <code>citec-kb/logs/</code>에도<br>
+로테이션 파일 로그를 남깁니다 (10MB × 5개 보관, <code>LOG_DIR</code> 환경변수로 경로 변경 가능).<br>
+컨테이너를 오래 붙잡고 있지 않아도, <code>docker compose logs</code>가 롤오버되어 과거 기록이 사라졌어도<br>
+이 디렉토리에서 바로 확인할 수 있습니다.</p>
+<pre><code class="language-bash">tail -f logs/api.log       # api 실시간
+tail -f logs/worker.log    # worker 실시간
+grep -i error logs/api.log | tail -50
+</code></pre>
+<p><code>docker-compose.yml</code>에 볼륨 마운트가 없던 버전(v18 이전 code 번들)에서는 이 디렉토리가 생기지<br>
+않습니다 — <code>--code -y</code>로 최신 code 번들을 적용하면 다음 <code>docker compose up -d api worker</code>부터<br>
+자동으로 생성됩니다.</p>
 <hr>
 <h2 id="env">운용 <code>.env</code> (비밀키는 번들 밖)</h2>
 <pre><code class="language-bash">cp .env.example .env

@@ -74,6 +74,8 @@ services:
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw
       # Project-local HF cache only (./models). Never share paths with other repos.
       - ${MODELS_HOST_DIR:-./models}:/models:ro
+      # RW: rotating file logs (api.log) for fast on-host troubleshooting
+      - ./logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,6 +106,8 @@ services:
       - ./data:/app/data:ro
       - ${RAW_HOST_DIR:-./data/raw}:/data/raw:ro
       - ./apps/worker/app:/app/app
+      # RW: rotating file logs (worker.log) for fast on-host troubleshooting
+      - ./logs:/app/logs
     depends_on:
       redis:
         condition: service_healthy

@@ -187,6 +187,25 @@ scripts/in.sh --data --restore-pg -y
 
 ---
 
+## 장애 진단 — 파일 로그 (`citec-kb/logs/`)
+
+`api`/`worker` 컨테이너는 콘솔(`docker compose logs`)뿐 아니라 호스트의 `citec-kb/logs/`에도
+로테이션 파일 로그를 남깁니다 (10MB × 5개 보관, `LOG_DIR` 환경변수로 경로 변경 가능).
+컨테이너를 오래 붙잡고 있지 않아도, `docker compose logs`가 롤오버되어 과거 기록이 사라졌어도
+이 디렉토리에서 바로 확인할 수 있습니다.
+
+```bash
+tail -f logs/api.log       # api 실시간
+tail -f logs/worker.log    # worker 실시간
+grep -i error logs/api.log | tail -50
+```
+
+`docker-compose.yml`에 볼륨 마운트가 없던 버전(v18 이전 code 번들)에서는 이 디렉토리가 생기지
+않습니다 — `--code -y`로 최신 code 번들을 적용하면 다음 `docker compose up -d api worker`부터
+자동으로 생성됩니다.
+
+---
+
 ## 운용 `.env` (비밀키는 번들 밖)
 
 ```bash

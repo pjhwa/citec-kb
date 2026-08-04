@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -37,11 +38,19 @@ from app.routers import ops as ops_router  # noqa: E402
 from app.routers import tickets as tickets_router  # noqa: E402
 from app.routers import external_compat as external_compat_router  # noqa: E402
 
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format=_LOG_FORMAT)
+
 logger = logging.getLogger("citec.api")
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+
+try:
+    log_dir = Path(os.getenv("LOG_DIR", "/app/logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(log_dir / "api.log", maxBytes=10_000_000, backupCount=5)
+    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    logging.getLogger().addHandler(file_handler)
+except OSError as e:
+    logger.warning("file logging disabled (%s): %s", log_dir, e)
 
 
 @asynccontextmanager

@@ -11,17 +11,27 @@ import logging
 import os
 import signal
 import time
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import redis
 
-logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO"),
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
-)
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format=_LOG_FORMAT)
+
 logger = logging.getLogger("citec.worker")
+
+try:
+    log_dir = Path(os.getenv("LOG_DIR", "/app/logs"))
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = RotatingFileHandler(log_dir / "worker.log", maxBytes=10_000_000, backupCount=5)
+    file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    logging.getLogger().addHandler(file_handler)
+except OSError as e:
+    logger.warning("file logging disabled (%s): %s", log_dir, e)
 
 QUEUE_KEY = "citec:jobs:queue"
 JOB_KEY = "citec:jobs:{id}"
