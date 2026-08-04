@@ -25,8 +25,9 @@
       <a href="#4-mxgraph-xml">4. mxGraph XML 구조 기초</a>
       <a href="#41" style="padding-left:20px;font-size:12px">4.1 핵심 요소</a>
       <a href="#42" style="padding-left:20px;font-size:12px">4.2 최소 유효 골격 (신규 작성 시 기준)</a>
-      <a href="#44-compressed" style="padding-left:20px;font-size:12px">4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖</a>
       <a href="#43-style" style="padding-left:20px;font-size:12px">4.3 자주 쓰는 style 예시</a>
+      <a href="#44-compressed" style="padding-left:20px;font-size:12px">4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖</a>
+      <a href="#45-media-type-citec-kb" style="padding-left:20px;font-size:12px">4.5 첨부파일 저장 규칙 — media type과 파일명 (citec-kb가 자동 처리)</a>
       <a href="#5">5. 오류 처리</a>
       <a href="#6">6. 안티패턴</a>
       <a href="#7">7. 최소 체크리스트</a>
@@ -41,7 +42,7 @@
       <p class="lead">다이어그램 읽기/쓰기 워크플로 (Claude 전용)</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/CONFLUENCE_DRAWIO_MCP_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-08-03</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-08-04</div></div>
       </div>
     </header>
     <section>
@@ -119,6 +120,11 @@
 </table></div>
 <p>각 도구는 REST 프록시일 뿐이며, <code>xml_content</code>는 항상 <strong>원본 그대로의 mxGraph XML 문자열</strong>이다<br>
 (이미지 변환·렌더링 없음 — Claude는 텍스트로만 읽고 쓴다).</p>
+<p><code>kb_confluence_list_diagrams</code>의 각 항목에는 다음 진단용 필드도 포함된다 — 매칭 실패나<br>
+렌더링 문제를 조사할 때 바로 이 값들부터 확인한다:<br>
+- <code>attachment_id</code>가 <code>None</code>이면 <code>candidate_attachment_titles</code>(페이지의 실제 첨부파일명 전체<br>
+  목록, 빈 배열이면 첨부파일이 아예 없다는 뜻)를 함께 반환한다.<br>
+- <code>media_type</code>은 Confluence에 실제 저장된 <code>metadata.mediaType</code> 값이다 (§4.5 참고).</p>
 <hr>
 <h2 id="2-page_id">2. 워크플로 — 읽기 (page_id를 모를 때)</h2>
 <pre><code>1) kb_confluence_find_pages(space_key=&quot;LOOKIN&quot;, title=&quot;네트워크&quot;)
@@ -219,26 +225,6 @@ OK, 버전 증가) draw.io 뷰어가 구조를 인식하지 못해 <strong>"cann
 <p>이 골격에서 <code>value</code>(텍스트), <code>style</code>(모양), 좌표/크기, 연결 관계만 요청에 맞게 바꾸면<br>
 대부분의 신규 다이어그램 요청을 처리할 수 있다. <strong>기존 다이어그램을 수정하는 경우, <code>&lt;mxfile&gt;</code>과<br>
 <code>&lt;diagram id=...&gt;</code>는 원본 값을 그대로 유지</strong>하고 <code>&lt;mxGraphModel&gt;</code> 내부만 편집한다.</p>
-<h3 id="44-compressed">4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖</h3>
-<p>draw.io는 <code>&lt;diagram&gt;</code> 내부 콘텐츠를 압축(base64 + raw deflate)해서 저장하는 옵션을 지원한다.<br>
-이 경우 <code>&lt;diagram id="..." name="..."&gt;</code> 태그 바로 다음에 <code>&lt;mxGraphModel&gt;</code>이 보이지 않고,<br>
-대신 알아볼 수 없는 base64 문자열이 온다:</p>
-<pre><code class="language-xml">&lt;diagram id=&quot;abc123&quot; name=&quot;Page-1&quot;&gt;
-  7Vddc6M2FP01mflop9jhSl2xn4ejxNll2n1z9tqIQTYyMhKDN...(이하 알아볼 수 없는 문자열)
-&lt;/diagram&gt;
-</code></pre>
-<p><strong><code>kb_confluence_get_diagram</code>으로 받은 텍스트가 이 형태(‘diagram 태그 다음이<br>
-<code>&lt;mxGraphModel</code>로 시작하지 않고 임의의 문자/숫자 뭉치)라면, 그 다이어그램은 압축<br>
-저장되어 있는 것이다.</strong> 현재 citec-kb는 이 압축을 해제/재압축하는 기능이 없다 —</p>
-<ul>
-<li>❌ <strong>압축된 내용을 읽지 못했다고 새 <code>&lt;mxGraphModel&gt;</code>을 지어내서 <code>kb_confluence_put_diagram</code>으로<br>
-  덮어쓰지 않는다.</strong> 원본을 완전히 파괴한다 (id도, 실제 내용도 모두 소실).</li>
-<li>✅ 대신 사용자에게 "이 다이어그램은 압축 저장 형식이라 현재 도구로는 읽거나 편집할 수<br>
-  없다"고 명확히 보고하고, 필요하면 압축 해제 지원을 별도로 요청하도록 안내한다.</li>
-<li>✅ 이미 실수로 덮어썼다면, Confluence 페이지의 첨부파일 버전 기록(첨부파일 → 이력)에서<br>
-  이전 버전으로 복원하도록 안내한다 — citec-kb API는 최신 버전만 조회하므로 과거 버전<br>
-  복구는 Confluence UI에서 직접 해야 한다.</li>
-</ul>
 <h3 id="43-style">4.3 자주 쓰는 style 예시</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -274,6 +260,58 @@ OK, 버전 증가) draw.io 뷰어가 구조를 인식하지 못해 <strong>"cann
 </tr>
 </tbody>
 </table></div>
+<h3 id="44-compressed">4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖</h3>
+<p>draw.io는 <code>&lt;diagram&gt;</code> 내부 콘텐츠를 압축(base64 + raw deflate)해서 저장하는 옵션을 지원한다.<br>
+이 경우 <code>&lt;diagram id="..." name="..."&gt;</code> 태그 바로 다음에 <code>&lt;mxGraphModel&gt;</code>이 보이지 않고,<br>
+대신 알아볼 수 없는 base64 문자열이 온다:</p>
+<pre><code class="language-xml">&lt;diagram id=&quot;abc123&quot; name=&quot;Page-1&quot;&gt;
+  7Vddc6M2FP01mflop9jhSl2xn4ejxNll2n1z9tqIQTYyMhKDN...(이하 알아볼 수 없는 문자열)
+&lt;/diagram&gt;
+</code></pre>
+<p><strong><code>kb_confluence_get_diagram</code>으로 받은 텍스트가 이 형태(‘diagram 태그 다음이<br>
+<code>&lt;mxGraphModel</code>로 시작하지 않고 임의의 문자/숫자 뭉치)라면, 그 다이어그램은 압축<br>
+저장되어 있는 것이다.</strong> 현재 citec-kb는 이 압축을 해제/재압축하는 기능이 없다 —</p>
+<ul>
+<li>❌ <strong>압축된 내용을 읽지 못했다고 새 <code>&lt;mxGraphModel&gt;</code>을 지어내서 <code>kb_confluence_put_diagram</code>으로<br>
+  덮어쓰지 않는다.</strong> 원본을 완전히 파괴한다 (id도, 실제 내용도 모두 소실).</li>
+<li>✅ 대신 사용자에게 "이 다이어그램은 압축 저장 형식이라 현재 도구로는 읽거나 편집할 수<br>
+  없다"고 명확히 보고하고, 필요하면 압축 해제 지원을 별도로 요청하도록 안내한다.</li>
+<li>✅ 이미 실수로 덮어썼다면, Confluence 페이지의 첨부파일 버전 기록(첨부파일 → 이력)에서<br>
+  이전 버전으로 복원하도록 안내한다 — citec-kb API는 최신 버전만 조회하므로 과거 버전<br>
+  복구는 Confluence UI에서 직접 해야 한다.</li>
+</ul>
+<h3 id="45-media-type-citec-kb">4.5 첨부파일 저장 규칙 — media type과 파일명 (citec-kb가 자동 처리)</h3>
+<p><strong>2026-08-04 실사고 해결 내역.</strong> <code>kb_confluence_put_diagram</code>으로 업로드는 성공(200 OK,<br>
+버전 증가, macro revision 일치)했는데도 브라우저에서 <strong>"Diagram attachment access error:<br>
+cannot display diagram"</strong>이 뜨는 사고가 있었다. 근본 원인 두 가지, 둘 다 citec-kb 쪽에서<br>
+고쳐 지금은 자동으로 처리된다 — Claude가 직접 신경 쓸 필요는 없지만, <strong>같은 증상이 다시<br>
+보이면 이 표부터 확인한다</strong>:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>원인</th>
+<th>증상</th>
+<th>조치 (citec-kb가 자동 수행)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Content-Type이 <code>application/xml</code>로 고정 전송됨</td>
+<td><code>list_diagrams</code>의 <code>media_type</code>이 정상 다이어그램(<code>application/vnd.jgraph.mxfile</code>)과 다름</td>
+<td>업로드 시 <code>application/vnd.jgraph.mxfile</code>로 전송</td>
+</tr>
+<tr>
+<td>신규 첨부파일명에 <code>.drawio</code> 확장자를 강제로 붙임</td>
+<td>Confluence가 Content-Type을 무시하고 <strong>파일 확장자로 media type을 재판단</strong>해 위 문제가 재발함</td>
+<td>신규 생성 시 확장자 없이 <code>diagram_name</code> 그대로 저장 (이 조직의 실제 첨부파일 명명 규칙과 동일)</td>
+</tr>
+</tbody>
+</table></div>
+<p>이 조직의 draw.io Confluence 앱은 다이어그램 원본을 확장자 없이 저장한다 — 예:<br>
+<code>MAZ 가용성 테스트 구성도</code> (확장자 없음), <code>MAZ 가용성 테스트 구성도.png</code>(자동 생성 미리보기),<br>
+<code>~MAZ 가용성 테스트 구성도.tmp</code>(자동 생성 락파일)가 함께 존재한다. <code>match_attachment_for_diagram</code>은<br>
+이 순서로 매칭한다: ① <code>&lt;diagram_name&gt;.drawio</code> 정확매칭 → ② 확장자 없는 정확매칭 → ③<br>
+<code>.drawio</code>/<code>.xml</code> 확장자 한정 stem fallback.</p>
 <hr>
 <h2 id="5">5. 오류 처리</h2>
 <div class="table-wrap"><table>
@@ -314,6 +352,11 @@ OK, 버전 증가) draw.io 뷰어가 구조를 인식하지 못해 <strong>"cann
 <td>Confluence 쪽 리소스 자체가 없음 (502, 404 매핑)</td>
 <td><code>confluence resource not found</code></td>
 <td>page_id 자체가 잘못됐을 가능성 — <code>kb_confluence_find_pages</code>로 재확인.</td>
+</tr>
+<tr>
+<td>업로드는 성공(200)했는데 브라우저에서 "Diagram attachment access error: cannot display diagram"</td>
+<td>API 오류 아님 — citec-kb 도구는 정상 응답을 반환함</td>
+<td>citec-kb API/MCP 오류가 아니라 뷰어 렌더링 문제다. <code>kb_confluence_list_diagrams</code>로 <code>media_type</code>이 <code>application/vnd.jgraph.mxfile</code>인지 확인한다(§4.5) — 2026-08-04에 이 원인으로 발생한 사고가 있었고 이미 수정되었으므로, 최신 code 번들이 배포됐는지부터 확인한다.</td>
 </tr>
 </tbody>
 </table></div>

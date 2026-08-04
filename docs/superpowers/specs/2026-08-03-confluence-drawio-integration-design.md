@@ -90,3 +90,16 @@ Three new tools mirroring the router 1:1, following the existing `kb_*` tool con
 ## Config / docs
 
 - Document `CONFLUENCE_BASE_URL` / `CONFLUENCE_USERNAME` / `CONFLUENCE_PASSWORD` in `.env.example` (or wherever other integration env vars are documented) and in `docs/MCP.md`'s tool table.
+
+## Post-implementation notes (2026-08-04)
+
+Real-world ops testing surfaced several deviations from this design. Kept here for history; current behavior is authoritative in `docs/CONFLUENCE_DRAWIO_MCP_GUIDE.md` §4.5 and the code itself.
+
+- **Module location:** shipped as `apps/api/app/confluence/{client,macro,service}.py`, not `apps/api/app/integrations/`.
+- **Added a 4th tool:** `kb_confluence_find_pages(space_key, title, limit)` — the design assumed `page_id` was already known, but real usage starts from a space key (CQL search), which can change over time. `GET /v1/confluence/spaces/{space_key}/pages`.
+- **Matching is 3-tier, not 2:** exact `{name}.drawio` → exact no-extension match → `.drawio`/`.xml`-restricted stem fallback. The org's actual draw.io Confluence app stores source attachments with **no extension at all** (confirmed against production data), which the original 2-tier design didn't anticipate.
+- **Upload Content-Type:** must be `application/vnd.jgraph.mxfile`, not generic `application/xml` — Confluence's draw.io viewer gates rendering on this, and re-derives it from the filename extension if one is present (regardless of the declared Content-Type). New attachments are therefore created with **no filename extension**.
+- **Diagnostic fields added to `list_diagrams`:** `candidate_attachment_titles` (all attachment titles on the page, when a macro's diagramName can't be matched) and `media_type` (Confluence's actual `metadata.mediaType`) — both required `expand=version,metadata.mediaType` on the attachment-list call, which Confluence omits by default.
+- **Error handling extended:** `httpx.RequestError` (connection failures, malformed `CONFLUENCE_BASE_URL`) is now mapped to 502 with a logged, actionable detail — the original design only covered `HTTPStatusError`. A `DiagramFormatError` (non-UTF-8 attachment content, e.g. a wrongly-matched binary preview) maps to 502 as well.
+- **MCP-side detail surfacing:** the MCP tools must not call bare `resp.raise_for_status()` for unhandled statuses — that discards the API's JSON `detail` field, which was the actual cause of an early "502 with no explanation" incident.
+- **File logging:** `apps/api`/`apps/worker` now write rotating logs to `citec-kb/logs/` (see `docs/DEPLOY.md`), added specifically so these classes of errors are diagnosable without live container access.

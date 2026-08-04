@@ -55,6 +55,12 @@
 각 도구는 REST 프록시일 뿐이며, `xml_content`는 항상 **원본 그대로의 mxGraph XML 문자열**이다
 (이미지 변환·렌더링 없음 — Claude는 텍스트로만 읽고 쓴다).
 
+`kb_confluence_list_diagrams`의 각 항목에는 다음 진단용 필드도 포함된다 — 매칭 실패나
+렌더링 문제를 조사할 때 바로 이 값들부터 확인한다:
+- `attachment_id`가 `None`이면 `candidate_attachment_titles`(페이지의 실제 첨부파일명 전체
+  목록, 빈 배열이면 첨부파일이 아예 없다는 뜻)를 함께 반환한다.
+- `media_type`은 Confluence에 실제 저장된 `metadata.mediaType` 값이다 (§4.5 참고).
+
 ---
 
 ## 2. 워크플로 — 읽기 (page_id를 모를 때)
@@ -177,6 +183,17 @@ OK, 버전 증가) draw.io 뷰어가 구조를 인식하지 못해 **"cannot dis
 대부분의 신규 다이어그램 요청을 처리할 수 있다. **기존 다이어그램을 수정하는 경우, `<mxfile>`과
 `<diagram id=...>`는 원본 값을 그대로 유지**하고 `<mxGraphModel>` 내부만 편집한다.
 
+### 4.3 자주 쓰는 style 예시
+
+| 목적 | style 값 |
+|------|----------|
+| 기본 사각형 | `rounded=0;whiteSpace=wrap;html=1;` |
+| 둥근 사각형 | `rounded=1;whiteSpace=wrap;html=1;` |
+| 원/타원 | `ellipse;whiteSpace=wrap;html=1;` |
+| 마름모(결정) | `rhombus;whiteSpace=wrap;html=1;` |
+| 직교(계단형) 화살표 | `edgeStyle=orthogonalEdgeStyle;html=1;` |
+| 점선 화살표 | `dashed=1;html=1;` |
+
 ### 4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖
 
 draw.io는 `<diagram>` 내부 콘텐츠를 압축(base64 + raw deflate)해서 저장하는 옵션을 지원한다.
@@ -201,16 +218,24 @@ draw.io는 `<diagram>` 내부 콘텐츠를 압축(base64 + raw deflate)해서 �
   이전 버전으로 복원하도록 안내한다 — citec-kb API는 최신 버전만 조회하므로 과거 버전
   복구는 Confluence UI에서 직접 해야 한다.
 
-### 4.3 자주 쓰는 style 예시
+### 4.5 첨부파일 저장 규칙 — media type과 파일명 (citec-kb가 자동 처리)
 
-| 목적 | style 값 |
-|------|----------|
-| 기본 사각형 | `rounded=0;whiteSpace=wrap;html=1;` |
-| 둥근 사각형 | `rounded=1;whiteSpace=wrap;html=1;` |
-| 원/타원 | `ellipse;whiteSpace=wrap;html=1;` |
-| 마름모(결정) | `rhombus;whiteSpace=wrap;html=1;` |
-| 직교(계단형) 화살표 | `edgeStyle=orthogonalEdgeStyle;html=1;` |
-| 점선 화살표 | `dashed=1;html=1;` |
+**2026-08-04 실사고 해결 내역.** `kb_confluence_put_diagram`으로 업로드는 성공(200 OK,
+버전 증가, macro revision 일치)했는데도 브라우저에서 **"Diagram attachment access error:
+cannot display diagram"**이 뜨는 사고가 있었다. 근본 원인 두 가지, 둘 다 citec-kb 쪽에서
+고쳐 지금은 자동으로 처리된다 — Claude가 직접 신경 쓸 필요는 없지만, **같은 증상이 다시
+보이면 이 표부터 확인한다**:
+
+| 원인 | 증상 | 조치 (citec-kb가 자동 수행) |
+|------|------|------------------------------|
+| Content-Type이 `application/xml`로 고정 전송됨 | `list_diagrams`의 `media_type`이 정상 다이어그램(`application/vnd.jgraph.mxfile`)과 다름 | 업로드 시 `application/vnd.jgraph.mxfile`로 전송 |
+| 신규 첨부파일명에 `.drawio` 확장자를 강제로 붙임 | Confluence가 Content-Type을 무시하고 **파일 확장자로 media type을 재판단**해 위 문제가 재발함 | 신규 생성 시 확장자 없이 `diagram_name` 그대로 저장 (이 조직의 실제 첨부파일 명명 규칙과 동일) |
+
+이 조직의 draw.io Confluence 앱은 다이어그램 원본을 확장자 없이 저장한다 — 예:
+`MAZ 가용성 테스트 구성도` (확장자 없음), `MAZ 가용성 테스트 구성도.png`(자동 생성 미리보기),
+`~MAZ 가용성 테스트 구성도.tmp`(자동 생성 락파일)가 함께 존재한다. `match_attachment_for_diagram`은
+이 순서로 매칭한다: ① `<diagram_name>.drawio` 정확매칭 → ② 확장자 없는 정확매칭 → ③
+`.drawio`/`.xml` 확장자 한정 stem fallback.
 
 ---
 
@@ -224,6 +249,7 @@ draw.io는 `<diagram>` 내부 콘텐츠를 압축(base64 + raw deflate)해서 �
 | diagram_name이 실제로 없음 (get) | `오류: 다이어그램을 찾을 수 없습니다: <name>` | 오탈자 가능성 우선 의심 → `kb_confluence_list_diagrams`로 실제 존재하는 이름 재확인. |
 | Confluence 인증 실패 (502) | 에러 문자열에 `confluence auth failed` 포함 | Claude가 해결할 수 없는 서버 설정 문제 — 재시도 금지, 사용자/운영자에게 보고. |
 | Confluence 쪽 리소스 자체가 없음 (502, 404 매핑) | `confluence resource not found` | page_id 자체가 잘못됐을 가능성 — `kb_confluence_find_pages`로 재확인. |
+| 업로드는 성공(200)했는데 브라우저에서 "Diagram attachment access error: cannot display diagram" | API 오류 아님 — citec-kb 도구는 정상 응답을 반환함 | citec-kb API/MCP 오류가 아니라 뷰어 렌더링 문제다. `kb_confluence_list_diagrams`로 `media_type`이 `application/vnd.jgraph.mxfile`인지 확인한다(§4.5) — 2026-08-04에 이 원인으로 발생한 사고가 있었고 이미 수정되었으므로, 최신 code 번들이 배포됐는지부터 확인한다. |
 
 ---
 
