@@ -967,6 +967,9 @@ async def kb_confluence_list_diagrams(page_id: str) -> str:
             f"- {it.get('diagram_name')} (attachment_id={it.get('attachment_id')}, "
             f"version={it.get('version')}, inline={it.get('inline')})"
         )
+        candidates = it.get("candidate_attachment_titles")
+        if it.get("attachment_id") is None and candidates:
+            lines.append(f"  ⚠ 매칭 실패 — 실제 .drawio/.xml 첨부파일명: {candidates}")
     return "\n".join(lines)
 
 

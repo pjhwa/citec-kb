@@ -81,6 +81,43 @@ def test_list_diagrams_includes_inline_and_standalone(monkeypatch):
     assert by_name["standalone"]["inline"] is False
 
 
+def test_list_diagrams_surfaces_candidate_titles_when_unmatched(monkeypatch):
+    """When a macro's diagramName can't be matched to any attachment, surface
+    the actual .drawio/.xml filenames present so the naming mismatch is
+    diagnosable without extra tooling (this is the exact gap that made the
+    'attachment_id=None' report opaque)."""
+    body = """
+    <ac:structured-macro ac:name="drawio">
+      <ac:parameter ac:name="diagramName">Architecture Diagram</ac:parameter>
+    </ac:structured-macro>
+    """
+    attachments = [
+        {
+            "id": "att-real",
+            "title": "8f3c1e2a-91.drawio",
+            "version": {"number": 2},
+        },
+        {"id": "att-png", "title": "8f3c1e2a-91.png", "version": {"number": 2}},
+    ]
+    fake = _FakeClient(body, attachments)
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    items = asyncio.run(service.list_diagrams("123"))
+
+    item = items[0]
+    assert item["attachment_id"] is None
+    assert item["candidate_attachment_titles"] == ["8f3c1e2a-91.drawio"]
+
+
+def test_list_diagrams_omits_candidate_titles_when_matched(monkeypatch):
+    fake = _FakeClient(_BODY, _ATTACHMENTS)
+    monkeypatch.setattr(service, "_client", lambda: fake)
+
+    items = asyncio.run(service.list_diagrams("123"))
+
+    assert "candidate_attachment_titles" not in items[0]
+
+
 def test_get_diagram_xml_returns_decoded_content(monkeypatch):
     fake = _FakeClient(_BODY, _ATTACHMENTS, download_bytes=b"<mxGraphModel/>")
     monkeypatch.setattr(service, "_client", lambda: fake)

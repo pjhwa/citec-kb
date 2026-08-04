@@ -23,8 +23,10 @@
 3. **mxGraph XML의 최소 구조(§4)를 이해하고, 최소 변경 원칙을 지킨다.** 관계없는 셀의
    `id`를 바꾸거나 삭제하지 않는다 — 다른 셀의 `parent`/`source`/`target`이 그 id를
    참조하고 있을 수 있다.
-4. **새 다이어그램을 처음부터 만들 때도 유효한 `mxGraphModel` 최소 골격(§4.2)을 지킨다.**
-   빈 문자열이나 불완전한 XML을 올리면 Confluence 쪽 draw.io 뷰어가 열리지 않는다.
+4. **모든 `.drawio` 파일은 `<mxfile><diagram id=...>...</diagram></mxfile>`로 감싸야 한다
+   (§4.2).** `<mxGraphModel>`만 최상위로 올리면 Confluence는 업로드는 받아주지만(200 OK)
+   뷰어가 렌더링에 실패한다 — 반드시 `<mxfile>` 래퍼와 원본 `<diagram id>`를 유지한다.
+   받은 XML이 base64로 압축된 형식(§4.4)이면 절대 새로 지어내지 말고 사용자에게 보고한다.
 5. **오류 코드별로 다르게 대응한다(§5).** 503(연동 미설정)은 사용자에게 즉시 보고하고
    재시도하지 않는다. 404(페이지/다이어그램 없음)는 오탈자·잘못된 diagram_name일 가능성을
    먼저 의심한다. 502(인증 실패)는 API 서버 측 `CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD`
@@ -107,12 +109,31 @@
 
 ## 4. mxGraph XML 구조 기초
 
-draw.io(diagrams.net)가 사용하는 파일 형식은 `mxGraphModel`이다. Confluence에 저장되는
-`.drawio` 첨부파일도 동일한 형식이다.
+**중요 (2026-08-04 정정):** `.drawio` 첨부파일의 최상위 요소는 `<mxGraphModel>`이 **아니라
+`<mxfile>`이다.** `<mxGraphModel>`은 그 안의 `<diagram>` 요소가 감싸는 내부 콘텐츠일 뿐이다.
+`<mxfile>` 래퍼 없이 `<mxGraphModel>`만 올리면 Confluence는 업로드 자체는 받아주지만(200
+OK, 버전 증가) draw.io 뷰어가 구조를 인식하지 못해 **"cannot display diagram" 오류로
+렌더링에 실패한다** — 실제로 이 문제로 테스트 페이지의 다이어그램이 깨진 사례가 있었다.
+
+```
+<mxfile host="..." modified="..." agent="..." version="...">
+  <diagram id="..." name="Page-1">
+    <mxGraphModel ...>
+      <root> ... </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
+```
 
 ### 4.1 핵심 요소
 
-- `<mxGraphModel>`: 최상위 루트. 캔버스 설정(격자, 페이지 크기 등)을 속성으로 가진다.
+- `<mxfile>`: **최상위 루트.** `host`/`modified`/`agent`/`version` 속성을 가지며, 하나 이상의
+  `<diagram>`을 자식으로 가진다.
+- `<diagram id="..." name="...">`: 다이어그램 한 페이지. `id`는 유일해야 하며, **기존
+  다이어그램을 수정할 때는 원본의 id를 그대로 유지한다** — 바꾸면 Confluence 매크로가
+  참조를 잃는다. 내용은 §4.4의 압축 여부에 따라 두 가지 형태 중 하나다.
+- `<mxGraphModel>`: `<diagram>` 내부의 실제 그래프 데이터. 캔버스 설정(격자, 페이지 크기 등)을
+  속성으로 가진다.
 - `<root>`: 셀(cell) 컨테이너. 관례상 `id="0"`(루트 레이어), `id="1"`(기본 레이어, parent="0")
   두 개가 항상 먼저 온다 — 이 둘은 지우거나 바꾸지 않는다.
 - `<mxCell>` (vertex, 즉 도형/노드): `vertex="1"`, `parent`는 보통 `"1"`, `value`는 표시
@@ -120,36 +141,65 @@ draw.io(diagrams.net)가 사용하는 파일 형식은 `mxGraphModel`이다. Con
   `<mxGeometry x= y= width= height= as="geometry"/>`를 가진다.
 - `<mxCell>` (edge, 즉 화살표/연결선): `edge="1"`, `source`/`target`에 연결할 두 vertex의
   `id`를 넣는다. 자식 `<mxGeometry relative="1" as="geometry"/>`는 보통 빈 채로 둔다.
-- 모든 `id`는 **문서 전체에서 유일**해야 한다. 겹치면 draw.io가 셀을 잘못 렌더링하거나
+- 모든 `mxCell id`는 **문서 전체에서 유일**해야 한다. 겹치면 draw.io가 셀을 잘못 렌더링하거나
   경고 없이 하나를 덮어쓴다.
 
 ### 4.2 최소 유효 골격 (신규 작성 시 기준)
 
 ```xml
-<mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1"
-              connect="1" arrows="1" fold="1" page="1" pageScale="1"
-              pageWidth="850" pageHeight="1100" math="0" shadow="0">
-  <root>
-    <mxCell id="0" />
-    <mxCell id="1" parent="0" />
-    <mxCell id="2" value="Node A" style="rounded=0;whiteSpace=wrap;html=1;"
-            vertex="1" parent="1">
-      <mxGeometry x="40" y="40" width="120" height="60" as="geometry" />
-    </mxCell>
-    <mxCell id="3" value="Node B" style="rounded=0;whiteSpace=wrap;html=1;"
-            vertex="1" parent="1">
-      <mxGeometry x="240" y="40" width="120" height="60" as="geometry" />
-    </mxCell>
-    <mxCell id="4" style="edgeStyle=orthogonalEdgeStyle;html=1;"
-            edge="1" parent="1" source="2" target="3">
-      <mxGeometry relative="1" as="geometry" />
-    </mxCell>
-  </root>
-</mxGraphModel>
+<mxfile host="Confluence" modified="2026-08-04T00:00:00.000Z" agent="citec-kb-mcp" version="24.0.0">
+  <diagram id="new-diagram-1" name="Page-1">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1"
+                  connect="1" arrows="1" fold="1" page="1" pageScale="1"
+                  pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="Node A" style="rounded=0;whiteSpace=wrap;html=1;"
+                vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="Node B" style="rounded=0;whiteSpace=wrap;html=1;"
+                vertex="1" parent="1">
+          <mxGeometry x="240" y="40" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4" style="edgeStyle=orthogonalEdgeStyle;html=1;"
+                edge="1" parent="1" source="2" target="3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
 ```
 
 이 골격에서 `value`(텍스트), `style`(모양), 좌표/크기, 연결 관계만 요청에 맞게 바꾸면
-대부분의 신규 다이어그램 요청을 처리할 수 있다.
+대부분의 신규 다이어그램 요청을 처리할 수 있다. **기존 다이어그램을 수정하는 경우, `<mxfile>`과
+`<diagram id=...>`는 원본 값을 그대로 유지**하고 `<mxGraphModel>` 내부만 편집한다.
+
+### 4.4 압축된(compressed) 다이어그램 — 현재 지원 범위 밖
+
+draw.io는 `<diagram>` 내부 콘텐츠를 압축(base64 + raw deflate)해서 저장하는 옵션을 지원한다.
+이 경우 `<diagram id="..." name="...">` 태그 바로 다음에 `<mxGraphModel>`이 보이지 않고,
+대신 알아볼 수 없는 base64 문자열이 온다:
+
+```xml
+<diagram id="abc123" name="Page-1">
+  7Vddc6M2FP01mflop9jhSl2xn4ejxNll2n1z9tqIQTYyMhKDN...(이하 알아볼 수 없는 문자열)
+</diagram>
+```
+
+**`kb_confluence_get_diagram`으로 받은 텍스트가 이 형태(‘diagram 태그 다음이
+`<mxGraphModel`로 시작하지 않고 임의의 문자/숫자 뭉치)라면, 그 다이어그램은 압축
+저장되어 있는 것이다.** 현재 citec-kb는 이 압축을 해제/재압축하는 기능이 없다 —
+
+- ❌ **압축된 내용을 읽지 못했다고 새 `<mxGraphModel>`을 지어내서 `kb_confluence_put_diagram`으로
+  덮어쓰지 않는다.** 원본을 완전히 파괴한다 (id도, 실제 내용도 모두 소실).
+- ✅ 대신 사용자에게 "이 다이어그램은 압축 저장 형식이라 현재 도구로는 읽거나 편집할 수
+  없다"고 명확히 보고하고, 필요하면 압축 해제 지원을 별도로 요청하도록 안내한다.
+- ✅ 이미 실수로 덮어썼다면, Confluence 페이지의 첨부파일 버전 기록(첨부파일 → 이력)에서
+  이전 버전으로 복원하도록 안내한다 — citec-kb API는 최신 버전만 조회하므로 과거 버전
+  복구는 Confluence UI에서 직접 해야 한다.
 
 ### 4.3 자주 쓰는 style 예시
 
@@ -186,8 +236,15 @@ draw.io(diagrams.net)가 사용하는 파일 형식은 `mxGraphModel`이다. Con
 - ❌ 업로드 후 매크로가 자동으로 페이지에 나타난다고 가정 (§0.6 — 매크로가 이미 있는
   diagram_name을 갱신하는 경우만 즉시 반영됨)
 - ❌ 기존 XML의 `mxCell id`를 임의로 바꾸거나 재사용해 다른 셀과 충돌시키는 것 (§0.3, §4.1)
+- ❌ `<mxfile>` 래퍼 없이 `<mxGraphModel>`만 최상위로 업로드하는 것 — 업로드는 성공(200)하지만
+  뷰어에서 "cannot display diagram"으로 렌더링 실패 (§0.4, §4.2)
+- ❌ `kb_confluence_get_diagram` 결과가 압축된 base64 형식(§4.4)인데 이를 무시하고 새
+  `<mxGraphModel>`을 지어내서 덮어쓰는 것 — 원본이 영구 소실된다
 - ❌ 502/503 오류를 재시도로 해결하려 하는 것 (서버 설정 문제이므로 Claude가 고칠 수 없음)
 - ❌ 사용자가 확인하지 않은 diagram_name/page_id를 추측해서 쓰기 작업을 실행하는 것
+- ❌ `list_diagrams` 결과에 `attachment_id=None` + `candidate_attachment_titles`가 있는데
+  이를 무시하고 diagram_name으로 바로 get/put을 시도하는 것 — 먼저 실제 첨부파일명을
+  사용자에게 확인한다
 
 ---
 
@@ -197,7 +254,10 @@ draw.io(diagrams.net)가 사용하는 파일 형식은 `mxGraphModel`이다. Con
 - [ ] 검색 결과가 여러 건이면 사용자 확인을 받았는가
 - [ ] 쓰기 작업 전에 `kb_confluence_get_diagram`으로 기존 내용을 확인했는가 (신규 생성이
       아닌 경우)
-- [ ] 편집 시 기존 `mxCell id`를 보존했는가, 새 id는 충돌 없이 부여했는가
+- [ ] 편집 시 기존 `<mxfile>`/`<diagram id>`와 `mxCell id`를 보존했는가, 새 id는 충돌
+      없이 부여했는가
+- [ ] 받은 XML이 `<mxGraphModel`로 시작하지 않는 base64 압축 형식인지 확인했는가 —
+      맞다면 편집을 시도하지 않고 사용자에게 보고했는가
 - [ ] `kb_confluence_put_diagram` 응답의 `version`이 예상대로 증가했는지 확인했는가
 - [ ] 매크로가 없는 페이지에 신규 업로드한 경우, 사용자에게 매크로 삽입이 별도로
       필요하다고 안내했는가

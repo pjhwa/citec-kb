@@ -32,14 +32,22 @@ async def list_diagrams(page_id: str) -> list[dict[str, Any]]:
     seen_attachment_ids: set[str] = set()
     for name in inline_names:
         att = match_attachment_for_diagram(name, attachments)
-        items.append(
-            {
-                "diagram_name": name,
-                "attachment_id": att.get("id") if att else None,
-                "version": ((att or {}).get("version") or {}).get("number"),
-                "inline": True,
-            }
-        )
+        item: dict[str, Any] = {
+            "diagram_name": name,
+            "attachment_id": att.get("id") if att else None,
+            "version": ((att or {}).get("version") or {}).get("number"),
+            "inline": True,
+        }
+        if not att:
+            # Diagnostic aid: show what .drawio/.xml attachments actually exist
+            # on the page, so a naming-convention mismatch is visible without
+            # extra tooling instead of a bare attachment_id=None.
+            item["candidate_attachment_titles"] = [
+                a.get("title")
+                for a in attachments
+                if (a.get("title") or "").lower().rsplit(".", 1)[-1] in ("drawio", "xml")
+            ]
+        items.append(item)
         if att and att.get("id"):
             seen_attachment_ids.add(att["id"])
 
