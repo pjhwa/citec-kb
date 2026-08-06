@@ -22,10 +22,10 @@
       <a href="#_4" style="padding-left:20px;font-size:12px">기간 조회 · 티켓 목록</a>
       <a href="#_5" style="padding-left:20px;font-size:12px">집계 · 분석</a>
       <a href="#_6" style="padding-left:20px;font-size:12px">유사장애 · 체크리스트 · 용량</a>
-      <a href="#_7" style="padding-left:20px;font-size:12px">실패 버킷 (장애 패턴)</a>
+      <a href="#networkclusterwindows" style="padding-left:20px;font-size:12px">실패 버킷 (장애 패턴, 다중 플러그인 — network/cluster/windows 등)</a>
       <a href="#insight" style="padding-left:20px;font-size:12px">Insight · 상태</a>
       <a href="#confluence-drawio" style="padding-left:20px;font-size:12px">Confluence draw.io 다이어그램</a>
-      <a href="#_8">사용 예 (에이전트)</a>
+      <a href="#_7">사용 예 (에이전트)</a>
       <a href="#docker">Docker로 기동</a>
       <a href="#claude-desktop-claude-code">Claude Desktop / Claude Code</a>
     </nav>
@@ -184,7 +184,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </tr>
 </tbody>
 </table></div>
-<h3 id="_7">실패 버킷 (장애 패턴)</h3>
+<h3 id="networkclusterwindows">실패 버킷 (장애 패턴, 다중 플러그인 — network/cluster/windows 등)</h3>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -196,7 +196,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 <tbody>
 <tr>
 <td><code>kb_register_failure_bucket</code></td>
-<td>실패 버킷(장애 패턴) 등록 — 판별 신호 포함</td>
+<td>실패 버킷(장애 패턴) 등록 — 판별 신호 포함. <code>fb_domain</code>/<code>evidence_ref</code> 필수, <code>source_plugin</code> 권장</td>
 <td><code>POST /v1/failure-buckets</code></td>
 </tr>
 <tr>
@@ -206,12 +206,12 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </tr>
 <tr>
 <td><code>kb_match_failure_bucket</code></td>
-<td>관찰 신호로 후보 버킷 순위화</td>
+<td>관찰 신호로 후보 버킷 순위화. <code>fb_domain</code> 선택 필터</td>
 <td><code>POST /v1/failure-buckets/match</code></td>
 </tr>
 <tr>
 <td><code>kb_list_failure_buckets</code></td>
-<td>등록된 버킷 목록</td>
+<td>등록된 버킷 목록. <code>fb_domain</code> 선택 필터</td>
 <td><code>GET /v1/failure-buckets</code></td>
 </tr>
 <tr>
@@ -221,6 +221,8 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </tr>
 </tbody>
 </table></div>
+<p><code>fb_domain</code> 값 목록은 <a href="../references/failure-bucket-domains.md">failure-bucket-domains.md</a> 참고.<br>
+플러그인 개발자용 상세 지침은 <a href="./FAILURE_BUCKET_PLUGIN_GUIDE.md">FAILURE_BUCKET_PLUGIN_GUIDE.md</a>.</p>
 <h3 id="insight">Insight · 상태</h3>
 <div class="table-wrap"><table>
 <thead>
@@ -292,7 +294,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </blockquote>
 <p><code>wiki_*</code> 이름은 <a href="https://github.com/pjhwa/citec-wiki-qa">citec-wiki-qa</a> MCP와 호환됩니다.</p>
 <hr>
-<h2 id="_8">사용 예 (에이전트)</h2>
+<h2 id="_7">사용 예 (에이전트)</h2>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -335,7 +337,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </tr>
 <tr>
 <td>"LB idle-timeout RST 패턴 등록해줘"</td>
-<td><code>kb_register_failure_bucket(bucket_name=..., discriminating_signals=[...])</code></td>
+<td><code>kb_register_failure_bucket(bucket_name=..., discriminating_signals=[...], fb_domain="network", evidence_ref=...)</code></td>
 </tr>
 <tr>
 <td>"이 RST idle 62초 신호로 어떤 장애 패턴이 유력해?"</td>

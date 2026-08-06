@@ -18,23 +18,28 @@ def test_compute_confidence_counter_lowers():
 def test_bucket_body_md_includes_signals():
     body = bucket_body_md(
         bucket_name="LB idle-timeout RST",
+        fb_domain="network",
         protocol="TCP",
         symptom="다운로드 중 연결 끓김",
         discriminating_signals=["RST 직전 idle 60초 이상"],
         counter_signals=["재전송 다수 관찰"],
         root_cause="LB 세션 idle timeout",
         recommended_action="keepalive 간격을 idle timeout보다 짧게 설정",
+        evidence_ref="CITECTS-2481",
     )
     assert "RST 직전 idle 60초 이상" in body
     assert "재전송 다수 관찰" in body
     assert "LB 세션 idle timeout" in body
+    assert "CITECTS-2481" in body
 
 
 def _make_row(**overrides):
     base = dict(
         id="abcdef12-3456-7890-abcd-ef1234567890",
         bucket_name="LB idle-timeout RST",
+        fb_domain="network",
         protocol="TCP",
+        evidence_ref="CITECTS-2481",
         symptom="증상",
         discriminating_signals=["신호1"],
         counter_signals=[],

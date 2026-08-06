@@ -100,8 +100,12 @@ CITEC_KB_BASE_URL=http://localhost:8573 python3 mcp-server/test_smoke.py
 ```
 
 도구: `kb_search`, `kb_get_document`, `kb_ask`, `kb_query`, `kb_ticket`, `kb_list_insights`,
-`kb_register_failure_bucket`, `kb_refine_failure_bucket`, `kb_match_failure_bucket`, …  
+`kb_register_failure_bucket`, `kb_refine_failure_bucket`, `kb_match_failure_bucket`, …
 (`wiki_*` 별칭 = citec-wiki-qa MCP 호환)
+
+실패 버킷은 `fb_domain`(network/cluster/windows 등, 다중 플러그인 공용)으로 구분된다 — 값 목록은
+[references/failure-bucket-domains.md](./references/failure-bucket-domains.md), 플러그인 개발
+지침은 [docs/FAILURE_BUCKET_PLUGIN_GUIDE.md](./docs/FAILURE_BUCKET_PLUGIN_GUIDE.md) 참고.
 
 ### 설계·구현 문서 (웹)
 

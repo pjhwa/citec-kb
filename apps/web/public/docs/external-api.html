@@ -497,12 +497,12 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td>POST</td>
 <td><code>/v1/failure-buckets</code></td>
-<td>신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, protocol) — 즉시 색인</td>
+<td>신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, <strong>fb_domain</strong>(필수), <strong>evidence_ref</strong>(필수), protocol, created_by) — 즉시 색인. 응답에 <code>possible_duplicate_of</code>(선택) 포함 가능</td>
 </tr>
 <tr>
 <td>GET</td>
 <td><code>/v1/failure-buckets</code></td>
-<td>목록 (protocol, min_confidence, limit, offset 필터)</td>
+<td>목록 (<strong>fb_domain</strong>, protocol, min_confidence, limit, offset 필터)</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -517,12 +517,15 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td>POST</td>
 <td><code>/v1/failure-buckets/match</code></td>
-<td>observed_signals[] + symptom → 후보 버킷 순위</td>
+<td>observed_signals[] + symptom + <strong>fb_domain</strong>(선택) → 후보 버킷 순위</td>
 </tr>
 </tbody>
 </table></div>
 <blockquote>
-<p><code>source_type=failure_bucket</code>은 <code>data/raw/</code> 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.</p>
+<p><code>source_type=failure_bucket</code>은 <code>data/raw/</code> 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.<br>
+<code>fb_domain</code>은 플러그인/진단 영역 파셋(<code>network</code>/<code>cluster</code>/<code>windows</code>, …) 이며 코퍼스 전역<br>
+<code>domain</code>(<code>kb_search(area=)</code>가 쓰는 7개 고정 어휘)과는 별도 축입니다 — 값 목록은<br>
+<a href="../references/failure-bucket-domains.md">failure-bucket-domains.md</a> 참고.</p>
 </blockquote>
 <p>OpenAPI: <code>http://localhost:8573/docs</code></p>
 <hr>

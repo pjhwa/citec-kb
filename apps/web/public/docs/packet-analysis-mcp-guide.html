@@ -50,6 +50,11 @@
 패킷 데이터를 직접 보고 판단</strong>하되, citec-kb는 "과거에 이미 정리된 판별 기준"을 참고/기록하는<br>
 보조 지식베이스로 취급한다.</p>
 <p>관련 문서: <a href="./MCP.md">MCP.md</a> · <a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a> §4.15 · <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a></p>
+<blockquote>
+<p>citec-kb의 <code>failure_bucket</code>은 이제 이 스킬 하나만이 아니라 여러 진단 플러그인이 공유하는<br>
+레지스트리다(<code>docs/FAILURE_BUCKET_PLUGIN_GUIDE.md</code> 참고). 이 스킬은 항상 <code>fb_domain="network"</code><br>
+고정값을 채워 등록/조회한다 — 하위 호환을 위해 기존 <code>protocol</code>(TCP/TLS/HTTP)도 계속 함께 채운다.</p>
+</blockquote>
 <hr>
 <h2 id="0">0. 핵심 원칙</h2>
 <ol>
@@ -79,12 +84,12 @@
 </thead>
 <tbody>
 <tr>
-<td><code>kb_match_failure_bucket(observed_signals=, symptom=, protocol=)</code></td>
+<td><code>kb_match_failure_bucket(observed_signals=, symptom=, fb_domain="network", protocol=)</code></td>
 <td>관찰된 신호로 후보 버킷 순위화</td>
 <td>분석 전 · 분석 중 (반복)</td>
 </tr>
 <tr>
-<td><code>kb_list_failure_buckets(protocol=, min_confidence=)</code></td>
+<td><code>kb_list_failure_buckets(fb_domain="network", protocol=, min_confidence=)</code></td>
 <td>특정 프로토콜의 등록된 패턴 전체 목록</td>
 <td>분석 전 (탐색)</td>
 </tr>
@@ -104,8 +109,8 @@
 <td>패턴이 아니라 특정 사고 사례가 필요할 때</td>
 </tr>
 <tr>
-<td><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)</code></td>
-<td>신규 패턴 등록 (즉시 검색 노출)</td>
+<td><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain="network", evidence_ref=, counter_signals=, protocol=, source_plugin="packet-capture-rca@&lt;version&gt;")</code></td>
+<td>신규 패턴 등록 (즉시 검색 노출). <code>fb_domain</code>/<code>evidence_ref</code> 필수</td>
 <td>분석 후 — 새 패턴 확정 시</td>
 </tr>
 <tr>
@@ -122,6 +127,7 @@
 <pre><code>1) kb_match_failure_bucket(
      observed_signals=[],              # 아직 없으면 빈 배열
      symptom=&quot;&lt;사용자가 보고한 증상 그대로&gt;&quot;,
+     fb_domain=&quot;network&quot;,
      protocol=&quot;&lt;알고 있다면 TCP|TLS|HTTP 등&gt;&quot;
    )
 2) 결과가 있으면 → kb_get_failure_bucket(bucket_id=...)로 판별 신호 전문 확인
@@ -142,6 +148,7 @@
 kb_match_failure_bucket(
   observed_signals=[&quot;RST 직전 idle 62초&quot;, &quot;FIN 없이 RST&quot;],
   symptom=&quot;다운로드 중 연결 끓김&quot;,
+  fb_domain=&quot;network&quot;,
   protocol=&quot;TCP&quot;
 )
 </code></pre>
@@ -170,10 +177,17 @@ kb_match_failure_bucket(
   ],
   root_cause=&quot;&lt;근본 원인&gt;&quot;,
   recommended_action=&quot;&lt;권장 조치&gt;&quot;,
-  protocol=&quot;TCP|TLS|HTTP|...&quot;
+  fb_domain=&quot;network&quot;,
+  evidence_ref=&quot;&lt;원자료를 가리키는 구체적 포인터, 예: capture:2026-08-06-upload01.pcapng#frame=4821&gt;&quot;,
+  protocol=&quot;TCP|TLS|HTTP|...&quot;,
+  source_plugin=&quot;packet-capture-rca@&lt;version&gt;&quot;
 )
 </code></pre>
-<p>작성 기준은 §5(품질 가이드) 참고. <code>discriminating_signals</code>가 비어 있으면 API가 거부한다.</p>
+<p>작성 기준은 §5(품질 가이드) 참고. <code>discriminating_signals</code>가 비어 있으면 API가 거부한다.<br>
+<code>fb_domain</code>/<code>evidence_ref</code>도 필수다 — 빈 값이면 API가 거부한다. <code>evidence_ref</code>는 자유 서술이<br>
+아니라 사람이 나중에 열어 확인할 수 있는 구체적 포인터여야 한다(캡처 파일명#frame 번호 등).<br>
+응답에 <code>possible_duplicate_of</code>가 포함되면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻이니<br>
+<code>kb_get_failure_bucket</code>으로 확인 후 필요하면 등록 대신 §4-2의 확인 기록으로 정정한다.</p>
 <h3 id="4-2">4-2. 기존 버킷이 맞았던 경우 → 확인 기록</h3>
 <pre><code>kb_refine_failure_bucket(bucket_id=&quot;&lt;매칭된 버킷 id&gt;&quot;, confirm=true)
 </code></pre>
@@ -207,6 +221,8 @@ kb_match_failure_bucket(
   (예: "TLS record 재조립 지연", "LB idle-timeout으로 인한 RST").</li>
 <li>protocol은 가능하면 항상 채운다 — <code>domain</code> 필터링과 <code>kb_list_failure_buckets(protocol=)</code><br>
   조회에 쓰인다.</li>
+<li>신호 개수를 인위적으로 부풀리지 않는다 — 매칭 스코어는 매칭 개수에 상한(K=4)을 두고 계산하므로<br>
+  신호가 많다고 불리해지지 않는다.</li>
 </ul>
 <hr>
 <h2 id="6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</h2>

@@ -80,7 +80,10 @@ async def main() -> int:
         discriminating_signals=[fb_signal],
         root_cause="스모크 테스트",
         recommended_action="없음",
+        fb_domain="network",
+        evidence_ref=f"smoke:{os.getpid()}",
         protocol="TCP",
+        source_plugin="test_smoke@0",
     )
     check("kb_register_failure_bucket", not fb_reg.startswith("오류:"), fb_reg[:200])
 
@@ -92,8 +95,9 @@ async def main() -> int:
     if fb_id:
         fb_get = await server.kb_get_failure_bucket(fb_id)
         check("kb_get_failure_bucket", fb_name in fb_get, fb_get[:200])
+        check("kb_get_failure_bucket has fb_domain", "fb_domain=network" in fb_get, fb_get[:200])
 
-        fb_match = await server.kb_match_failure_bucket(observed_signals=[fb_signal])
+        fb_match = await server.kb_match_failure_bucket(observed_signals=[fb_signal], fb_domain="network")
         check("kb_match_failure_bucket finds it", fb_id in fb_match, fb_match[:300])
 
         fb_refine = await server.kb_refine_failure_bucket(fb_id, confirm=True)
@@ -101,8 +105,23 @@ async def main() -> int:
     else:
         check("kb_register_failure_bucket returned id", False, fb_reg)
 
-    fb_list = await server.kb_list_failure_buckets(protocol="TCP", limit=50)
+    fb_list = await server.kb_list_failure_buckets(fb_domain="network", protocol="TCP", limit=50)
     check("kb_list_failure_buckets", not fb_list.startswith("오류:"), fb_list[:200])
+
+    fb_missing_domain = await server.kb_register_failure_bucket(
+        bucket_name="SMOKE-missing-fb-domain",
+        symptom="s",
+        discriminating_signals=["x"],
+        root_cause="r",
+        recommended_action="a",
+        fb_domain="",
+        evidence_ref="smoke:x",
+    )
+    check(
+        "kb_register_failure_bucket rejects empty fb_domain",
+        fb_missing_domain.startswith("오류:"),
+        fb_missing_domain,
+    )
 
     help_t = await server.kb_tools_help()
     check("kb_tools_help", "kb_list_tickets" in help_t, help_t[:100])

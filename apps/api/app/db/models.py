@@ -357,6 +357,8 @@ class FailureBucket(Base):
     __table_args__ = (
         Index("ix_failure_buckets_protocol", "protocol"),
         Index("ix_failure_buckets_bucket_name", "bucket_name"),
+        Index("ix_failure_buckets_fb_domain", "fb_domain"),
+        Index("ix_failure_buckets_fb_domain_protocol", "fb_domain", "protocol"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
@@ -364,7 +366,9 @@ class FailureBucket(Base):
         ForeignKey("documents.id", ondelete="CASCADE"), unique=True
     )
     bucket_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    fb_domain: Mapped[str] = mapped_column(String(32), nullable=False)
     protocol: Mapped[Optional[str]] = mapped_column(String(32))
+    evidence_ref: Mapped[str] = mapped_column(Text, nullable=False)
     symptom: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     discriminating_signals: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default=text("'{}'::text[]")

@@ -12,6 +12,16 @@ _ENV_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bMSP\b|운영대행", re.I), "msp"),
 ]
 
+# failure_bucket's fb_domain facet (references/failure-bucket-domains.md is the
+# source of truth) mapped to the 7 fixed corpus-wide Document.domain values used
+# by kb_search(area=)/kb_query. Add an entry here whenever a new fb_domain is
+# registered in that file.
+_FB_DOMAIN_TO_CORPUS_DOMAIN: dict[str, str] = {
+    "network": "network",
+    "cluster": "os",
+    "windows": "os",
+}
+
 _DOMAIN_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Linux|리눅스|kernel|sysctl|OS hang", re.I), "os"),
     (re.compile(r"Oracle|HANA|MySQL|Tibero|Postgre|DB2|Greenplum|GPDB|SQL", re.I), "dbms"),
@@ -58,9 +68,11 @@ def infer_domain(
         if area:
             return area.lower().replace(" ", "_")
     if source_type == "failure_bucket" and metadata:
-        protocol = str(metadata.get("protocol") or "")
-        if protocol:
-            return protocol.lower().replace(" ", "_")
+        fb_domain = str(metadata.get("fb_domain") or "").lower()
+        if fb_domain in _FB_DOMAIN_TO_CORPUS_DOMAIN:
+            return _FB_DOMAIN_TO_CORPUS_DOMAIN[fb_domain]
+        # Unmapped fb_domain: leave corpus domain unset here and fall through to
+        # the keyword rules below instead of dropping it entirely.
     blob = f"{title}\n{body[:3000]}"
     for pat, dom in _DOMAIN_RULES:
         if pat.search(blob):

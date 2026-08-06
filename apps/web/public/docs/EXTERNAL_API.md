@@ -218,13 +218,16 @@ verdict: `helpful` | `not_helpful` | `resolved` | `failed` | `edited`
 
 | Method | Path | 설명 |
 |--------|------|------|
-| POST | `/v1/failure-buckets` | 신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, protocol) — 즉시 색인 |
-| GET | `/v1/failure-buckets` | 목록 (protocol, min_confidence, limit, offset 필터) |
+| POST | `/v1/failure-buckets` | 신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, **fb_domain**(필수), **evidence_ref**(필수), protocol, created_by) — 즉시 색인. 응답에 `possible_duplicate_of`(선택) 포함 가능 |
+| GET | `/v1/failure-buckets` | 목록 (**fb_domain**, protocol, min_confidence, limit, offset 필터) |
 | GET | `/v1/failure-buckets/{id}` | 단건 상세 |
 | POST | `/v1/failure-buckets/{id}/refine` | 신호 추가 + 확인(confirm=true)/반박(confirm=false) — 신뢰도 자동 재계산 |
-| POST | `/v1/failure-buckets/match` | observed_signals[] + symptom → 후보 버킷 순위 |
+| POST | `/v1/failure-buckets/match` | observed_signals[] + symptom + **fb_domain**(선택) → 후보 버킷 순위 |
 
 > `source_type=failure_bucket`은 `data/raw/` 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.
+> `fb_domain`은 플러그인/진단 영역 파셋(`network`/`cluster`/`windows`, …) 이며 코퍼스 전역
+> `domain`(`kb_search(area=)`가 쓰는 7개 고정 어휘)과는 별도 축입니다 — 값 목록은
+> [failure-bucket-domains.md](../references/failure-bucket-domains.md) 참고.
 
 OpenAPI: `http://localhost:8573/docs`
 

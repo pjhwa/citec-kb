@@ -240,8 +240,12 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
 
 
 def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
-    """Most recently registered/refined failure buckets, for the admin dashboard."""
-    from sqlalchemy import select
+    """Most recently registered/refined failure buckets, for the admin dashboard.
+
+    Includes a per-fb_domain count breakdown (design doc §10) since bucket
+    volume is now spread across multiple diagnostic plugins, not just one.
+    """
+    from sqlalchemy import func, select
 
     from app.db.models import FailureBucket
 
@@ -250,11 +254,18 @@ def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
             select(FailureBucket).order_by(FailureBucket.updated_at.desc()).limit(limit)
         ).scalars()
     )
+    domain_counts = dict(
+        session.execute(
+            select(FailureBucket.fb_domain, func.count()).group_by(FailureBucket.fb_domain)
+        ).all()
+    )
     return {
+        "by_domain": {k: int(v) for k, v in domain_counts.items()},
         "recent": [
             {
                 "id": r.id,
                 "bucket_name": r.bucket_name,
+                "fb_domain": r.fb_domain,
                 "protocol": r.protocol,
                 "confidence": r.confidence,
                 "support_count": r.support_count,
@@ -263,7 +274,7 @@ def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
             for r in rows
-        ]
+        ],
     }
 
 

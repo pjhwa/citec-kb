@@ -116,9 +116,10 @@
 
   <div class="card" style="margin-top:12px">
     <strong>최근 등록된 실패 버킷 (failure_bucket)</strong>
+    <div id="fbByDomain" class="meta">로딩 중…</div>
     <table class="tbl">
-      <thead><tr><th>이름</th><th>프로토콜</th><th>신뢰도</th><th>확인/반박</th><th>등록자</th><th>갱신</th></tr></thead>
-      <tbody id="fbBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+      <thead><tr><th>이름</th><th>도메인</th><th>프로토콜</th><th>신뢰도</th><th>확인/반박</th><th>등록자</th><th>갱신</th></tr></thead>
+      <tbody id="fbBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
     </table>
   </div>
 
@@ -265,15 +266,22 @@ async function refreshDashboard() {
       }).join("")
     : '<tr><td colspan="4" class="meta">기록 없음</td></tr>';
 
-  const fb = (d.failure_buckets || {}).recent || [];
+  const fbData = d.failure_buckets || {};
+  const fb = fbData.recent || [];
+  const byDomain = fbData.by_domain || {};
+  const domainEntries = Object.keys(byDomain);
+  $("fbByDomain").textContent = domainEntries.length
+    ? "도메인별 건수: " + domainEntries.map((k) => k + "=" + byDomain[k]).join(", ")
+    : "도메인별 건수: —";
   $("fbBody").innerHTML = fb.length
     ? fb.map((r) => {
-        return '<tr><td>' + esc(r.bucket_name || "") + '</td><td>' + esc(r.protocol || "—") +
+        return '<tr><td>' + esc(r.bucket_name || "") + '</td><td>' + esc(r.fb_domain || "—") +
+          '</td><td>' + esc(r.protocol || "—") +
           '</td><td>' + esc(String(r.confidence != null ? r.confidence : "—")) +
           '</td><td>' + esc((r.support_count || 0) + " / " + (r.counter_count || 0)) +
           '</td><td>' + esc(r.created_by || "—") + '</td><td>' + fmtTs(r.updated_at) + '</td></tr>';
       }).join("")
-    : '<tr><td colspan="6" class="meta">등록된 실패 버킷 없음</td></tr>';
+    : '<tr><td colspan="7" class="meta">등록된 실패 버킷 없음</td></tr>';
 }
 
 let lastJobId = null;

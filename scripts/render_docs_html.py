@@ -35,6 +35,7 @@ DOCS = [
     ("CONFLUENCE_DRAWIO_MCP_GUIDE.md", "confluence-drawio-mcp-guide.html", "Confluence draw.io MCP 가이드", "다이어그램 읽기/쓰기 워크플로 (Claude 전용)"),
     ("DEPLOY.md", "deploy.html", "폐쇄망 배포 가이드", "분리 번들 · 버전 추적 · 변경분만 배포"),
     ("EXTERNAL_API.md", "external-api.html", "외부 연동 API", "citec-wiki-qa 호환 /api/* 레이어"),
+    ("FAILURE_BUCKET_PLUGIN_GUIDE.md", "failure-bucket-plugin-guide.html", "실패 버킷 플러그인 개발 지침", "다중 진단 플러그인의 failure_bucket 연동 규약 (fb_domain·evidence_ref·source_plugin)"),
     ("IMPLEMENTATION_PLAN.md", "implementation-plan.html", "구현 계획", "PR DAG · 백로그 · API 계약 · 게이트 G0–G6"),
     ("MCP.md", "mcp.html", "MCP 서버", "Claude / Cursor용 kb_search · kb_ask · kb_query"),
     ("OIDC_IDP_SETUP.md", "oidc-idp-setup.html", "OIDC / IdP 연동 가이드", "Keycloak 및 외부 IdP 연동 모드"),

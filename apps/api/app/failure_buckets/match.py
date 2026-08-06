@@ -7,6 +7,11 @@ from typing import Any
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]{2,}")
 
+# Caps signal_ratio's denominator so a well-refined bucket (many
+# discriminating_signals accumulated via refine_bucket) doesn't get penalized
+# for partial matches relative to a sparse, newer bucket. See design doc §3.
+_SIGNAL_RATIO_CAP = 4
+
 
 def _tokens(text: str) -> set[str]:
     return {t.lower() for t in _TOKEN_RE.findall(text or "")}
@@ -40,7 +45,7 @@ def match_bucket(
     contradicted = [s for s in counter if _signal_hit(observed_tokens, s)]
 
     total = len(discriminating) or 1
-    signal_ratio = len(matched) / total
+    signal_ratio = min(len(matched), _SIGNAL_RATIO_CAP) / min(total, _SIGNAL_RATIO_CAP)
     score = 0.6 * signal_ratio + 0.4 * float(bucket.get("confidence") or 0.5)
     if contradicted:
         score -= 0.5 * len(contradicted)

@@ -39,7 +39,7 @@
       <a href="#412-insights" style="padding-left:20px;font-size:12px">4.12 Insights</a>
       <a href="#413-kb_ask-wiki_ask" style="padding-left:20px;font-size:12px">4.13 kb_ask / wiki_ask</a>
       <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
-      <a href="#415-failure-buckets" style="padding-left:20px;font-size:12px">4.15 Failure buckets (네트워크 패킷 진단 등)</a>
+      <a href="#415-failure-buckets-networkclusterwindows" style="padding-left:20px;font-size:12px">4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)</a>
       <a href="#5-time-expressions-relative">5. Time expressions (relative)</a>
       <a href="#6-source-types-path-conventions">6. Source types &amp; path conventions</a>
       <a href="#7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</a>
@@ -581,16 +581,20 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <li><code>kb_tools_help</code> — short tool menu (also useful mid-conversation)</li>
 </ul>
 <hr>
-<h3 id="415-failure-buckets">4.15 Failure buckets (네트워크 패킷 진단 등)</h3>
+<h3 id="415-failure-buckets-networkclusterwindows">4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)</h3>
+<p><code>packet-capture-rca</code> 하나만이 아니라 <code>pacemaker-tools</code>, <code>windows-tools</code> 등 여러 진단 플러그인이<br>
+같은 레지스트리에 확정된 실패 패턴을 등재·재사용한다. 도메인은 <code>fb_domain</code> 값(예: <code>network</code>,<br>
+<code>cluster</code>, <code>windows</code>)으로 구분되며 목록은 <a href="../references/failure-bucket-domains.md">failure-bucket-domains.md</a><br>
+가 정본이다. 플러그인 개발자용 상세 지침은 <a href="./FAILURE_BUCKET_PLUGIN_GUIDE.md">FAILURE_BUCKET_PLUGIN_GUIDE.md</a>.</p>
 <ul>
-<li><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)</code> — 새 실패 패턴 등록, 즉시 검색 노출</li>
-<li><code>kb_match_failure_bucket(observed_signals=, symptom=, protocol=)</code> — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님)</li>
+<li><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, source_plugin=)</code> — 새 실패 패턴 등록, 즉시 검색 노출. <code>fb_domain</code>/<code>evidence_ref</code>는 필수(빈 값이면 400) — <code>evidence_ref</code>는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(<code>CITECTS-2481</code>, <code>capture:....pcapng#frame=4821</code> 등)여야 한다. 응답에 <code>possible_duplicate_of</code>가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 <code>kb_refine_failure_bucket</code>으로 정정한다</li>
+<li><code>kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=)</code> — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다</li>
 <li><code>kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)</code> — 확인/반박 시 신뢰도 자동 재계산 (self-improving)</li>
-<li><code>kb_list_failure_buckets(protocol=)</code> / <code>kb_get_failure_bucket(bucket_id=)</code></li>
+<li><code>kb_list_failure_buckets(fb_domain=, protocol=)</code> / <code>kb_get_failure_bucket(bucket_id=)</code></li>
 </ul>
 <p><strong>API:</strong> <code>POST /v1/failure-buckets</code>, <code>POST /v1/failure-buckets/{id}/refine</code>,<br>
 <code>POST /v1/failure-buckets/match</code>, <code>GET /v1/failure-buckets[/{id}]</code></p>
-<p>패킷 분석 중 이미 알려진 패턴인지 먼저 <code>kb_match_failure_bucket</code>으로 확인하고,<br>
+<p>분석 중 이미 알려진 패턴인지 먼저 <code>kb_match_failure_bucket</code>으로 확인하고,<br>
 새 패턴이면 <code>kb_register_failure_bucket</code>으로 등록, 기존 패턴이 맞았거나 틀렸으면<br>
 <code>kb_refine_failure_bucket(confirm=True/False)</code>로 되먹임한다.</p>
 <hr>

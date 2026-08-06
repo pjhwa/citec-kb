@@ -285,17 +285,22 @@ Still verify important claims with `kb_get_document` if the model output looks t
 
 ---
 
-### 4.15 Failure buckets (네트워크 패킷 진단 등)
+### 4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)
 
-- `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)` — 새 실패 패턴 등록, 즉시 검색 노출
-- `kb_match_failure_bucket(observed_signals=, symptom=, protocol=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님)
+`packet-capture-rca` 하나만이 아니라 `pacemaker-tools`, `windows-tools` 등 여러 진단 플러그인이
+같은 레지스트리에 확정된 실패 패턴을 등재·재사용한다. 도메인은 `fb_domain` 값(예: `network`,
+`cluster`, `windows`)으로 구분되며 목록은 [failure-bucket-domains.md](../references/failure-bucket-domains.md)
+가 정본이다. 플러그인 개발자용 상세 지침은 [FAILURE_BUCKET_PLUGIN_GUIDE.md](./FAILURE_BUCKET_PLUGIN_GUIDE.md).
+
+- `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, source_plugin=)` — 새 실패 패턴 등록, 즉시 검색 노출. `fb_domain`/`evidence_ref`는 필수(빈 값이면 400) — `evidence_ref`는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(`CITECTS-2481`, `capture:....pcapng#frame=4821` 등)여야 한다. 응답에 `possible_duplicate_of`가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 `kb_refine_failure_bucket`으로 정정한다
+- `kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다
 - `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)` — 확인/반박 시 신뢰도 자동 재계산 (self-improving)
-- `kb_list_failure_buckets(protocol=)` / `kb_get_failure_bucket(bucket_id=)`
+- `kb_list_failure_buckets(fb_domain=, protocol=)` / `kb_get_failure_bucket(bucket_id=)`
 
 **API:** `POST /v1/failure-buckets`, `POST /v1/failure-buckets/{id}/refine`,
 `POST /v1/failure-buckets/match`, `GET /v1/failure-buckets[/{id}]`
 
-패킷 분석 중 이미 알려진 패턴인지 먼저 `kb_match_failure_bucket`으로 확인하고,
+분석 중 이미 알려진 패턴인지 먼저 `kb_match_failure_bucket`으로 확인하고,
 새 패턴이면 `kb_register_failure_bucket`으로 등록, 기존 패턴이 맞았거나 틀렸으면
 `kb_refine_failure_bucket(confirm=True/False)`로 되먹임한다.
 

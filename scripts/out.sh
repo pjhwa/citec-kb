@@ -366,7 +366,7 @@ build_source_bundle() {
 
   log "[1/3] 화이트리스트 복사"
   local d
-  for d in apps config mcp-server scripts deploy packages; do
+  for d in apps config mcp-server scripts deploy packages references; do
     if [[ -d "${SOURCE_PATH}/${d}" ]]; then
       cp -a "${SOURCE_PATH}/${d}" "$dest/"
     else
@@ -376,7 +376,8 @@ build_source_bundle() {
 
   mkdir -p "$dest/docs"
   local f
-  for f in DEPLOY.md EXTERNAL_API.md MCP.md AI_AGENT_GUIDE.md OIDC_IDP_SETUP.md; do
+  for f in DEPLOY.md EXTERNAL_API.md MCP.md AI_AGENT_GUIDE.md OIDC_IDP_SETUP.md \
+           FAILURE_BUCKET_PLUGIN_GUIDE.md PACKET_ANALYSIS_MCP_GUIDE.md; do
     [[ -f "${SOURCE_PATH}/docs/${f}" ]] && cp -a "${SOURCE_PATH}/docs/${f}" "$dest/docs/"
   done
 

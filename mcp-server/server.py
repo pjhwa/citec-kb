@@ -856,11 +856,11 @@ async def kb_tools_help() -> str:
   kb_list_checkitems(q=, area=) / kb_get_checkitem(code=)
   kb_capacity_estimate(period_days=, basis=)
 
-[실패 버킷 · 네트워크 패킷 진단]
-  kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, counter_signals=, protocol=)
+[실패 버킷 · 다중 플러그인 진단 지식(network/cluster/windows 등)]
+  kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, source_plugin=)
   kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)
-  kb_match_failure_bucket(observed_signals=, symptom=, protocol=)
-  kb_list_failure_buckets(protocol=, min_confidence=)
+  kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=)
+  kb_list_failure_buckets(fb_domain=, protocol=, min_confidence=)
   kb_get_failure_bucket(bucket_id=)
 
 [Confluence draw.io 다이어그램]
@@ -1023,11 +1023,15 @@ async def kb_register_failure_bucket(
     discriminating_signals: list[str],
     root_cause: str,
     recommended_action: str,
+    fb_domain: str,
+    evidence_ref: str,
     counter_signals: list[str] | None = None,
     protocol: str = "",
+    source_plugin: str = "",
 ) -> str:
     """새로운 실패 버킷(장애 패턴)을 등록한다. 즉시 검색에 노출된다.
-    예: bucket_name='LB idle-timeout RST', discriminating_signals=['RST 직전 idle 60초 이상']
+    예: bucket_name='LB idle-timeout RST', discriminating_signals=['RST 직전 idle 60초 이상'],
+    fb_domain='network', evidence_ref='capture:2026-08-06-upload01.pcapng#frame=4821'
     """
     if not bucket_name.strip():
         return "오류: bucket_name 이 비어 있습니다."
@@ -1039,14 +1043,21 @@ async def kb_register_failure_bucket(
         return "오류: root_cause 가 비어 있습니다."
     if not recommended_action.strip():
         return "오류: recommended_action 이 비어 있습니다."
+    if not fb_domain.strip():
+        return "오류: fb_domain 이 비어 있습니다."
+    if not evidence_ref.strip():
+        return "오류: evidence_ref 가 비어 있습니다."
     body: dict[str, Any] = {
         "bucket_name": bucket_name.strip(),
+        "fb_domain": fb_domain.strip(),
         "symptom": symptom or "",
         "discriminating_signals": discriminating_signals,
         "counter_signals": counter_signals or [],
         "root_cause": root_cause or "",
         "recommended_action": recommended_action or "",
+        "evidence_ref": evidence_ref.strip(),
         "protocol": protocol.strip() or None,
+        "created_by": source_plugin.strip() or None,
     }
     try:
         async with _client() as client:
@@ -1055,10 +1066,20 @@ async def kb_register_failure_bucket(
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
-    return (
+    lines = [
         f"등록됨: {data.get('bucket_name')} (id={data.get('id')}, "
         f"confidence={data.get('confidence')})"
-    )
+    ]
+    dup = data.get("possible_duplicate_of")
+    if dup:
+        lines.append(
+            f"주의: 기존 버킷과 유사할 수 있습니다 — {dup.get('bucket_name')} "
+            f"(id={dup.get('bucket_id')}, confidence={dup.get('confidence')})"
+        )
+    warning = data.get("fb_domain_warning")
+    if warning:
+        lines.append(f"경고: {warning}")
+    return "\n".join(lines)
 
 
 @mcp.tool()
@@ -1097,11 +1118,12 @@ async def kb_refine_failure_bucket(
 async def kb_match_failure_bucket(
     observed_signals: list[str],
     symptom: str = "",
+    fb_domain: str = "",
     protocol: str = "",
     top_k: int = 5,
 ) -> str:
     """관찰된 신호로 후보 실패 버킷을 순위화한다.
-    예: observed_signals=['RST 직전 idle 62초'], symptom='다운로드 중 연결 끓김'"""
+    예: observed_signals=['RST 직전 idle 62초'], symptom='다운로드 중 연결 끓김', fb_domain='network'"""
     if not observed_signals and not symptom.strip():
         return "오류: observed_signals 또는 symptom 중 하나는 필요합니다."
     body: dict[str, Any] = {
@@ -1109,6 +1131,8 @@ async def kb_match_failure_bucket(
         "symptom": symptom or "",
         "top_k": min(max(top_k, 1), 20),
     }
+    if fb_domain.strip():
+        body["fb_domain"] = fb_domain.strip()
     if protocol.strip():
         body["protocol"] = protocol.strip()
     try:
@@ -1136,12 +1160,15 @@ async def kb_match_failure_bucket(
 
 @mcp.tool()
 async def kb_list_failure_buckets(
+    fb_domain: str = "",
     protocol: str = "",
     min_confidence: float = 0.0,
     limit: int = 20,
 ) -> str:
-    """등록된 실패 버킷 목록. protocol 예: TCP|TLS|HTTP"""
+    """등록된 실패 버킷 목록. fb_domain 예: network|cluster|windows, protocol 예: TCP|TLS|HTTP"""
     params: dict[str, Any] = {"limit": min(max(limit, 1), 200), "min_confidence": min_confidence}
+    if fb_domain.strip():
+        params["fb_domain"] = fb_domain.strip()
     if protocol.strip():
         params["protocol"] = protocol.strip()
     try:
@@ -1157,8 +1184,8 @@ async def kb_list_failure_buckets(
         if not isinstance(it, dict):
             continue
         lines.append(
-            f"- {it.get('bucket_name')} (id={it.get('id')}) protocol={it.get('protocol')} "
-            f"confidence={it.get('confidence')}"
+            f"- {it.get('bucket_name')} (id={it.get('id')}) fb_domain={it.get('fb_domain')} "
+            f"protocol={it.get('protocol')} confidence={it.get('confidence')}"
         )
     if not items:
         lines.append("(결과 없음)")
@@ -1182,8 +1209,10 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
         return _err(e)
     return (
         f"# {data.get('bucket_name')} (id={data.get('id')})\n"
-        f"protocol={data.get('protocol')} confidence={data.get('confidence')} "
-        f"support={data.get('support_count')} counter={data.get('counter_count')}\n\n"
+        f"fb_domain={data.get('fb_domain')} protocol={data.get('protocol')} "
+        f"confidence={data.get('confidence')} "
+        f"support={data.get('support_count')} counter={data.get('counter_count')}\n"
+        f"evidence_ref={data.get('evidence_ref')} created_by={data.get('created_by')}\n\n"
         f"증상: {data.get('symptom')}\n"
         f"판별 신호: {data.get('discriminating_signals')}\n"
         f"반증 신호: {data.get('counter_signals')}\n"

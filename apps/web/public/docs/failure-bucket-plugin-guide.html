@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>실패 버킷 플러그인 개발 지침 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css" />
+<link rel="stylesheet" href="/css/docs.css" />
+<script src="/js/nav.js"></script>
+</head>
+<body>
+<div class="top" id="topNav" data-page="doc"></div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>진단 플러그인 개발 지침 — citec-kb `failure_bucket` 자가개선 루프 연동</h1>
+    <nav class="nav">
+      <a href="#citec-kb-failure_bucket">진단 플러그인 개발 지침 — citec-kb failure_bucket 자가개선 루프 연동</a>
+      <a href="#0">0. 이 지침이 다루지 않는 것</a>
+      <a href="#1">1. 원칙 (모든 플러그인 공통)</a>
+      <a href="#2-fb_domain">2. fb_domain — 내 플러그인의 도메인 값 정하기</a>
+      <a href="#3-phase">3. 이 스킬의 phase에 매핑 — 일반 템플릿</a>
+      <a href="#3-1-1" style="padding-left:20px;font-size:12px">3-1. 분석 착수 시점 — 1차 조회</a>
+      <a href="#3-2" style="padding-left:20px;font-size:12px">3-2. 분석 진행 중 — 반복 재조회</a>
+      <a href="#3-3" style="padding-left:20px;font-size:12px">3-3. 분석 종료 시점 — 되먹임 (정확히 하나)</a>
+      <a href="#4-evidence_ref">4. evidence_ref 작성 기준 — "확정된 내용"의 유일한 게이트</a>
+      <a href="#5-discriminating_signals-counter_signals">5. 좋은 discriminating_signals / counter_signals 작성 기준</a>
+      <a href="#6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</a>
+      <a href="#7-referencescitec-kb-integrationmd">7. 새 플러그인용 스켈레톤 — references/citec-kb-integration.md</a>
+      <a href="#8">8. 체크리스트 (요약)</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>진단 플러그인 개발 지침 — citec-kb `failure_bucket` 자가개선 루프 연동</h1>
+      <p class="lead">다중 진단 플러그인의 failure_bucket 연동 규약 (fb_domain·evidence_ref·source_plugin)</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/FAILURE_BUCKET_PLUGIN_GUIDE.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">-</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-failure_bucket">진단 플러그인 개발 지침 — citec-kb <code>failure_bucket</code> 자가개선 루프 연동</h1>
+<p><strong>대상:</strong> <code>packet-capture-rca</code>처럼 특정 진단 영역(패킷/Pacemaker·Corosync 클러스터/Windows<br>
+이벤트로그·AD 복제 등)을 분석하는 새 Claude Code 스킬·플러그인을 만드는 개발자.<br>
+<strong>목적:</strong> 매 플러그인이 각자 방식으로 citec-kb를 쓰지 않고, 같은 규약으로 과거 확인된 실패<br>
+패턴(<code>failure_bucket</code>)을 조회·재사용하고 새로 확인한 패턴을 되먹임하게 한다.</p>
+<p>이 문서는 <code>packet-capture-rca</code> 스킬의 <code>references/citec-kb-integration.md</code>(실제 동작 검증된<br>
+워크플로)를 일반화한 것이다. 특정 도메인 예시가 필요하면 그 파일을 함께 참고할 것. 이 지침이 요구하는<br>
+<code>fb_domain</code>/<code>evidence_ref</code>/<code>source_plugin</code> 필드는 citec-kb 쪽 설계 변경<br>
+(<a href="./superpowers/specs/2026-08-06-failure-bucket-multi-plugin-design.md">2026-08-06-failure-bucket-multi-plugin-design.md</a>)에<br>
+의존한다 — 대상 citec-kb 배포가 그 변경을 아직 반영하지 않았다면(구버전 MCP 시그니처), 먼저<br>
+<code>kb_tools_help()</code>로 실제 파라미터를 확인하고 없는 파라미터는 생략한다.</p>
+<hr>
+<h2 id="0">0. 이 지침이 다루지 않는 것</h2>
+<ul>
+<li><strong>CITECTS/Jira 지원 이력 조회는 이 지침의 대상이 아니다.</strong> "과거 유사 사례가 있었는가"는<br>
+<code>kb_similar_incident</code>(citec-kb에 동기화된 지원이력 사본)로 확인하고, 정식 지원 티켓 자체의<br>
+  조회/생성/갱신은 <code>jira-mcp</code>(<code>citec-mcp-workbench</code> 스킬 영역)로 한다. 이 문서는 오직<br>
+<code>failure_bucket</code>(구조화된 실패 패턴 라이브러리) 하나만 다룬다.</li>
+<li>승인/리뷰 워크플로는 없다. 등록은 즉시 검색에 노출되고, 운영 대시보드로 사후 가시성만 제공된다.<br>
+  따라서 §4의 "근거 없는 등록 금지" 원칙이 실질적인 유일한 품질 게이트다 — 가볍게 여기지 않는다.</li>
+</ul>
+<hr>
+<h2 id="1">1. 원칙 (모든 플러그인 공통)</h2>
+<ol>
+<li><strong>분석을 시작하기 전에 먼저 citec-kb부터 조회한다.</strong> 알려진 판별 신호를 기준으로 원자료(캡처,<br>
+   로그, 이벤트)를 훨씬 빠르게 좁혀 들어갈 수 있다.</li>
+<li><strong>한 도구만 믿지 않는다.</strong> <code>kb_match_failure_bucket</code>(구조화 매칭), <code>kb_search</code>(하이브리드<br>
+   전문/의미 검색, <code>section="failure_bucket"</code>), <code>kb_list_failure_buckets</code>(도메인별 목록),<br>
+<code>kb_similar_incident</code>(과거 장애 티켓)를 상호 보완적으로 쓴다.</li>
+<li><strong>새 신호를 확인할 때마다 재조회한다.</strong> 분석 중 신호가 늘어나면 <code>kb_match_failure_bucket</code>을<br>
+   갱신된 <code>observed_signals</code>로 다시 호출한다. 한 번으로 끝내지 않는다.</li>
+<li><strong>분석이 끝나면 반드시 되먹임한다.</strong> 등록(<code>kb_register_failure_bucket</code>) 또는 확인/반박<br>
+   (<code>kb_refine_failure_bucket</code>, <code>confirm=true/false</code>) 중 정확히 하나를 수행한다. 이게 없으면<br>
+   자가개선 루프가 끊기고 다음 세션이 처음부터 다시 분석해야 한다.</li>
+<li><strong>근거 없는 등록/확정을 금지한다.</strong> 실제로 관찰되지 않은 신호를 지어내지 않는다. 확신이 서지<br>
+   않으면 등록을 보류하거나 조건부/추정 수준으로만 보고한다. 등록할 때는 반드시 §4의<br>
+<code>evidence_ref</code>를 구체적으로 남긴다 — "확정된 내용"이라는 부서 방침을 지키는 유일한 기계적 장치다.</li>
+</ol>
+<hr>
+<h2 id="2-fb_domain">2. <code>fb_domain</code> — 내 플러그인의 도메인 값 정하기</h2>
+<p>등록/조회 시 항상 <code>fb_domain</code>을 채운다. 즉흥적으로 새 문자열을 짓지 않고, citec-kb의<br>
+<code>references/failure-bucket-domains.md</code>(부서 공용 어휘 목록)를 먼저 확인한다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>플러그인</th>
+<th>fb_domain</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>packet-capture-rca</td>
+<td><code>network</code></td>
+</tr>
+<tr>
+<td>pacemaker-tools</td>
+<td><code>cluster</code></td>
+</tr>
+<tr>
+<td>windows-tools</td>
+<td><code>windows</code></td>
+</tr>
+<tr>
+<td>(새 플러그인)</td>
+<td>목록에 없으면 신설 — 아래 절차</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>새 <code>fb_domain</code>이 필요한 경우:</strong><br>
+1. 정말 기존 값으로 충분하지 않은지 확인한다(예: "AD 복제 실패"를 <code>windows</code>와 별도로 나눌 필요가<br>
+   실제로 있는가, 아니면 <code>windows</code> 안에서 신호로 구분해도 충분한가).<br>
+2. <code>references/failure-bucket-domains.md</code>에 행을 추가하는 PR을 citec-kb 저장소에 낸다(코퍼스<br>
+   전역 <code>domain</code>/<code>area</code> 값에 매핑하는 <code>taxonomy.py</code>의 매핑 테이블도 함께—citec-kb 개발팀 몫이지만<br>
+   플러그인 개발자가 PR로 제안할 수 있다).<br>
+3. 등록 없이 새 값을 그냥 써버리면 citec-kb가 경고를 반환하도록 설계돼 있다(구버전이면 무시될 수<br>
+   있음) — 경고를 보면 오타인지 신설인지 먼저 확인한다.</p>
+<hr>
+<h2 id="3-phase">3. 이 스킬의 phase에 매핑 — 일반 템플릿</h2>
+<p>아래는 3단계(분석 전/중/후) 구조를 자기 플러그인의 phase 이름으로 바꿔 쓰면 되는 템플릿이다.<br>
+(<code>packet-capture-rca</code>의 phase 1/3/4/5/7 매핑은 <code>citec-kb-integration.md</code> 참고.)</p>
+<h3 id="3-1-1">3-1. 분석 착수 시점 — 1차 조회</h3>
+<pre><code>kb_match_failure_bucket(
+  observed_signals=[],                 # 아직 없으면 빈 배열
+  symptom=&quot;&lt;사용자가 보고한 증상 원문&gt;&quot;,
+  fb_domain=&quot;&lt;내 플러그인의 fb_domain&gt;&quot;
+)
+</code></pre>
+<p>결과가 있으면 <code>kb_get_failure_bucket(bucket_id=)</code>으로 판별/반증 신호 전문을 받아 분석 체크리스트로<br>
+삼는다. 결과가 부실하면:</p>
+<pre><code>kb_list_failure_buckets(fb_domain=...)
+  → kb_search(query=&quot;&lt;증상 키워드&gt;&quot;, section=&quot;failure_bucket&quot;)
+  → kb_similar_incident(symptom=..., product=...)
+</code></pre>
+<h3 id="3-2">3-2. 분석 진행 중 — 반복 재조회</h3>
+<p>원자료를 더 파고들며 새 신호(로그 이벤트, 타이밍, 플래그, 에러 코드 등)를 확인할 때마다:</p>
+<pre><code>kb_match_failure_bucket(
+  observed_signals=[...누적된 신호...],
+  symptom=&quot;...&quot;,
+  fb_domain=&quot;...&quot;
+)
+</code></pre>
+<p>응답의 <code>matched_signals</code>/<code>contradicted</code>를 함께 본다. <code>contradicted</code>가 뜬 버킷은 사실상 배제<br>
+대상이다. 이 재조회는 1회로 끝내지 않는다.</p>
+<h3 id="3-3">3-3. 분석 종료 시점 — 되먹임 (정확히 하나)</h3>
+<ul>
+<li><strong>완전히 새로운 패턴</strong> →</li>
+</ul>
+<p><code>kb_register_failure_bucket(
+    bucket_name="&lt;증상+원인 형태의 짧은 이름&gt;",
+    symptom="&lt;사용자/운영 관점 현상&gt;",
+    discriminating_signals=["&lt;관찰된 구체적 신호&gt;", ...],
+    counter_signals=["&lt;반증 신호&gt;", ...],
+    root_cause="&lt;근본 원인&gt;",
+    recommended_action="&lt;권장 조치&gt;",
+    fb_domain="&lt;내 플러그인의 fb_domain&gt;",
+    evidence_ref="&lt;원자료를 가리키는 구체적 포인터 — §4&gt;",
+    source_plugin="&lt;plugin-name&gt;@&lt;version&gt;"
+  )</code></p>
+<p>응답에 <code>possible_duplicate_of</code>가 포함돼 있으면, 등록은 이미 됐더라도 그 버킷을<br>
+<code>kb_get_failure_bucket</code>으로 열어 실제로 같은 패턴인지 확인한다. 같은 패턴이면 이번 등록 대신<br>
+<code>kb_refine_failure_bucket(confirm=true)</code>을 썼어야 한다는 뜻이니, 다음부터는 등록 전<br>
+<code>kb_match_failure_bucket</code>을 더 폭넓게(신호를 다양하게 바꿔가며) 먼저 돌린다.</p>
+<ul>
+<li><strong>기존 버킷이 맞았음</strong> → <code>kb_refine_failure_bucket(bucket_id=, confirm=true, add_signal=&lt;새로
+  확인된 신호, 있다면&gt;)</code></li>
+<li><strong>기존 버킷 후보였지만 아니었음</strong> → <code>kb_refine_failure_bucket(bucket_id=, confirm=false,
+  add_counter_signal=&lt;이 버킷을 배제시키는, 이번에 발견한 신호&gt;)</code></li>
+</ul>
+<hr>
+<h2 id="4-evidence_ref">4. <code>evidence_ref</code> 작성 기준 — "확정된 내용"의 유일한 게이트</h2>
+<p><code>evidence_ref</code>는 사람이 나중에 열어 독립적으로 확인할 수 있는 <strong>구체적 포인터</strong>여야 한다. 자유<br>
+서술("패킷에서 확인함" 등)은 거부 대상이다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>원자료</th>
+<th>형식 예시</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>지원 티켓</td>
+<td><code>CITECTS-2481</code></td>
+</tr>
+<tr>
+<td>Confluence 페이지</td>
+<td><code>confluence:2412784426</code></td>
+</tr>
+<tr>
+<td>패킷 캡처</td>
+<td><code>capture:2026-08-06-upload01.pcapng#frame=4821</code></td>
+</tr>
+<tr>
+<td>Windows 이벤트</td>
+<td><code>evtx:DC01-System.evtx#EventRecordID=88213</code></td>
+</tr>
+<tr>
+<td>Pacemaker/Corosync 로그</td>
+<td><code>log:node1/corosync.log#L4021-L4055</code></td>
+</tr>
+<tr>
+<td>SWIM 장애번호</td>
+<td><code>swim:INC00123456</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>이 필드가 없으면(또는 형식이 자유 서술이면) <strong>등록을 보류</strong>하고 사용자에게 "이 신호를 어떤 원자료<br>
+어느 지점에서 확인했는지" 되묻는다.</p>
+<hr>
+<h2 id="5-discriminating_signals-counter_signals">5. 좋은 discriminating_signals / counter_signals 작성 기준</h2>
+<ul>
+<li><strong>관찰 가능한 구체적 조건</strong>으로 쓴다. "타임아웃 문제" ❌ / "RST 직전 idle ≥ 60초" ✅ /<br>
+  "Event ID 1135 발생 후 5초 이내 1177 발생" ✅</li>
+<li><strong>측정 가능한 임계값·플래그·이벤트 ID 조합</strong>을 명시한다.</li>
+<li>counter_signals는 "이 패턴이 아님"이 아니라 <strong>왜 아닌지 판별 가능한 신호</strong>로 쓴다.</li>
+<li><code>bucket_name</code>은 "증상+원인" 형태로 짧게 쓴다.</li>
+<li><strong>신호 개수를 인위적으로 부풀리지 않는다.</strong> citec-kb의 매칭 스코어는 매칭 개수에 상한을 두고<br>
+  계산하므로(신호가 많다고 불리해지지는 않는다) 정확한 신호를 필요한 만큼만 쓴다 — 상세 배경은<br>
+  citec-kb 설계 문서 §3 참고.</li>
+</ul>
+<hr>
+<h2 id="6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</h2>
+<ul>
+<li>citec-kb 조회 없이 바로 분석을 시작하고 끝내는 것.</li>
+<li>분석 중 신호가 추가됐는데도 처음 조회 결과만으로 결론 내리는 것.</li>
+<li>분석 결과를 등록/확인/반박 중 아무것도 하지 않고 세션을 끝내는 것.</li>
+<li>원자료에서 실제로 확인되지 않은 신호를 <code>discriminating_signals</code>에 지어내서 넣는 것.</li>
+<li><code>evidence_ref</code> 없이(또는 자유 서술로) 등록하는 것.</li>
+<li><code>contradicted</code>가 뜬 버킷의 <code>recommended_action</code>을 검증 없이 그대로 적용하는 것.</li>
+<li>이미 존재하는 버킷과 사실상 동일한 패턴을 이름만 바꿔 중복 등록하는 것 — 먼저<br>
+<code>kb_match_failure_bucket</code>/<code>kb_list_failure_buckets(fb_domain=)</code>로 기존 버킷 유무를 반드시 확인.</li>
+<li><code>fb_domain</code>을 비우거나 즉흥적으로 새 문자열을 짓는 것 — §2 절차를 따른다.</li>
+<li>"유사 사례가 있었는지" 확인이나 패턴 등록/정제를 <code>jira-mcp</code>로 하는 것 — §0 참고.</li>
+</ul>
+<hr>
+<h2 id="7-referencescitec-kb-integrationmd">7. 새 플러그인용 스켈레톤 — <code>references/citec-kb-integration.md</code></h2>
+<p>새 플러그인 스킬을 만들 때, 아래 골격을 그 스킬의 <code>references/citec-kb-integration.md</code>로 복사해<br>
+자신의 phase 이름과 도메인 예시로 채운다. (<code>packet-capture-rca</code>의 것이 실제로 채워진 참고 예시다.)</p>
+<pre><code class="language-markdown"># citec-kb 연동 — failure-bucket 패턴 라이브러리 + 자가개선 루프
+
+wiki-mcp의 kb_* 도구가 세션에 있다면 이 워크플로는 선택이 아니라 필수다. fb_domain=&quot;&lt;이 플러그인의
+fb_domain&gt;&quot;을 항상 채운다.
+
+## 원칙
+(본 가이드 §1을 그대로 인용 또는 요약)
+
+## 이 스킬의 phase에 매핑
+- phase &lt;N&gt;(원자료 열기 전) — kb_match_failure_bucket(fb_domain=&quot;...&quot;, symptom=...)로 1차 조회
+- phase &lt;M&gt;(분석 중) — 새 신호 확인마다 kb_match_failure_bucket 재호출
+- phase &lt;P&gt;(보고 작성 후) — kb_register_failure_bucket 또는 kb_refine_failure_bucket 중 정확히 하나
+
+## 좋은 신호 작성 기준 / evidence_ref 형식
+(본 가이드 §4/§5에서 이 도메인에 맞는 예시로 구체화)
+
+## 하지 말아야 할 것
+(본 가이드 §6 그대로)
+</code></pre>
+<hr>
+<h2 id="8">8. 체크리스트 (요약)</h2>
+<ul>
+<li>☐ 분석 착수 전 <code>kb_match_failure_bucket(fb_domain=...)</code> (+ 필요 시 <code>kb_list_failure_buckets</code>,<br>
+<code>kb_search</code>, <code>kb_similar_incident</code>)</li>
+<li>☐ 새 신호를 확인할 때마다 <code>kb_match_failure_bucket</code> 재호출</li>
+<li>☐ 분석 종료 시 <code>kb_register_failure_bucket</code>(evidence_ref/fb_domain/source_plugin 포함) 또는<br>
+<code>kb_refine_failure_bucket</code>(confirm=true/false) 중 하나</li>
+<li>☐ <code>possible_duplicate_of</code> 응답이 오면 확인 후 필요 시 등록 대신 refine으로 정정</li>
+<li>☐ <code>fb_domain</code>이 <code>references/failure-bucket-domains.md</code>에 있는 값인지 확인 (새 값이면 §2 절차)</li>
+</ul>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

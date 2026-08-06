@@ -11,8 +11,27 @@ from app.db.models import FailureBucket
 from app.db.session import session_scope
 from app.failure_buckets.draft import bucket_draft, compute_confidence
 from app.failure_buckets.match import rank_buckets
+from app.taxonomy import _FB_DOMAIN_TO_CORPUS_DOMAIN
 
 logger = logging.getLogger("citec.failure_buckets")
+
+# Safety cap on match_buckets()'s SQL fetch — Python ranking runs over the
+# fetched rows, so this bounds worst-case latency as bucket volume grows
+# across plugins (see design doc §9).
+_MATCH_FETCH_LIMIT = 500
+
+
+def _known_fb_domains() -> frozenset[str]:
+    """fb_domain values documented in references/failure-bucket-domains.md.
+
+    references/ isn't copied into the API container image (see apps/api/Dockerfile),
+    so this can't read that file at runtime — instead it uses
+    app.taxonomy._FB_DOMAIN_TO_CORPUS_DOMAIN's keys, which both docs already
+    require to be updated in lockstep with failure-bucket-domains.md whenever a
+    new fb_domain is added (design doc §2/§5). Soft convention only: an
+    unlisted fb_domain is still accepted, just flagged with a warning.
+    """
+    return frozenset(_FB_DOMAIN_TO_CORPUS_DOMAIN.keys())
 
 
 def _to_dict(row: FailureBucket) -> dict[str, Any]:
@@ -20,7 +39,9 @@ def _to_dict(row: FailureBucket) -> dict[str, Any]:
         "id": row.id,
         "document_id": row.document_id,
         "bucket_name": row.bucket_name,
+        "fb_domain": row.fb_domain,
         "protocol": row.protocol,
+        "evidence_ref": row.evidence_ref,
         "symptom": row.symptom,
         "discriminating_signals": list(row.discriminating_signals or []),
         "counter_signals": list(row.counter_signals or []),
@@ -74,21 +95,36 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
     }
 
 
+_DUPLICATE_SCORE_THRESHOLD = 0.75
+
+
 def create_bucket(
     *,
     bucket_name: str,
+    fb_domain: str,
     symptom: str,
     discriminating_signals: list[str],
     root_cause: str,
     recommended_action: str,
+    evidence_ref: str,
     counter_signals: Optional[list[str]] = None,
     protocol: Optional[str] = None,
     created_by: Optional[str] = None,
 ) -> dict[str, Any]:
+    fb_domain = fb_domain.strip().lower()
+    dup_candidates = match_buckets(
+        observed_signals=discriminating_signals,
+        symptom=symptom,
+        fb_domain=fb_domain,
+        top_k=1,
+    )
+
     with session_scope() as session:
         row = FailureBucket(
             bucket_name=bucket_name.strip(),
+            fb_domain=fb_domain,
             protocol=(protocol or "").strip() or None,
+            evidence_ref=evidence_ref.strip(),
             symptom=symptom or "",
             discriminating_signals=list(discriminating_signals or []),
             counter_signals=list(counter_signals or []),
@@ -105,6 +141,21 @@ def create_bucket(
     if result is None:
         raise RuntimeError(f"failure_bucket {bucket_id} vanished after create")
     result["index"] = index
+
+    top_dup = dup_candidates[0] if dup_candidates else None
+    if top_dup and top_dup.get("confidence", 0.0) >= _DUPLICATE_SCORE_THRESHOLD:
+        result["possible_duplicate_of"] = {
+            "bucket_id": top_dup.get("bucket_id"),
+            "bucket_name": top_dup.get("bucket_name"),
+            "confidence": top_dup.get("confidence"),
+        }
+
+    if fb_domain not in _known_fb_domains():
+        result["fb_domain_warning"] = (
+            f"fb_domain='{fb_domain}'는 references/failure-bucket-domains.md에 없는 새 값입니다. "
+            "오타가 아니라면 문서에 추가해 주세요."
+        )
+
     return result
 
 
@@ -116,6 +167,7 @@ def get_bucket(bucket_id: str) -> Optional[dict[str, Any]]:
 
 def list_buckets(
     *,
+    fb_domain: Optional[str] = None,
     protocol: Optional[str] = None,
     min_confidence: float = 0.0,
     limit: int = 20,
@@ -125,6 +177,8 @@ def list_buckets(
     offset = max(0, int(offset))
     with session_scope() as session:
         stmt = select(FailureBucket).order_by(FailureBucket.created_at.desc())
+        if fb_domain:
+            stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
             stmt = stmt.where(FailureBucket.protocol == protocol)
         if min_confidence:
@@ -179,13 +233,17 @@ def match_buckets(
     *,
     observed_signals: list[str],
     symptom: str = "",
+    fb_domain: Optional[str] = None,
     protocol: Optional[str] = None,
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
     with session_scope() as session:
         stmt = select(FailureBucket)
+        if fb_domain:
+            stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
             stmt = stmt.where(FailureBucket.protocol == protocol)
+        stmt = stmt.limit(_MATCH_FETCH_LIMIT)
         rows = list(session.scalars(stmt).all())
         dicts = [_to_dict(r) for r in rows]
     return rank_buckets(observed_signals, symptom, dicts, top_k=top_k)

@@ -17,16 +17,20 @@ def compute_confidence(support_count: int, counter_count: int) -> float:
 def bucket_body_md(
     *,
     bucket_name: str,
+    fb_domain: str,
     protocol: str | None,
     symptom: str,
     discriminating_signals: list[str],
     counter_signals: list[str],
     root_cause: str,
     recommended_action: str,
+    evidence_ref: str,
 ) -> str:
     lines = [f"# [failure_bucket] {bucket_name}"]
+    lines.append(f"fb_domain: {fb_domain}")
     if protocol:
         lines.append(f"프로토콜: {protocol}")
+    lines.append(f"근거: {evidence_ref}")
     lines.append("")
     lines.append(f"증상: {symptom or '(미상)'}")
     lines.append("")
@@ -52,12 +56,14 @@ def bucket_draft(row: Any) -> DocumentDraft:
     """
     body = bucket_body_md(
         bucket_name=row.bucket_name,
+        fb_domain=row.fb_domain,
         protocol=row.protocol,
         symptom=row.symptom,
         discriminating_signals=list(row.discriminating_signals or []),
         counter_signals=list(row.counter_signals or []),
         root_cause=row.root_cause,
         recommended_action=row.recommended_action,
+        evidence_ref=row.evidence_ref,
     )
     return DocumentDraft(
         source_type="failure_bucket",
@@ -66,7 +72,9 @@ def bucket_draft(row: Any) -> DocumentDraft:
         body_md=body,
         metadata={
             "bucket_id": row.id,
+            "fb_domain": row.fb_domain,
             "protocol": row.protocol,
+            "evidence_ref": row.evidence_ref,
             "discriminating_signals": list(row.discriminating_signals or []),
             "counter_signals": list(row.counter_signals or []),
             "root_cause": row.root_cause,
@@ -75,7 +83,7 @@ def bucket_draft(row: Any) -> DocumentDraft:
         evidence_grade="machine",
         source_uri=f"failure_bucket://{row.id}",
         # domain is intentionally left unset here: app.taxonomy.infer_domain has a
-        # dedicated `source_type == "failure_bucket"` branch (from metadata["protocol"])
+        # dedicated `source_type == "failure_bucket"` branch (from metadata["fb_domain"])
         # that the ingest pipeline (enrich_draft_fields) calls via `domain or infer_domain(...)`.
         # Setting a truthy domain here would shadow that branch and duplicate its logic.
         domain=None,

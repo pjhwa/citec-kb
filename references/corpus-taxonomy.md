@@ -173,9 +173,19 @@
 
 기존 6개 `source_type`과 달리 `failure_bucket`은 `data/raw/`의 파일을 스캔해 적재하는 것이
 아니라, `kb_register_failure_bucket` MCP 도구(→ `POST /v1/failure-buckets`)를 통해
-실시간으로 등재된다. 필드: `bucket_name`, `protocol`, `symptom`, `discriminating_signals`,
-`counter_signals`, `root_cause`, `recommended_action`, `confidence`(self-improving,
-`kb_refine_failure_bucket` 호출로 갱신). 설계 근거: `docs/superpowers/specs/2026-07-29-failure-bucket-design.md`.
+실시간으로 등재된다. 필드: `bucket_name`, `fb_domain`, `protocol`, `evidence_ref`, `symptom`,
+`discriminating_signals`, `counter_signals`, `root_cause`, `recommended_action`,
+`confidence`(self-improving, `kb_refine_failure_bucket` 호출로 갱신), `created_by`(등록/정제
+플러그인, `source_plugin` 파라미터로 전달됨). 설계 근거: `docs/superpowers/specs/2026-07-29-failure-bucket-design.md`,
+다중 플러그인 확장은 `docs/superpowers/specs/2026-08-06-failure-bucket-multi-plugin-design.md`.
+
+`fb_domain`은 `failure_bucket` 전용 파셋(플러그인/진단 영역 단위 — `network`/`cluster`/`windows`
+등, 정본은 `references/failure-bucket-domains.md`)이며 코퍼스 전체가 공유하는 7개 고정 어휘
+`domain`(`os`/`dbms`/`storage`/`network`/`virtualization`/`middleware`/`cloud`)과는 **별도
+축**이다. `apps/api/app/taxonomy.py`의 `_FB_DOMAIN_TO_CORPUS_DOMAIN` 매핑 테이블이
+`fb_domain`을 그 7개 어휘 중 하나로 변환해 `Document.domain`에 넣으므로, `kb_search(area=)`처럼
+코퍼스 전역을 훑는 필터는 항상 7개 어휘로만 동작하고, `fb_domain`은 `kb_list_failure_buckets`/
+`kb_match_failure_bucket`/운영 대시보드에서만 별도로 쓰인다.
 
 ---
 
