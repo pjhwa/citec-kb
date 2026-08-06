@@ -64,6 +64,12 @@ SQL
     cat "${BUNDLE_DIR}/documents.csv"
     echo '\.'
     cat <<'SQL'
+-- 이 정리(cleanup)는 documents.csv가 있을 때만 실행된다. 안전한 이유: 이 레포의 유일한
+-- chunks/document_sections 쓰기 경로는 apps/api/app/ingest/pipeline.py의
+-- _upsert_document 뿐이고, 거기서는 documents.content_hash가 바뀔 때만 섹션/청크를
+-- 재생성한다 — 즉 documents 행이 안 바뀌었는데 sections/chunks만 바뀌는 경우는 현재
+-- 코드베이스에 존재하지 않는다. 이 가정이 깨지면(예: 문서 내용과 무관하게 재청킹하는 새
+-- 경로가 생기면) 아래 정리도 document_sections.csv/chunks.csv 단독 존재 시로 넓혀야 한다.
 UPDATE chunks SET is_active = false
   WHERE document_id IN (SELECT id FROM stg_documents)
     AND document_id IN (SELECT id FROM documents);
