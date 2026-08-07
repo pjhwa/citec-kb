@@ -225,6 +225,7 @@ def refine_bucket(
     confirm: bool = True,
 ) -> dict[str, Any]:
     signals_changed = False
+    environment_changed = False
     with session_scope() as session:
         row = session.get(FailureBucket, bucket_id)
         if not row:
@@ -238,9 +239,15 @@ def refine_bucket(
             signals_changed = True
         # environment=None (the default) means "leave untouched" — same convention as
         # add_signal/add_counter_signal. Not part of bucket_draft()'s content_hash inputs
-        # (see draft.py), so setting it never needs a re-embed/re-index like signals do.
+        # (see draft.py), so a change here never needs a re-chunk/re-embed — but it DOES
+        # need _index_bucket() re-run to push the new value onto the mirrored Document row
+        # (bucket_draft() passes environment straight through; the upsert's "same hash"
+        # path patches Document.environment without touching chunks, so this stays cheap).
         if environment is not None:
-            row.environment = environment.strip().lower() or None
+            new_environment = environment.strip().lower() or None
+            if new_environment != row.environment:
+                row.environment = new_environment
+                environment_changed = True
 
         if confirm:
             row.support_count = int(row.support_count or 0) + 1
@@ -249,7 +256,7 @@ def refine_bucket(
         row.confidence = compute_confidence(row.support_count, row.counter_count)
         session.flush()
 
-    index = _index_bucket(bucket_id) if signals_changed else None
+    index = _index_bucket(bucket_id) if (signals_changed or environment_changed) else None
     result = get_bucket(bucket_id)
     if result is None:
         raise RuntimeError(f"failure_bucket {bucket_id} vanished after refine")

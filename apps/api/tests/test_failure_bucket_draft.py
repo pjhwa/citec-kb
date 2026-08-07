@@ -48,6 +48,7 @@ def _make_row(**overrides):
         confidence=0.5,
         support_count=0,
         counter_count=0,
+        environment=None,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -63,3 +64,19 @@ def test_bucket_draft_hash_stable_when_only_counts_change():
     assert draft_a.external_id == "FB-abcdef12-3456-7890-abcd-ef1234567890"
     assert draft_a.domain is None
     assert draft_a.evidence_grade == "machine"
+
+
+def test_bucket_draft_environment_passthrough():
+    row = _make_row(environment="onprem")
+    draft = bucket_draft(row)
+    assert draft.environment == "onprem"
+
+
+def test_bucket_draft_hash_stable_when_only_environment_changes():
+    row_a = _make_row(environment=None)
+    row_b = _make_row(environment="hybrid")
+    draft_a = bucket_draft(row_a)
+    draft_b = bucket_draft(row_b)
+    assert draft_a.content_hash == draft_b.content_hash
+    assert draft_a.environment is None
+    assert draft_b.environment == "hybrid"

@@ -87,4 +87,10 @@ def bucket_draft(row: Any) -> DocumentDraft:
         # that the ingest pipeline (enrich_draft_fields) calls via `domain or infer_domain(...)`.
         # Setting a truthy domain here would shadow that branch and duplicate its logic.
         domain=None,
+        # Unlike domain, environment has no dedicated taxonomy branch to derive it from
+        # metadata — pass the structured column straight through. enrich_draft_fields()'s
+        # `environment or infer_environment(...)` (taxonomy.py) only falls back to regex
+        # inference when this is falsy, so an unset bucket (row.environment is None) keeps
+        # today's behavior unchanged.
+        environment=row.environment,
     ).finalize()
