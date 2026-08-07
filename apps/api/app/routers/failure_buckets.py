@@ -30,6 +30,7 @@ class FailureBucketCreate(BaseModel):
     recommended_action: str = Field(default="", max_length=4000)
     evidence_ref: str = Field(..., min_length=1)
     protocol: Optional[str] = Field(default=None, max_length=32)
+    environment: Optional[str] = Field(default=None, max_length=16)
     created_by: Optional[str] = None
 
 
@@ -44,6 +45,7 @@ class FailureBucketMatch(BaseModel):
     symptom: str = Field(default="", max_length=4000)
     fb_domain: Optional[str] = Field(default=None, max_length=32)
     protocol: Optional[str] = Field(default=None, max_length=32)
+    environment: Optional[str] = Field(default=None, max_length=16)
     top_k: int = Field(default=5, ge=1, le=20)
 
 
@@ -66,6 +68,7 @@ def post_failure_bucket(
         recommended_action=body.recommended_action,
         evidence_ref=body.evidence_ref,
         protocol=body.protocol,
+        environment=body.environment,
         created_by=body.created_by or principal.name,
     )
 
@@ -74,12 +77,18 @@ def post_failure_bucket(
 def get_failure_buckets(
     fb_domain: Optional[str] = Query(None),
     protocol: Optional[str] = Query(None),
+    environment: Optional[str] = Query(None),
     min_confidence: float = Query(0.0, ge=0.0, le=1.0),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> dict[str, Any]:
     return list_buckets(
-        fb_domain=fb_domain, protocol=protocol, min_confidence=min_confidence, limit=limit, offset=offset
+        fb_domain=fb_domain,
+        protocol=protocol,
+        environment=environment,
+        min_confidence=min_confidence,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -116,6 +125,7 @@ def post_match_failure_buckets(body: FailureBucketMatch) -> dict[str, Any]:
         symptom=body.symptom,
         fb_domain=body.fb_domain,
         protocol=body.protocol,
+        environment=body.environment,
         top_k=body.top_k,
     )
     return {"results": results, "total": len(results)}

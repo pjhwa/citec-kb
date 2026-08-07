@@ -359,6 +359,7 @@ class FailureBucket(Base):
         Index("ix_failure_buckets_bucket_name", "bucket_name"),
         Index("ix_failure_buckets_fb_domain", "fb_domain"),
         Index("ix_failure_buckets_fb_domain_protocol", "fb_domain", "protocol"),
+        Index("ix_failure_buckets_environment", "environment"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
@@ -368,6 +369,11 @@ class FailureBucket(Base):
     bucket_name: Mapped[str] = mapped_column(String(256), nullable=False)
     fb_domain: Mapped[str] = mapped_column(String(32), nullable=False)
     protocol: Mapped[Optional[str]] = mapped_column(String(32))
+    # csp | msp | onprem | hybrid — orthogonal to fb_domain (diagnostic area) and
+    # protocol (transport sub-type). Nullable: no reliable source to backfill
+    # pre-existing rows (see 20260807_0005 migration note). A bucket with
+    # environment=None applies to any environment (not yet confirmed either way).
+    environment: Mapped[Optional[str]] = mapped_column(String(16))
     evidence_ref: Mapped[str] = mapped_column(Text, nullable=False)
     symptom: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     discriminating_signals: Mapped[list[str]] = mapped_column(

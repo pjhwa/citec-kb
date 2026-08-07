@@ -40,6 +40,11 @@
 
 - 값 형식: 소문자, 언더스코어 구분 없이 단일 단어 권장(`network`, `cluster`, `windows`). 복합 개념이
   필요하면 하이픈보다 신호 쪽에서 구분하는 것을 먼저 검토한다(위 1번).
+- **`environment`(csp/msp/onprem/hybrid)는 `fb_domain`과 다른 축이다** — `fb_domain`이 "어느
+  진단 영역인가"라면 `environment`는 "그 패턴이 어느 배포 환경에서 성립하는가"다. 이 표에 새 값을
+  추가하는 절차와 무관하며, 모든 `fb_domain`이 공통으로 쓰는 선택 필드다(`docs/FAILURE_BUCKET_PLUGIN_GUIDE.md`
+  §4-1 참고). `environment`에는 이 표와 같은 별도 어휘 표가 없다 — `references/corpus-taxonomy.md`가
+  이미 코퍼스 전역에서 쓰는 4개 값을 그대로 재사용한다.
 - 이 표는 `docs/FAILURE_BUCKET_PLUGIN_GUIDE.md`(플러그인 개발자용 지침)와
   `docs/superpowers/specs/2026-08-06-failure-bucket-multi-plugin-design.md`(citec-kb 설계 지침)
   양쪽에서 동일하게 참조한다 — 세 문서가 서로 다른 도메인 목록을 갖지 않도록 이 파일만 갱신한다.

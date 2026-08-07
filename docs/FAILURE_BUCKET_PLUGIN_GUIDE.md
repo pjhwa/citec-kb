@@ -154,6 +154,19 @@ kb_match_failure_bucket(
 
 ---
 
+## 4-1. `environment` — 모든 플러그인 공통 선택 필드
+
+`fb_domain`(진단 영역)과 별개로, `kb_register_failure_bucket`/`kb_match_failure_bucket`/
+`kb_list_failure_buckets`는 공통으로 `environment: csp|msp|onprem|hybrid`를 받는다. 이 패턴이
+특정 환경에서만 성립한다고 **원자료로 확인됐을 때만** 채운다(원칙 5와 동일하게 근거 없는 값은
+금지) — 예: `pacemaker-tools`가 "온프레미스 물리 노드에서만 나타나는 STONITH 오동작"을 등록한다면
+`environment="onprem"`. `kb_match_failure_bucket(environment=...)`로 조회하면 다른 환경으로 명시
+태깅된 버킷은 후보에서 제외되고, `environment`가 비어 있는(아직 미확인) 버킷은 계속 후보에
+남는다 — 즉 이 필드를 채우지 않아도 기존 동작은 그대로다. 값 어휘는 `references/corpus-taxonomy.md`
+가 코퍼스 전역에서 이미 쓰는 4개 값과 동일하다.
+
+---
+
 ## 5. 좋은 discriminating_signals / counter_signals 작성 기준
 
 - **관찰 가능한 구체적 조건**으로 쓴다. "타임아웃 문제" ❌ / "RST 직전 idle ≥ 60초" ✅ /

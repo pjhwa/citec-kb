@@ -1027,12 +1027,15 @@ async def kb_register_failure_bucket(
     evidence_ref: str,
     counter_signals: list[str] | None = None,
     protocol: str = "",
+    environment: str = "",
     source_plugin: str = "",
 ) -> str:
     """새로운 실패 버킷(장애 패턴)을 등록한다. 즉시 검색에 노출된다.
     예: bucket_name='LB idle-timeout RST', discriminating_signals=['RST 직전 idle 60초 이상'],
     fb_domain='network', evidence_ref='capture:2026-08-06-upload01.pcapng#frame=4821'
-    """
+    environment: csp|msp|onprem|hybrid — 이 패턴이 특정 환경에서만 성립하면 채운다(예: 'hybrid'는
+    서비스 메시/쿠버네티스처럼 온프레미스·클라우드 어디서나 나타나는 복잡 토폴로지). 확신이 없으면
+    비워둔다 — 비워두면 환경 무관 패턴으로 취급되어 모든 environment 필터에 계속 후보로 노출된다."""
     if not bucket_name.strip():
         return "오류: bucket_name 이 비어 있습니다."
     if not discriminating_signals:
@@ -1057,6 +1060,7 @@ async def kb_register_failure_bucket(
         "recommended_action": recommended_action or "",
         "evidence_ref": evidence_ref.strip(),
         "protocol": protocol.strip() or None,
+        "environment": environment.strip() or None,
         "created_by": source_plugin.strip() or None,
     }
     try:
@@ -1079,6 +1083,9 @@ async def kb_register_failure_bucket(
     warning = data.get("fb_domain_warning")
     if warning:
         lines.append(f"경고: {warning}")
+    ev_warning = data.get("evidence_ref_warning")
+    if ev_warning:
+        lines.append(f"경고: {ev_warning}")
     return "\n".join(lines)
 
 
@@ -1120,10 +1127,13 @@ async def kb_match_failure_bucket(
     symptom: str = "",
     fb_domain: str = "",
     protocol: str = "",
+    environment: str = "",
     top_k: int = 5,
 ) -> str:
     """관찰된 신호로 후보 실패 버킷을 순위화한다.
-    예: observed_signals=['RST 직전 idle 62초'], symptom='다운로드 중 연결 끓김', fb_domain='network'"""
+    예: observed_signals=['RST 직전 idle 62초'], symptom='다운로드 중 연결 끓김', fb_domain='network'
+    environment(csp|msp|onprem|hybrid)를 채우면 다른 환경 전용으로 태깅된 버킷은 후보에서 제외된다
+    (environment 미태깅 버킷은 계속 후보에 남는다)."""
     if not observed_signals and not symptom.strip():
         return "오류: observed_signals 또는 symptom 중 하나는 필요합니다."
     body: dict[str, Any] = {
@@ -1135,6 +1145,8 @@ async def kb_match_failure_bucket(
         body["fb_domain"] = fb_domain.strip()
     if protocol.strip():
         body["protocol"] = protocol.strip()
+    if environment.strip():
+        body["environment"] = environment.strip()
     try:
         async with _client() as client:
             resp = await client.post("/v1/failure-buckets/match", json=body)
@@ -1162,15 +1174,19 @@ async def kb_match_failure_bucket(
 async def kb_list_failure_buckets(
     fb_domain: str = "",
     protocol: str = "",
+    environment: str = "",
     min_confidence: float = 0.0,
     limit: int = 20,
 ) -> str:
-    """등록된 실패 버킷 목록. fb_domain 예: network|cluster|windows, protocol 예: TCP|TLS|HTTP"""
+    """등록된 실패 버킷 목록. fb_domain 예: network|cluster|windows, protocol 예: TCP|TLS|HTTP,
+    environment 예: csp|msp|onprem|hybrid"""
     params: dict[str, Any] = {"limit": min(max(limit, 1), 200), "min_confidence": min_confidence}
     if fb_domain.strip():
         params["fb_domain"] = fb_domain.strip()
     if protocol.strip():
         params["protocol"] = protocol.strip()
+    if environment.strip():
+        params["environment"] = environment.strip()
     try:
         async with _client() as client:
             resp = await client.get("/v1/failure-buckets", params=params)
@@ -1185,7 +1201,8 @@ async def kb_list_failure_buckets(
             continue
         lines.append(
             f"- {it.get('bucket_name')} (id={it.get('id')}) fb_domain={it.get('fb_domain')} "
-            f"protocol={it.get('protocol')} confidence={it.get('confidence')}"
+            f"protocol={it.get('protocol')} environment={it.get('environment')} "
+            f"confidence={it.get('confidence')}"
         )
     if not items:
         lines.append("(결과 없음)")
@@ -1210,6 +1227,7 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
     return (
         f"# {data.get('bucket_name')} (id={data.get('id')})\n"
         f"fb_domain={data.get('fb_domain')} protocol={data.get('protocol')} "
+        f"environment={data.get('environment')} "
         f"confidence={data.get('confidence')} "
         f"support={data.get('support_count')} counter={data.get('counter_count')}\n"
         f"evidence_ref={data.get('evidence_ref')} created_by={data.get('created_by')}\n\n"

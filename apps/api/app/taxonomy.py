@@ -10,6 +10,14 @@ _ENV_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bSCP\b|삼성클라우드|SKE|PaaS", re.I), "csp"),
     (re.compile(r"온프레|on-?prem|베어메탈|IDC", re.I), "onprem"),
     (re.compile(r"\bMSP\b|운영대행", re.I), "msp"),
+    # Service-mesh / k8s topologies span csp and onprem alike (OpenShift, etc.),
+    # so they don't pin csp/onprem/msp by themselves — "hybrid" flags the
+    # topology complexity instead. This is a fallback for free-text inference
+    # only; failure_bucket registration should prefer the explicit `environment`
+    # parameter (see packet-capture-rca_개선지침_및_citec-kb_연동분석.md §B-1)
+    # over relying on this regex to infer it after the fact.
+    (re.compile(r"서비스\s*메시|service\s*mesh|Istio|Linkerd|사이드카|sidecar|mTLS", re.I), "hybrid"),
+    (re.compile(r"쿠버네티스|Kubernetes|\bk8s\b|파드\s*IP|ClusterIP", re.I), "hybrid"),
 ]
 
 # failure_bucket's fb_domain facet (references/failure-bucket-domains.md is the

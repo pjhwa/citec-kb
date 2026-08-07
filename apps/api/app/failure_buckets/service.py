@@ -41,6 +41,7 @@ def _to_dict(row: FailureBucket) -> dict[str, Any]:
         "bucket_name": row.bucket_name,
         "fb_domain": row.fb_domain,
         "protocol": row.protocol,
+        "environment": row.environment,
         "evidence_ref": row.evidence_ref,
         "symptom": row.symptom,
         "discriminating_signals": list(row.discriminating_signals or []),
@@ -97,6 +98,13 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
 
 _DUPLICATE_SCORE_THRESHOLD = 0.75
 
+# evidence_ref soft-format check (warning only, not a rejection — see
+# multi-plugin design doc §11 "운영 마찰을 줄이기 위한 의도적 선택" and the
+# analysis doc §B-3: kept as a warning because retroactively rejecting the
+# existing legacy:pre-migration rows would be a breaking change, and because
+# new prefixes will legitimately appear as new plugins register buckets).
+_EVIDENCE_REF_PREFIXES = ("capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:")
+
 
 def create_bucket(
     *,
@@ -109,13 +117,16 @@ def create_bucket(
     evidence_ref: str,
     counter_signals: Optional[list[str]] = None,
     protocol: Optional[str] = None,
+    environment: Optional[str] = None,
     created_by: Optional[str] = None,
 ) -> dict[str, Any]:
     fb_domain = fb_domain.strip().lower()
+    environment = (environment or "").strip().lower() or None
     dup_candidates = match_buckets(
         observed_signals=discriminating_signals,
         symptom=symptom,
         fb_domain=fb_domain,
+        environment=environment,
         top_k=1,
     )
 
@@ -124,6 +135,7 @@ def create_bucket(
             bucket_name=bucket_name.strip(),
             fb_domain=fb_domain,
             protocol=(protocol or "").strip() or None,
+            environment=environment,
             evidence_ref=evidence_ref.strip(),
             symptom=symptom or "",
             discriminating_signals=list(discriminating_signals or []),
@@ -156,6 +168,14 @@ def create_bucket(
             "오타가 아니라면 문서에 추가해 주세요."
         )
 
+    ref_check = evidence_ref.strip().lower()
+    if not ref_check.startswith(_EVIDENCE_REF_PREFIXES):
+        result["evidence_ref_warning"] = (
+            f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
+            f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
+            "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
+        )
+
     return result
 
 
@@ -169,6 +189,7 @@ def list_buckets(
     *,
     fb_domain: Optional[str] = None,
     protocol: Optional[str] = None,
+    environment: Optional[str] = None,
     min_confidence: float = 0.0,
     limit: int = 20,
     offset: int = 0,
@@ -181,6 +202,8 @@ def list_buckets(
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
             stmt = stmt.where(FailureBucket.protocol == protocol)
+        if environment:
+            stmt = stmt.where(FailureBucket.environment == environment)
         if min_confidence:
             stmt = stmt.where(FailureBucket.confidence >= min_confidence)
         total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
@@ -235,6 +258,7 @@ def match_buckets(
     symptom: str = "",
     fb_domain: Optional[str] = None,
     protocol: Optional[str] = None,
+    environment: Optional[str] = None,
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
     with session_scope() as session:
@@ -243,6 +267,16 @@ def match_buckets(
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
             stmt = stmt.where(FailureBucket.protocol == protocol)
+        if environment:
+            # Hard filter, not a score input (see analysis doc §B-1): a bucket
+            # tagged for a different environment shouldn't surface even at low
+            # confidence, since applying a pattern to the wrong topology is
+            # exactly the failure mode this facet exists to prevent. A bucket
+            # with environment=None (not yet confirmed either way) is treated
+            # as environment-agnostic and still matches any filter.
+            stmt = stmt.where(
+                (FailureBucket.environment == environment) | (FailureBucket.environment.is_(None))
+            )
         stmt = stmt.limit(_MATCH_FETCH_LIMIT)
         rows = list(session.scalars(stmt).all())
         dicts = [_to_dict(r) for r in rows]

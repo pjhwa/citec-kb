@@ -83,6 +83,7 @@ async def main() -> int:
         fb_domain="network",
         evidence_ref=f"smoke:{os.getpid()}",
         protocol="TCP",
+        environment="onprem",
         source_plugin="test_smoke@0",
     )
     check("kb_register_failure_bucket", not fb_reg.startswith("오류:"), fb_reg[:200])
@@ -96,17 +97,54 @@ async def main() -> int:
         fb_get = await server.kb_get_failure_bucket(fb_id)
         check("kb_get_failure_bucket", fb_name in fb_get, fb_get[:200])
         check("kb_get_failure_bucket has fb_domain", "fb_domain=network" in fb_get, fb_get[:200])
+        check("kb_get_failure_bucket has environment", "environment=onprem" in fb_get, fb_get[:200])
 
         fb_match = await server.kb_match_failure_bucket(observed_signals=[fb_signal], fb_domain="network")
         check("kb_match_failure_bucket finds it", fb_id in fb_match, fb_match[:300])
+
+        fb_match_env_hit = await server.kb_match_failure_bucket(
+            observed_signals=[fb_signal], fb_domain="network", environment="onprem"
+        )
+        check(
+            "kb_match_failure_bucket(environment=matching) still finds it",
+            fb_id in fb_match_env_hit,
+            fb_match_env_hit[:300],
+        )
+
+        fb_match_env_miss = await server.kb_match_failure_bucket(
+            observed_signals=[fb_signal], fb_domain="network", environment="csp"
+        )
+        check(
+            "kb_match_failure_bucket(environment=mismatched) excludes it",
+            fb_id not in fb_match_env_miss,
+            fb_match_env_miss[:300],
+        )
 
         fb_refine = await server.kb_refine_failure_bucket(fb_id, confirm=True)
         check("kb_refine_failure_bucket", "confidence=" in fb_refine, fb_refine[:200])
     else:
         check("kb_register_failure_bucket returned id", False, fb_reg)
 
-    fb_list = await server.kb_list_failure_buckets(fb_domain="network", protocol="TCP", limit=50)
-    check("kb_list_failure_buckets", not fb_list.startswith("오류:"), fb_list[:200])
+    fb_list = await server.kb_list_failure_buckets(
+        fb_domain="network", protocol="TCP", environment="onprem", limit=50
+    )
+    check("kb_list_failure_buckets(environment=)", not fb_list.startswith("오류:"), fb_list[:200])
+
+    fb_bad_evidence = await server.kb_register_failure_bucket(
+        bucket_name=f"SMOKE-{os.getpid()}-bad-evidence-ref",
+        symptom="스모크 테스트용 자유서술 evidence_ref",
+        discriminating_signals=[f"스모크 신호 {os.getpid()}-2"],
+        root_cause="스모크 테스트",
+        recommended_action="없음",
+        fb_domain="network",
+        evidence_ref="확인함",
+        source_plugin="test_smoke@0",
+    )
+    check(
+        "kb_register_failure_bucket warns on free-text evidence_ref",
+        not fb_bad_evidence.startswith("오류:") and "경고:" in fb_bad_evidence,
+        fb_bad_evidence[:300],
+    )
 
     fb_missing_domain = await server.kb_register_failure_bucket(
         bucket_name="SMOKE-missing-fb-domain",
