@@ -857,11 +857,16 @@ async def kb_tools_help() -> str:
   kb_capacity_estimate(period_days=, basis=)
 
 [실패 버킷 · 다중 플러그인 진단 지식(network/cluster/windows 등)]
-  kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, source_plugin=)
-  kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)
-  kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=)
-  kb_list_failure_buckets(fb_domain=, protocol=, min_confidence=)
+  kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)
+  kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)
+  kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)
+  kb_list_failure_buckets(fb_domain=, protocol=, environment=, min_confidence=)
   kb_get_failure_bucket(bucket_id=)
+                  environment: csp|msp|onprem|hybrid — fb_domain/protocol과 직교하는 별도 축.
+                  캡처/로그로 실제 확인됐을 때만 채운다(근거 없는 값 금지). 미지정 시 기존
+                  동작 그대로(등록은 environment=null, 매칭/목록은 필터 없음, refine은 기존
+                  값 유지). match/list에서 다른 값으로 태깅된 버킷은 후보에서 제외되고,
+                  environment가 비어있는(미확인) 버킷은 계속 후보에 남는다.
 
 [Confluence draw.io 다이어그램]
   kb_confluence_find_pages(space_key=, title=)    공간명으로 페이지 검색 (page_id 모를 때 먼저 사용)

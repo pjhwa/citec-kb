@@ -184,6 +184,28 @@ async def main() -> int:
 
     help_t = await server.kb_tools_help()
     check("kb_tools_help", "kb_list_tickets" in help_t, help_t[:100])
+    # Regression guard: kb_tools_help() is a hand-written static string, not
+    # generated from the real signatures — it drifted once already (missing
+    # `environment=` after B-1 added it to 4 of the 5 failure_bucket tools).
+    # This check exists to catch the next such drift, not just this one.
+    import inspect
+
+    for fn_name in (
+        "kb_register_failure_bucket",
+        "kb_match_failure_bucket",
+        "kb_list_failure_buckets",
+        "kb_refine_failure_bucket",
+    ):
+        fn = getattr(server, fn_name)
+        assert "environment" in inspect.signature(fn).parameters, (
+            f"{fn_name} lost its environment= param — update this assertion "
+            "(and check kb_tools_help() is still accurate) if that's intentional"
+        )
+        check(
+            f"kb_tools_help() documents {fn_name}(environment=)",
+            f"{fn_name}(" in help_t and "environment=" in help_t.split(f"{fn_name}(")[1].split(")")[0],
+            help_t[:800],
+        )
 
     cd = await server.kb_confluence_list_diagrams("0")
     check(
