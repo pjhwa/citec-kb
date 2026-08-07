@@ -122,6 +122,27 @@ async def main() -> int:
 
         fb_refine = await server.kb_refine_failure_bucket(fb_id, confirm=True)
         check("kb_refine_failure_bucket", "confidence=" in fb_refine, fb_refine[:200])
+
+        fb_refine_env = await server.kb_refine_failure_bucket(fb_id, environment="csp", confirm=True)
+        check(
+            "kb_refine_failure_bucket(environment=) sets it",
+            "environment=csp" in fb_refine_env,
+            fb_refine_env[:200],
+        )
+
+        fb_get_after_env = await server.kb_get_failure_bucket(fb_id)
+        check(
+            "kb_get_failure_bucket reflects refined environment",
+            "environment=csp" in fb_get_after_env,
+            fb_get_after_env[:200],
+        )
+
+        fb_refine_no_env = await server.kb_refine_failure_bucket(fb_id, confirm=True)
+        check(
+            "kb_refine_failure_bucket without environment= leaves it untouched",
+            "environment=csp" in fb_refine_no_env,
+            fb_refine_no_env[:200],
+        )
     else:
         check("kb_register_failure_bucket returned id", False, fb_reg)
 

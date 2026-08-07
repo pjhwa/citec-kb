@@ -1094,10 +1094,14 @@ async def kb_refine_failure_bucket(
     bucket_id: str,
     add_signal: str = "",
     add_counter_signal: str = "",
+    environment: str = "",
     confirm: bool = True,
 ) -> str:
     """실패 버킷을 정제한다 — 신호 추가 및 확인(confirm=True)/반박(confirm=False) 기록.
-    신뢰도(confidence)가 자동 재계산된다."""
+    신뢰도(confidence)가 자동 재계산된다.
+    environment: csp|msp|onprem|hybrid — 기존 버킷에 environment가 비어있었거나 잘못 태깅됐음을
+    이번에 확인했을 때 채운다(덮어씀). 비워두면(기본값) 기존 environment는 그대로 유지된다 — 이
+    호출과 무관한 값을 실수로 지우지 않는다."""
     bucket_id = (bucket_id or "").strip()
     if not bucket_id:
         return "오류: bucket_id 가 비어 있습니다."
@@ -1106,6 +1110,8 @@ async def kb_refine_failure_bucket(
         body["add_signal"] = add_signal.strip()
     if add_counter_signal.strip():
         body["add_counter_signal"] = add_counter_signal.strip()
+    if environment.strip():
+        body["environment"] = environment.strip()
     try:
         async with _client() as client:
             resp = await client.post(f"/v1/failure-buckets/{bucket_id}/refine", json=body)
@@ -1116,7 +1122,8 @@ async def kb_refine_failure_bucket(
     except httpx.HTTPError as e:
         return _err(e)
     return (
-        f"정제됨: {data.get('bucket_name')} confidence={data.get('confidence')} "
+        f"정제됨: {data.get('bucket_name')} environment={data.get('environment')} "
+        f"confidence={data.get('confidence')} "
         f"support={data.get('support_count')} counter={data.get('counter_count')}"
     )
 

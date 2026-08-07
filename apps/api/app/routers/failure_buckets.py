@@ -37,6 +37,7 @@ class FailureBucketCreate(BaseModel):
 class FailureBucketRefine(BaseModel):
     add_signal: Optional[str] = None
     add_counter_signal: Optional[str] = None
+    environment: Optional[str] = Field(default=None, max_length=16)
     confirm: bool = True
 
 
@@ -112,6 +113,7 @@ def post_refine_failure_bucket(
             bucket_id,
             add_signal=body.add_signal,
             add_counter_signal=body.add_counter_signal,
+            environment=body.environment,
             confirm=body.confirm,
         )
     except KeyError:

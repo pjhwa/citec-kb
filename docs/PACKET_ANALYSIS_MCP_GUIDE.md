@@ -42,7 +42,7 @@
 | `kb_search(query=, section="failure_bucket", area=)` | 버킷 이름·증상·조치 텍스트에 대한 하이브리드 검색 | 정확한 신호 문구를 모를 때 |
 | `kb_similar_incident(symptom=, product=, environment=)` | 과거 지원이력(장애 티켓) 중 유사 사례 | 패턴이 아니라 특정 사고 사례가 필요할 때 |
 | `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain="network", evidence_ref=, counter_signals=, protocol=, environment=, source_plugin="packet-capture-rca@<version>")` | 신규 패턴 등록 (즉시 검색 노출). `fb_domain`/`evidence_ref` 필수, `environment`는 선택 | 분석 후 — 새 패턴 확정 시 |
-| `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)` | 신호 추가 + 확인/반박 기록 → 신뢰도 자동 재계산 | 분석 후 — 기존 패턴 재확인/반박 시 |
+| `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)` | 신호 추가 + 확인/반박 기록 → 신뢰도 자동 재계산. `environment`를 채우면 기존 값을 덮어씀(비우면 그대로 유지) | 분석 후 — 기존 패턴 재확인/반박 시, 또는 environment가 비어있던 기존 버킷을 이번 분석 증거로 소급 태깅할 때 |
 
 도구 시그니처와 REST 매핑 상세는 `docs/AI_AGENT_GUIDE.md` §4.15, `docs/MCP.md` 참고.
 
@@ -151,6 +151,18 @@ kb_refine_failure_bucket(bucket_id="<매칭된 버킷 id>", confirm=true)
 kb_refine_failure_bucket(
   bucket_id="...",
   add_signal="<이번에 새로 확인된 판별 신호>",
+  confirm=true
+)
+```
+
+기존 버킷의 `environment`가 비어 있었는데 이번 분석(또는 그 버킷의 기존 symptom/root_cause 재검토)으로
+환경을 확인했다면 같은 호출에 `environment`를 함께 넘겨도 된다 — 신호 추가와 별개로 처리되며, 다른
+필드는 건드리지 않는다:
+
+```
+kb_refine_failure_bucket(
+  bucket_id="...",
+  environment="onprem",
   confirm=true
 )
 ```

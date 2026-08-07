@@ -221,6 +221,7 @@ def refine_bucket(
     *,
     add_signal: Optional[str] = None,
     add_counter_signal: Optional[str] = None,
+    environment: Optional[str] = None,
     confirm: bool = True,
 ) -> dict[str, Any]:
     signals_changed = False
@@ -235,6 +236,11 @@ def refine_bucket(
         if add_counter_signal and add_counter_signal not in (row.counter_signals or []):
             row.counter_signals = [*(row.counter_signals or []), add_counter_signal]
             signals_changed = True
+        # environment=None (the default) means "leave untouched" — same convention as
+        # add_signal/add_counter_signal. Not part of bucket_draft()'s content_hash inputs
+        # (see draft.py), so setting it never needs a re-embed/re-index like signals do.
+        if environment is not None:
+            row.environment = environment.strip().lower() or None
 
         if confirm:
             row.support_count = int(row.support_count or 0) + 1
