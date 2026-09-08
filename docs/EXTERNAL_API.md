@@ -43,7 +43,7 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 |-----------------|----------------------|
 | `checkitems` | `checkitem` |
 | `support_history` | `support_history` |
-| `incident_reports` | `support_history` |
+| `incident_reports` | `incident_reports` |
 | `tech_repo` | `tech_repo` |
 | `tuning_ai` / `sql_tuning` | `tuning_ai` |
 | `vendor_docs` | `vendor_docs` |
@@ -94,7 +94,9 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 
 ### 업로드 — wiki-qa `POST /api/upload` 호환
 
-기술지원이력 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는 경로입니다.
+기술지원이력 / SWIM 장애보고서 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는
+경로입니다. MCP에서는 `kb_upload_document(filename=, content=, source_type=)`로 이 엔드포인트를
+그대로 감싸 호출합니다(쓰기 도구 — 결과가 코퍼스에 즉시 반영됨).
 
 | Method | Path | 설명 |
 |--------|------|------|
@@ -102,12 +104,12 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 | GET | `/api/ingest-status/{job_id}` | SSE로 ingest 진행상황 추적 |
 | POST | `/api/upload-multiple` | 파일 여러 개(`files` 필드), 동일 `source_type` 적용 |
 
-**`source_type` 지원 값 / 별칭** (citec-wiki-qa README 별칭 표와 동일):
+**`source_type` 지원 값 / 별칭** (citec-wiki-qa README 별칭 표 기반 + citec-kb 자체 확장):
 
 | 값/별칭 | citec-kb 내부 source_type |
 |---------|---------------------------|
 | `support_history`, `support` | `support_history` |
-| `incident_reports`, `incident` | `support_history` |
+| `incident_reports`, `incident` | `incident_reports` |
 | `tech_repo`, `confluence_docs`, `confluence`, `techrepo`, `tech-repo` | `tech_repo` |
 | `tuning_ai`, `sql_tuning`, `sql`, `issue_analysis`, `dbms_tuning`, `dbms-tuning`, `tuning-ai` | `tuning_ai` |
 
@@ -128,6 +130,10 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 curl -X POST http://<host>/api/upload \
      -F "file=@CITECTS-1234.md" \
      -F "source_type=support_history"
+
+curl -X POST http://<host>/api/upload \
+     -F "file=@swim_26090761356.md" \
+     -F "source_type=incident_reports"
 
 curl -X POST http://<host>/api/upload \
      -F "file=@148554390_kernel_params.txt" \
@@ -173,7 +179,7 @@ SSE 이벤트 (wiki-qa 호환):
 
 `stream: false` 이면 JSON 한 번에 반환.
 
-`template`: `general` · `checkitems` · `support_history` · `tech_repo` · `tuning_ai` · `synthesis` …
+`template`: `general` · `checkitems` · `support_history` · `incident_reports` · `tech_repo` · `tuning_ai` · `synthesis` …
 
 ### Synthesis ≈ Insight
 

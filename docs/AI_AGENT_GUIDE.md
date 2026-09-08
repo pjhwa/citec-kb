@@ -62,7 +62,7 @@ Every hit should expose (or MCP text will print):
 | `body_api` / `body_api_url` | Direct GET of ticket/checkitem JSON/body |
 | `web_url` / `web_path` | Human-readable UI link |
 | `external_id` | Ticket key / page id / checkitem code |
-| `source_type` | `support_history`, `tech_repo`, `checkitem`, … |
+| `source_type` | `support_history`, `incident_reports`, `tech_repo`, `checkitem`, … |
 
 When answering users, include at least: **title + external_id + path or web_url**.
 
@@ -175,7 +175,7 @@ Base MCP: FastMCP over **streamable-http** (`http://localhost:8577/mcp`) or **st
 | Arg | Type | Description |
 |-----|------|-------------|
 | `query` | str | Search string |
-| `section` | str | → `source_type`: `support_history`, `tech_repo`, `tuning_ai`, `checkitems`, `confluence_docs`, … |
+| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitems`, `confluence_docs`, … |
 | `area` | str | → domain filter (`os`, `dbms`, `network`, `cloud`, `storage`, …) |
 | `category` | str | wiki-compat only when `use_v1=false` |
 | `limit` | int | 1–50 |
