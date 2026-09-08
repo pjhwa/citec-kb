@@ -138,6 +138,8 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
         doc.work_type = draft.work_type
         doc.path_l2 = draft.path_l2
         doc.path_l3 = draft.path_l3
+        if draft.lang:
+            doc.lang = draft.lang
         doc.updated_at = _now()
         action = "updated"
         # soft-deactivate old chunks
@@ -166,6 +168,7 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             work_type=draft.work_type,
             path_l2=draft.path_l2,
             path_l3=draft.path_l3,
+            **({"lang": draft.lang} if draft.lang else {}),
         )
         # handle id collision with different external
         if session.get(Document, doc.id):

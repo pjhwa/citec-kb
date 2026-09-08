@@ -30,6 +30,15 @@ _FB_DOMAIN_TO_CORPUS_DOMAIN: dict[str, str] = {
     "windows": "os",
 }
 
+# SWIM(전사 장애관리 시스템) incident_reports 헤더의 `장애유형` 값을 corpus
+# Document.domain으로 매핑. 매핑에 없는 값(Infra/상용SW/Facility 등)은 억지로
+# 추측하지 않고 None으로 두어 infer_domain()의 키워드 규칙에 위임한다.
+_SWIM_TYPE_TO_CORPUS_DOMAIN: dict[str, str] = {
+    "NW": "network",
+    "Cloud": "cloud",
+    "Application": "middleware",
+}
+
 _DOMAIN_RULES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"Linux|리눅스|kernel|sysctl|OS hang", re.I), "os"),
     (re.compile(r"Oracle|HANA|MySQL|Tibero|Postgre|DB2|Greenplum|GPDB|SQL", re.I), "dbms"),
