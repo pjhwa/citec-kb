@@ -64,6 +64,12 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 `fb_domain` 값 목록은 [failure-bucket-domains.md](../references/failure-bucket-domains.md) 참고.
 플러그인 개발자용 상세 지침은 [FAILURE_BUCKET_PLUGIN_GUIDE.md](./FAILURE_BUCKET_PLUGIN_GUIDE.md).
 
+### 문서 업로드 (쓰기)
+
+| Tool | 설명 | 백엔드 |
+|------|------|--------|
+| `kb_upload_document` | 문서 1건 업로드 → 즉시 ingest 큐 등록(백그라운드 처리). `kb_register_failure_bucket`과 같은 급의 **쓰기** 도구 — 코퍼스에 반영됨. 주 용도: SWIM 증분 반영(`source_type` 기본값 `incident_reports`) | `POST /api/upload` |
+
 ### Insight · 상태
 
 | Tool | 설명 | 백엔드 |

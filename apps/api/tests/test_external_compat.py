@@ -3,11 +3,14 @@
 import pytest
 from fastapi import HTTPException
 
+from app.ingest.adapters import parse_incident_report_file
 from app.routers.external_compat import (
     _map_section,
     _resolve_upload_source_type,
     _safe_upload_filename,
     _SECTION_MAP,
+    _UPLOAD_PARSERS,
+    _UPLOAD_RAW_SUBDIR,
     _validate_upload_extension,
     _VERDICT_RATING,
 )
@@ -49,8 +52,8 @@ def test_section_map_keys_cover_mcp_templates():
 def test_resolve_upload_source_type_aliases():
     assert _resolve_upload_source_type("support_history") == "support_history"
     assert _resolve_upload_source_type("support") == "support_history"
-    assert _resolve_upload_source_type("incident_reports") == "support_history"
-    assert _resolve_upload_source_type("incident") == "support_history"
+    assert _resolve_upload_source_type("incident_reports") == "incident_reports"
+    assert _resolve_upload_source_type("incident") == "incident_reports"
     assert _resolve_upload_source_type("tech_repo") == "tech_repo"
     assert _resolve_upload_source_type("confluence_docs") == "tech_repo"
     assert _resolve_upload_source_type("confluence") == "tech_repo"
@@ -67,6 +70,20 @@ def test_resolve_upload_source_type_aliases():
 
 def test_resolve_upload_source_type_default_is_support_history():
     assert _resolve_upload_source_type("") == "support_history"
+
+
+def test_incident_reports_upload_wired_to_native_swim_parser():
+    """Regression: incident_reports used to alias to support_history and get
+    parsed by parse_support_history_file (Jira "# Title" shape) — silently
+    mis-filing SWIM uploads under source_type=support_history with a garbage
+    title. Confirmed on the running stack before this fix (POST /api/upload
+    with source_type=incident_reports landed as
+    documents.source_type='support_history', title=filename stem).
+    """
+    internal = _resolve_upload_source_type("incident_reports")
+    assert internal == "incident_reports"
+    assert _UPLOAD_PARSERS[internal] is parse_incident_report_file
+    assert _UPLOAD_RAW_SUBDIR[internal] == "incident_reports"
 
 
 def test_resolve_upload_source_type_unknown_is_400():

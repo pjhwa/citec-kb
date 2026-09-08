@@ -36,6 +36,7 @@ from app.db.models import Document, Feedback, IngestJob, Insight
 from app.db.session import session_scope
 from app.doc_access import attach_document_access, document_access
 from app.ingest.adapters import (
+    parse_incident_report_file,
     parse_support_history_file,
     parse_tech_repo_file,
     parse_tuning_ai_file,
@@ -96,11 +97,18 @@ _TEMPLATE_LABELS = {
 # with source_type="tech_repo", not "confluence_docs" — do not "fix" this to match
 # _SECTION_MAP without checking whether citec-kb should first gain a distinct
 # confluence_docs parser.
+#
+# "incident_reports"/"incident" used to alias to support_history — from when
+# wiki-qa's README table predated citec-kb's own incident_reports (SWIM) parser
+# (see app/ingest/adapters.py:parse_incident_report_file, added later). Now that
+# a native parser exists, route them there instead of silently mis-filing SWIM
+# uploads as support_history under parse_support_history_file (which expects a
+# Jira "# Title" / "- **Issue Key**:" shape SWIM markdown doesn't have).
 _UPLOAD_ALIASES: dict[str, str] = {
     "support_history": "support_history",
     "support": "support_history",
-    "incident_reports": "support_history",
-    "incident": "support_history",
+    "incident_reports": "incident_reports",
+    "incident": "incident_reports",
     "tech_repo": "tech_repo",
     "confluence_docs": "tech_repo",
     "confluence": "tech_repo",
@@ -121,12 +129,14 @@ _UPLOAD_NOT_IMPLEMENTED = {"vendor_docs", "vendor", "checkitems"}
 
 _UPLOAD_PARSERS = {
     "support_history": parse_support_history_file,
+    "incident_reports": parse_incident_report_file,
     "tech_repo": parse_tech_repo_file,
     "tuning_ai": parse_tuning_ai_file,
 }
 
 _UPLOAD_RAW_SUBDIR = {
     "support_history": "support_history",
+    "incident_reports": "incident_reports",
     "tech_repo": "tech_repo",
     "tuning_ai": "tuning_ai",
 }

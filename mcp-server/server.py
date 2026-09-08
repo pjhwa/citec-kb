@@ -759,6 +759,41 @@ async def kb_similar_incident(
 
 
 @mcp.tool()
+async def kb_upload_document(
+    filename: str,
+    content: str,
+    source_type: str = "incident_reports",
+) -> str:
+    """[쓰기 도구] 문서 1건을 업로드해 즉시 ingest 큐에 넣는다 (기존 POST /api/upload 래핑).
+    주 용도: MY-OS SWIM 증분 수집 파이프라인이 신규/변경 장애보고서 소수 건을 즉시 반영.
+
+    filename: 확장자 포함 파일명 (예: 26090761356.md)
+    content: 파일 전체 텍스트(마크다운 원문)
+    source_type: 기본 incident_reports — 다른 source_type도 넘길 수 있지만
+                 이번 도구의 주 용도는 SWIM 장애보고서 증분 반영이다.
+
+    ingest는 백그라운드로 처리된다 — 이 도구는 큐 등록까지만 확인한다. 적재 완료
+    확인은 몇 초 뒤 kb_ticket(external_id=..., source_type="incident_reports")로
+    별도 조회할 것.
+    """
+    if not filename.strip() or not content.strip():
+        return "오류: filename/content가 비어 있습니다."
+    try:
+        async with _client(timeout=60.0) as client:
+            files = {"file": (filename, content.encode("utf-8"), "text/markdown")}
+            data_form = {"source_type": source_type}
+            resp = await client.post("/api/upload", files=files, data=data_form)
+            resp.raise_for_status()
+            body = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return (
+        f"업로드 큐 등록됨: job_id={body.get('job_id')} "
+        f"filename={body.get('filename')} status={body.get('status')}"
+    )
+
+
+@mcp.tool()
 async def kb_list_checkitems(
     q: str = "",
     area: str = "",
@@ -867,6 +902,10 @@ async def kb_tools_help() -> str:
                   동작 그대로(등록은 environment=null, 매칭/목록은 필터 없음, refine은 기존
                   값 유지). match/list에서 다른 값으로 태깅된 버킷은 후보에서 제외되고,
                   environment가 비어있는(미확인) 버킷은 계속 후보에 남는다.
+
+[문서 업로드 — 쓰기]
+  kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록
+                  (kb_register_failure_bucket과 같은 급의 쓰기 도구 — 결과가 코퍼스에 반영됨)
 
 [Confluence draw.io 다이어그램]
   kb_confluence_find_pages(space_key=, title=)    공간명으로 페이지 검색 (page_id 모를 때 먼저 사용)
