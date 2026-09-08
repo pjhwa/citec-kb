@@ -66,6 +66,15 @@ _COMP_MAP: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"진단\s*컨설팅|진단컨설팅", re.I), "진단컨설팅"),
 ]
 
+# SWIM(전사 장애관리 시스템) incident_reports 질의 감지. 매치 시 source_type을
+# support_history 대신 incident_reports로 라우팅한다. _COMP_MAP(Jira Component:
+# 장애지원/기술지원/진단컨설팅)과 SWIM의 metadata 키(장애유형/진행상태 등)는 서로
+# 다른 축이므로 절대 혼용하지 않는다 — component/status/assignee group_by는
+# aggregate_tickets._bucket_key가 Jira 전용 키(Component/Status/Assignee)를
+# 그대로 읽기 때문에 SWIM 문서에서는 전부 "(empty)" 버킷이 된다. 그래서 SWIM
+# 질의는 이 세 축을 쓰지 않고 total로 낮춘다(아래 detect_analytics_intent 참고).
+_SWIM_HINT = re.compile(r"SWIM|전사\s*장애|장애\s*보고서", re.I)
+
 
 def detect_analytics_intent(text: str) -> Optional[dict]:
     """Return analytics intent params, or None if not analytics-like."""
@@ -77,20 +86,23 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
     if _ANALYTICS_EXCLUDE.search(t) and not re.search(r"건수|비중|티켓\s*규모", t):
         return None
 
+    swim = bool(_SWIM_HINT.search(t))
+
     # title token analytics (I23 등)
     if _TITLE_TOKENS.search(t) and not re.search(r"건수|비중|연도별", t):
         component = None
-        for pat, name in _COMP_MAP:
-            if pat.search(t):
-                component = name
-                break
-        if component is None and re.search(r"장애", t) and not re.search(r"기술", t):
-            component = "장애지원"
+        if not swim:
+            for pat, name in _COMP_MAP:
+                if pat.search(t):
+                    component = name
+                    break
+            if component is None and re.search(r"장애", t) and not re.search(r"기술", t):
+                component = "장애지원"
         return {
             "intent": "analytics",
             "mode": "title_tokens",
             "group_by": "token",
-            "source_type": "support_history",
+            "source_type": "incident_reports" if swim else "support_history",
             "date_field": "Created",
             "component": component,
             "entity": None,
@@ -123,15 +135,23 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
     ):
         group_by = "issue_type"
 
+    if swim and group_by in {"component", "status", "assignee"}:
+        # aggregate_tickets._bucket_key reads Jira-only metadata keys
+        # (Component/Status/Assignee) for these axes — SWIM docs have none of
+        # those, so every row would collapse into a meaningless "(empty)"
+        # bucket. Downgrade to total rather than emit a misleading breakdown.
+        group_by = "total"
+
     component = None
-    for pat, name in _COMP_MAP:
-        if pat.search(t):
-            component = name
-            break
-    # "장애 건수" without full 장애지원 → treat as 장애지원 component
-    if component is None and re.search(r"장애", t) and not re.search(r"기술", t):
-        if re.search(r"건수|몇\s*건|비중", t):
-            component = "장애지원"
+    if not swim:
+        for pat, name in _COMP_MAP:
+            if pat.search(t):
+                component = name
+                break
+        # "장애 건수" without full 장애지원 → treat as 장애지원 component
+        if component is None and re.search(r"장애", t) and not re.search(r"기술", t):
+            if re.search(r"건수|몇\s*건|비중", t):
+                component = "장애지원"
 
     entity = None
     for pat, needle in _ENTITIES:
@@ -158,7 +178,7 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
         "intent": "analytics",
         "mode": mode,
         "group_by": group_by if mode == "aggregate" else "total",
-        "source_type": "support_history",
+        "source_type": "incident_reports" if swim else "support_history",
         "date_field": "Created",
         "component": component,
         "entity": entity,

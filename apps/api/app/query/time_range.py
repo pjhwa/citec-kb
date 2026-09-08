@@ -26,6 +26,7 @@ _LIST_INTENT = re.compile(
 # 건수/몇 건 alone → analytics (see detect_analytics_intent); keep with list words for list path
 _COUNT_AS_LIST = re.compile(r"건수|몇\s*건", re.I)
 _SUPPORT_HINT = re.compile(r"지원|티켓|CITECTS|이슈\s*이력|장애\s*이력", re.I)
+_SWIM_HINT = re.compile(r"SWIM|전사\s*장애|장애\s*보고서", re.I)
 
 # Order matters: more specific first
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
@@ -131,12 +132,16 @@ def detect_time_scoped_list(text: str) -> Optional[dict]:
     # Require list-ish intent OR explicit support wording with a range
     listish = bool(_LIST_INTENT.search(t)) or bool(_COUNT_AS_LIST.search(t))
     supportish = bool(_SUPPORT_HINT.search(t))
-    if not (listish or supportish):
+    swimish = bool(_SWIM_HINT.search(t))
+    if not (listish or supportish or swimish):
         # bare "지난 주" alone is ambiguous
         return None
-    source = "support_history" if supportish or "지원" in t else None
-    if re.search(r"지원", t):
+    if swimish:
+        source = "incident_reports"
+    elif supportish or "지원" in t:
         source = "support_history"
+    else:
+        source = None
     return {
         "intent": "time_scoped_list",
         "date_from": dr.date_from.isoformat(),

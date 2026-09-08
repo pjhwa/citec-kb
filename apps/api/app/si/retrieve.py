@@ -18,6 +18,12 @@ from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]{3,}")
 
+# source_types searched by similar_incidents(). IssueFrame extraction (see
+# frames/job.py) only covers support_history, so incident_reports (SWIM) hits
+# fall back to the snippet-only path below — still useful as a "similar case
+# exists" signal even without a structured cause/resolution frame.
+SI_SOURCE_TYPES = ("support_history", "incident_reports")
+
 
 def _query_tokens(q: str) -> list[str]:
     toks = [t.lower() for t in _TOKEN_RE.findall(q or "")]
@@ -120,27 +126,30 @@ def similar_incidents(
     except Exception:  # noqa: BLE001
         qvec = None
 
-    filters = SearchFilters(source_type="support_history", status="active")
-    if environment:
-        filters.environment = environment
-
     with session_scope() as session:
-        # Broader hybrid pool so high-quality frames can still surface
-        resp = hybrid_search(
-            session,
-            SearchRequest(q=q, top_k=max(top_k * 8, 40), filters=filters),
-            query_vector=qvec,
-        )
-
         seen: set[str] = set()
         ordered_docs: list[str] = []
         hit_by_doc: dict[str, Any] = {}
-        for h in resp.results:
-            if h.document_id in seen:
-                continue
-            seen.add(h.document_id)
-            ordered_docs.append(h.document_id)
-            hit_by_doc[h.document_id] = h
+        resp = None
+        # Broader hybrid pool so high-quality frames can still surface. Queried
+        # per source_type (not a single filter with source_type as a list) to
+        # keep SearchFilters/hybrid_search's shared, corpus-wide contract
+        # (Optional[str], == comparison) unchanged for other callers.
+        for st in SI_SOURCE_TYPES:
+            filters = SearchFilters(source_type=st, status="active")
+            if environment:
+                filters.environment = environment
+            resp = hybrid_search(
+                session,
+                SearchRequest(q=q, top_k=max(top_k * 8, 40), filters=filters),
+                query_vector=qvec,
+            )
+            for h in resp.results:
+                if h.document_id in seen:
+                    continue
+                seen.add(h.document_id)
+                ordered_docs.append(h.document_id)
+                hit_by_doc[h.document_id] = h
 
         frames: dict[str, tuple[IssueFrame, Document]] = {}
         if ordered_docs:

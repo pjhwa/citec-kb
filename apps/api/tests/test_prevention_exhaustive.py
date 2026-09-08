@@ -27,3 +27,10 @@ def test_planner_routes_new_intents():
     assert plan_query("예방하려면 무엇을 점검해야 하나?")["intent"] == "prevention"
     assert plan_query("관련 지원 건 전부 모아줘")["intent"] == "exhaustive"
     assert plan_query("장애지원 제목 패턴")["intent"] == "analytics"
+
+
+def test_exhaustive_detect_swim():
+    e = detect_exhaustive_intent("SWIM 이라크 사무소 정전 관련 지원 건 전부와 공통 원인은?")
+    assert e is not None
+    assert e["intent"] == "exhaustive"
+    assert e["source_type"] == "incident_reports"

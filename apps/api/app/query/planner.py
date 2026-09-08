@@ -255,18 +255,19 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             )
         if plan.get("range_label"):
             result["range_label"] = plan["range_label"]
-        note = "집계·건수/제목토큰 — support_history metadata COUNT (LLM 미사용)."
+        result_source = result.get("source_type") or "support_history"
+        note = f"집계·건수/제목토큰 — {result_source} metadata COUNT (LLM 미사용)."
         if result.get("group_by") == "issue_type":
             note = (
                 "이슈 유형 세분류(타임아웃·성능저하/지연·리소스고갈·접속불가·"
                 "서비스장애/FRB·시스템Crash/Hang·설정오류·방화벽·DB…, "
                 "제목·본문 규칙) — Jira Component(기술지원/장애지원)와 다름. "
-                "source_type=support_history only. 상세: GET /v1/tickets/{external_id}"
+                f"source_type={result_source} only. 상세: GET /v1/tickets/{{external_id}}"
             )
         elif result.get("group_by") == "component" and result.get("include_samples"):
             note = (
                 "업무 유형(Jira Component: 기술지원/장애지원/…)별 건수 + 샘플 — "
-                "source_type=support_history only. 상세: GET /v1/tickets/{external_id}"
+                f"source_type={result_source} only. 상세: GET /v1/tickets/{{external_id}}"
             )
         return {
             "intent": "analytics",

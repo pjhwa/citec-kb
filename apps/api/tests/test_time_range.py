@@ -79,3 +79,17 @@ def test_detect_accepts_ticket_list_wording():
     intent = detect_time_scoped_list("최근 7일 티켓 목록")
     assert intent is not None
     assert intent["intent"] == "time_scoped_list"
+
+
+def test_detect_time_scoped_list_swim():
+    """Phase 2 Track B: SWIM keyword routes to incident_reports, not support_history."""
+    intent = detect_time_scoped_list("지난 주 SWIM 장애 몇 건이야")
+    assert intent is not None
+    assert intent["intent"] == "time_scoped_list"
+    assert intent["source_type"] == "incident_reports"
+
+
+def test_detect_time_scoped_list_swim_alt_phrasing():
+    intent = detect_time_scoped_list("지난 주 전사 장애 보고서 목록")
+    assert intent is not None
+    assert intent["source_type"] == "incident_reports"

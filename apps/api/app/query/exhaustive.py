@@ -34,7 +34,9 @@ def detect_exhaustive_intent(text: str) -> Optional[dict[str, Any]]:
         if re.search(r"분류해|분류하|분류까|어떻게\s*분류|유형|종류", t):
             return None
     source_type = None
-    if re.search(r"기술\s*지원|지원\s*이력|support_history|지원건", t, re.I):
+    if re.search(r"SWIM|전사\s*장애|장애\s*보고서", t, re.I):
+        source_type = "incident_reports"
+    elif re.search(r"기술\s*지원|지원\s*이력|support_history|지원건", t, re.I):
         source_type = "support_history"
     return {
         "intent": "exhaustive",
