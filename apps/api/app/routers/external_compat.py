@@ -51,13 +51,20 @@ router = APIRouter(tags=["external-compat (wiki-qa)"])
 logger = logging.getLogger("citec.external_compat")
 
 # wiki-qa template / section → citec-kb source_type
+#
+# "incident_reports" used to alias to support_history here too — the same
+# staleness as _UPLOAD_ALIASES below (see its comment): this table predates
+# citec-kb's own incident_reports (SWIM) source_type from Phase 1. Fixed to
+# route to itself so GET /api/wiki/search?section=incident_reports and
+# POST /api/query {"template": "incident_reports"} (wiki_ask/kb_ask compat)
+# actually search SWIM instead of silently searching support_history.
 _SECTION_MAP: dict[str, Optional[str]] = {
     "": None,
     "general": None,
     "checkitems": "checkitem",
     "checkitem": "checkitem",
     "support_history": "support_history",
-    "incident_reports": "support_history",
+    "incident_reports": "incident_reports",
     "vendor_docs": "vendor_docs",
     "tech_repo": "tech_repo",
     "tuning_ai": "tuning_ai",

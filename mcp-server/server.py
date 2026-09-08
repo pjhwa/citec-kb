@@ -318,7 +318,7 @@ async def _get_synthesis_impl(slug: str) -> str:
 @mcp.tool()
 async def kb_ask(query: str, template: str = "general", mode: str = "fast") -> str:
     """CI-TEC 지식 근거로 자연어 질문에 답변한다 (RAG + Trust).
-    template: general|checkitems|support_history|tech_repo|tuning_ai|synthesis
+    template: general|checkitems|support_history|tech_repo|tuning_ai|incident_reports|synthesis
     mode: fast|deep
     """
     return await _ask_impl(query, template, mode)

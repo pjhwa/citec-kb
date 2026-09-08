@@ -19,7 +19,7 @@ from app.routers.external_compat import (
 def test_section_map_checkitems():
     assert _map_section("checkitems") == "checkitem"
     assert _map_section("support_history") == "support_history"
-    assert _map_section("incident_reports") == "support_history"
+    assert _map_section("incident_reports") == "incident_reports"
     assert _map_section("synthesis") == "insight"
     assert _map_section("general") is None
     assert _map_section("") is None
@@ -28,6 +28,16 @@ def test_section_map_checkitems():
 def test_section_passthrough():
     assert _map_section("tech_repo") == "tech_repo"
     assert _map_section("tuning_ai") == "tuning_ai"
+
+
+def test_section_map_incident_reports_not_aliased_to_support_history():
+    """Regression: _SECTION_MAP used to map incident_reports -> support_history
+    (stale, predates the Phase 1 SWIM source_type). That silently made
+    GET /api/wiki/search?section=incident_reports and
+    POST /api/query {"template": "incident_reports"} (wiki_ask/kb_ask compat)
+    search support_history instead of SWIM.
+    """
+    assert _map_section("incident_reports") == "incident_reports"
 
 
 def test_verdict_rating():
