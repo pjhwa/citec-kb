@@ -54,46 +54,51 @@ _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Inline "label : value" captures (single or few lines)
+#
+# "■" added to the bullet-prefix/stop-token classes below to cover SWIM
+# (incident_reports) markdown, which uses "■ 장애상황:"/"■ 장애원인:"/
+# "■ 장애조치:" instead of -/*/•/○. Without it these patterns never match a
+# SWIM line at all (frames_total stayed support_history-only).
 _INLINE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "root_cause",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○]?\s*)?(?:\d+[.)]\s*)?(?:장애\s*)?원인\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:\d+[.)]\s*)?(?:장애\s*)?원인\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○]?\s*)?(?:장애\s*)?조치(?:\s*내용|\s*내역|\s*완료)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:장애\s*)?조치(?:\s*내용|\s*내역|\s*완료)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○]?\s*)?해결(?:\s*방안|\s*책)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?해결(?:\s*방안|\s*책)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),
     (
         "root_cause",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○]?\s*)?(?:\d+[.)]\s*)?장애원인\s*[:：]?\s*(.+?)(?=\n\s*(?:[-*•○#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:\d+[.)]\s*)?장애원인\s*[:：]?\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*\*조치\s*내용\*\s*[:：]?\s*(.+?)(?=\n\s*(?:[-*•○#*]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*\*조치\s*내용\*\s*[:：]?\s*(.+?)(?=\n\s*(?:[-*•○■#*]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),
     (
         "symptom",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○]?\s*)?(?:요청이슈|증상|현상)\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○#hH*]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:요청이슈|증상|현상|장애\s*상황)\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH*]|\d+[.)]|\Z))",
             re.I | re.S,
         ),
     ),

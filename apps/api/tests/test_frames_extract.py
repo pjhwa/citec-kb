@@ -70,3 +70,28 @@ h1. 3. 조치 내역
     assert fr["root_cause"] and "flapping" in fr["root_cause"].lower()
     assert fr["resolution"] and ("포트" in fr["resolution"] or "정상" in fr["resolution"])
     assert fr["quality"] >= 0.5
+
+
+_SWIM_MD = """[26090761356] [삼성전자] 이라크 사무소(SELV-Iraq) 지역정전으로 사내시스템 및 인터넷 접속 불가
+발생일시(한국): 2026-09-07 03:10 | 고객사: 삼성전자 | 진행상태: 조치완료 | 예상등급_SDS: X등급 | 장애유형: NW | 운영부서: 삼성SDS-SDSI | 신고자: Mirza Aziz | 기록구분: 실장애
+■ 장애상황: 사내시스템 및 인터넷 접속 불가
+■ 장애원인: 전원문제로 확인되며 고객사 건물 또는 지역 이슈인지 파악중
+지역정전
+■ 장애조치: 전원복구 후 정상화
+지역정전 해소 후 서비스 정상
+"""
+
+
+def test_swim_bullet_recognized():
+    """Phase 3 extension: SWIM (incident_reports) uses "■" bullets instead of
+    -/*/•/○ — the inline patterns must recognize it as both a label prefix and
+    a section-boundary stop token, or every ■ 장애원인/■ 장애조치 line is missed.
+    """
+    fr = extract_frame_from_markdown(
+        _SWIM_MD,
+        title="[삼성전자] 이라크 사무소(SELV-Iraq) 지역정전으로 사내시스템 및 인터넷 접속 불가",
+    )
+    assert fr["symptom"] == "사내시스템 및 인터넷 접속 불가"
+    assert fr["root_cause"] and "지역정전" in fr["root_cause"]
+    assert fr["resolution"] and "전원복구" in fr["resolution"]
+    assert fr["quality"] >= 0.8

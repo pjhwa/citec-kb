@@ -51,10 +51,15 @@ def extract_frames(
             )
             .where(Document.source_type == source_type)
             .where(Document.status == "active")
-            # Skip non-ticket markdown (e.g. 부서 소개)
-            .where(Document.external_id.like("CITECTS-%"))
             .order_by(Document.external_id)
         )
+        if source_type == "support_history":
+            # Jira export raw/ mixes in non-ticket markdown (e.g. 부서 소개) that
+            # doesn't have a CITECTS-nnnn key — skip it. Other source_types (e.g.
+            # incident_reports/SWIM) are uniformly ticket-shaped already, so this
+            # filter would otherwise wrongly exclude every one of their documents
+            # (their external_id is a numeric failSeq, never "CITECTS-...").
+            stmt = stmt.where(Document.external_id.like("CITECTS-%"))
         if not force:
             existing = select(IssueFrame.document_id)
             stmt = stmt.where(Document.id.not_in(existing))
