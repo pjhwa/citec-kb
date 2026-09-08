@@ -41,6 +41,17 @@ def test_swim_month_trend_routes_to_incident_reports():
     assert intent is not None
     assert intent["source_type"] == "incident_reports"
     assert intent["group_by"] == "month"
+    # Phase 2 fix-prompt bug 1: must not carry the Jira-only "Created" default
+    # through for SWIM, or aggregate_tickets filters every row out.
+    assert intent["date_field"] == "발생일시(한국)"
+
+
+def test_swim_this_week_count_uses_swim_date_field():
+    intent = detect_analytics_intent("지난 주 SWIM 장애 몇 건이야")
+    assert intent is not None
+    assert intent["source_type"] == "incident_reports"
+    assert intent["date_field"] == "발생일시(한국)"
+    assert intent.get("date_from") is not None
 
 
 def test_swim_issue_type_breakdown_uses_generic_classifier():

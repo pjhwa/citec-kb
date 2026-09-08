@@ -87,6 +87,9 @@ def test_detect_time_scoped_list_swim():
     assert intent is not None
     assert intent["intent"] == "time_scoped_list"
     assert intent["source_type"] == "incident_reports"
+    # Phase 2 fix-prompt bug 1: SWIM has no "Created" metadata key — must use
+    # its own date field (발생일시(한국)), or every row gets filtered out.
+    assert intent["date_field"] == "발생일시(한국)"
 
 
 def test_detect_time_scoped_list_swim_alt_phrasing():

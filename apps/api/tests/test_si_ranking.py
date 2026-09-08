@@ -30,10 +30,10 @@ class _FakeSession:
         return _FakeExecResult()
 
 
-def _hit(document_id: str, source_type: str, title: str) -> SearchHit:
+def _hit(document_id: str, source_type: str, title: str, score: float = 0.9) -> SearchHit:
     return SearchHit(
         rank=1,
-        score=0.9,
+        score=score,
         document_id=document_id,
         chunk_id=f"{document_id}#0",
         title=title,
@@ -83,4 +83,48 @@ def test_similar_incidents_merges_support_history_and_incident_reports(monkeypat
     assert calls == ["support_history", "incident_reports"]
     doc_ids = {c["document_id"] for c in result["cases"]}
     assert "support_history:CITECTS-1" in doc_ids
+    assert "incident_reports:26090761356" in doc_ids
+
+
+def test_similar_incidents_ranks_by_score_across_source_types(monkeypatch):
+    """Phase 2 fix-prompt bug 2 regression.
+
+    Before the fix, similar_incidents() concatenated each source_type's hit
+    list in query order (support_history first, then incident_reports) and
+    used position-in-that-list as the base rank score. So even a top-scoring
+    incident_reports hit landed after every support_history hit and got
+    pushed out of top_k. Queried second on purpose here (SI_SOURCE_TYPES is
+    ("support_history", "incident_reports")) but must still outrank lower
+    scoring support_history hits.
+    """
+
+    def fake_hybrid_search(_session, request, query_vector=None):
+        st = request.filters.source_type
+        if st == "support_history":
+            hits = [
+                _hit(f"support_history:CITECTS-{i}", "support_history", f"사례 {i}", score=0.5)
+                for i in range(5)
+            ]
+        elif st == "incident_reports":
+            hits = [_hit("incident_reports:26090761356", "incident_reports", "SWIM 최상위 사례", score=0.99)]
+        else:
+            hits = []
+        return SearchResponse(
+            query=request.q, exact_tokens=[], total=len(hits), gated=False,
+            results=hits, trust_retrieval="medium",
+        )
+
+    monkeypatch.setattr(si_retrieve, "embed_query", lambda q: None)
+    monkeypatch.setattr(si_retrieve, "hybrid_search", fake_hybrid_search)
+
+    @contextmanager
+    def fake_session_scope():
+        yield _FakeSession()
+
+    monkeypatch.setattr(si_retrieve, "session_scope", fake_session_scope)
+
+    result = si_retrieve.similar_incidents("이라크 사무소 지역정전 접속 불가", top_k=3)
+
+    doc_ids = [c["document_id"] for c in result["cases"]]
+    assert len(doc_ids) == 3
     assert "incident_reports:26090761356" in doc_ids

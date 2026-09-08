@@ -15,6 +15,33 @@ from app.db.session import session_scope
 
 _DATE_RE = re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
 
+# Per-source_type metadata key(s) that carry a usable date. support_history
+# comes from Jira exports (Created/Resolved/Updated); incident_reports (SWIM)
+# has none of those — its date lives under the raw SWIM header key 발생일시(한국)
+# instead (see app/ingest/adapters.py:parse_incident_report_file).
+_VALID_DATE_FIELDS: dict[str, frozenset[str]] = {
+    "support_history": frozenset({"Created", "Resolved", "Updated"}),
+    "incident_reports": frozenset({"발생일시(한국)"}),
+}
+_DEFAULT_DATE_FIELD: dict[str, str] = {
+    "support_history": "Created",
+    "incident_reports": "발생일시(한국)",
+}
+
+
+def resolve_date_field(source_type: str, date_field: Optional[str]) -> str:
+    """Pick a metadata date key valid for source_type, or its default.
+
+    A caller-supplied date_field that isn't valid for this source_type (e.g.
+    the Jira default "Created" passed in for incident_reports) falls back to
+    that source_type's own default rather than silently filtering everything
+    out downstream.
+    """
+    allowed = _VALID_DATE_FIELDS.get(source_type, _VALID_DATE_FIELDS["support_history"])
+    if date_field in allowed:
+        return date_field
+    return _DEFAULT_DATE_FIELD.get(source_type, "Created")
+
 
 def parse_meta_date(value: Optional[str]) -> Optional[date]:
     if not value:
@@ -90,8 +117,7 @@ def list_tickets(
     order: str = "desc",
 ) -> dict[str, Any]:
     """List documents filtered by metadata date field in [from, to] inclusive."""
-    if date_field not in {"Created", "Resolved", "Updated"}:
-        date_field = "Created"
+    date_field = resolve_date_field(source_type, date_field)
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     descending = (order or "desc").lower() != "asc"

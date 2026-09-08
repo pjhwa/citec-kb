@@ -20,6 +20,7 @@ from app.query.analytics_intent import detect_analytics_intent
 from app.query.exhaustive import detect_exhaustive_intent, run_exhaustive
 from app.query.prevention import detect_prevention_intent, run_prevention
 from app.query.time_range import detect_time_scoped_list
+from app.tickets.query import resolve_date_field
 
 # --- additional intent detectors ---
 
@@ -226,10 +227,11 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 top_k=int(body.get("top_k") or 20),
             )
         elif plan.get("mode") == "entity_share" and plan.get("entity"):
+            es_source = plan.get("source_type") or "support_history"
             result = entity_share(
                 entity=str(plan["entity"]),
-                source_type=plan.get("source_type") or "support_history",
-                date_field=plan.get("date_field") or "Created",
+                source_type=es_source,
+                date_field=resolve_date_field(es_source, plan.get("date_field")),
                 date_from=df,
                 date_to=dt,
             )
@@ -239,10 +241,11 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 or body.get("include_samples")
                 or (plan.get("group_by") in {"component", "issue_type"})
             )
+            agg_source = plan.get("source_type") or "support_history"
             result = aggregate_tickets(
-                source_type=plan.get("source_type") or "support_history",
+                source_type=agg_source,
                 group_by=plan.get("group_by") or "total",
-                date_field=plan.get("date_field") or "Created",
+                date_field=resolve_date_field(agg_source, plan.get("date_field")),
                 date_from=df,
                 date_to=dt,
                 component=plan.get("component"),
@@ -312,9 +315,10 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
         dt = date.fromisoformat(plan["date_to"])
         from app.tickets.query import list_tickets
 
+        tsl_source = plan.get("source_type") or "support_history"
         listed = list_tickets(
-            source_type=plan.get("source_type") or "support_history",
-            date_field=plan.get("date_field") or "Created",
+            source_type=tsl_source,
+            date_field=resolve_date_field(tsl_source, plan.get("date_field")),
             date_from=df,
             date_to=dt,
             limit=int(body.get("limit") or 50),

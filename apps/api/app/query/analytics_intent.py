@@ -7,6 +7,7 @@ from datetime import date
 from typing import Optional
 
 from app.query.time_range import parse_relative_range
+from app.tickets.query import resolve_date_field
 
 _ANALYTICS = re.compile(
     r"건수|몇\s*건|비중|통계|집계|연도별|월별|추이|규모\s*추이|티켓\s*규모|"
@@ -98,12 +99,13 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
                     break
             if component is None and re.search(r"장애", t) and not re.search(r"기술", t):
                 component = "장애지원"
+        source_type = "incident_reports" if swim else "support_history"
         return {
             "intent": "analytics",
             "mode": "title_tokens",
             "group_by": "token",
-            "source_type": "incident_reports" if swim else "support_history",
-            "date_field": "Created",
+            "source_type": source_type,
+            "date_field": resolve_date_field(source_type, None),
             "component": component,
             "entity": None,
         }
@@ -174,12 +176,13 @@ def detect_analytics_intent(text: str) -> Optional[dict]:
     if group_by == "component" and component == "기술지원" and _ISSUE_TYPE_BREAKDOWN.search(t):
         component = None
 
+    out_source_type = "incident_reports" if swim else "support_history"
     out: dict = {
         "intent": "analytics",
         "mode": mode,
         "group_by": group_by if mode == "aggregate" else "total",
-        "source_type": "incident_reports" if swim else "support_history",
-        "date_field": "Created",
+        "source_type": out_source_type,
+        "date_field": resolve_date_field(out_source_type, None),
         "component": component,
         "entity": entity,
         "include_samples": True

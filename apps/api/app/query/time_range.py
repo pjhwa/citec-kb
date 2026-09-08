@@ -8,6 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from app.tickets.query import resolve_date_field
+
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -142,11 +144,12 @@ def detect_time_scoped_list(text: str) -> Optional[dict]:
         source = "support_history"
     else:
         source = None
+    resolved_source = source or "support_history"
     return {
         "intent": "time_scoped_list",
         "date_from": dr.date_from.isoformat(),
         "date_to": dr.date_to.isoformat(),
         "range_label": dr.label,
-        "source_type": source or "support_history",
-        "date_field": "Created",  # default Jira Created
+        "source_type": resolved_source,
+        "date_field": resolve_date_field(resolved_source, None),
     }

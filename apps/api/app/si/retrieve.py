@@ -24,6 +24,8 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]{3,}")
 # exists" signal even without a structured cause/resolution frame.
 SI_SOURCE_TYPES = ("support_history", "incident_reports")
 
+_TRUST_RANK = {"strong": 3, "medium": 2, "weak": 1, "empty": 0}
+
 
 def _query_tokens(q: str) -> list[str]:
     toks = [t.lower() for t in _TOKEN_RE.findall(q or "")]
@@ -130,7 +132,8 @@ def similar_incidents(
         seen: set[str] = set()
         ordered_docs: list[str] = []
         hit_by_doc: dict[str, Any] = {}
-        resp = None
+        all_hits: list[Any] = []
+        trust_seen: list[str] = []
         # Broader hybrid pool so high-quality frames can still surface. Queried
         # per source_type (not a single filter with source_type as a list) to
         # keep SearchFilters/hybrid_search's shared, corpus-wide contract
@@ -144,12 +147,23 @@ def similar_incidents(
                 SearchRequest(q=q, top_k=max(top_k * 8, 40), filters=filters),
                 query_vector=qvec,
             )
-            for h in resp.results:
-                if h.document_id in seen:
-                    continue
-                seen.add(h.document_id)
-                ordered_docs.append(h.document_id)
-                hit_by_doc[h.document_id] = h
+            all_hits.extend(resp.results)
+            trust_seen.append(resp.trust_retrieval)
+        # Sort the merged pool by score before assigning rank position — each
+        # source_type's hits arrive pre-sorted within themselves, but simply
+        # concatenating the per-source_type lists would put every hit from the
+        # 2nd source_type after ALL hits from the 1st regardless of relevance
+        # (the ranking below uses this list's position as the base score).
+        all_hits.sort(key=lambda h: h.score, reverse=True)
+        for h in all_hits:
+            if h.document_id in seen:
+                continue
+            seen.add(h.document_id)
+            ordered_docs.append(h.document_id)
+            hit_by_doc[h.document_id] = h
+        trust_retrieval = max(
+            trust_seen, key=lambda t: _TRUST_RANK.get(t, -1), default="empty"
+        )
 
         frames: dict[str, tuple[IssueFrame, Document]] = {}
         if ordered_docs:
@@ -308,7 +322,7 @@ def similar_incidents(
         "bundles": bundles,
         "retrieval": {
             "vector_used": qvec is not None,
-            "trust_retrieval": resp.trust_retrieval,
+            "trust_retrieval": trust_retrieval,
             "candidates": len(ordered_docs),
         },
     }

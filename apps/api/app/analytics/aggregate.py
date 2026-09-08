@@ -12,7 +12,7 @@ from app.analytics.issue_type import classify_issue_type
 from app.db.models import Document
 from app.db.session import session_scope
 from app.doc_access import attach_document_access
-from app.tickets.query import parse_meta_date
+from app.tickets.query import parse_meta_date, resolve_date_field
 
 _GROUP_BY = frozenset(
     {"year", "month", "component", "status", "assignee", "total", "issue_type"}
@@ -90,8 +90,7 @@ def aggregate_tickets(
     gb = (group_by or "year").lower().strip()
     if gb not in _GROUP_BY:
         gb = "year"
-    if date_field not in {"Created", "Resolved", "Updated"}:
-        date_field = "Created"
+    date_field = resolve_date_field(source_type, date_field)
     top_k = max(1, min(int(top_k), 200))
     sample_limit = max(1, min(int(sample_limit), 30))
     entity_q = (entity or "").strip().lower() or None
