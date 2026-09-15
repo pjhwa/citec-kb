@@ -41,6 +41,31 @@ class RateLimiter:
             self._last_call = time.monotonic()
 
 
+# Absolute floor for a 429/503 retry wait, regardless of what the server
+# said. Confirmed in prod: Confluence can send `Retry-After: 0` on a 429
+# while X-RateLimit-Remaining is 0 — trusting that literally means an
+# immediate retry against a bucket that hasn't refilled, risking a 429
+# retry storm instead of recovering.
+_MIN_RETRY_DELAY = 0.5
+
+
+def _rate_limit_refill_floor(headers: httpx.Headers) -> float:
+    """Approximate time for one more token using Confluence's own
+    X-RateLimit-Limit/X-RateLimit-Interval-Seconds headers (e.g. "10
+    requests per 3s" → ~0.3s/token) — a same-order-of-magnitude wait when
+    Retry-After can't be trusted as-is."""
+    limit = headers.get("X-RateLimit-Limit")
+    interval = headers.get("X-RateLimit-Interval-Seconds")
+    try:
+        limit_f = float(limit) if limit else 0.0
+        interval_f = float(interval) if interval else 0.0
+        if limit_f > 0:
+            return interval_f / limit_f
+    except ValueError:
+        pass
+    return 0.0
+
+
 def build_incremental_cql(ancestor_id: str, since: str | None = None) -> str:
     """CQL for 'pages under ancestor_id, optionally modified after since'.
 
@@ -129,12 +154,16 @@ class ConfluenceClient:
             if resp.status_code in (429, 503):
                 retry_after_hdr = resp.headers.get("Retry-After")
                 try:
-                    delay = float(retry_after_hdr) if retry_after_hdr else min(2.0**attempt, 30.0)
+                    hdr_delay = float(retry_after_hdr) if retry_after_hdr else None
                 except ValueError:
-                    delay = min(2.0**attempt, 30.0)
+                    hdr_delay = None
+                backoff_delay = min(2.0**attempt, 30.0)
+                floor = _rate_limit_refill_floor(resp.headers)
+                delay = max(hdr_delay if hdr_delay is not None else backoff_delay, floor, _MIN_RETRY_DELAY)
                 logger.warning(
-                    "confluence rate-limited path=%s status=%s retry_after=%s attempt=%s/%s retry_in=%.1fs",
-                    path, resp.status_code, retry_after_hdr, attempt, max_retries, delay,
+                    "confluence rate-limited path=%s status=%s retry_after=%s "
+                    "refill_floor=%.2fs attempt=%s/%s retry_in=%.1fs",
+                    path, resp.status_code, retry_after_hdr, floor, attempt, max_retries, delay,
                 )
                 if attempt >= max_retries:
                     resp.raise_for_status()

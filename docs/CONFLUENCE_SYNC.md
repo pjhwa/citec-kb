@@ -71,7 +71,7 @@ python -m app.confluence.sync_cli
 
 ## Rate limiting (사용자 요구사항 — 원 프롬프트에는 없음)
 
-- 요청 간격을 `CONFLUENCE_RATE_LIMIT_RPS`(기본 2 req/s)로 제한
+- 요청 간격을 `CONFLUENCE_RATE_LIMIT_RPS`(기본 1.5 req/s — 아래 참고)로 제한
   (`app.confluence.client.RateLimiter`).
 - 크롤 구간은 `ConfluenceClient.bulk_client()`로 만든 단일 `AsyncClient`를
   재사용 — 페이지마다 새 TCP/TLS 핸드셰이크를 만들지 않는다. (기존
@@ -79,7 +79,31 @@ python -m app.confluence.sync_cli
   그대로 두었다 — 건드리지 않음.)
 - `AsyncHTTPTransport(retries=2)`는 연결 수준(DNS/TCP/TLS) 실패만 재시도하고
   HTTP 상태코드는 재시도하지 않는다 — 429/503은 `Retry-After` 헤더를 존중하는
-  지수 백오프(최대 5회, 캡 30초)로 별도 처리(`ConfluenceClient._get_with_retry`).
+  백오프(최대 5회, 캡 30초)로 별도 처리(`ConfluenceClient._get_with_retry`).
+
+### 실측: 429 발생 및 대응 (2026-09-15 운영 dry-run)
+
+운영 서버에서 `--dry-run` 중 실제로 429를 한 번 받았다. 관찰된 사실:
+
+- Confluence 응답 헤더: `X-RateLimit-Limit: 10`, `X-RateLimit-Interval-Seconds: 3`
+  (약 3.33 req/s 버킷), 429 당시 `X-RateLimit-Remaining: 0`.
+- 우리 기본 페이싱(당시 2 req/s)은 이론상 버킷 리필 속도보다 느린데도 고갈됐다 —
+  같은 계정(`jooksan.park`)을 다른 도구(예: MY-OS)가 동시에 쓰고 있을 가능성이
+  있다.
+- **버그를 하나 발견/수정함**: 429 응답의 `Retry-After` 헤더 값이 문자 그대로
+  `"0"`이었는데, 기존 코드는 이를 그대로 신뢰해 지연 없이 즉시 재시도했다(이번엔
+  운 좋게 바로 다음 요청이 성공했지만, 버킷이 진짜 비어있었다면 429가 반복될
+  수 있는 상황). `X-RateLimit-Limit`/`X-RateLimit-Interval-Seconds` 헤더로
+  "토큰 1개 리필에 걸리는 시간"을 계산해 최소 대기 시간으로 쓰도록
+  (`_rate_limit_refill_floor()`), 그리고 헤더가 전혀 없는 경우를 위한 절대
+  최소값(`_MIN_RETRY_DELAY = 0.5초`)도 추가했다.
+- **기본 RPS를 0.3으로 낮췄다** (2026-09-15, 박재화 확인). 이 Confluence 계정은
+  담당자 본인의 대화형 브라우징, MY-OS 등 다른 자동화 도구와 공유되는 계정이라
+  이 배치만의 페이싱으로는 429를 완전히 피할 수 없다. 크론 주기를 하루 1회
+  (점심시간 12시)로 정했고 시간 여유가 충분하므로, 속도보다 "다른 도구에 폐 안
+  끼치는 것"을 우선해 아주 느리게(약 3.3초에 1건) 돌도록 맞췄다. 소규모 테스트
+  실행 때만 필요하면 `CONFLUENCE_RATE_LIMIT_RPS=1` 등으로 일시적으로 올려서
+  써도 된다.
 
 ## 알려진 한계
 
@@ -94,8 +118,8 @@ python -m app.confluence.sync_cli
 
 ## 운영 배포 제안 (배포/크론 등록은 하지 않음 — 담당자 승인 필요)
 
-- 크론 주기: 앞의 3가지 라이브 미검증 항목이 확인된 뒤, 예를 들어 30분~1시간
-  간격 제안 (CQL/페이지네이션이 안정적으로 확인되면 조정).
+- 크론 주기: **확정 — 하루 1회, 점심시간 12시** (박재화). `scripts/confluence_sync.sh`
+  헤더에 예시 crontab 라인 있음.
 - 신규 환경변수(선택, 기본값 있음): `CONFLUENCE_RATE_LIMIT_RPS`,
   `CONFLUENCE_TIMEZONE` (기본 `Asia/Seoul`).
 - 기존 `CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD`는

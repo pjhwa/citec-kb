@@ -144,6 +144,50 @@ def test_get_with_retry_backs_off_on_429_then_succeeds():
     assert calls["n"] == 2
 
 
+def test_get_with_retry_floors_delay_when_retry_after_is_zero_but_bucket_empty():
+    """Prod evidence (2026-09-15): Confluence sent 429 with Retry-After: 0
+    while X-RateLimit-Remaining: 0 — trusting Retry-After literally means
+    retrying immediately against a bucket that hasn't refilled. The wait
+    must be floored using the X-RateLimit-Limit/Interval-Seconds headers
+    (here: 10 req/3s → ~0.33s/token) instead of the literal 0."""
+    from app.confluence.client import _MIN_RETRY_DELAY
+
+    client = _make_client()
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(
+                429,
+                headers={
+                    "Retry-After": "0",
+                    "X-RateLimit-Limit": "10",
+                    "X-RateLimit-Interval-Seconds": "3",
+                    "X-RateLimit-Remaining": "0",
+                },
+                json={},
+            )
+        return httpx.Response(200, json={"id": "123"})
+
+    async def _run():
+        async with httpx.AsyncClient(
+            base_url=client._base_url, transport=httpx.MockTransport(handler)
+        ) as http_client:
+            import time
+
+            t0 = time.monotonic()
+            data = await client.get_page_full("123", client=http_client, limiter=RateLimiter(0))
+            elapsed = time.monotonic() - t0
+            return data, elapsed
+
+    data, elapsed = asyncio.run(_run())
+    assert data == {"id": "123"}
+    assert calls["n"] == 2
+    # 10 req / 3s → ~0.333s/token, and never less than the absolute floor
+    assert elapsed >= min(3.0 / 10.0, _MIN_RETRY_DELAY) - 0.05
+
+
 def test_get_with_retry_raises_after_exhausting_retries():
     client = _make_client()
 

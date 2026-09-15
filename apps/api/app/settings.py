@@ -76,7 +76,15 @@ class Settings(BaseSettings):
     # retry already on ConfluenceClient — this throttles request pacing, that handles
     # DNS/TCP blips). Confluence instance is KST; lastmodified cursor must be rendered
     # in that timezone or a UTC-stored last_sync_at silently skips ~9h of edits per run.
-    confluence_rate_limit_rps: float = Field(default=2.0, alias="CONFLUENCE_RATE_LIMIT_RPS")
+    # Prod evidence (2026-09-15 dry-run): Confluence's own bucket is
+    # X-RateLimit-Limit=10 per X-RateLimit-Interval-Seconds=3 (~3.33 req/s),
+    # and a lone crawl at 2.0 still drained it to Remaining=0 and got one 429 —
+    # this Confluence account is shared with interactive browsing (박재화) and
+    # other automated tools (e.g. MY-OS), not just this crawl. Per 박재화: the
+    # cron schedule is once/day at lunchtime (12:00) with no urgency, so there
+    # is no reason to compete for the shared budget — go as slow as is
+    # comfortable. Raise via env only for an ad-hoc small-scope test run.
+    confluence_rate_limit_rps: float = Field(default=0.3, alias="CONFLUENCE_RATE_LIMIT_RPS")
     confluence_timezone: str = Field(default="Asia/Seoul", alias="CONFLUENCE_TIMEZONE")
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
