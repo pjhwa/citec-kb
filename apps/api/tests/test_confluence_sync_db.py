@@ -208,6 +208,72 @@ def test_sync_full_successful_run_advances_cursor(tmp_path, monkeypatch):
             session.query(Source).filter_by(id=source_id).delete()
 
 
+def test_sync_advances_cursor_despite_low_error_rate(tmp_path, monkeypatch):
+    """Prod evidence (2026-09-15): 1 transient 401 out of 5,483 pages must
+    not block the cursor forever — that forced a full ~90min re-bootstrap
+    on every single run. A low error rate (default threshold 1%) is
+    tolerated so the cursor still advances; the failed page stays visible
+    in error_detail for follow-up."""
+    import app.confluence.sync as sync_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        written = [sync_mod.WrittenPage(page_id=str(i), path=tmp_path / f"{i}.md") for i in range(999)]
+        errors = [{"page_id": "999", "root_id": "r1", "error": "401"}]
+        return sync_mod.CrawlResult(written=written, errors=errors, cql_log=[])
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+
+    try:
+        stats = sync_mod.sync(
+            tmp_path, dry_run=False, sources=["confluence_docs"], run_ingest_and_embed=False
+        )
+        src_stats = stats["sources"]["confluence_docs"]
+        assert src_stats["errors"] == 1
+        assert src_stats["cursor_advanced"] is True  # 1/1000 = 0.1% < default 1%
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            assert src.last_sync_at is not None
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_blocks_cursor_when_error_rate_exceeds_threshold(tmp_path, monkeypatch):
+    import app.confluence.sync as sync_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        written = [sync_mod.WrittenPage(page_id="1", path=tmp_path / "1.md")]
+        errors = [{"page_id": "2", "root_id": "r1", "error": "500"}]
+        return sync_mod.CrawlResult(written=written, errors=errors, cql_log=[])
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+
+    try:
+        stats = sync_mod.sync(
+            tmp_path, dry_run=False, sources=["confluence_docs"], run_ingest_and_embed=False
+        )
+        src_stats = stats["sources"]["confluence_docs"]
+        assert src_stats["cursor_advanced"] is False  # 1/2 = 50% >> 1%
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            assert src.last_sync_at is None
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
 def test_sync_unknown_source_type_is_skipped_not_a_crash(tmp_path):
     """An operator typo in --sources must produce a readable 'skipped:
     unknown source_type' entry in the result JSON, not a bare KeyError

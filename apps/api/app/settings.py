@@ -86,6 +86,15 @@ class Settings(BaseSettings):
     # comfortable. Raise via env only for an ad-hoc small-scope test run.
     confluence_rate_limit_rps: float = Field(default=0.3, alias="CONFLUENCE_RATE_LIMIT_RPS")
     confluence_timezone: str = Field(default="Asia/Seoul", alias="CONFLUENCE_TIMEZONE")
+    # Prod evidence (2026-09-15 full crawl): 1 page out of 5,483 in
+    # confluence_docs got a transient 401 — with the original zero-tolerance
+    # policy that alone blocked the cursor forever, forcing a full ~90min
+    # re-bootstrap of all 5,483 pages on every single daily run regardless
+    # of how few pages actually changed. 박재화 confirmed (2026-09-15): allow
+    # the cursor to advance when the per-source error rate stays under this
+    # fraction — failed page_ids are still logged (error_detail) so they can
+    # be checked, but one flaky page must not force endless full recrawls.
+    confluence_max_error_rate: float = Field(default=0.01, alias="CONFLUENCE_MAX_ERROR_RATE")
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(

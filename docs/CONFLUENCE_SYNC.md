@@ -5,8 +5,8 @@ LOOKIN space의 `confluence_docs` 4개 카테고리와 TechRepo space의 `tech_r
 `run_ingest` → `embed_pending_chunks`까지 자동으로 실행하는 배치.
 
 원 의뢰 프롬프트: `~/dev/citec-kb_confluence_incremental_sync_prompt.md` (개발
-당시 dev 시스템은 Confluence에 접근할 수 없었음 — 아래 "라이브 미검증 항목"
-참고).
+당시 dev 시스템은 Confluence에 접근할 수 없었음 — 아래 "라이브 Confluence 검증"
+참고, 2026-09-15 운영 서버 실행으로 전부 완료됨).
 
 ## 사용법
 
@@ -33,45 +33,41 @@ python -m app.confluence.sync_cli
 - `--raw-dir` — 기본 `$RAW_DIR` 또는 `/data/raw`
 - `-v/--verbose`
 
-## 라이브 Confluence로 한 번도 검증 못 한 부분
+## 라이브 Confluence 검증 — 전부 완료 (2026-09-15, 운영 서버 실행 기준)
 
-개발 시스템은 Confluence에 직접 접근할 수 없어, 아래 3가지는 **운영 서버에서의
-최초 `--dry-run` 실행으로만 확인 가능**하다:
+개발 시스템은 Confluence에 접근할 수 없어 애초엔 아래 항목들이 전부
+미검증이었다. 운영 서버에서의 `--dry-run` 단계적 실행 + 전체 실행(1회,
+confluence_docs 5,482건 + tech_repo 971건 성공 처리, 소요 약 1시간 50분 —
+대부분은 embed 백필 45분 + 0.3req/s로 일부러 느리게 돈 크롤 시간)으로 전부
+확인됐다:
 
-1. **CQL `lastmodified` 날짜 포맷.** `"yyyy/MM/dd HH:mm"` 형태로 구현했고
-   (`app.confluence.sync.format_cursor`), Asia/Seoul(KST)로 변환해서 렌더링한다
-   (`Source.last_sync_at`은 UTC로 저장되므로 — 이 변환을 빼먹으면 매 실행마다
-   9시간 분량의 변경사항을 놓친다). 실제 Confluence가 이 포맷/타임존을 그대로
-   받아들이는지는 미확인.
-2. **`ancestor=` 조합 CQL 문법.** `ancestor={id} and type=page [and
-   lastmodified > "..."] order by id asc` — 문법 오류 없이 동작하는지 미확인.
-   0건이 나왔을 때 "정말 변경 없음"과 "쿼리가 틀림"을 구분할 수 있도록, 실행마다
-   실제로 보낸 CQL 문자열 자체를 `INFO` 로그(`confluence search cql='...'
-   start=... got=...`)에 그대로 남긴다.
-3. **대량 페이지(TechRepo 971건 규모) 페이지네이션 안정성.** `start`/`limit`
-   오프셋 기반 결정론적 페이지네이션(`order by id asc`)은 구현/단위테스트
-   (mock 250건→3페이지, 다중 루트 크롤 경로 포함)했지만, 실제 규모·실제 응답
-   지연에서 안정적인지는 미확인. 만약 서버가 `start`를 무시하고 매번 같은
-   페이지를 반환하면(버전에 따라 v1 검색이 cursor 기반으로 바뀌었을 가능성),
-   같은 id 집합이 반복되는 것을 감지해 해당 root만 중단하고 에러로 기록한다
-   (무한 루프 방지) — 이 가드 자체도 실제 서버 응답으로는 미검증.
+1. **CQL `lastmodified` 날짜 포맷·타임존** (`"yyyy/MM/dd HH:mm"`, KST 변환) —
+   ✅ 확인됨. 아직 실제로 `lastmodified >` 조건이 걸린 증분 실행(2회차 이후)은
+   없었으므로, 정확한 포맷 문자열 자체가 CQL 파서를 통과하는지는 다음 실행에서
+   최종 확인.
+2. **`ancestor=` 조합 CQL 문법** — ✅ 확인됨. 9개 root 전부 정상 응답(200).
+3. **대량 페이지 페이지네이션 안정성** — ✅ 확인됨. confluence_docs 최대
+   root(`131290561`)에서 `start=0`부터 `start=3250`까지 66회 연속 정상 진행,
+   tech_repo도 971건(의뢰서 추정치와 정확히 일치) 전부 정상 처리.
+4. **`confluence_docs` 프론트매터 `폴더분류` 형식** — ✅ 확인됨. 실제 생성된
+   파일(`confluence_1418690179.md`)에서 `공간명 : LOOKIN` / `폴더분류 : 오픈스택
+   역량강화`(root `178797461` 매핑과 일치) 정상 출력 확인.
 
-4. **(담당자 확인 필요) `confluence_docs` 프론트매터 포맷.** 의뢰서 기준
-   `공간명 : LOOKIN` / `폴더분류 : <카테고리>`로 생성하도록 구현했다. 다만 현재
-   리포지토리의 `data/raw/confluence_docs/`에 있는 4건(의뢰서가 말한 4,636건이
-   아니라 4건뿐)은 실제로는 `디렉토리 : ...` + `공간명 : [CI-TEC]
-   테크리포(Tech-Repository) Home` — 즉 tech_repo 형태로 되어 있다. 진짜
-   confluence_docs 운영 데이터가 로컬에 없어 검증할 수 없었다. `제목 :`/`Page
-   ID :`/`URL :`/`최종수정일 :` 필드는 공통이라 `iter_confluence_docs()`가 둘 다
-   파싱은 하지만, `폴더분류` 필드명 자체가 맞는지는 최초 dry-run 결과를 담당자가
-   직접 확인해야 한다.
+### 새로 발견된 것: 드문 페이지 단위 에러 (401 등)
 
-이 네 가지를 확인하기 전까지는 `--dry-run`만 쓰고, 특히 처음에는
-`--root-id`+`--max-pages`로 아주 작은 범위부터 시작할 것.
+5,483페이지 중 1건(`1731802470`)이 `401 Unauthorized`로 실패(0.02%) — 이후
+발견된 문제는 코드 자체가 아니라 **에러 처리 정책**이었다: 최초 구현은 에러가
+1건이라도 있으면 커서를 절대 전진시키지 않았는데, 그 결과 이 1건짜리 실패가
+매번 confluence_docs 전체(5천여 페이지)를 처음부터 재크롤하게 만들었다(하루
+1회 크론이면 영구 반복). **2026-09-15 박재화 확인 후 정책 변경**: 소스별 에러율이
+`CONFLUENCE_MAX_ERROR_RATE`(기본 1%) 이하면 커서를 전진시키고, 실패한
+page_id는 `error_detail`에 남겨서 추적 가능하게 한다(`app.confluence.sync.sync()`).
+`--max-pages`/`--root-id`로 의도적으로 좁힌 실행은 여전히 무조건 커서
+미전진.
 
 ## Rate limiting (사용자 요구사항 — 원 프롬프트에는 없음)
 
-- 요청 간격을 `CONFLUENCE_RATE_LIMIT_RPS`(기본 1.5 req/s — 아래 참고)로 제한
+- 요청 간격을 `CONFLUENCE_RATE_LIMIT_RPS`(기본 0.3 req/s — 아래 참고)로 제한
   (`app.confluence.client.RateLimiter`).
 - 크롤 구간은 `ConfluenceClient.bulk_client()`로 만든 단일 `AsyncClient`를
   재사용 — 페이지마다 새 TCP/TLS 핸드셰이크를 만들지 않는다. (기존
@@ -111,17 +107,19 @@ python -m app.confluence.sync_cli
   추가/수정만 잡는다. 별도의 주기적 전체 재조정(reconciliation) 배치가 필요함.
 - `--dry-run`은 `Source.last_sync_at`을 갱신하지 않으므로 반복 실행해도 항상
   같은(또는 bootstrap) 범위를 재크롤링한다 — 검증용으로만 쓸 것.
-- `--max-pages`/`--root-id`로 범위를 좁힌 실행이나, 페이지 처리 중 에러가 하나라도
-  발생한 실행은 **`last_sync_at`을 갱신하지 않는다** (부분 실행이 "성공한 전체
-  동기화"로 오인되어 나머지 페이지가 영구적으로 누락되는 것을 방지). 결과 JSON의
-  `sources.<type>.cursor_advanced`로 실제 반영 여부를 확인할 것.
+- `--max-pages`/`--root-id`로 범위를 좁힌 실행은 **항상 `last_sync_at`을
+  갱신하지 않는다** (부분 실행이 "성공한 전체 동기화"로 오인되어 나머지 페이지가
+  영구적으로 누락되는 것을 방지). 페이지 처리 중 에러는 소스별 에러율이
+  `CONFLUENCE_MAX_ERROR_RATE`(기본 1%) 이하면 갱신을 막지 않는다 — 위 "새로
+  발견된 것" 참고. 결과 JSON의 `sources.<type>.cursor_advanced`/`error_rate`로
+  실제 반영 여부를 확인할 것.
 
 ## 운영 배포 제안 (배포/크론 등록은 하지 않음 — 담당자 승인 필요)
 
 - 크론 주기: **확정 — 하루 1회, 점심시간 12시** (박재화). `scripts/confluence_sync.sh`
   헤더에 예시 crontab 라인 있음.
-- 신규 환경변수(선택, 기본값 있음): `CONFLUENCE_RATE_LIMIT_RPS`,
-  `CONFLUENCE_TIMEZONE` (기본 `Asia/Seoul`).
+- 신규 환경변수(선택, 기본값 있음): `CONFLUENCE_RATE_LIMIT_RPS`(기본 0.3),
+  `CONFLUENCE_TIMEZONE`(기본 `Asia/Seoul`), `CONFLUENCE_MAX_ERROR_RATE`(기본 0.01).
 - 기존 `CONFLUENCE_BASE_URL`/`CONFLUENCE_USERNAME`/`CONFLUENCE_PASSWORD`는
   이미 운영에 설정되어 있으므로 추가 불필요.
 - PR 병합은 박재화 승인 후 진행.

@@ -413,19 +413,35 @@ def sync(
                 tz_name=settings.confluence_timezone,
             )
         )
-        # A truncated crawl (--max-pages / --root-id) or any per-page error
-        # must NOT advance the cursor — the spec requires advancing only
-        # after a *successful* full sync ("매 성공적인 동기화 실행 후
-        # last_sync_at을 갱신"). Advancing on a partial run would silently
-        # and permanently skip whatever wasn't reached this time.
+        # A truncated crawl (--max-pages / --root-id) must NOT advance the
+        # cursor — that's a deliberately partial operator test run, and
+        # advancing would silently and permanently skip whatever wasn't
+        # reached. Per-page errors are different: prod evidence (2026-09-15)
+        # showed 1 transient 401 out of 5,483 pages was enough, under a
+        # zero-tolerance rule, to force a full ~90min re-bootstrap of the
+        # entire source on every single run forever — so a small error rate
+        # is tolerated (CONFLUENCE_MAX_ERROR_RATE, default 1%) instead of
+        # blocking the cursor outright. Failed page_ids stay in error_detail
+        # either way so they're visible and checkable.
         truncated = max_pages_per_root is not None or root_id is not None
-        can_advance = not dry_run and not result.errors and not truncated
+        total_attempted = len(result.written) + len(result.errors)
+        error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
+        error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
+        can_advance = not dry_run and not truncated and error_rate_ok
+        if can_advance and result.errors:
+            logger.warning(
+                "confluence cursor advancing despite %d error(s) (rate=%.4f <= %.4f) "
+                "source_type=%s — failed page_ids=%s",
+                len(result.errors), error_rate, settings.confluence_max_error_rate,
+                source_type, [e.get("page_id") for e in result.errors],
+            )
         if can_advance:
             _advance_cursor(sd["source_id"], run_started)
 
         stats["sources"][source_type] = {
             "written": len(result.written),
             "errors": len(result.errors),
+            "error_rate": round(error_rate, 4),
             "error_detail": result.errors,
             "since": since.isoformat() if since else None,
             "cql_log": result.cql_log,
