@@ -1,0 +1,14 @@
+{
+  "note": "실제 LOOKIN space 페이지(getPageByID expand=body.storage,version,ancestors)에서 뽑은 발췌 - 본문 전체(약 8천자)가 아니라 정제 로직 검증에 필요한 대표 구조(헤딩/표/인라인 style/ac:structured-macro expand + 중첩 ri:attachment 이미지/종결부)만 남긴 축약본이다. id/title/version/ancestors/url 메타데이터는 실제 값 그대로. dev 시스템은 Confluence에 직접 접근할 수 없으므로 이 파일을 storage_html_to_text()/clean_body()/프론트매터 생성 단위테스트의 입력 픽스처로 사용할 것.",
+  "id": "2510261901",
+  "title": "[KPI-04] [기술력] Lookin 진단 분야 확대 (CI-TEC) 과제 진행 현황",
+  "space_key": "LOOKIN",
+  "folder_topic": "CI-TEC 과제",
+  "version": {"number": 13, "when": "2026-09-07T15:59:11.000+09:00"},
+  "ancestors": [
+    {"id": "222532724", "title": "[CI-TEC]"},
+    {"id": "377920133", "title": "Ⅱ. CI-TEC 과제 ('20년~'26년)"}
+  ],
+  "url": "https://devops.sdsdev.co.kr/confluence/pages/viewpage.action?pageId=2510261901",
+  "body_storage_html": "<h2>핵심 결론</h2><p><strong>이 과제는 SCP의 오픈소스 핵심 기술 3종을 Lookin 진단 체계에 처음 편입시키는 작업입니다.</strong></p><ol><li><strong>개발은 100% 끝났다.</strong> 체크리스트 데이터 기준 205개 진단 항목이 확정됐고, Kubernetes(SKE K8S)는 5월말 시스템 반영 완료, OpenStack/Ceph는 모든 개발이 완료되었습니다.</li></ol><table class=\"wrapped\"><tbody><tr><td style=\"text-align: center;background-color: rgb(243,242,239);\"><span style=\"font-size: 24.0px;font-weight: bold;\">205</span><br /><span style=\"font-size: 12.0px;\">신규 진단항목(확정)</span></td></tr></tbody></table><p><br /></p><ac:structured-macro ac:name=\"expand\" ac:schema-version=\"1\" ac:macro-id=\"f7c9c9e8-130f-4202-8a31-aa1b4e43aa48\"><ac:parameter ac:name=\"title\">1) Kubernetes (SKE K8S) - 강북삼성병원 진단 수행 내용</ac:parameter><ac:rich-text-body><p>1) Kubernetes (SKE K8S) - 강북삼성병원 진단 수행 내용</p><p><ac:image><ri:attachment ri:filename=\"image-2026-9-7_15-45-28.png\" /></ac:image></p></ac:rich-text-body></ac:structured-macro><p>- 이상 - </p>"
+}

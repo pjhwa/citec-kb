@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     confluence_base_url: str | None = Field(default=None, alias="CONFLUENCE_BASE_URL")
     confluence_username: str | None = Field(default=None, alias="CONFLUENCE_USERNAME")
     confluence_password: str | None = Field(default=None, alias="CONFLUENCE_PASSWORD")
+    # Incremental sync (app.confluence.sync_cli) — polling rate + CQL cursor timezone.
+    # Requests/sec cap for the batch crawl (separate from the retries=2 connection-level
+    # retry already on ConfluenceClient — this throttles request pacing, that handles
+    # DNS/TCP blips). Confluence instance is KST; lastmodified cursor must be rendered
+    # in that timezone or a UTC-stored last_sync_at silently skips ~9h of edits per run.
+    confluence_rate_limit_rps: float = Field(default=2.0, alias="CONFLUENCE_RATE_LIMIT_RPS")
+    confluence_timezone: str = Field(default="Asia/Seoul", alias="CONFLUENCE_TIMEZONE")
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(

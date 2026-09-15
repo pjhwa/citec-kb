@@ -1,0 +1,13 @@
+{
+  "note": "실제 페이지 사본이 아니라, export_confluence_docs.py의 docstring에 문서화된 실측 정제 케이스(4,636건 중 209건에서 ]]> 잔재, 2건에서 고립 인라인 CSS 룰 발견)를 재현하기 위해 만든 합성 픽스처다. storage_html_to_text()로 태그를 벗겨낸 '이후' 상태를 흉내낸 것 - clean_body()의 _CDATA_TAIL/_INLINE_CSS_RULE 정규식이 아래 두 케이스를 실제로 제거하는지 단위테스트로 확인할 것.",
+  "case_cdata_tail": {
+    "description": "Confluence 코드블록/제목-중복표시 매크로를 태그 스트립하면 여는 CDATA 태그는 사라지고 닫는 ']]>'만 텍스트로 남는다.",
+    "input_after_tag_strip": "이 부분은 코드 블록입니다\n]]>\n다음 문단으로 이어집니다.",
+    "expected_after_clean_body": "이 부분은 코드 블록입니다\n\n다음 문단으로 이어집니다."
+  },
+  "case_orphan_inline_css": {
+    "description": "인라인 style 매크로의 여는/닫는 태그만 스트립되고 CSS 룰 한 줄이 고립되어 남는 희귀 케이스.",
+    "input_after_tag_strip": "본문 시작\n.mystyle-class { color: red; font-size: 12px; }\n본문 계속",
+    "expected_after_clean_body": "본문 시작\n\n본문 계속"
+  }
+}
