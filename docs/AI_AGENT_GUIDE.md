@@ -175,7 +175,7 @@ Base MCP: FastMCP over **streamable-http** (`http://localhost:8577/mcp`) or **st
 | Arg | Type | Description |
 |-----|------|-------------|
 | `query` | str | Search string |
-| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitems`, `confluence_docs`, … |
+| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitems`, `confluence_docs`, `dept_archive`, … |
 | `area` | str | → domain filter (`os`, `dbms`, `network`, `cloud`, `storage`, …) |
 | `category` | str | wiki-compat only when `use_v1=false` |
 | `limit` | int | 1–50 |
@@ -336,6 +336,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` |
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form |
 | `confluence_docs` | Other confluence | `confluence_docs/...` |
+| `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` |
 | `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools |
 | insights / synthesis | Approved insights | via insight tools |
 

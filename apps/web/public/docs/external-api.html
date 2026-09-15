@@ -39,7 +39,7 @@
       <p class="lead">citec-wiki-qa 호환 /api/* 레이어</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/EXTERNAL_API.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-29</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-08</div></div>
       </div>
     </header>
     <section>
@@ -152,7 +152,7 @@
 </tr>
 <tr>
 <td><code>incident_reports</code></td>
-<td><code>support_history</code></td>
+<td><code>incident_reports</code></td>
 </tr>
 <tr>
 <td><code>tech_repo</code></td>
@@ -245,7 +245,9 @@
 <p>적용 엔드포인트: <code>POST /v1/search</code> · <code>POST /v1/query</code> items · <code>POST /v1/chat</code> citations ·<br>
 <code>GET /api/wiki/search</code> · analytics samples · <code>GET /v1/tickets</code> 목록/상세.</p>
 <h3 id="wiki-qa-post-apiupload">업로드 — wiki-qa <code>POST /api/upload</code> 호환</h3>
-<p>기술지원이력 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는 경로입니다.</p>
+<p>기술지원이력 / SWIM 장애보고서 / 테크리포 / DBMS튜닝 문서를 외부 시스템이 파일로 업로드하는<br>
+경로입니다. MCP에서는 <code>kb_upload_document(filename=, content=, source_type=)</code>로 이 엔드포인트를<br>
+그대로 감싸 호출합니다(쓰기 도구 — 결과가 코퍼스에 즉시 반영됨).</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -272,7 +274,7 @@
 </tr>
 </tbody>
 </table></div>
-<p><strong><code>source_type</code> 지원 값 / 별칭</strong> (citec-wiki-qa README 별칭 표와 동일):</p>
+<p><strong><code>source_type</code> 지원 값 / 별칭</strong> (citec-wiki-qa README 별칭 표 기반 + citec-kb 자체 확장):</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -287,7 +289,7 @@
 </tr>
 <tr>
 <td><code>incident_reports</code>, <code>incident</code></td>
-<td><code>support_history</code></td>
+<td><code>incident_reports</code></td>
 </tr>
 <tr>
 <td><code>tech_repo</code>, <code>confluence_docs</code>, <code>confluence</code>, <code>techrepo</code>, <code>tech-repo</code></td>
@@ -296,6 +298,10 @@
 <tr>
 <td><code>tuning_ai</code>, <code>sql_tuning</code>, <code>sql</code>, <code>issue_analysis</code>, <code>dbms_tuning</code>, <code>dbms-tuning</code>, <code>tuning-ai</code></td>
 <td><code>tuning_ai</code></td>
+</tr>
+<tr>
+<td><code>dept_archive</code>, <code>dept-archive</code></td>
+<td><code>dept_archive</code></td>
 </tr>
 </tbody>
 </table></div>
@@ -313,6 +319,10 @@
 <pre><code class="language-bash">curl -X POST http://&lt;host&gt;/api/upload \
      -F &quot;file=@CITECTS-1234.md&quot; \
      -F &quot;source_type=support_history&quot;
+
+curl -X POST http://&lt;host&gt;/api/upload \
+     -F &quot;file=@swim_26090761356.md&quot; \
+     -F &quot;source_type=incident_reports&quot;
 
 curl -X POST http://&lt;host&gt;/api/upload \
      -F &quot;file=@148554390_kernel_params.txt&quot; \
@@ -374,7 +384,7 @@ Content-Type: application/json
 </tbody>
 </table></div>
 <p><code>stream: false</code> 이면 JSON 한 번에 반환.</p>
-<p><code>template</code>: <code>general</code> · <code>checkitems</code> · <code>support_history</code> · <code>tech_repo</code> · <code>tuning_ai</code> · <code>synthesis</code> …</p>
+<p><code>template</code>: <code>general</code> · <code>checkitems</code> · <code>support_history</code> · <code>incident_reports</code> · <code>tech_repo</code> · <code>tuning_ai</code> · <code>synthesis</code> …</p>
 <h3 id="synthesis-insight">Synthesis ≈ Insight</h3>
 <div class="table-wrap"><table>
 <thead>

@@ -36,6 +36,7 @@ from app.db.models import Document, Feedback, IngestJob, Insight
 from app.db.session import session_scope
 from app.doc_access import attach_document_access, document_access
 from app.ingest.adapters import (
+    parse_dept_archive_file,
     parse_incident_report_file,
     parse_support_history_file,
     parse_tech_repo_file,
@@ -75,6 +76,8 @@ _SECTION_MAP: dict[str, Optional[str]] = {
     "synthesis": "insight",
     "insight": "insight",
     "insights": "insight",
+    "dept_archive": "dept_archive",
+    "dept-archive": "dept_archive",
 }
 
 _TEMPLATE_LABELS = {
@@ -87,6 +90,7 @@ _TEMPLATE_LABELS = {
     "tuning_ai": "DBMS튜닝",
     "failure_bucket": "실패 패턴 라이브러리",
     "synthesis": "Insight/합성지식",
+    "dept_archive": "부서 공유드라이브 아카이브",
 }
 
 
@@ -128,6 +132,8 @@ _UPLOAD_ALIASES: dict[str, str] = {
     "dbms_tuning": "tuning_ai",
     "dbms-tuning": "tuning_ai",
     "tuning-ai": "tuning_ai",
+    "dept_archive": "dept_archive",
+    "dept-archive": "dept_archive",
 }
 
 # Known wiki-qa values with no native citec-kb parser yet — reject with 501,
@@ -139,6 +145,7 @@ _UPLOAD_PARSERS = {
     "incident_reports": parse_incident_report_file,
     "tech_repo": parse_tech_repo_file,
     "tuning_ai": parse_tuning_ai_file,
+    "dept_archive": parse_dept_archive_file,
 }
 
 _UPLOAD_RAW_SUBDIR = {
@@ -146,6 +153,7 @@ _UPLOAD_RAW_SUBDIR = {
     "incident_reports": "incident_reports",
     "tech_repo": "tech_repo",
     "tuning_ai": "tuning_ai",
+    "dept_archive": "dept_archive",
 }
 
 _UPLOAD_ALLOWED_EXT = {".md", ".txt"}

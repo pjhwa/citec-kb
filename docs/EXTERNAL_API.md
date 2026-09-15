@@ -112,6 +112,7 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 | `incident_reports`, `incident` | `incident_reports` |
 | `tech_repo`, `confluence_docs`, `confluence`, `techrepo`, `tech-repo` | `tech_repo` |
 | `tuning_ai`, `sql_tuning`, `sql`, `issue_analysis`, `dbms_tuning`, `dbms-tuning`, `tuning-ai` | `tuning_ai` |
+| `dept_archive`, `dept-archive` | `dept_archive` |
 
 허용 확장자: `.md`, `.txt` (전체 재구축 스캔도 두 확장자 모두 포함). 최대 파일 크기: **20MB**
 (초과 시 `413 Request Entity Too Large`).

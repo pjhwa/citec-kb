@@ -38,7 +38,7 @@
       <p class="lead">failure_bucket 검색·등록 워크플로 (Claude 전용)</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/PACKET_ANALYSIS_MCP_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-07-29</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-08-07</div></div>
       </div>
     </header>
     <section>
@@ -84,13 +84,13 @@
 </thead>
 <tbody>
 <tr>
-<td><code>kb_match_failure_bucket(observed_signals=, symptom=, fb_domain="network", protocol=)</code></td>
+<td><code>kb_match_failure_bucket(observed_signals=, symptom=, fb_domain="network", protocol=, environment=)</code></td>
 <td>관찰된 신호로 후보 버킷 순위화</td>
 <td>분석 전 · 분석 중 (반복)</td>
 </tr>
 <tr>
-<td><code>kb_list_failure_buckets(fb_domain="network", protocol=, min_confidence=)</code></td>
-<td>특정 프로토콜의 등록된 패턴 전체 목록</td>
+<td><code>kb_list_failure_buckets(fb_domain="network", protocol=, environment=, min_confidence=)</code></td>
+<td>특정 프로토콜/환경의 등록된 패턴 전체 목록</td>
 <td>분석 전 (탐색)</td>
 </tr>
 <tr>
@@ -109,14 +109,14 @@
 <td>패턴이 아니라 특정 사고 사례가 필요할 때</td>
 </tr>
 <tr>
-<td><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain="network", evidence_ref=, counter_signals=, protocol=, source_plugin="packet-capture-rca@&lt;version&gt;")</code></td>
-<td>신규 패턴 등록 (즉시 검색 노출). <code>fb_domain</code>/<code>evidence_ref</code> 필수</td>
+<td><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain="network", evidence_ref=, counter_signals=, protocol=, environment=, source_plugin="packet-capture-rca@&lt;version&gt;")</code></td>
+<td>신규 패턴 등록 (즉시 검색 노출). <code>fb_domain</code>/<code>evidence_ref</code> 필수, <code>environment</code>는 선택</td>
 <td>분석 후 — 새 패턴 확정 시</td>
 </tr>
 <tr>
-<td><code>kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, confirm=)</code></td>
-<td>신호 추가 + 확인/반박 기록 → 신뢰도 자동 재계산</td>
-<td>분석 후 — 기존 패턴 재확인/반박 시</td>
+<td><code>kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)</code></td>
+<td>신호 추가 + 확인/반박 기록 → 신뢰도 자동 재계산. <code>environment</code>를 채우면 기존 값을 덮어씀(비우면 그대로 유지)</td>
+<td>분석 후 — 기존 패턴 재확인/반박 시, 또는 environment가 비어있던 기존 버킷을 이번 분석 증거로 소급 태깅할 때</td>
 </tr>
 </tbody>
 </table></div>
@@ -180,14 +180,22 @@ kb_match_failure_bucket(
   fb_domain=&quot;network&quot;,
   evidence_ref=&quot;&lt;원자료를 가리키는 구체적 포인터, 예: capture:2026-08-06-upload01.pcapng#frame=4821&gt;&quot;,
   protocol=&quot;TCP|TLS|HTTP|...&quot;,
+  environment=&quot;&lt;확신이 있을 때만: csp|msp|onprem|hybrid — 아래 참고&gt;&quot;,
   source_plugin=&quot;packet-capture-rca@&lt;version&gt;&quot;
 )
 </code></pre>
 <p>작성 기준은 §5(품질 가이드) 참고. <code>discriminating_signals</code>가 비어 있으면 API가 거부한다.<br>
 <code>fb_domain</code>/<code>evidence_ref</code>도 필수다 — 빈 값이면 API가 거부한다. <code>evidence_ref</code>는 자유 서술이<br>
-아니라 사람이 나중에 열어 확인할 수 있는 구체적 포인터여야 한다(캡처 파일명#frame 번호 등).<br>
+아니라 사람이 나중에 열어 확인할 수 있는 구체적 포인터여야 한다(캡처 파일명#frame 번호 등) — 알려진<br>
+접두어(<code>capture:</code>/<code>confluence:</code>/<code>CITECTS-</code>/<code>evtx:</code>/<code>log:</code>/<code>swim:</code>/<code>legacy:</code>)와 다르면 응답에<br>
+<code>evidence_ref_warning</code>이 붙는다(등록 자체는 막지 않음 — 경고를 보면 자유 서술이 아닌지 재확인).<br>
 응답에 <code>possible_duplicate_of</code>가 포함되면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻이니<br>
 <code>kb_get_failure_bucket</code>으로 확인 후 필요하면 등록 대신 §4-2의 확인 기록으로 정정한다.</p>
+<p><strong><code>environment</code>는 이 패턴이 특정 환경에서만 성립한다고 캡처로 확인됐을 때만 채운다</strong> — fb_domain(진단<br>
+영역)·protocol(전송계층 하위분류)과 직교하는 별도 축이다. 예: 서비스 메시(mTLS)·쿠버네티스처럼<br>
+csp/onprem 어디서나 나타나는 복잡 토폴로지 전용 패턴이면 <code>"hybrid"</code>. 비워두면 환경 무관 패턴으로<br>
+취급되어 <code>kb_match_failure_bucket(environment=...)</code> 필터에서도 계속 후보로 남는다 — 근거 없이 csp나<br>
+onprem 중 하나로 단정해 좁히지 않는다(§1 원칙 5, 근거 없는 등록/확정 금지와 동일한 이유).</p>
 <h3 id="4-2">4-2. 기존 버킷이 맞았던 경우 → 확인 기록</h3>
 <pre><code>kb_refine_failure_bucket(bucket_id=&quot;&lt;매칭된 버킷 id&gt;&quot;, confirm=true)
 </code></pre>
@@ -195,6 +203,15 @@ kb_match_failure_bucket(
 <pre><code>kb_refine_failure_bucket(
   bucket_id=&quot;...&quot;,
   add_signal=&quot;&lt;이번에 새로 확인된 판별 신호&gt;&quot;,
+  confirm=true
+)
+</code></pre>
+<p>기존 버킷의 <code>environment</code>가 비어 있었는데 이번 분석(또는 그 버킷의 기존 symptom/root_cause 재검토)으로<br>
+환경을 확인했다면 같은 호출에 <code>environment</code>를 함께 넘겨도 된다 — 신호 추가와 별개로 처리되며, 다른<br>
+필드는 건드리지 않는다:</p>
+<pre><code>kb_refine_failure_bucket(
+  bucket_id=&quot;...&quot;,
+  environment=&quot;onprem&quot;,
   confirm=true
 )
 </code></pre>
@@ -221,6 +238,7 @@ kb_match_failure_bucket(
   (예: "TLS record 재조립 지연", "LB idle-timeout으로 인한 RST").</li>
 <li>protocol은 가능하면 항상 채운다 — <code>domain</code> 필터링과 <code>kb_list_failure_buckets(protocol=)</code><br>
   조회에 쓰인다.</li>
+<li>environment는 캡처로 실제 확인된 경우에만 채운다 — 추측으로 채우지 않는다. 위 §4-1 참고.</li>
 <li>신호 개수를 인위적으로 부풀리지 않는다 — 매칭 스코어는 매칭 개수에 상한(K=4)을 두고 계산하므로<br>
   신호가 많다고 불리해지지 않는다.</li>
 </ul>

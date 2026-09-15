@@ -14,6 +14,9 @@ _NBSP = re.compile(r"\u00a0|&nbsp;")
 
 def clean_jira_markup(text: str) -> str:
     t = text or ""
+    # Postgres text columns reject NUL bytes outright (DataError) — strip them.
+    # Seen in PDF/doc-extracted content (dept_archive) that carries stray \x00.
+    t = t.replace("\x00", "")
     t = _NBSP.sub(" ", t)
     t = _JIRA_COLOR.sub("", t)
     t = _JIRA_PANEL.sub("", t)

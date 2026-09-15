@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--sources",
         default="",
-        help="Comma list: support_history,tech_repo,confluence_docs,tuning_ai,checkitem",
+        help="Comma list: support_history,tech_repo,confluence_docs,tuning_ai,checkitem,dept_archive",
     )
     parser.add_argument("--limit", type=int, default=None, help="Max documents (debug)")
     parser.add_argument("-v", "--verbose", action="store_true")

@@ -227,6 +227,73 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
         ).finalize()
 
 
+_DEPT_ARCHIVE_DOMAIN_PATTERNS = [
+    (re.compile(r"리눅스|HP-UX|Windows업무"), "os"),
+    (re.compile(r"HANA|Tibero|DB업무폴더"), "dbms"),
+    (re.compile(r"스토리지"), "storage"),
+    (re.compile(r"(?<![A-Za-z])MW(?![A-Za-z])|미들웨어|벤더협의체"), "middleware"),
+    (re.compile(r"VMware|클라우드"), "cloud"),
+    (re.compile(r"Network|네트워크"), "network"),
+]
+
+
+def _domain_from_dept_archive_path(path_str: str) -> Optional[str]:
+    """부서함(R드라이브) 폴더명 관례 기준 domain 추론.
+
+    _domain_from_path()는 confluence "디렉토리" 필드의 한국어 키워드
+    (운영체제/데이터베이스/...)를 기대하지만, dept_archive의 원본 경로는
+    다른 명명 관례("51. 리눅스_오픈소스", "57. Windows업무폴더" 등)를 쓰므로
+    별도 매핑을 둔다. 실 데이터 샘플(1,111건) 기준 78% 커버리지 확인됨 -
+    나머지는 인사/조직/기타 성격이라 domain 없음이 맞다.
+    """
+    for pattern, domain in _DEPT_ARCHIVE_DOMAIN_PATTERNS:
+        if pattern.search(path_str or ""):
+            return domain
+    return None
+
+
+def parse_dept_archive_file(path: Path) -> DocumentDraft:
+    """CI-TEC 부서 공유드라이브(R드라이브 등) 원본 파일 아카이브.
+
+    MY-OS 코퍼스(corpus/build/export_file_docs.py)가 생성하는 프론트매터
+    (구분/폴더분류/업무주제/파일형식/제목/경로/최종수정일)를 그대로 소비한다 -
+    confluence_docs와 동일한 "key : value" 프론트매터 모양이라 별도 신규 파서
+    없이 같은 파싱 로직을 재사용한다.
+    """
+    raw = _read(path)
+    meta: dict[str, Any] = {"filename": path.name}
+    body = raw
+    fm = _FRONT_YAML.match(raw)
+    if fm:
+        for line in fm.group(1).splitlines():
+            parts = re.split(r"[:：]", line, maxsplit=1)
+            if len(parts) == 2:
+                meta[parts[0].strip()] = parts[1].strip()
+        body = raw[fm.end() :]
+    title = meta.get("제목") or path.stem
+    dept_path = meta.get("경로") or ""
+    return DocumentDraft(
+        source_type="dept_archive",
+        external_id=path.stem,
+        title=_clip(title, 1000),
+        body_md=clean_md(body),
+        metadata=meta,
+        source_uri=dept_path or f"file://dept_archive/{path.name}",
+        evidence_grade="B",
+        work_type=meta.get("업무주제"),
+        path_l2=meta.get("폴더분류"),
+        domain=_domain_from_dept_archive_path(dept_path),
+    ).finalize()
+
+
+def iter_dept_archive(root: Path) -> Iterator[DocumentDraft]:
+    d = root / "dept_archive"
+    if not d.is_dir():
+        return
+    for path in sorted(d.glob("*.md")):
+        yield parse_dept_archive_file(path)
+
+
 def parse_tuning_ai_file(path: Path) -> DocumentDraft:
     raw = _read(path)
     meta: dict[str, Any] = {"filename": path.name}
@@ -347,6 +414,7 @@ ADAPTERS = {
     "tuning_ai": iter_tuning_ai,
     "checkitem": iter_checkitems_json,
     "incident_reports": iter_incident_reports,
+    "dept_archive": iter_dept_archive,
 }
 
 

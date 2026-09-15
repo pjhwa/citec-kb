@@ -13,7 +13,7 @@ router = APIRouter(prefix="/v1/ingest", tags=["ingest"])
 class IngestRequest(BaseModel):
     sources: Optional[list[str]] = Field(
         default=None,
-        description="support_history, tech_repo, confluence_docs, tuning_ai, checkitem",
+        description="support_history, tech_repo, confluence_docs, tuning_ai, checkitem, dept_archive",
     )
     limit: Optional[int] = Field(default=None, ge=1, description="Max docs (debug)")
     async_mode: bool = Field(default=False, description="Run in background thread")
