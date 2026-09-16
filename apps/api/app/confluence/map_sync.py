@@ -276,14 +276,28 @@ async def _crawl_map_source(
                 if max_pages_per_root is not None and root_written >= max_pages_per_root:
                     break
                 cql = build_incremental_cql(root_id, since=since_str)
-                data = await client.search_pages_incremental(
-                    root_id,
-                    since=since_str,
-                    start=start,
-                    limit=_PAGE_SIZE,
-                    client=http_client,
-                    limiter=limiter,
-                )
+                try:
+                    data = await client.search_pages_incremental(
+                        root_id,
+                        since=since_str,
+                        start=start,
+                        limit=_PAGE_SIZE,
+                        client=http_client,
+                        limiter=limiter,
+                    )
+                except Exception as exc:  # noqa: BLE001 — a bad search call must not kill the whole crawl
+                    # Prod evidence (2026-09-16 dry-run): an unhandled 401 on
+                    # this call took down every remaining source_id in the
+                    # run (sync_map()'s per-source_id loop never even
+                    # reached confluence_map_techrepo/...) — only the
+                    # per-page fetch below was ever guarded. Same fix
+                    # applied to the sibling app.confluence.sync._crawl_source.
+                    logger.exception(
+                        "confluence map search failed root=%s start=%s cql=%r — abandoning this root",
+                        root_id, start, cql,
+                    )
+                    errors.append({"page_id": None, "root_id": root_id, "error": str(exc)})
+                    break
                 results = data.get("results") or []
                 cql_note = f"cql={cql!r} start={start} got={len(results)}"
                 cql_log.append(cql_note)

@@ -177,6 +177,19 @@ tech_repo 크론이나 다른 도구까지 같이 영향을 받는다 — **속�
 | 페이지당 API 호출 | `get_page_full`(body 포함) | `get_page_meta`(body 없이 version+ancestors만) |
 | 크론 | 이미 운영 등록(매일 12시) | **미등록** — 담당자 승인 후 별도 등록 (목표는 동일하게 매일 1회) |
 
+## 실측 버그 및 수정 (2026-09-16 운영 dry-run)
+
+`--dry-run`(9개 source_id 전체) 실행 중 첫 source_id(`confluence_map_lookin`)의
+검색 호출이 401을 받자 **그 즉시 전체 프로세스가 Traceback과 함께 죽었다** —
+나머지 8개 source_id(techrepo/serviceexcellenceteam/icloudut/신규 5개)는
+아예 실행도 안 됐다. 원인: 페이지네이션 루프에서 개별 페이지 조회
+(`get_page_meta`)만 try/except로 감싸져 있었고, root별 검색/목록 조회
+(`search_pages_incremental`) 자체는 보호돼 있지 않았다 — 자매 모듈
+`app.confluence.sync`(confluence_docs/tech_repo, 이미 운영 크론)를 그대로
+본떠 만들었기 때문에 그쪽에도 동일한 결함이 있었다(`docs/CONFLUENCE_SYNC.md`
+참고, 같이 수정함). 이제 검색 호출도 root 단위로 try/except로 감싸 실패 시
+그 root만 포기하고(`errors`에 기록) 다음 root/source_id로 계속 진행한다.
+
 ## 알려진 한계
 
 - 삭제/비공개 전환 페이지는 탐지하지 않는다(기존 `sync.py`와 동일 한계).

@@ -65,6 +65,21 @@ page_id는 `error_detail`에 남겨서 추적 가능하게 한다(`app.confluenc
 `--max-pages`/`--root-id`로 의도적으로 좁힌 실행은 여전히 무조건 커서
 미전진.
 
+### 버그 수정: 검색(search) 호출 실패가 전체 크롤을 중단시키던 문제
+
+2026-09-16, 자매 기능(`confluence_map`) 라이브 dry-run에서 실제로 발생:
+페이지네이션 루프 안에서 개별 페이지 조회(`get_page_full`)만 try/except로
+감싸져 있었고, **root별 검색/목록 조회(`search_pages_incremental`) 호출
+자체는 보호돼 있지 않았다.** 그 결과 검색 호출 하나가 401 등으로 실패하면
+예외가 `_crawl_source()` 밖으로 그대로 전파돼 **그 실행에 포함된 나머지 모든
+root(사실상 그 함수 호출 전체)가 죽었다** — 개별 페이지 실패는 격리됐지만
+검색 호출 실패는 격리되지 않았던 비대칭. `app.confluence.map_sync`가 이
+모듈을 그대로 본떠 만들어진 거라 여기(confluence_docs/tech_repo, 이미 운영
+크론 등록됨)에도 동일한 결함이 있었다 — 지금까지 실제 크론 실행에서 검색
+호출이 실패한 적이 없어서 드러나지 않았을 뿐이다. 이제 검색 호출도 root
+단위로 try/except로 감싸 실패 시 그 root만 포기하고 다음 root로 진행하도록
+고쳤다(`errors`에 `page_id: null`로 기록).
+
 ## Rate limiting (사용자 요구사항 — 원 프롬프트에는 없음)
 
 - 요청 간격을 `CONFLUENCE_RATE_LIMIT_RPS`(기본 0.3 req/s — 아래 참고)로 제한
