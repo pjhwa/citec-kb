@@ -196,6 +196,29 @@ class ConfluenceClient:
             resp.raise_for_status()
             return resp.json()
 
+    async def get_page_meta(
+        self,
+        page_id: str,
+        *,
+        client: httpx.AsyncClient | None = None,
+        limiter: RateLimiter | None = None,
+    ) -> dict[str, Any]:
+        """Version + ancestors only, no body.storage — for structure-only
+        crawls (app.confluence.map_sync) that need the breadcrumb/last-
+        modified date but never read page content. Saves payload size vs
+        get_page_full(); request count/rate-limit cost is the same (still
+        one GET per page)."""
+        params = {"expand": "version,ancestors"}
+        if client is not None:
+            return await self._get_with_retry(
+                client, f"/rest/api/content/{page_id}", params,
+                limiter=limiter or RateLimiter(0),
+            )
+        async with self._http() as c:
+            resp = await c.get(f"/rest/api/content/{page_id}", params=params)
+            resp.raise_for_status()
+            return resp.json()
+
     async def search_pages_incremental(
         self,
         ancestor_id: str,

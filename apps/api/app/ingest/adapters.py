@@ -227,6 +227,60 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
         ).finalize()
 
 
+def iter_confluence_map(root: Path) -> Iterator[DocumentDraft]:
+    """Lightweight structure-only index (title/URL/breadcrumb, no body) for
+    Confluence spaces CI-TEC references but does not fully ingest — only
+    LOOKIN (confluence_docs) and TechRepo (tech_repo) get full body text.
+
+    Same frontmatter shape as confluence_docs/tech_repo (key : value block)
+    but with a `경로`(breadcrumb) field instead of 폴더분류/디렉토리, plus
+    `space_key`/`유형`(문서|폴더). body_md is just the breadcrumb path again
+    (so path keywords are full-text searchable) — never the real page body.
+    evidence_grade is deliberately "C" (pointer only, not evidence) so it
+    never outranks an actual A-grade confluence_docs/tech_repo document with
+    the same topic.
+
+    Output contract consumed here is produced by
+    app.confluence.map_sync.build_frontmatter_confluence_map() and by
+    scripts/migrate_confluence_map_from_skill_index.py — do not change
+    field names without updating both together.
+    """
+    d = root / "confluence_map"
+    if not d.is_dir():
+        return
+    for path in sorted(d.glob("*.md")):
+        raw = _read(path)
+        meta: dict[str, Any] = {"filename": path.name}
+        body = raw
+        fm = _FRONT_YAML.match(raw)
+        if fm:
+            for line in fm.group(1).splitlines():
+                parts = re.split(r"[:：]", line, maxsplit=1)
+                if len(parts) == 2:
+                    meta[parts[0].strip()] = parts[1].strip()
+            body = raw[fm.end() :]
+        page_id = meta.get("Page ID") or path.stem
+        title = meta.get("제목") or path.stem
+        path_breadcrumb = meta.get("경로") or ""
+        body_text = body.strip() or path_breadcrumb
+        yield DocumentDraft(
+            source_type="confluence_map",
+            external_id=str(page_id),
+            title=_clip(title, 1000),
+            body_md=body_text,
+            metadata=meta,
+            source_uri=meta.get("URL"),
+            evidence_grade="C",
+            path_l2=meta.get("space_key"),
+            # Document.path_l3 is String(512); ICLOUDUT breadcrumbs alone
+            # measured up to 459 chars in a 14,600-page sample (2026-09-16) —
+            # close enough to the limit that a deeper live-crawled page could
+            # exceed it and fail the DB insert. Full path is never lost: it
+            # stays in metadata["경로"] (JSONB, unbounded) and in body_md.
+            path_l3=_clip(path_breadcrumb, 500) or None,
+        ).finalize()
+
+
 _DEPT_ARCHIVE_DOMAIN_PATTERNS = [
     (re.compile(r"리눅스|HP-UX|Windows업무"), "os"),
     (re.compile(r"HANA|Tibero|DB업무폴더"), "dbms"),
@@ -411,6 +465,7 @@ ADAPTERS = {
     "support_history": iter_support_history,
     "tech_repo": iter_tech_repo,
     "confluence_docs": iter_confluence_docs,
+    "confluence_map": iter_confluence_map,
     "tuning_ai": iter_tuning_ai,
     "checkitem": iter_checkitems_json,
     "incident_reports": iter_incident_reports,
