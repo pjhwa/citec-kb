@@ -321,7 +321,11 @@ class IssueFrame(Base):
     """Structured ticket slots for similar-incident / prevention."""
 
     __tablename__ = "issue_frames"
-    __table_args__ = (Index("ix_issue_frames_document_id", "document_id"),)
+    __table_args__ = (
+        Index("ix_issue_frames_document_id", "document_id"),
+        Index("ix_issue_frames_citec_domains", "citec_domains", postgresql_using="gin"),
+        Index("ix_issue_frames_severity_tier", "severity_tier"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
     document_id: Mapped[str] = mapped_column(
@@ -339,6 +343,21 @@ class IssueFrame(Base):
         ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
     )
     quality: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    # CI-TEC's 11-domain lens (app.frames.citec_taxonomy.tag_citec_domains) —
+    # deliberately distinct from `components` above (that list is the
+    # general-purpose similar-incident hint set used across every
+    # source_type; this one only applies where a CI-TEC recurring-pattern
+    # batch job has populated it, currently incident_reports/SWIM). Empty
+    # array means either "not yet computed" or "no CI-TEC domain applies" —
+    # same pre-existing ambiguity as `components`.
+    citec_domains: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
+    )
+    # SWIM 최종등급 → tier (app.frames.citec_taxonomy.classify_severity_tier):
+    # major | minor | failover_no_impact | customer_fault | vendor_fault |
+    # unknown. NULL = not yet computed (only set for incident_reports rows
+    # a CI-TEC batch job has processed).
+    severity_tier: Mapped[Optional[str]] = mapped_column(String(32))
     raw_extract: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
