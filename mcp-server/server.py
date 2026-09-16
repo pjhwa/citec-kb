@@ -1360,6 +1360,143 @@ async def kb_stats() -> str:
     return "\n".join(lines)
 
 
+@mcp.tool()
+async def kb_citec_domain_catalog() -> str:
+    """CI-TEC 반복장애 대시보드가 쓰는 11개 도메인(Linux/Windows/VMware/
+    OpenStack/Kubernetes/Middleware/Network/Storage/Ceph/Database/성능)과
+    SWIM 심각도 티어(major/minor/failover_no_impact/customer_fault/
+    vendor_fault/unknown) 정의, group_by에 쓸 수 있는 차원 목록을 반환한다.
+    다른 kb_citec_* 도구를 쓰기 전에 한 번 조회해서 값을 확인하는 걸 권장."""
+    try:
+        async with _client() as client:
+            resp = await client.get("/v1/citec-dashboard/domains")
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    lines = ["CI-TEC 도메인:"]
+    lines.append(", ".join(data.get("domains") or []))
+    lines.append("")
+    lines.append("심각도 티어:")
+    for tier, desc in (data.get("severity_tiers") or {}).items():
+        lines.append(f"  - {tier}: {desc}")
+    lines.append("")
+    lines.append(
+        f"group_by 차원(최대 {data.get('max_group_by_dimensions')}개 조합): "
+        + ", ".join(data.get("group_by_dimensions") or [])
+    )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_citec_recurring_patterns(
+    group_by: str,
+    domains: str = "",
+    severity_tiers: str = "",
+    dept_contains: str = "",
+    customer_contains: str = "",
+    since_days: int = 0,
+    min_count: int = 3,
+    limit: int = 30,
+) -> str:
+    """CI-TEC SWIM(incident_reports) 반복 장애 패턴 조회 — 태깅된 11개 도메인
+    (Linux/Windows/VMware/OpenStack/Kubernetes/Middleware/Network/Storage/
+    Ceph/Database/성능) 기준으로 집계한다. 값 확인이 필요하면 먼저
+    kb_citec_domain_catalog()를 호출할 것.
+
+    group_by: 쉼표로 1~3개, domain/severity_tier/dept/customer/year 중에서
+      (예: "domain" 또는 "domain,severity_tier" 또는 "domain,dept").
+    domains: 필터할 도메인 쉼표 목록(예: "Network,Database"), 비우면 전체.
+    severity_tiers: 필터할 티어 쉼표 목록(예: "major,minor"), 비우면 전체.
+    dept_contains / customer_contains: 운영부서/고객사 부분일치 필터.
+    since_days: N일 이내 발생 건만(예: 730=최근 2년), 0이면 전체 기간.
+    min_count: 이 값 미만인 그룹은 결과에서 제외(기본 3 — "반복"의 최소
+      기준, citec-kb 대화에서 박재화가 확정한 값).
+    limit: 반환할 그룹 수 상한(건수 내림차순 정렬).
+
+    한 장애가 여러 도메인 태그를 가질 수 있어(예: "DB Hang"은 Database와
+    성능 둘 다), group_by에 domain이 들어가면 그 장애는 해당하는 각 도메인
+    그룹에 한 번씩 잡힌다 — count는 "그 도메인이 걸린 건수"이지 "그 도메인
+    단독인 건수"가 아니다."""
+    params: dict[str, Any] = {"group_by": group_by, "min_count": min_count, "limit": limit}
+    if domains.strip():
+        params["domains"] = domains.strip()
+    if severity_tiers.strip():
+        params["severity_tiers"] = severity_tiers.strip()
+    if dept_contains.strip():
+        params["dept_contains"] = dept_contains.strip()
+    if customer_contains.strip():
+        params["customer_contains"] = customer_contains.strip()
+    if since_days > 0:
+        params["since_days"] = since_days
+
+    try:
+        async with _client() as client:
+            resp = await client.get("/v1/citec-dashboard/recurring-patterns", params=params)
+            if resp.status_code >= 400:
+                return f"오류: 반복 패턴 조회 실패 (HTTP {resp.status_code}): {_api_error_detail(resp)}"
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    groups = data.get("groups") or []
+    if not groups:
+        return f"조건에 맞는 반복 패턴이 없습니다 (candidate_count={data.get('candidate_count')}, min_count={min_count})."
+
+    lines = [
+        f"반복 패턴 {len(groups)}건 (전체 후보 {data.get('candidate_count')}건 중"
+        + (", 결과 더 있음(limit 도달)" if data.get("truncated") else "")
+        + "):"
+    ]
+    for g in groups:
+        group_desc = ", ".join(f"{k}={v}" for k, v in g["group"].items())
+        lines.append(f"- [{group_desc}] {g['count']}건, 고객사 {g['customer_count']}곳")
+        for s in g.get("samples") or []:
+            lines.append(f"    · {s.get('title')} ({s.get('occurred_at')}) {s.get('url') or ''}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_citec_failure_bucket_coverage(since_days: int = 730, min_count: int = 3) -> str:
+    """CI-TEC 11개 도메인별로, 반복 장애가 확인됐는데 아직 failure_bucket
+    (실패 패턴 라이브러리)에 등록 안 된 "정리 갭"을 보여준다.
+
+    주의: failure_bucket의 fb_domain 어휘(현재 network/cluster/windows
+    3개뿐, references/failure-bucket-domains.md 참고)는 진단 플러그인이
+    소유하는 별도 체계라 CI-TEC 11개 도메인과 대부분 대응이 없다.
+    Network→network, Windows→windows, Linux→cluster(Pacemaker HA 한정,
+    부분 대응) 3개만 실제 gap 비교가 되고, 나머지 8개 도메인은
+    "no_fb_domain_defined"로 나온다 — 이건 "커버리지 0%"가 아니라 "아직
+    이 도메인을 위한 fb_domain 자체가 없다"는 뜻이다."""
+    try:
+        async with _client() as client:
+            resp = await client.get(
+                "/v1/citec-dashboard/failure-bucket-coverage",
+                params={"since_days": since_days, "min_count": min_count},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    status_label = {
+        "gap": "⚠ 정리 필요 (반복 확인됨, failure_bucket 없음)",
+        "covered": "✓ 등록됨",
+        "no_recurring_pattern": "- 반복 패턴 없음",
+        "no_fb_domain_defined": "(fb_domain 미정의)",
+    }
+    lines = [f"CI-TEC 도메인별 failure_bucket 커버리지 (최근 {since_days}일, min_count={min_count}):"]
+    for row in data.get("domains") or []:
+        fb_count = row.get("failure_bucket_count")
+        fb_count_str = "" if fb_count is None else f", 등록된 failure_bucket {fb_count}건"
+        lines.append(
+            f"- {row['domain']}: 반복 장애 {row['recurring_incident_count']}건{fb_count_str} "
+            f"— {status_label.get(row['status'], row['status'])}"
+        )
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     # streamable-http: Claude Desktop remote / Docker (default)
     # stdio: local Claude Desktop / Claude Code subprocess

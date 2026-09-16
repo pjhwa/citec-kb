@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from app.db.models import Document, IssueFrame
 from app.db.session import session_scope
-from app.frames.job import extract_frames
+from app.frames.job import extract_citec_domains, extract_frames
 
 router = APIRouter(prefix="/v1", tags=["frames"])
 
@@ -31,6 +31,29 @@ def run_extract(body: FrameExtractBody) -> dict[str, Any]:
             limit=body.limit,
             force=body.force,
             min_quality=body.min_quality,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class CitecDomainExtractBody(BaseModel):
+    source_type: str = "incident_reports"
+    limit: Optional[int] = Field(default=None, ge=1, le=20000)
+    force: bool = False
+
+
+@router.post("/frames/extract-citec-domains")
+def run_extract_citec_domains(body: CitecDomainExtractBody) -> dict[str, Any]:
+    """Batch-tag issue_frames.citec_domains/severity_tier for the CI-TEC
+    recurring-incident dashboard (see app.citec_dashboard.service /
+    docs/CITEC_DASHBOARD_API.md). Idempotent — safe to call on a cron after
+    each incident_reports ingest; only untagged (severity_tier IS NULL)
+    rows are processed unless force=true."""
+    try:
+        return extract_citec_domains(
+            source_type=body.source_type,
+            limit=body.limit,
+            force=body.force,
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
