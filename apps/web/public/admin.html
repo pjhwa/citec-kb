@@ -124,6 +124,26 @@
   </div>
 
   <div class="card" style="margin-top:12px">
+    <div class="job-top">
+      <strong>Confluence 맵 동기화 (confluence_map)</strong>
+      <span>
+        <span id="mapRunning" class="badge na">…</span>
+        <button type="button" id="btnMapRun">지금 실행 (백그라운드)</button>
+      </span>
+    </div>
+    <p class="meta" style="margin:4px 0 8px">
+      LOOKIN/TechRepo/ServiceExcellenceTeam/ICLOUDUT/DevOps001/Openstack101/CLDENG/DFTRTS/EMCloud
+      9개 공간 순차 동기화. 실행 중 중단돼도 다음 실행이 체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록
+      Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).
+    </p>
+    <div id="mapCurrent" class="row"><span>지금 처리 중</span><span class="meta">…</span></div>
+    <table class="tbl">
+      <thead><tr><th>source_id</th><th>space</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th></tr></thead>
+      <tbody id="mapSyncBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+    <span id="mapMsg" class="meta"></span>
+  </div>
+  <div class="card" style="margin-top:12px">
     <strong>ops/status</strong>
     <pre id="ops">…</pre>
   </div>
@@ -152,7 +172,7 @@ function fmtTs(iso) {
 function jobBadgeClass(status) {
   if (status === "success" || status === "done" || status === "completed") return "ok";
   if (status === "failed" || status === "error") return "bad";
-  if (status === "running" || status === "in_progress" || status === "queued") return "warn";
+  if (status === "running" || status === "in_progress" || status === "queued" || status === "skipped") return "warn";
   return "na";
 }
 
@@ -185,6 +205,7 @@ async function refresh() {
     badge($("hpilot"), !!ops.pilot_engineering_ready, ops.pilot_engineering_ready ? "ready" : "no");
 
     await refreshDashboard();
+    await refreshMapSync();
 
     $("msg").textContent = "ok " + new Date().toLocaleTimeString();
   } catch (e) {
@@ -283,6 +304,75 @@ async function refreshDashboard() {
       }).join("")
     : '<tr><td colspan="7" class="meta">등록된 실패 버킷 없음</td></tr>';
 }
+
+function fmtCheckpoint(cp) {
+  const roots = Object.keys(cp || {});
+  if (!roots.length) return '<span class="meta">—</span>';
+  return roots.map((r) => {
+    const c = cp[r];
+    if (c && c.done) return esc(r) + ': <span class="badge ok">완료</span>';
+    if (c && c.start != null) return esc(r) + ': <span class="badge warn">진행중 (start=' + c.start + ')</span>';
+    return esc(r) + ": —";
+  }).join("<br/>");
+}
+
+async function refreshMapSync() {
+  try {
+    const r = await CitecAuth.apiFetch("/v1/confluence-map/status");
+    if (r.status === 401 || r.status === 403) {
+      $("mapSyncBody").innerHTML = '<tr><td colspan="4" class="meta">관리자 권한 필요</td></tr>';
+      badge($("mapRunning"), null, "?");
+      return;
+    }
+    const d = await r.json();
+    badge($("mapRunning"), d.running === true, d.running ? "실행 중" : (d.running === false ? "대기" : "확인 불가"));
+
+    const cur = d.current;
+    if (!cur || !cur.source_id) {
+      $("mapCurrent").innerHTML = '<span>지금 처리 중</span><span class="meta">' +
+        (d.running ? '—' : '실행 중 아님') + '</span>';
+    } else {
+      const label = esc(cur.source_id) + (cur.space_key ? ' (' + esc(cur.space_key) + ')' : '') +
+        (cur.root_label ? ' → ' + esc(cur.root_label) : '') +
+        (cur.pages_done_this_root ? ' · ' + cur.pages_done_this_root + '페이지 처리됨' : '') +
+        ' · 소스 ' + (cur.source_index || "?") + '/' + (cur.source_total || "?");
+      const staleTag = d.running ? '' : ' <span class="badge bad">중단됨 (재시작/크래시 의심)</span>';
+      $("mapCurrent").innerHTML = '<span>지금 처리 중</span><span>' + label + staleTag + '</span>';
+    }
+
+    const sources = Object.keys(d.sources || {}).sort();
+    $("mapSyncBody").innerHTML = sources.length
+      ? sources.map((id) => {
+          const s = d.sources[id];
+          return '<tr><td>' + esc(id) + '</td><td>' + esc(s.space_key || "—") +
+            '</td><td>' + fmtTs(s.last_sync_at) +
+            '</td><td>' + fmtCheckpoint(s.checkpoint) + '</td></tr>';
+        }).join("")
+      : '<tr><td colspan="4" class="meta">데이터 없음</td></tr>';
+  } catch (e) {
+    $("mapSyncBody").innerHTML = '<tr><td colspan="4" class="meta">' + esc(String(e)) + '</td></tr>';
+  }
+}
+
+$("btnMapRun").onclick = async () => {
+  $("mapMsg").textContent = "요청 중…";
+  try {
+    const r = await CitecAuth.apiFetch("/v1/jobs", {
+      method: "POST",
+      body: { type: "confluence_map_sync", payload: {} },
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      $("mapMsg").textContent = "실패: " + (d.detail || r.status) + " (admin 권한 필요할 수 있음)";
+      return;
+    }
+    $("mapMsg").textContent = "큐에 등록됨 (job " + d.id + ") — worker가 백그라운드로 실행, 몇 시간 걸릴 수 있음. 아래 표/작업 큐에서 진행상황 확인.";
+    await refreshMapSync();
+    await refreshDashboard();
+  } catch (e) {
+    $("mapMsg").textContent = String(e);
+  }
+};
 
 let lastJobId = null;
 $("btnPing").onclick = async () => {

@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterator, Optional
+
+from sqlalchemy import text
 
 from app.confluence.client import ConfluenceClient, RateLimiter, build_incremental_cql
 from app.confluence.sync import (
@@ -46,12 +49,22 @@ from app.confluence.sync import (
     version_date,
 )
 from app.db.models import Source
-from app.db.session import session_scope
+from app.db.session import get_engine, session_scope
 from app.settings import get_settings
 
 logger = logging.getLogger("citec.confluence.map_sync")
 
 _PAGE_SIZE = 50
+
+# Arbitrary but stable key for a Postgres advisory lock guarding sync_map()
+# run-exclusivity. Needed because this function has two independent
+# callers that share no process/filesystem: scripts/map_sync.sh's
+# `docker compose exec` CLI invocation (flock'd at the shell level, but
+# only against *itself*) and the admin-triggered HTTP endpoint (run inside
+# the api container's own thread pool, via the Redis job queue/worker —
+# see app.routers.confluence_map). Without this, a manual/cron run and an
+# admin-triggered run could race on the same source_id's cursor/checkpoint.
+_SYNC_LOCK_KEY = 861_234_501
 
 # Curated roots per space — narrow subtrees only (incident/tech-support
 # relevant), same "don't ingest whole space" policy as sync.py's
@@ -249,6 +262,7 @@ def _write_map_page(
 async def _crawl_map_source(
     client: ConfluenceClient,
     *,
+    source_id: str,
     roots: dict[str, str],
     space_key: str,
     space_name: str,
@@ -257,6 +271,8 @@ async def _crawl_map_source(
     max_pages_per_root: Optional[int],
     rps: float,
     tz_name: str,
+    use_checkpoint: bool = False,
+    progress: Optional[dict[str, Any]] = None,
 ) -> CrawlResult:
     from app.confluence.sync import format_cursor  # avoid import-time cycle risk
 
@@ -266,10 +282,31 @@ async def _crawl_map_source(
     written: list[WrittenPage] = []
     errors: list[dict[str, Any]] = []
     cql_log: list[str] = []
+    checkpoints = _read_checkpoints(source_id) if use_checkpoint else {}
 
     async with client.bulk_client() as http_client:
         for root_id, root_label in roots.items():
-            start = 0
+            root_checkpoint = checkpoints.get(root_id) or {}
+            if use_checkpoint and root_checkpoint.get("done"):
+                note = f"root={root_id} skipped: already completed this cycle (checkpoint)"
+                logger.info("confluence map %s since=%s", note, since_str)
+                cql_log.append(note)
+                continue
+            start = int(root_checkpoint.get("start") or 0) if use_checkpoint else 0
+            if progress is not None:
+                _set_progress(
+                    **progress,
+                    root_id=root_id,
+                    root_label=root_label,
+                    pages_done_this_root=start,
+                    updated_at=_now().isoformat(),
+                )
+            if start:
+                note = f"root={root_id} resumed from checkpoint start={start}"
+                logger.info(
+                    "confluence map %s (previous run was interrupted mid-root)", note
+                )
+                cql_log.append(note)
             root_written = 0
             seen_ids: set[str] = set()
             while True:
@@ -292,6 +329,10 @@ async def _crawl_map_source(
                     # reached confluence_map_techrepo/...) — only the
                     # per-page fetch below was ever guarded. Same fix
                     # applied to the sibling app.confluence.sync._crawl_source.
+                    #
+                    # Leave any saved checkpoint untouched here — the next
+                    # run (or resumed process) retries from the last
+                    # successfully completed page batch instead of root 0.
                     logger.exception(
                         "confluence map search failed root=%s start=%s cql=%r — abandoning this root",
                         root_id, start, cql,
@@ -303,6 +344,8 @@ async def _crawl_map_source(
                 cql_log.append(cql_note)
                 logger.info("confluence map search %s", cql_note)
                 if not results:
+                    if use_checkpoint:
+                        _save_root_checkpoint(source_id, root_id, done=True)
                     break
                 new_ids = {str(r.get("id")) for r in results} - seen_ids
                 if not new_ids:
@@ -344,10 +387,123 @@ async def _crawl_map_source(
                             {"page_id": page_id, "root_id": root_id, "error": str(exc)}
                         )
                 if len(results) < _PAGE_SIZE:
+                    if use_checkpoint:
+                        _save_root_checkpoint(source_id, root_id, done=True)
                     break
                 start += _PAGE_SIZE
+                if use_checkpoint:
+                    # Persisted every _PAGE_SIZE (50) pages, not per-page —
+                    # a crash/restart mid-batch replays at most one batch
+                    # (~a few minutes at the confluence rate limit) instead
+                    # of the whole root.
+                    _save_root_checkpoint(source_id, root_id, start=start)
+                if progress is not None:
+                    _set_progress(
+                        **progress,
+                        root_id=root_id,
+                        root_label=root_label,
+                        pages_done_this_root=start,
+                        updated_at=_now().isoformat(),
+                    )
 
     return CrawlResult(written=written, errors=errors, cql_log=cql_log)
+
+
+@contextmanager
+def _sync_run_lock() -> Iterator[bool]:
+    """Postgres session-level advisory lock — held for the whole sync_map()
+    call. Yields True if acquired (caller should proceed), False if some
+    other sync_map() invocation already holds it (caller should skip).
+    Uses AUTOCOMMIT so this doesn't sit as an open idle transaction for the
+    entire (possibly many-hour) crawl — advisory locks are tied to the
+    underlying connection/session, not to a transaction."""
+    conn = get_engine().connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        acquired = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": _SYNC_LOCK_KEY}).scalar())
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _SYNC_LOCK_KEY})
+    finally:
+        conn.close()
+
+
+_PROGRESS_KEY = "citec:confluence_map:progress"
+
+
+def _progress_redis():
+    import redis
+
+    settings = get_settings()
+    url = getattr(settings, "redis_url", None) or "redis://localhost:6379/0"
+    return redis.from_url(url, decode_responses=True, socket_connect_timeout=3)
+
+
+def _set_progress(**fields: Any) -> None:
+    """Best-effort "what's happening right now" pointer for the admin
+    status endpoint — answers "which space, which root, how far in" without
+    the caller having to infer it from Source.config['checkpoint'] (which
+    only says where each source *left off*, not which one is currently
+    active). Never raises: this is telemetry, not correctness — a Redis
+    hiccup must not take down the actual crawl."""
+    try:
+        r = _progress_redis()
+        r.hset(_PROGRESS_KEY, mapping={k: "" if v is None else str(v) for k, v in fields.items()})
+        r.expire(_PROGRESS_KEY, 3600)  # self-heals if a crash skips _clear_progress
+    except Exception:  # noqa: BLE001
+        logger.debug("confluence map progress pointer update failed (non-fatal)", exc_info=True)
+
+
+def _clear_progress() -> None:
+    try:
+        _progress_redis().delete(_PROGRESS_KEY)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def get_progress() -> Optional[dict[str, Any]]:
+    """Read the current/last-known progress pointer. Combine with
+    is_sync_running() in callers — a non-empty pointer while not running
+    just means "this is where the last run stopped" (crash or clean finish)."""
+    try:
+        data = _progress_redis().hgetall(_PROGRESS_KEY)
+        return data or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def is_sync_running() -> bool:
+    """True if some sync_map() call currently holds the run lock. Used by
+    the admin status endpoint and by restart_api_if_idle.sh (via a tiny
+    inline script) to avoid restarting the api container mid-crawl when the
+    crawl was triggered from the admin UI rather than the CLI (the CLI path
+    is separately caught by that script's /proc cmdline grep).
+
+    Reads pg_locks directly rather than attempting-then-releasing
+    pg_try_advisory_lock: that acquire-probe pattern would itself briefly
+    hold the lock, and a real sync_map() call trying to start in that same
+    instant would see the lock as taken and skip with "already_running" —
+    a status/health check silently cancelling a real run. _SYNC_LOCK_KEY
+    fits in 32 bits, so the single-bigint pg_advisory_lock() form is stored
+    as classid=0, objid=key, objsubid=1 (verified against pg_locks; the
+    two-int32 form used by *_lock(a, b) would show objsubid=2 instead)."""
+    conn = get_engine().connect().execution_options(isolation_level="AUTOCOMMIT")
+    try:
+        return bool(
+            conn.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "  SELECT 1 FROM pg_locks"
+                    "  WHERE locktype = 'advisory' AND classid = 0"
+                    "    AND objid = :k AND objsubid = 1 AND granted"
+                    ")"
+                ),
+                {"k": _SYNC_LOCK_KEY},
+            ).scalar()
+        )
+    finally:
+        conn.close()
 
 
 def _read_cursor(source_id: str) -> Optional[datetime]:
@@ -381,16 +537,63 @@ def _advance_cursor(source_id: str, run_started: datetime) -> None:
             src.last_sync_at = new_cursor
 
 
+def _read_checkpoints(source_id: str) -> dict[str, dict[str, Any]]:
+    """Per-root crawl progress for the *current* (not-yet-advanced) since
+    cursor, keyed by root_id: {"start": N} (in progress, resume at page
+    offset N) or {"done": True} (this root's incremental fetch already ran
+    to completion this cycle — don't redo it if a later root in the same
+    source_id gets interrupted). Cleared by _clear_checkpoints() once the
+    whole source_id completes and its cursor advances past this cycle."""
+    with session_scope() as session:
+        src = session.get(Source, source_id)
+        if not src:
+            return {}
+        return dict((src.config or {}).get("checkpoint") or {})
+
+
+def _save_root_checkpoint(
+    source_id: str, root_id: str, *, start: Optional[int] = None, done: bool = False
+) -> None:
+    with session_scope() as session:
+        src = session.get(Source, source_id)
+        if not src:
+            return
+        config = dict(src.config or {})
+        checkpoint = dict(config.get("checkpoint") or {})
+        checkpoint[root_id] = {"done": True} if done else {"start": start}
+        config["checkpoint"] = checkpoint
+        src.config = config  # reassign (not mutate) so SQLAlchemy detects the JSONB change
+
+
+def _clear_checkpoints(source_id: str) -> None:
+    with session_scope() as session:
+        src = session.get(Source, source_id)
+        if not src or "checkpoint" not in (src.config or {}):
+            return
+        config = dict(src.config)
+        config.pop("checkpoint", None)
+        src.config = config
+
+
 def seed_cursor(source_id: str, seeded_at: datetime) -> None:
     """Used by scripts/migrate_confluence_map_from_skill_index.py right
     after a one-time bootstrap import: sets last_sync_at so the *next* live
     sync_map() run only asks Confluence for pages changed since the
     migration, instead of re-crawling everything the migration already
-    covered (this matters most for ICLOUDUT's ~14,600 pages)."""
+    covered (this matters most for ICLOUDUT's ~14,600 pages).
+
+    Also drops any leftover per-root checkpoint (see _save_root_checkpoint):
+    a stale {"start": N} paired with a freshly-seeded cursor would resume at
+    offset N of a completely different (post-migration) result set and
+    silently skip everything before it."""
     with session_scope() as session:
         src = session.get(Source, source_id)
         if src:
             src.last_sync_at = seeded_at
+            if "checkpoint" in (src.config or {}):
+                config = dict(src.config)
+                config.pop("checkpoint", None)
+                src.config = config
         else:
             session.add(
                 Source(
@@ -422,7 +625,39 @@ def sync_map(
     policy exactly (see that function's docstring for the rationale) —
     intentionally not shared code because of the per-space cursor keying
     difference explained in this module's docstring.
+
+    Thin wrapper around _sync_map_locked(): acquires _sync_run_lock() so a
+    concurrent call (cron CLI vs. admin-triggered job, or two admin clicks)
+    never runs two crawls over the same source_id at once. Returns a
+    {"skipped": True, "reason": "already_running", "sources": {}} stub
+    instead of racing when the lock is already held.
     """
+    with _sync_run_lock() as acquired:
+        if not acquired:
+            logger.warning(
+                "confluence map sync already running elsewhere (advisory lock held) — "
+                "skipping this invocation"
+            )
+            return {"dry_run": dry_run, "skipped": True, "reason": "already_running", "sources": {}}
+        return _sync_map_locked(
+            raw_dir,
+            dry_run=dry_run,
+            source_ids=source_ids,
+            max_pages_per_root=max_pages_per_root,
+            root_id=root_id,
+            run_ingest_and_embed=run_ingest_and_embed,
+        )
+
+
+def _sync_map_locked(
+    raw_dir: str | Path,
+    *,
+    dry_run: bool = False,
+    source_ids: Optional[list[str]] = None,
+    max_pages_per_root: Optional[int] = None,
+    root_id: Optional[str] = None,
+    run_ingest_and_embed: bool = True,
+) -> dict[str, Any]:
     raw_root = Path(raw_dir)
     settings = get_settings()
     client = ConfluenceClient(settings)
@@ -430,8 +665,49 @@ def sync_map(
     run_started = _now()
 
     stats: dict[str, Any] = {"dry_run": dry_run, "started_at": run_started.isoformat(), "sources": {}}
+    _set_progress(
+        run_started_at=run_started.isoformat(),
+        source_index=0,
+        source_total=len(defs),
+        source_id=None,
+        space_key=None,
+        root_id=None,
+        root_label=None,
+        pages_done_this_root=None,
+        updated_at=_now().isoformat(),
+    )
 
-    for source_id in defs:
+    try:
+        return _sync_map_body(
+            defs=defs,
+            raw_root=raw_root,
+            settings=settings,
+            client=client,
+            run_started=run_started,
+            stats=stats,
+            dry_run=dry_run,
+            max_pages_per_root=max_pages_per_root,
+            root_id=root_id,
+            run_ingest_and_embed=run_ingest_and_embed,
+        )
+    finally:
+        _clear_progress()
+
+
+def _sync_map_body(
+    *,
+    defs: list[str],
+    raw_root: Path,
+    settings: Any,
+    client: ConfluenceClient,
+    run_started: datetime,
+    stats: dict[str, Any],
+    dry_run: bool,
+    max_pages_per_root: Optional[int],
+    root_id: Optional[str],
+    run_ingest_and_embed: bool,
+) -> dict[str, Any]:
+    for idx, source_id in enumerate(defs, start=1):
         if source_id not in MAP_SOURCE_DEFS:
             logger.error("unknown confluence_map source_id=%s (valid: %s)", source_id, list(MAP_SOURCE_DEFS))
             stats["sources"][source_id] = {"skipped": True, "reason": "unknown source_id"}
@@ -446,10 +722,27 @@ def sync_map(
 
         _ensure_source_row(source_id, sd["space_key"], sd["roots"])
         since = _read_cursor(source_id)
+        truncated = max_pages_per_root is not None or root_id is not None
+        # Only checkpoint/resume full, untruncated crawls — a `--max-pages`/
+        # `--root-id` smoke test must never read or clobber the real
+        # in-progress checkpoint for this source.
+        use_checkpoint = not truncated
 
+        _set_progress(
+            run_started_at=run_started.isoformat(),
+            source_index=idx,
+            source_total=len(defs),
+            source_id=source_id,
+            space_key=sd["space_key"],
+            root_id=None,
+            root_label=None,
+            pages_done_this_root=None,
+            updated_at=_now().isoformat(),
+        )
         result = asyncio.run(
             _crawl_map_source(
                 client,
+                source_id=source_id,
                 roots=roots,
                 space_key=sd["space_key"],
                 space_name=sd["space_name"],
@@ -458,15 +751,24 @@ def sync_map(
                 max_pages_per_root=max_pages_per_root,
                 rps=settings.confluence_rate_limit_rps,
                 tz_name=settings.confluence_timezone,
+                use_checkpoint=use_checkpoint,
+                progress={
+                    "run_started_at": run_started.isoformat(),
+                    "source_index": idx,
+                    "source_total": len(defs),
+                    "source_id": source_id,
+                    "space_key": sd["space_key"],
+                },
             )
         )
-        truncated = max_pages_per_root is not None or root_id is not None
         total_attempted = len(result.written) + len(result.errors)
         error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
         error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance:
             _advance_cursor(source_id, run_started)
+            if use_checkpoint:
+                _clear_checkpoints(source_id)
 
         stats["sources"][source_id] = {
             "written": len(result.written),

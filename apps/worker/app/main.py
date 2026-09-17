@@ -91,6 +91,15 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("insight_reindex requires payload.insight_id")
         # embed can take a while (model load)
         return _http_json("POST", f"/v1/insights/{iid}/reindex", timeout=600)
+    if job_type == "confluence_map_sync":
+        # Can legitimately run for many hours (LOOKIN alone has run 8+ hours
+        # in prod) — this blocks _process_one/the worker's main loop for the
+        # duration (no other queued job runs meanwhile, and the heartbeat at
+        # the top of main()'s while-loop won't get refreshed until this
+        # returns, so the admin page's "worker heartbeat" can show stale/
+        # down while a sync is genuinely just still running). Timeout is a
+        # generous ceiling, not an expected duration.
+        return _http_json("POST", "/v1/confluence-map/_run-sync", body=payload, timeout=24 * 3600)
     if job_type == "embed_document":
         # Prefer insight_reindex when possible; this path hits a thin API via reindex of
         # a promoted insight is preferred. For raw document_id, call internal-style
@@ -124,16 +133,22 @@ def _process_one(client: redis.Redis, job_id: str) -> None:
     logger.info("job start id=%s type=%s", job_id, job_type)
     try:
         result = _handle(job_type, payload if isinstance(payload, dict) else {})
+        # sync_map()-shaped results (confluence_map_sync) can come back
+        # {"skipped": True, "reason": "already_running"} when another run
+        # already held the lock — a genuine no-op, not "done". Surfacing it
+        # as a distinct status keeps a lock-skipped admin-triggered run from
+        # rendering as a green success in the job queue UI.
+        skipped = isinstance(result, dict) and result.get("skipped") is True
         client.hset(
             key,
             mapping={
-                "status": "done",
+                "status": "skipped" if skipped else "done",
                 "finished_at": str(int(time.time())),
                 "result": json.dumps(result, ensure_ascii=False),
-                "error": "",
+                "error": ("skipped: " + str(result.get("reason") or "")) if skipped else "",
             },
         )
-        logger.info("job done id=%s type=%s", job_id, job_type)
+        logger.info("job %s id=%s type=%s", "skipped" if skipped else "done", job_id, job_type)
     except (HTTPError, URLError, ValueError, OSError) as exc:
         client.hset(
             key,

@@ -29,6 +29,7 @@ ALLOWED_TYPES = frozenset(
         "noop",
         "insight_reindex",  # payload: {insight_id}
         "embed_document",  # payload: {document_id}
+        "confluence_map_sync",  # payload: {source_ids?, dry_run?, max_pages_per_root?, root_id?}
     }
 )
 
