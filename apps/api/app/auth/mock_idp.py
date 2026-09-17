@@ -19,6 +19,7 @@ import redis
 from urllib.parse import parse_qs
 
 from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
@@ -26,44 +27,14 @@ from app.settings import get_settings
 
 logger = logging.getLogger("citec.auth.mock_idp")
 
-# Deterministic RSA key for JWKS e2e (dev only — not a production secret).
-_PRIVATE_PEM = b"""-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCR+9zFEK5PTHXh
-UUrm4zyNEDPNJSmzBWKxefczbfnrVr5TUSpTuYKICsIdDDEw0H2X61iv5mkwccxI
-zyyFrPewUdiRoz2iGoKa55taF/wqBOyBPfbyMmNZ8WyjZBoKPgF4qYqtLnzFd3gd
-ST6LBplonk0PCKuvePpBLotYLPsHB2gQiXA886HuJAyux/vzACISBUyA5L/F2T6q
-a4HU2jWD9Xq02uhu2vf++cFhXzMND9w9pLfKMchdHNJS1ZmCpj7gicK0wM9xe6yH
-GJLtzU7Px/cNzpmWaIJE3opOikGiIxpqYxZ5O9gmFL34528foKWpl7QaDu/Hk1sY
-W/P/CsCbAgMBAAECggEABUAOp5O7ASUZ1DmtPPKNOfGMO2OLxWF7NDDTwCjDZUBg
-ZfS0VgCE/kmMw6itmDjXW4BeVy0tOU3OcAvraP9YhSHcbRh23f6gFdwgjTPxoL0+
-mENXP0yqoBB7vMCb4yRpvyIx15qlaCCs1DjPJAbfu5B96v1/1za9oVyALHKpsI34
-uy92L9xDf+5Ri0/oxkg+3Ch51UVgBcagiMVjNvA8T+3BnQebd5HVeB3NnMPJ0pln
-E8j+vtsLwP+m/4SOvQJEsHU9mebQZzAoe61dOVj2ObvXPAWLnRwFqFZpRc4W45Y+
-w1GRpZRzMzVtRd+AP80sK5KM3B6oNUMdugWamr95QQKBgQDDXvzZMjlX9TmPbgQx
-5cu8nkAMMHWRyfnLXdcUlsM+F23tNUvqr2qVImMDJ8ffNWyJA7akb/VJ5D6fE3Ak
-hCcuMAxSFFn7yhXVRCRRTh0Z1gxMvo7AUpSoboP1tPBGSCGrJueYHvMEliOC0S7M
-0dSIGzf1fypf3JY9V0yC+rikoQKBgQC/SV5johWzoZx0K21uy9FTfL+2gyI//0ck
-S2S/UXuDu88tndZnhG3+ExUymJVq03x6FtcZxt8hK0ZAXw0EvFm8N/AFFaiBG6k3
-ZtAZXBxudvTMiZkq+qmEbcCcLe1SKxIDrQSRBJQebvbva2lVX5BhrxjGBswyhRMq
-cmOMWVsfuwKBgQCdjxxROVzfn6fFEU+WwiE1w1YZvncClSW7qblMJG3exFxlweaw
-pLlK/ollQQ7C5z3ZncINCTGDXuxVtAJroJxMdnlpNHqBQi+rZ6H2ZA26CVKwDbno
-RnEXCNGpNTvVIlTsx5pcpxELsN2AoZyhl9NT1MejV+PfnXEYlS/iLbr9IQKBgH5N
-qpZs6pluZ4jJN/vFdpUCtO+FDLNnEoljgsVUvxKPis/a/Tvi1GHEJeX/nAEqXXGb
-7TGm/6O+GCfe2xC6cSH3aXNiBp4hLo1XRKbKDDfgMelwHYOkeRPpCBnXtXDg4Yct
-0esTM94YdNJHgQiPDh2B6QCwcloVRj9rwlFkmueLAoGBAKkM7zKC4AQyQ15SKdzi
-7Ce6txziAaOnHIIBrwHOmY66nX9OizV74NClwmY5zGx/mtlKTNWN4c9hcG4Yu0vA
-wn2ToZYtsZRFd+/ceaVoUEYgA8k8fAR35pmsgtOZ1zQB+7hdlabcr+DvzpGd4klV
-KKb8VZTBDGfvK7fTE0VD7OJ1
------END PRIVATE KEY-----
-"""
-
 _KID = "citec-mock-idp-1"
 _CODE_KEY = "citec:mock-idp:code:{code}"
 _MEMORY_CODES: dict[str, str] = {}  # fallback if redis down
 
 router = APIRouter(prefix="/v1/mock-idp", tags=["mock-idp"])
 
-_private_key = serialization.load_pem_private_key(_PRIVATE_PEM, password=None)
+# Generated fresh per process (dev/local/test only) — no key material committed to source.
+_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 _public_key = _private_key.public_key()
 
 
