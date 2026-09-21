@@ -98,7 +98,7 @@ _SYNC_LOCK_KEY = 861_234_501
 # citec-kb has no mechanism to delegate a KB caller's identity to
 # Confluence and check their live read permission before returning a
 # search result — apps/api/app/auth/ is role-based only (viewer/author/
-# senior/admin), and GET /v1/search has no auth dependency at all. A
+# senior/admin), and POST /v1/search has no auth dependency at all. A
 # separate handoff design proposed building that delegation before any
 # confluence_map rollout; this codebase makes the opposite call instead:
 # every space/page registered below (roots or explicit_pages) is a
