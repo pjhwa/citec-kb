@@ -586,7 +586,9 @@ def get_progress() -> Optional[dict[str, Any]]:
 
 
 def is_sync_running() -> bool:
-    """True if some sync_map() call currently holds the run lock. Used by
+    """True if some sync_map() *or* run_map_inventory() call currently holds
+    the run lock — both share _SYNC_LOCK_KEY/_sync_run_lock() so they never
+    race each other on the same source_id. Used by
     the admin status endpoint and by restart_api_if_idle.sh (via a tiny
     inline script) to avoid restarting the api container mid-crawl when the
     crawl was triggered from the admin UI rather than the CLI (the CLI path
@@ -752,6 +754,27 @@ def run_map_inventory(
     Document.metadata_["space_key"], not Document.source_id. This is safe
     because each space_key maps to exactly one MAP_SOURCE_DEFS entry (see
     test_map_source_defs_each_have_own_space_key_and_roots_or_explicit_pages).
+
+    Run-exclusivity: wrapped in the same _sync_run_lock() sync_map() uses,
+    since both write raw frontmatter under the same raw_dir, call the same
+    run_ingest, and mutate the same Document rows — without this an
+    inventory run could race a concurrent daily sync_map() (or another
+    inventory run) on the same source_id. If the lock is already held, this
+    returns immediately with {"skipped": True, "reason": "already_running"}
+    instead of crawling.
+
+    Archive safety: `_crawl_map_source`/`_crawl_explicit_pages` swallow
+    root- and page-level failures into `result.errors` rather than raising,
+    so a transient error (401/429/timeout, or an entire root's search call
+    failing) would otherwise make an active page look "gone" from this
+    listing. Because an inventory run's whole point is "trust an absence of
+    a page as evidence it was deleted," any error anywhere in the run makes
+    that absence untrustworthy — so archiving is skipped entirely (not
+    rate-thresholded, unlike sync_map()'s error_rate_ok) whenever
+    result.errors is non-empty. The full computed diff is still returned
+    under "would_archive" regardless of dry_run or errors, so a caller can
+    always see what a clean run would have archived; "archived" reflects
+    only what was actually written to the DB this run.
     """
     raw_root = Path(raw_dir)
     settings = get_settings()
@@ -760,6 +783,40 @@ def run_map_inventory(
         raise ValueError(f"unknown confluence_map source_id={source_id!r}")
     sd = MAP_SOURCE_DEFS[source_id]
 
+    with _sync_run_lock() as acquired:
+        if not acquired:
+            logger.warning(
+                "confluence map inventory already running elsewhere (advisory lock held) — "
+                "skipping this invocation source_id=%s",
+                source_id,
+            )
+            return {
+                "source_id": source_id,
+                "dry_run": dry_run,
+                "skipped": True,
+                "reason": "already_running",
+                "previous_count": None,
+                "current_count": None,
+                "written": None,
+                "errors": [],
+                "would_archive": [],
+                "archived": [],
+                "archive_skipped_due_to_errors": False,
+            }
+        return _run_map_inventory_locked(
+            source_id, raw_root, client=client, settings=settings, sd=sd, dry_run=dry_run
+        )
+
+
+def _run_map_inventory_locked(
+    source_id: str,
+    raw_root: Path,
+    *,
+    client: ConfluenceClient,
+    settings: Any,
+    sd: dict[str, Any],
+    dry_run: bool,
+) -> dict[str, Any]:
     with session_scope() as session:
         previous_ids = {
             row[0]
@@ -806,7 +863,14 @@ def run_map_inventory(
     current_ids = {w.page_id for w in result.written}
     gone_ids = previous_ids - current_ids
     archived: list[str] = []
-    if gone_ids and not dry_run:
+    archive_skipped_due_to_errors = False
+    if gone_ids and result.errors:
+        # Don't trust this run's absences: some root or page failed, so
+        # current_ids is an incomplete listing rather than proof any of
+        # gone_ids was actually deleted (see docstring). Report the
+        # candidates via would_archive below but archive nothing.
+        archive_skipped_due_to_errors = True
+    elif gone_ids and not dry_run:
         with session_scope() as session:
             rows = session.execute(
                 select(Document).where(
@@ -832,7 +896,9 @@ def run_map_inventory(
         "current_count": len(current_ids),
         "written": len(result.written),
         "errors": result.errors,
+        "would_archive": sorted(gone_ids),
         "archived": sorted(archived),
+        "archive_skipped_due_to_errors": archive_skipped_due_to_errors,
     }
 
 
