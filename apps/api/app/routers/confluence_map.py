@@ -60,6 +60,28 @@ def run_sync(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+class InventoryBody(BaseModel):
+    source_id: str
+    dry_run: bool = False
+
+
+@router.post("/_run-inventory")
+def run_inventory(
+    body: InventoryBody,
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    _ = principal
+    from app.confluence.map_sync import run_map_inventory
+
+    settings = get_settings()
+    try:
+        return run_map_inventory(body.source_id, settings.raw_dir, dry_run=body.dry_run)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/status")
 def get_status(
     principal: Principal = Depends(require_roles("admin")),

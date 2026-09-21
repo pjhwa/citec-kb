@@ -36,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.confluence.client import ConfluenceClient, RateLimiter, build_incremental_cql
 from app.confluence.sync import (
@@ -48,7 +48,7 @@ from app.confluence.sync import (
     page_url,
     version_date,
 )
-from app.db.models import Source
+from app.db.models import Document, Source
 from app.db.session import get_engine, session_scope
 from app.settings import get_settings
 
@@ -717,6 +717,123 @@ def seed_cursor(source_id: str, seeded_at: datetime) -> None:
                     last_sync_at=seeded_at,
                 )
             )
+
+
+def run_map_inventory(
+    source_id: str,
+    raw_dir: str | Path,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Weekly full-metadata reconciliation for one confluence_map source.
+
+    sync_map()'s daily crawl is incremental (CQL lastmodified > cursor) — a
+    page that moves out of a root's subtree, gets relabeled, or is deleted
+    never shows up in that incremental result, so its old confluence_map
+    entry lingers in the search index forever (§5 "전체 메타데이터 대조" in
+    the 2026-09-16 handoff design was right that this gap exists; it just
+    hadn't seen this repo's actual incremental-only implementation).
+
+    This re-lists every configured root in full (since=None, the same call
+    the initial bootstrap crawl uses) and re-fetches every explicit_pages
+    seed, then archives (Document.status="archived" — already filtered out
+    of search by _apply_doc_filters' default status="active", so no new
+    search-side logic is needed) any page previously indexed under this
+    source's space_key that the fresh listing no longer returns.
+
+    Deliberately does not touch last_sync_at/checkpoint — this runs on its
+    own (weekly, ops-triggered) cadence independent of the daily
+    incremental sync and must not perturb it.
+
+    Scoping note: all confluence_map documents share Document.source_id=
+    "fs_raw" (see app.ingest.pipeline.run_ingest — the filesystem adapter
+    path doesn't know which MAP_SOURCE_DEFS entry a given file came from),
+    so "previously indexed under this source" is determined by
+    Document.metadata_["space_key"], not Document.source_id. This is safe
+    because each space_key maps to exactly one MAP_SOURCE_DEFS entry (see
+    test_map_source_defs_each_have_own_space_key_and_roots_or_explicit_pages).
+    """
+    raw_root = Path(raw_dir)
+    settings = get_settings()
+    client = ConfluenceClient(settings)
+    if source_id not in MAP_SOURCE_DEFS:
+        raise ValueError(f"unknown confluence_map source_id={source_id!r}")
+    sd = MAP_SOURCE_DEFS[source_id]
+
+    with session_scope() as session:
+        previous_ids = {
+            row[0]
+            for row in session.execute(
+                select(Document.external_id).where(
+                    Document.source_type == "confluence_map",
+                    Document.metadata_["space_key"].astext == sd["space_key"],
+                    Document.status == "active",
+                )
+            ).all()
+        }
+
+    result = asyncio.run(
+        _crawl_map_source(
+            client,
+            source_id=source_id,
+            roots=sd["roots"],
+            space_key=sd["space_key"],
+            space_name=sd["space_name"],
+            since=None,
+            raw_dir=raw_root,
+            max_pages_per_root=None,
+            rps=settings.confluence_rate_limit_rps,
+            tz_name=settings.confluence_timezone,
+            use_checkpoint=False,
+        )
+    )
+    explicit_pages = sd.get("explicit_pages") or {}
+    if explicit_pages:
+        explicit_result = asyncio.run(
+            _crawl_explicit_pages(
+                client,
+                pages=explicit_pages,
+                space_key=sd["space_key"],
+                space_name=sd["space_name"],
+                raw_dir=raw_root,
+                rps=settings.confluence_rate_limit_rps,
+                tz_name=settings.confluence_timezone,
+            )
+        )
+        result.written.extend(explicit_result.written)
+        result.errors.extend(explicit_result.errors)
+
+    current_ids = {w.page_id for w in result.written}
+    gone_ids = previous_ids - current_ids
+    archived: list[str] = []
+    if gone_ids and not dry_run:
+        with session_scope() as session:
+            rows = session.execute(
+                select(Document).where(
+                    Document.source_type == "confluence_map",
+                    Document.metadata_["space_key"].astext == sd["space_key"],
+                    Document.external_id.in_(gone_ids),
+                    Document.status == "active",
+                )
+            ).scalars().all()
+            for doc in rows:
+                doc.status = "archived"
+                archived.append(doc.external_id)
+
+    if not dry_run:
+        from app.ingest.pipeline import run_ingest
+
+        run_ingest(raw_root, sources=["confluence_map"])
+
+    return {
+        "source_id": source_id,
+        "dry_run": dry_run,
+        "previous_count": len(previous_ids),
+        "current_count": len(current_ids),
+        "written": len(result.written),
+        "errors": result.errors,
+        "archived": sorted(archived),
+    }
 
 
 def sync_map(
