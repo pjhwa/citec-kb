@@ -13,11 +13,13 @@ from app.confluence.map_sync import (
 from app.ingest.adapters import iter_confluence_map
 
 
-def test_map_source_defs_cover_all_nine_approved_spaces():
-    # 4 whole-space (LOOKIN/TechRepo/ServiceExcellenceTeam/ICLOUDUT, promoted
-    # 2026-09-16 from one-time migration to continuous daily crawl) + 5
-    # curated-root new spaces. sysops intentionally excluded (no issue/KDB
-    # content yet).
+def test_map_source_defs_cover_all_twelve_approved_spaces():
+    # Original 9 (see git history) + 3 added 2026-09-21 to close the gap a
+    # GitHub-connectivity KB question exposed: 6 real, live-verified answer
+    # pages lived entirely outside the 4 original snapshot spaces, and 3 of
+    # those 6 were in spaces the map didn't cover at all yet (SPC, GUID,
+    # genaibusiness) — see docs/superpowers/plans/
+    # 2026-09-21-confluence-map-handoff-gap-closure.md.
     assert set(MAP_SOURCE_DEFS.keys()) == {
         "confluence_map_lookin",
         "confluence_map_techrepo",
@@ -28,17 +30,42 @@ def test_map_source_defs_cover_all_nine_approved_spaces():
         "confluence_map_cldeng",
         "confluence_map_dftrts",
         "confluence_map_emcloud",
+        "confluence_map_spc",
+        "confluence_map_guid",
+        "confluence_map_genaibusiness",
     }
 
 
-def test_map_source_defs_each_have_own_space_key_and_nonempty_roots():
+def test_map_source_defs_each_have_own_space_key_and_roots_or_explicit_pages():
     space_keys = set()
     for source_id, sd in MAP_SOURCE_DEFS.items():
-        assert sd["roots"], f"{source_id} has no roots"
+        assert sd["roots"] or sd.get("explicit_pages"), (
+            f"{source_id} has neither roots nor explicit_pages"
+        )
         space_keys.add(sd["space_key"])
     # each mapped space gets its own independent cursor (source_id) —
     # this is *why* map_sync isn't folded into sync.py's _SOURCE_DEFS
     assert len(space_keys) == len(MAP_SOURCE_DEFS)
+
+
+def test_map_source_defs_explicit_pages_scoped_to_the_six_github_question_pages():
+    # The concrete gap this task closes — page IDs live-verified 2026-09-16
+    # (see evaluation-seed.json in the handoff package). Two of the six
+    # (DevOps001, Openstack101) sit under personal workspaces outside every
+    # curated root already configured for those spaces, so they're
+    # registered as explicit_pages on the *existing* source entries rather
+    # than expanding those roots to cover the personal-workspace subtree.
+    assert MAP_SOURCE_DEFS["confluence_map_spc"]["explicit_pages"].keys() == {
+        "155680474", "383755011",
+    }
+    assert MAP_SOURCE_DEFS["confluence_map_guid"]["explicit_pages"].keys() == {
+        "1488175558",
+    }
+    assert MAP_SOURCE_DEFS["confluence_map_genaibusiness"]["explicit_pages"].keys() == {
+        "1268082455",
+    }
+    assert "1475349722" in MAP_SOURCE_DEFS["confluence_map_devops001"]["explicit_pages"]
+    assert "2254661271" in MAP_SOURCE_DEFS["confluence_map_openstack101"]["explicit_pages"]
 
 
 def test_is_folder_title_detects_numbered_menu_and_divider_pages():

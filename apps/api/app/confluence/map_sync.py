@@ -94,6 +94,20 @@ _SYNC_LOCK_KEY = 861_234_501
 # 스냅샷과 실제 사이 326건 격차 같은 것). 홈페이지 자기 자신은 `ancestor=`
 # CQL 특성상 결과에 안 잡힌다(자손만 반환) — confluence_docs/tech_repo도
 # 동일한 특성이라 새로운 제약이 아니다.
+# --- ACL scope decision (2026-09-21) -----------------------------------
+# citec-kb has no mechanism to delegate a KB caller's identity to
+# Confluence and check their live read permission before returning a
+# search result — apps/api/app/auth/ is role-based only (viewer/author/
+# senior/admin), and GET /v1/search has no auth dependency at all. A
+# separate handoff design proposed building that delegation before any
+# confluence_map rollout; this codebase makes the opposite call instead:
+# every space/page registered below (roots or explicit_pages) is a
+# deliberate scope decision that its title/breadcrumb/URL are safe to show
+# to any KB user, not a temporary gap pending an ACL system. Do not add a
+# space or page here on the assumption that per-user filtering will catch
+# anything this list gets wrong — there is no such filtering, on this path
+# or on kb_query/kb_search/kb_ask generally.
+# -------------------------------------------------------------------------
 MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
     "confluence_map_lookin": {
         "space_key": "LOOKIN",
@@ -131,6 +145,14 @@ MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
             "468085983": "006. SCP CASE study",
             "370644108": "★★ SCP (SCP SRE + SCP NW Share) ★★",
         },
+        # Added 2026-09-21: lives under 개인별 업무공간 > 이정수, outside all
+        # 3 curated roots above. Registered as a single-page seed rather
+        # than adding "개인별 업무공간" as a 4th root — that folder is one
+        # person's personal workspace, not team-curated content, and
+        # crawling it whole would sweep in unrelated personal pages.
+        "explicit_pages": {
+            "1475349722": "GitHub 아이피 변경 적용 (개인 업무공간 seed: 이정수 > R+ 거점서버 인수인계)",
+        },
     },
     "confluence_map_openstack101": {
         "space_key": "Openstack101",
@@ -140,6 +162,12 @@ MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
             "2318695720": "9. 팀 ISSUE 관리",
             "1176274225": "Nuri 운영구성",
             "1204002143": "Nuri 운영 관련",
+        },
+        # Added 2026-09-21: lives under Personal Space > 정지원, outside all
+        # 4 curated roots above — same rationale as confluence_map_devops001's
+        # explicit_pages.
+        "explicit_pages": {
+            "2254661271": "Squid Proxy 전환 (개인 업무공간 seed: 정지원 > 2026~Techops)",
         },
     },
     "confluence_map_cldeng": {
@@ -170,6 +198,36 @@ MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
         "roots": {
             "271034968": "문제 해결 문서",
             "184265267": "7. Cloud Engineering(Shared Service)",
+        },
+    },
+    # Added 2026-09-21 to close a gap a GitHub-connectivity KB question
+    # exposed: these 3 spaces had zero MAP_SOURCE_DEFS coverage, and the
+    # relevant pages are individually-known-important rather than whole
+    # curated subtrees worth crawling — see explicit_pages below and
+    # docs/superpowers/plans/2026-09-21-confluence-map-handoff-gap-closure.md.
+    "confluence_map_spc": {
+        "space_key": "SPC",
+        "space_name": "Coding References",
+        "roots": {},
+        "explicit_pages": {
+            "155680474": "SDS GitHub info.(connection, policy, etc.)",
+            "383755011": "GitHub Q&A",
+        },
+    },
+    "confluence_map_guid": {
+        "space_key": "GUID",
+        "space_name": "DevOps Support",
+        "roots": {},
+        "explicit_pages": {
+            "1488175558": "Self-hosted Runner 구축하기",
+        },
+    },
+    "confluence_map_genaibusiness": {
+        "space_key": "genaibusiness",
+        "space_name": "Gen.AI 사업팀",
+        "roots": {},
+        "explicit_pages": {
+            "1268082455": "신규 SCP 프로젝트 구성시 추가 작업",
         },
     },
 }
