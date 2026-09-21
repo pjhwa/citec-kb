@@ -261,12 +261,18 @@ curl -s 'http://localhost:8573/v1/citec-dashboard/recurring-patterns?group_by=de
   "min_count": 3,
   "domains": [
     { "domain": "Network", "recurring_incident_count": 405, "fb_domain": "network",
-      "failure_bucket_count": 0, "status": "gap" },
+      "fb_domains": ["network"], "failure_bucket_count": 0, "status": "gap" },
+    { "domain": "Linux", "recurring_incident_count": 212, "fb_domain": "linux",
+      "fb_domains": ["linux", "cluster"], "failure_bucket_count": 6, "status": "covered" },
     { "domain": "성능", "recurring_incident_count": 148, "fb_domain": null,
-      "failure_bucket_count": null, "status": "no_fb_domain_defined" }
+      "fb_domains": null, "failure_bucket_count": null, "status": "no_fb_domain_defined" }
   ]
 }
 ```
+
+`fb_domain`은 이 CI-TEC 도메인의 대표(identity) fb_domain 값(하위 호환용, 단일 문자열).
+`fb_domains`는 `failure_bucket_count` 집계에 실제로 쓰인 fb_domain 전부다 — Linux처럼 여러
+fb_domain을 합산하는 도메인에서는 `fb_domain` 하나만 보고 판단하지 말고 `fb_domains`를 본다.
 
 `status` 값:
 
@@ -308,12 +314,25 @@ kb_citec_recurring_patterns(group_by="domain,dept", domains="Network,Storage", m
    오탐이 다른 도메인에도 남아있을 수 있다. 태깅 결과는 "1차 신호"로 쓸 것.
 2. **바어 "SCP" 미분류는 의도적**이다(§3.1) — v1/v2 구분이 필요 없는 장애가
    섞여 있어서, 억지로 VMware나 OpenStack에 붙이지 않는다.
-3. **`failure_bucket` 커버리지 비교는 3개 도메인(Network/Windows/Linux)만
-   진짜 gap 분석이 된다.** `fb_domain` 어휘(`network`/`cluster`/`windows`,
-   `references/failure-bucket-domains.md`)는 진단 플러그인이 소유하는 별도
-   체계라 CI-TEC 11개 도메인과 대부분 대응이 없다. 새 `fb_domain`을 추가하려면
-   그 문서의 "새 도메인 추가 절차"(PR + `app/taxonomy.py` 매핑)를 밟아야
-   한다 — 이 기능이 임의로 매핑을 만들지 않는다.
+3. **`failure_bucket` 커버리지 비교는 9개 도메인(Network/Windows/Linux/
+   VMware/OpenStack/Middleware/Storage/Ceph/Database, 7개 fb_domain 값으로
+   수렴)만 진짜 gap 분석이 된다.** `fb_domain` 어휘(`network`/`cluster`/`windows`/`dbms`/`linux`/
+   `virtualization`/`middleware`/`storage`, `references/
+   failure-bucket-domains.md`)는 진단 플러그인이 소유하는 별도 체계라
+   CI-TEC 11개 도메인과 1:1로 대응하지 않는다. VMware/OpenStack →
+   `virtualization`, Storage/Ceph → `storage`처럼 두 CI-TEC 도메인이 fb_domain
+   하나를 공유하는 경우, 두 도메인 행의 `failure_bucket_count`는 동일하게
+   나온다 — 의도된 coarse-graining이지 이중집계 버그가 아니다(`app/
+   citec_dashboard/service.py`의 `_DOMAIN_TO_FB_DOMAIN` 주석 참고). Linux
+   행은 그와 별개로 `linux` 자체 버킷에 더해 `cluster`(pacemaker-tools)
+   버킷도 합산한다 — Pacemaker/Corosync가 이 부서 환경에서 항상 Linux
+   호스트에서 돌기 때문에 그 버킷들도 실질적으로 Linux 커버리지로 본다
+   (`_DOMAIN_TO_EXTRA_FB_DOMAINS`, 2026-09-21 박재화 결정). 각 행의
+   `fb_domains` 배열이 실제로 합산에 쓰인 fb_domain 값을 모두 보여준다.
+   Kubernetes/성능은 아직 대응 fb_domain이 없어 "no_fb_domain_defined"로
+   남는다. 새 `fb_domain`을 추가하려면 그 문서의 "새 도메인 추가 절차"
+   (PR + `app/taxonomy.py` 매핑)를 밟아야 한다 — 이 기능이 임의로 매핑을
+   만들지 않는다.
 4. **시간 필터는 Python에서 처리한다**, SQL이 아니라. `발생일시(한국)`가
    `documents.metadata_`(JSONB) 안 자유텍스트라 인덱스가 없다 — 후보군을
    먼저 `citec_domains`/`severity_tier`(둘 다 인덱스 있음)로 좁힌 뒤 Python에서

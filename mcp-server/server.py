@@ -1462,11 +1462,23 @@ async def kb_citec_failure_bucket_coverage(since_days: int = 730, min_count: int
     """CI-TEC 11개 도메인별로, 반복 장애가 확인됐는데 아직 failure_bucket
     (실패 패턴 라이브러리)에 등록 안 된 "정리 갭"을 보여준다.
 
-    주의: failure_bucket의 fb_domain 어휘(현재 network/cluster/windows
-    3개뿐, references/failure-bucket-domains.md 참고)는 진단 플러그인이
-    소유하는 별도 체계라 CI-TEC 11개 도메인과 대부분 대응이 없다.
-    Network→network, Windows→windows, Linux→cluster(Pacemaker HA 한정,
-    부분 대응) 3개만 실제 gap 비교가 되고, 나머지 8개 도메인은
+    주의: failure_bucket의 fb_domain 어휘(현재 network/cluster/windows/
+    dbms/linux/virtualization/middleware/storage 8개, references/
+    failure-bucket-domains.md 참고)는 진단 플러그인이 소유하는 별도
+    체계라 CI-TEC 11개 도메인과 완전히 겹치지 않는다. 이 도구가 실제
+    gap 비교에 쓰는 CI-TEC→fb_domain 매핑은 9개 CI-TEC 도메인 → fb_domain 8개
+    전부(identity 7개 + Linux에 합산되는 cluster):
+    Network→network,
+    Windows→windows, Linux→linux(+cluster 합산), VMware/OpenStack→virtualization(공유),
+    Middleware→middleware, Storage/Ceph→storage(공유), Database→dbms.
+    Linux는 pacemaker-tools가 등록한 cluster 버킷도 함께 센다 — Pacemaker/
+    Corosync가 항상 Linux 호스트에서 도는 이 부서 환경에서는 그 버킷들도
+    실질적으로 Linux 커버리지이기 때문이다(응답의 `fb_domains` 배열에
+    ["linux", "cluster"]로 노출됨). VMware/OpenStack, Storage/Ceph처럼 같은
+    fb_domain을 공유하는 도메인 쌍은 failure_bucket_count가 동일하게
+    나온다 — 의도된 설계이며(둘 중 한쪽에만 해당하는 버킷도 다른 쪽
+    커버리지로 잡힐 수 있음), 이중집계 버그가 아니다. Kubernetes/성능은
+    아직 대응하는 fb_domain이 없어
     "no_fb_domain_defined"로 나온다 — 이건 "커버리지 0%"가 아니라 "아직
     이 도메인을 위한 fb_domain 자체가 없다"는 뜻이다."""
     try:

@@ -31,6 +31,56 @@ def test_infer_domain_failure_bucket_windows_maps_to_os():
     assert domain == "os"
 
 
+def test_infer_domain_failure_bucket_dbms_maps_to_dbms():
+    domain = infer_domain(
+        "SQL Server AlwaysOn 페일오버",
+        "Error 8645 RESOURCE_SEMAPHORE 대기 후 failover",
+        source_type="failure_bucket",
+        metadata={"fb_domain": "dbms"},
+    )
+    assert domain == "dbms"
+
+
+def test_infer_domain_failure_bucket_linux_maps_to_os():
+    domain = infer_domain(
+        "OOM killer로 인한 노드 무응답",
+        "hung_task 120s 경고 연속",
+        source_type="failure_bucket",
+        metadata={"fb_domain": "linux"},
+    )
+    assert domain == "os"
+
+
+def test_infer_domain_failure_bucket_virtualization_maps_to_virtualization():
+    domain = infer_domain(
+        "ESXi APD로 인한 게스트 I/O 정지",
+        "path down 후 APD 140s 초과",
+        source_type="failure_bucket",
+        metadata={"fb_domain": "virtualization"},
+    )
+    assert domain == "virtualization"
+
+
+def test_infer_domain_failure_bucket_middleware_maps_to_middleware():
+    domain = infer_domain(
+        "WebLogic stuck thread",
+        "BEA-000337 stuck thread 600s 초과",
+        source_type="failure_bucket",
+        metadata={"fb_domain": "middleware"},
+    )
+    assert domain == "middleware"
+
+
+def test_infer_domain_failure_bucket_storage_maps_to_storage():
+    domain = infer_domain(
+        "Ceph slow request",
+        "slow request ≥ 30s + osd down 동반",
+        source_type="failure_bucket",
+        metadata={"fb_domain": "storage"},
+    )
+    assert domain == "storage"
+
+
 def test_infer_domain_failure_bucket_unmapped_fb_domain_falls_back_to_keywords():
     domain = infer_domain(
         "네트워크 방화벽 이슈",

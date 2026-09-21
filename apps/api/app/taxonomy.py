@@ -28,6 +28,11 @@ _FB_DOMAIN_TO_CORPUS_DOMAIN: dict[str, str] = {
     "network": "network",
     "cluster": "os",
     "windows": "os",
+    "dbms": "dbms",
+    "linux": "os",
+    "virtualization": "virtualization",
+    "middleware": "middleware",
+    "storage": "storage",
 }
 
 # SWIM(전사 장애관리 시스템) incident_reports 헤더의 `장애유형` 값을 corpus

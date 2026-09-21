@@ -248,30 +248,62 @@ def query_recurring_patterns(
 
 # fb_domain (app.failure_buckets — see references/failure-bucket-domains.md)
 # is a SEPARATE, smaller vocabulary owned by diagnostic plugins
-# (packet-capture-rca/pacemaker-tools/windows-tools), not designed around
-# CI-TEC's 11 domains. Only 3 fb_domain values exist as of 2026-09-16:
-# network, cluster, windows. Mapping the other 8 CI-TEC domains onto one of
-# these would misrepresent unrelated diagnostic scope as "coverage" — so
-# only domains with a genuine, documented fb_domain correspondence are
-# mapped here; the rest report "정의된 fb_domain 없음" (no fb_domain exists
-# for this domain yet) rather than a fabricated 0%-coverage number, per
-# references/failure-bucket-domains.md's "새 도메인 추가 절차" (adding one
-# requires a PR to that file + app/taxonomy.py, not an assumption here).
+# (packet-capture-rca/pacemaker-tools/windows-tools/pro-infra-rca), not
+# designed around CI-TEC's 11 domains. As of 2026-09-21 the fb_domain
+# vocabulary has 8 values (network, cluster, windows, dbms, linux,
+# virtualization, middleware, storage). 9 of the 11 CI-TEC domains now have
+# a genuine correspondence and are mapped below (identity mapping collapses
+# onto 7 distinct fb_domain values, since VMware/OpenStack and Storage/Ceph
+# share one each) — plus `cluster` folds into Linux via
+# _DOMAIN_TO_EXTRA_FB_DOMAINS below, so all 8 fb_domain values contribute to
+# coverage, not just the 7 identity ones. Kubernetes and 성능 have no
+# fb_domain and report "no_fb_domain_defined"
+# rather than a fabricated 0%-coverage number, per references/
+# failure-bucket-domains.md's "새 도메인 추가 절차" (adding one requires a
+# PR to that file + app/taxonomy.py, not an assumption here).
+#
+# Two CI-TEC domain pairs share one fb_domain because pro-infra-rca's
+# vocabulary doesn't split that finely (references/failure-bucket-domains.md
+# §2). Paired rows show the SAME failure_bucket_count — that's intentional
+# coarse-graining, matching the existing cluster/windows→os design in
+# app/taxonomy.py, not a double-count: a "covered" status there means "a
+# bucket exists somewhere in this shared fb_domain", not "for this exact
+# CI-TEC domain". Read the underlying bucket's symptom/root_cause before
+# treating a paired-row "covered" status as domain-specific evidence.
+#   - VMware / OpenStack → virtualization (hypervisor vs. hypervisor-mgmt
+#     control plane; pro-infra-rca's scope note treats OpenStack as part of
+#     the virtualization-management layer)
+#   - Storage / Ceph → storage (Ceph is CI-TEC's distributed-storage
+#     special case of the same storage fb_domain)
 _DOMAIN_TO_FB_DOMAIN: dict[str, Optional[str]] = {
     "Network": "network",
     "Windows": "windows",
-    # cluster (pacemaker-tools) is Linux HA-clustering specifically
-    # (Pacemaker/Corosync), a narrower scope than CI-TEC's general "Linux"
-    # domain — flagged as a partial/proxy match, not equivalence.
-    "Linux": "cluster",
-    "VMware": None,
-    "OpenStack": None,
+    "Linux": "linux",
+    "VMware": "virtualization",
+    "OpenStack": "virtualization",
     "Kubernetes": None,
-    "Middleware": None,
-    "Storage": None,
-    "Ceph": None,
-    "Database": None,
+    "Middleware": "middleware",
+    "Storage": "storage",
+    "Ceph": "storage",
+    "Database": "dbms",
     "성능": None,
+}
+
+# Extra fb_domain values whose bucket counts also fold into a CI-TEC domain's
+# coverage, on top of the single "identity" value above — for domains where
+# an existing plugin's buckets are, operationally, coverage of that CI-TEC
+# domain even though the fb_domain name doesn't match it.
+#
+# Linux: pacemaker-tools registers HA-clustering patterns (fencing, quorum
+# loss, DRBD, iSCSI shared storage) under fb_domain="cluster" — but in this
+# department's environment Pacemaker/Corosync always runs on Linux hosts, so
+# those buckets ARE Linux-layer coverage, not a separate unrelated scope.
+# Decision: 2026-09-21, 박재화 (citec-kb owner) — pacemaker-tools buckets
+# count toward the Linux row; windows-tools buckets already count toward the
+# Windows row via the identity mapping above (fb_domain="windows" is Windows
+# CI-TEC domain's own value, no extra needed).
+_DOMAIN_TO_EXTRA_FB_DOMAINS: dict[str, tuple[str, ...]] = {
+    "Linux": ("cluster",),
 }
 
 
@@ -288,6 +320,18 @@ def failure_bucket_coverage(
     failure_bucket coverage is exactly the "확인은 됐는데 아직 안 정리된
     반복 패턴" gap the dashboard's failure_bucket-coverage panel exists to
     surface — see docs/CITEC_DASHBOARD_API.md.
+
+    Note: VMware/OpenStack and Storage/Ceph share one fb_domain each (see
+    _DOMAIN_TO_FB_DOMAIN comment) — their failure_bucket_count is identical
+    by design, not a bug. A "covered" status on either paired row means a
+    bucket exists somewhere in that shared fb_domain, not necessarily one
+    specific to that exact CI-TEC domain.
+
+    Linux additionally folds in pacemaker-tools' `cluster` fb_domain buckets
+    (see _DOMAIN_TO_EXTRA_FB_DOMAINS) — `failure_bucket_count` there is
+    linux + cluster combined, and `fb_domains` in each row lists every
+    fb_domain that contributed (`fb_domain` stays the single identity value
+    for backward compatibility with existing callers).
     """
     pattern_result = query_recurring_patterns(
         group_by=["domain"], since_days=since_days, min_count=min_count, limit=len(CITEC_DOMAINS),
@@ -295,9 +339,13 @@ def failure_bucket_coverage(
     )
     incident_counts = {g["group"]["domain"]: g["count"] for g in pattern_result["groups"]}
 
+    all_fb_domains = {v for v in _DOMAIN_TO_FB_DOMAIN.values() if v}
+    for extras in _DOMAIN_TO_EXTRA_FB_DOMAINS.values():
+        all_fb_domains.update(extras)
+
     with session_scope() as session:
         fb_counts: dict[str, int] = {}
-        for fb_domain in {v for v in _DOMAIN_TO_FB_DOMAIN.values() if v}:
+        for fb_domain in all_fb_domains:
             fb_counts[fb_domain] = int(
                 session.scalar(
                     select(func.count())
@@ -310,17 +358,20 @@ def failure_bucket_coverage(
     rows = []
     for domain in CITEC_DOMAINS:
         fb_domain = _DOMAIN_TO_FB_DOMAIN.get(domain)
+        fb_domains = ((fb_domain,) if fb_domain else ()) + _DOMAIN_TO_EXTRA_FB_DOMAINS.get(domain, ())
         recurring_count = incident_counts.get(domain, 0)
+        bucket_count = sum(fb_counts.get(d, 0) for d in fb_domains) if fb_domains else None
         rows.append(
             {
                 "domain": domain,
                 "recurring_incident_count": recurring_count,
                 "fb_domain": fb_domain,
-                "failure_bucket_count": fb_counts.get(fb_domain, 0) if fb_domain else None,
+                "fb_domains": list(fb_domains) if fb_domains else None,
+                "failure_bucket_count": bucket_count,
                 "status": (
                     "no_fb_domain_defined" if fb_domain is None
-                    else "gap" if recurring_count > 0 and fb_counts.get(fb_domain, 0) == 0
-                    else "covered" if fb_counts.get(fb_domain, 0) > 0
+                    else "gap" if recurring_count > 0 and not bucket_count
+                    else "covered" if bucket_count
                     else "no_recurring_pattern"
                 ),
             }

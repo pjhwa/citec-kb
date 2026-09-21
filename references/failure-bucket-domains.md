@@ -18,6 +18,11 @@
 | `network` | 네트워크 패킷/전송계층(TCP/TLS/HTTP) 장애. 하위 분류는 기존 `protocol` 컬럼(TCP/TLS/HTTP)으로 별도 표현 | packet-capture-rca | `network` | "RST 직전 idle ≥ 60초", "TLS record 경계 불일치" | 2026-07-29 |
 | `cluster` | Pacemaker/Corosync 리눅스 HA 클러스터 — 펜싱/쿼럼 손실/split-brain/DRBD/iSCSI 공유스토리지 | pacemaker-tools | `os` | "token timeout 이내 펜싱 발생", "qdevice 응답 없음 후 쿼럼 손실" | (신설 시 기입) |
 | `windows` | Windows 이벤트로그, WSFC 페일오버 클러스터, AD DS 복제, SQL Always On AG | windows-tools | `os` | "Event ID 1135 발생 후 5초 이내 1177 발생", "repadmin 오류 8606 연속 3회" | (신설 시 기입) |
+| `dbms` | DBMS 엔진·인스턴스 계층 장애. SQL Server(ERRORLOG·XEL) · Oracle single/RAC·Grid Infrastructure(alert.log·CRS trc·AWR) · Tibero · MySQL/MariaDB · PostgreSQL · Redis Enterprise(RLEC). 클러스터 페일오버라도 근본원인이 엔진 내부면 이 값 | pro-infra-rca | `dbms` | "Error 8645 RESOURCE_SEMAPHORE 대기 max ≥ 200s 후 IsAlive 실패로 failover", "ORA-29740 evicted 직전 86초 이내 생존 노드 firewalld 기동" | 2026-09-21 |
+| `linux` | Linux·AIX 등 Unix 계열 OS 커널/시스템 계층 장애. syslog·journald·dmesg·kdump vmcore·sar/sysstat·sosreport·AIX errpt. Pacemaker/Corosync HA 기능은 `cluster`, Windows는 `windows`로 분리 | pro-infra-rca | `os` | "OOM killer 발생 후 hung_task 120s 경고 연속", "sar runq-sz > nCPU 10분 이상 지속 + %iowait ≥ 30%" | 2026-09-21 |
+| `virtualization` | 하이퍼바이저·가상화 관리 계층 장애. VMware ESXi/vCenter(vmkernel.log·vobd.log) · KVM/libvirt·qemu · OpenStack(nova·neutron·cinder·glance·keystone oslo.log) | pro-infra-rca | `virtualization` | "NMP: path down 후 APD 140s 초과 → 게스트 I/O 정지", "OpenStack MessagingTimeout 이 req-<uuid> 로 nova→neutron 연쇄" | 2026-09-21 |
+| `middleware` | WAS·웹서버·JVM 계층 장애. WebLogic(BEA-NNNNNN) · Tomcat(catalina.out) · JBoss/WildFly(WFLYSRV) · Nginx(error.log upstream) · JVM OOM/GC | pro-infra-rca | `middleware` | "BEA-000337 stuck thread 600s 초과 누적 후 요청 큐 적체", "SEVERE: OutOfMemoryError: Java heap space 후 응답 정지" | 2026-09-21 |
+| `storage` | 스토리지 어레이·경로·분산 스토리지 계층 장애. SAN/array · multipath · iSCSI · Ceph(RADOS/RBD/CephFS) · Dell EMC(Unity/PowerStore/PowerMax/Isilon) · SCSI sense. 클러스터가 스토리지 이상에 *반응*해 펜싱한 경우는 `cluster` | pro-infra-rca | `storage` | "multipath path down 후 iSCSI detected conn error 반복", "Ceph slow request ≥ 30s + osd down 동반" | 2026-09-21 |
 
 > `cluster`/`windows`가 둘 다 코퍼스 `domain="os"`로 매핑되는 것은 의도된 설계다 — Pacemaker/WSFC/AD
 > 모두 OS/커널 계층 HA 기능이라 `kb_search(area="os")`로 전역 검색될 때 함께 잡히길 원한다. `fb_domain`
