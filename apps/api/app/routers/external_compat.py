@@ -426,6 +426,8 @@ def _search_results(
                     "external_id": r.external_id,
                     "source_type": st,
                     "source_uri": r.source_uri,
+                    "evidence_eligible": r.evidence_eligible,
+                    "map_synced_at": r.map_synced_at,
                 }
             )
         )

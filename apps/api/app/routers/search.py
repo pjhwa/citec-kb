@@ -100,6 +100,8 @@ def search(body: SearchBody) -> dict[str, Any]:
                     "source_uri": r.source_uri,
                     "fts_rank": r.fts_rank,
                     "vec_rank": r.vec_rank,
+                    "evidence_eligible": r.evidence_eligible,
+                    "map_synced_at": r.map_synced_at,
                 }
             )
             for r in resp.results

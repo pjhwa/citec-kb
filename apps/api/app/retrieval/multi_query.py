@@ -328,48 +328,12 @@ def multi_hybrid_search(
             if prev is None or score > prev:
                 best_score[eid] = score
                 # store hit with adjusted score for ranking
-                best[eid] = SearchHit(
-                    rank=hit.rank,
-                    score=score,
-                    document_id=hit.document_id,
-                    chunk_id=hit.chunk_id,
-                    title=hit.title,
-                    snippet=hit.snippet,
-                    source_type=hit.source_type,
-                    external_id=hit.external_id,
-                    evidence_grade=hit.evidence_grade,
-                    domain=hit.domain,
-                    environment=hit.environment,
-                    work_type=hit.work_type,
-                    path_l2=hit.path_l2,
-                    source_uri=hit.source_uri,
-                    fts_rank=hit.fts_rank,
-                    vec_rank=hit.vec_rank,
-                )
+                best[eid] = replace(hit, score=score)
 
     merged = sorted(best.values(), key=lambda h: float(h.score or 0), reverse=True)[: req.top_k]
     ranked: list[SearchHit] = []
     for i, h in enumerate(merged, 1):
-        ranked.append(
-            SearchHit(
-                rank=i,
-                score=h.score,
-                document_id=h.document_id,
-                chunk_id=h.chunk_id,
-                title=h.title,
-                snippet=h.snippet,
-                source_type=h.source_type,
-                external_id=h.external_id,
-                evidence_grade=h.evidence_grade,
-                domain=h.domain,
-                environment=h.environment,
-                work_type=h.work_type,
-                path_l2=h.path_l2,
-                source_uri=h.source_uri,
-                fts_rank=h.fts_rank,
-                vec_rank=h.vec_rank,
-            )
-        )
+        ranked.append(replace(h, rank=i))
 
     base = first_resp or hybrid_search(session, req, query_vector=query_vector)
     out = SearchResponse(

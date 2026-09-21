@@ -429,6 +429,8 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                             "snippet": r.snippet,
                             "source_type": getattr(r, "source_type", None),
                             "document_id": getattr(r, "document_id", None),
+                            "evidence_eligible": getattr(r, "evidence_eligible", None),
+                            "map_synced_at": getattr(r, "map_synced_at", None),
                         }
                     )
                     for r in resp.results
