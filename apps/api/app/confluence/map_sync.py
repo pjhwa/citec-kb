@@ -409,6 +409,60 @@ async def _crawl_map_source(
     return CrawlResult(written=written, errors=errors, cql_log=cql_log)
 
 
+async def _crawl_explicit_pages(
+    client: ConfluenceClient,
+    *,
+    pages: dict[str, str],
+    space_key: str,
+    space_name: str,
+    raw_dir: Path,
+    rps: float,
+    tz_name: str,
+) -> CrawlResult:
+    """Fetch a fixed list of individually-registered page IDs directly by ID
+    (ConfluenceClient.get_page_meta, no CQL ancestor listing) and write them
+    with the same frontmatter shape _crawl_map_source uses.
+
+    For "seed" registrations from MAP_SOURCE_DEFS[...]["explicit_pages"]: a
+    specific page worth indexing whose containing subtree is not (and
+    should not be) curated as a whole — e.g. a single page that happens to
+    live under someone's personal workspace folder, where treating the
+    whole personal space as a curated root would sweep in unrelated
+    personal content. `pages` maps page_id -> a human-readable label used
+    as this page's root_label in the frontmatter (there is no shared root
+    page for these, so each carries its own descriptive label instead).
+    """
+    base_url = client._base_url
+    limiter = RateLimiter(rps)
+    written: list[WrittenPage] = []
+    errors: list[dict[str, Any]] = []
+
+    async with client.bulk_client() as http_client:
+        for page_id, label in pages.items():
+            try:
+                meta = await client.get_page_meta(
+                    page_id, client=http_client, limiter=limiter
+                )
+                wp = _write_map_page(
+                    meta=meta,
+                    root_label=label,
+                    space_key=space_key,
+                    space_name=space_name,
+                    base_url=base_url,
+                    tz_name=tz_name,
+                    raw_dir=raw_dir,
+                )
+                written.append(wp)
+            except Exception as exc:  # noqa: BLE001 — one bad seed must not drop the rest
+                logger.exception(
+                    "confluence map explicit seed fetch failed page_id=%s space=%s",
+                    page_id, space_key,
+                )
+                errors.append({"page_id": page_id, "root_id": None, "error": str(exc)})
+
+    return CrawlResult(written=written, errors=errors, cql_log=[])
+
+
 @contextmanager
 def _sync_run_lock() -> Iterator[bool]:
     """Postgres session-level advisory lock — held for the whole sync_map()
@@ -761,6 +815,25 @@ def _sync_map_body(
                 },
             )
         )
+        explicit_pages = sd.get("explicit_pages") or {}
+        if explicit_pages and root_id is None:
+            # explicit seeds have no root_id to filter by — only run them
+            # on untruncated/full-source syncs, same as --root-id smoke
+            # tests skip checkpointing above.
+            explicit_result = asyncio.run(
+                _crawl_explicit_pages(
+                    client,
+                    pages=explicit_pages,
+                    space_key=sd["space_key"],
+                    space_name=sd["space_name"],
+                    raw_dir=raw_root,
+                    rps=settings.confluence_rate_limit_rps,
+                    tz_name=settings.confluence_timezone,
+                )
+            )
+            result.written.extend(explicit_result.written)
+            result.errors.extend(explicit_result.errors)
+
         total_attempted = len(result.written) + len(result.errors)
         error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
         error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
