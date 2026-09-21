@@ -21,11 +21,12 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
 from app.confluence.map_sync import MAP_SOURCE_DEFS
-from app.db.models import Source
+from app.db.models import Document, Source
 from app.db.session import session_scope
 from app.settings import get_settings
 
@@ -80,6 +81,51 @@ def run_inventory(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/children")
+def get_children(space_key: str, parent_path: str = "") -> dict[str, Any]:
+    """Direct children of a space (parent_path="") or of a given breadcrumb
+    path within it, read from confluence_map documents already ingested
+    into the KB search index. Only pages already indexed by confluence_map
+    show up here — this is not a general live Confluence browser, and
+    (per the 2026-09-21 ACL scope decision — see map_sync.py) carries no
+    per-user permission check, matching every other confluence_map/search
+    read path today.
+    """
+    with session_scope() as session:
+        rows = session.execute(
+            select(Document.external_id, Document.title, Document.source_uri, Document.metadata_)
+            .where(
+                Document.source_type == "confluence_map",
+                Document.status == "active",
+                Document.metadata_["space_key"].astext == space_key,
+            )
+        ).all()
+
+    items: list[dict[str, Any]] = []
+    for external_id, title, source_uri, meta in rows:
+        path = (meta or {}).get("경로") or ""
+        if parent_path:
+            prefix = parent_path + " > "
+            if not path.startswith(prefix):
+                continue
+            remainder = path[len(prefix):]
+        else:
+            remainder = path
+        if not remainder or " > " in remainder:
+            continue  # not present at this level, or a deeper descendant
+        items.append(
+            {
+                "page_id": external_id,
+                "title": title,
+                "url": source_uri,
+                "path": path,
+                "is_folder": (meta or {}).get("유형") == "폴더",
+            }
+        )
+    items.sort(key=lambda it: it["title"])
+    return {"space_key": space_key, "parent_path": parent_path, "items": items}
 
 
 @router.get("/status")
