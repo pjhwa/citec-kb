@@ -61,6 +61,7 @@ def test_map_crawl_writes_files_across_two_roots(tmp_path):
     result = asyncio.run(
         _crawl_map_source(
             client,
+            source_id="test_source",
             roots=roots,
             space_key="DevOps001",
             space_name="SCP인프라운영팀",
@@ -102,6 +103,7 @@ def test_map_crawl_search_failure_on_one_root_does_not_abort_other_roots(tmp_pat
     result = asyncio.run(
         _crawl_map_source(
             client,
+            source_id="test_source",
             roots=roots,
             space_key="DevOps001",
             space_name="SCP인프라운영팀",
@@ -138,6 +140,7 @@ def test_map_crawl_one_bad_page_does_not_abort_the_others(tmp_path):
     result = asyncio.run(
         _crawl_map_source(
             client,
+            source_id="test_source",
             roots=roots,
             space_key="DevOps001",
             space_name="SCP인프라운영팀",
