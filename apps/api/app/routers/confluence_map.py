@@ -146,7 +146,8 @@ def get_status(
             for r in rows
         }
     # Sources never run yet have no row — report them too so the admin page
-    # always shows all 9, not just whichever have already synced once.
+    # always shows every configured source, not just whichever have already
+    # synced once.
     for source_id, sd in MAP_SOURCE_DEFS.items():
         by_id.setdefault(
             source_id,
