@@ -278,6 +278,20 @@ class SearchHit:
     source_uri: Optional[str]
     fts_rank: Optional[int]
     vec_rank: Optional[int]
+    # evidence_eligible=False marks a hit as a pointer, not verified
+    # evidence — currently true only for evidence_grade="C" confluence_map
+    # rows. Callers (incl. the AI answer path) must read the current
+    # Confluence page before treating a False-flagged hit as an answer
+    # basis, per the handoff design's evidence_eligible/requires_source_read
+    # contract (§7 of the 2026-09-16 design doc).
+    evidence_eligible: bool = True
+    # Document.updated_at for confluence_map hits — an approximation of
+    # "last confirmed synced", not "last confirmed still live": it only
+    # advances when map_sync's crawl actually rewrites this page's
+    # frontmatter (title/breadcrumb/version changed), not on every crawl
+    # that merely re-touches an unchanged page. None for non-confluence_map
+    # hits and for confluence_map hits never re-touched since ingest.
+    map_synced_at: Optional[str] = None
 
 
 @dataclass
@@ -495,6 +509,7 @@ def hybrid_search(
                 Document.work_type,
                 Document.path_l2,
                 Document.source_uri,
+                Document.updated_at,
             )
             .join(Document, Document.id == Chunk.document_id)
             .where(Chunk.id.in_(all_ids))
@@ -513,6 +528,7 @@ def hybrid_search(
                 "work_type": r.work_type,
                 "path_l2": r.path_l2,
                 "source_uri": r.source_uri,
+                "updated_at": r.updated_at,
             }
             text_by_id[r.id] = f"{r.header_context}\n{r.title}\n{r.external_id}\n{r.text}"
 
@@ -575,6 +591,12 @@ def hybrid_search(
                 source_uri=m.get("source_uri"),
                 fts_rank=h.fts_rank,
                 vec_rank=h.vec_rank,
+                evidence_eligible=str(m.get("source_type") or "") != "confluence_map",
+                map_synced_at=(
+                    m["updated_at"].isoformat()
+                    if m.get("source_type") == "confluence_map" and m.get("updated_at")
+                    else None
+                ),
             )
         )
         if len(results) >= req.top_k:
