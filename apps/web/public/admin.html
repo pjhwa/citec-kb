@@ -131,17 +131,26 @@
         <button type="button" id="btnMapRun">지금 실행 (백그라운드)</button>
       </span>
     </div>
-    <p class="meta" style="margin:4px 0 8px">
-      LOOKIN/TechRepo/ServiceExcellenceTeam/ICLOUDUT/DevOps001/Openstack101/CLDENG/DFTRTS/EMCloud
-      9개 공간 순차 동기화. 실행 중 중단돼도 다음 실행이 체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록
+    <p class="meta" style="margin:4px 0 8px" id="mapSourceCount">
+      활성 공간 순차 동기화. 실행 중 중단돼도 다음 실행이 체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록
       Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).
     </p>
     <div id="mapCurrent" class="row"><span>지금 처리 중</span><span class="meta">…</span></div>
     <table class="tbl">
-      <thead><tr><th>source_id</th><th>space</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th></tr></thead>
-      <tbody id="mapSyncBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
+      <thead><tr><th>source_id</th><th>space</th><th>상태</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th><th></th></tr></thead>
+      <tbody id="mapSyncBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
     </table>
     <span id="mapMsg" class="meta"></span>
+    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0"/>
+    <strong style="font-size:13px">새 공간 추가</strong>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center">
+      <input type="text" id="newSpaceKey" placeholder="space_key (예: NEWSPACE)" style="flex:1;min-width:140px"/>
+      <input type="text" id="newSpaceName" placeholder="space_name (예: 새 팀 공간)" style="flex:1;min-width:140px"/>
+      <input type="text" id="newPageId" placeholder="root/page ID" style="flex:1;min-width:120px"/>
+      <input type="text" id="newPageLabel" placeholder="label" style="flex:1;min-width:140px"/>
+      <label class="toggle"><input type="checkbox" id="newIsExplicit"/> explicit page</label>
+      <button type="button" id="btnAddSpace">추가</button>
+    </div>
   </div>
   <div class="card" style="margin-top:12px">
     <strong>ops/status</strong>
@@ -320,7 +329,7 @@ async function refreshMapSync() {
   try {
     const r = await CitecAuth.apiFetch("/v1/confluence-map/status");
     if (r.status === 401 || r.status === 403) {
-      $("mapSyncBody").innerHTML = '<tr><td colspan="4" class="meta">관리자 권한 필요</td></tr>';
+      $("mapSyncBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
       badge($("mapRunning"), null, "?");
       return;
     }
@@ -341,16 +350,28 @@ async function refreshMapSync() {
     }
 
     const sources = Object.keys(d.sources || {}).sort();
+    const activeCount = sources.filter((id) => d.sources[id].status !== "disabled").length;
+    $("mapSourceCount").textContent =
+      activeCount + "개 활성 공간(전체 " + sources.length + "개) 순차 동기화. 실행 중 중단돼도 다음 실행이 " +
+      "체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록 Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).";
     $("mapSyncBody").innerHTML = sources.length
       ? sources.map((id) => {
           const s = d.sources[id];
-          return '<tr><td>' + esc(id) + '</td><td>' + esc(s.space_key || "—") +
+          const disabled = s.status === "disabled";
+          const statusBadge = '<span class="badge ' + (disabled ? "na" : "ok") + '">' +
+            (disabled ? "비활성" : "활성") + '</span>';
+          const toggleLabel = disabled ? "활성화" : "비활성화";
+          return '<tr><td>' + esc(id) + '</td><td>' + esc(s.space_name || s.space_key || "—") +
+            '</td><td>' + statusBadge +
             '</td><td>' + fmtTs(s.last_sync_at) +
-            '</td><td>' + fmtCheckpoint(s.checkpoint) + '</td></tr>';
+            '</td><td>' + fmtCheckpoint(s.checkpoint) +
+            '</td><td><button type="button" class="ghost" data-toggle-source="' + esc(id) +
+            '" data-next-status="' + (disabled ? "active" : "disabled") + '">' + toggleLabel +
+            '</button></td></tr>';
         }).join("")
-      : '<tr><td colspan="4" class="meta">데이터 없음</td></tr>';
+      : '<tr><td colspan="6" class="meta">데이터 없음</td></tr>';
   } catch (e) {
-    $("mapSyncBody").innerHTML = '<tr><td colspan="4" class="meta">' + esc(String(e)) + '</td></tr>';
+    $("mapSyncBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(String(e)) + '</td></tr>';
   }
 }
 
@@ -369,6 +390,69 @@ $("btnMapRun").onclick = async () => {
     $("mapMsg").textContent = "큐에 등록됨 (job " + d.id + ") — worker가 백그라운드로 실행, 몇 시간 걸릴 수 있음. 아래 표/작업 큐에서 진행상황 확인.";
     await refreshMapSync();
     await refreshDashboard();
+  } catch (e) {
+    $("mapMsg").textContent = String(e);
+  }
+};
+
+$("mapSyncBody").addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("[data-toggle-source]");
+  if (!btn) return;
+  const sourceId = btn.getAttribute("data-toggle-source");
+  const nextStatus = btn.getAttribute("data-next-status");
+  btn.disabled = true;
+  try {
+    const r = await CitecAuth.apiFetch("/v1/confluence-map/sources/" + encodeURIComponent(sourceId), {
+      method: "PATCH",
+      body: { status: nextStatus },
+    });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      $("mapMsg").textContent = "상태 변경 실패: " + (d.detail || r.status);
+      btn.disabled = false;
+      return;
+    }
+    await refreshMapSync();
+  } catch (e) {
+    $("mapMsg").textContent = String(e);
+    btn.disabled = false;
+  }
+});
+
+$("btnAddSpace").onclick = async () => {
+  const spaceKey = $("newSpaceKey").value.trim();
+  const spaceName = $("newSpaceName").value.trim();
+  const pageId = $("newPageId").value.trim();
+  const pageLabel = $("newPageLabel").value.trim();
+  const isExplicit = $("newIsExplicit").checked;
+  if (!spaceKey || !spaceName || !pageId || !pageLabel) {
+    $("mapMsg").textContent = "space_key/space_name/page ID/label을 모두 입력하세요.";
+    return;
+  }
+  $("mapMsg").textContent = "추가 중…";
+  try {
+    const r = await CitecAuth.apiFetch("/v1/confluence-map/sources", {
+      method: "POST",
+      body: {
+        space_key: spaceKey,
+        space_name: spaceName,
+        page_id: pageId,
+        label: pageLabel,
+        is_explicit_page: isExplicit,
+      },
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      $("mapMsg").textContent = "추가 실패: " + (d.detail || r.status);
+      return;
+    }
+    $("mapMsg").textContent = "공간 추가됨: " + d.source_id;
+    $("newSpaceKey").value = "";
+    $("newSpaceName").value = "";
+    $("newPageId").value = "";
+    $("newPageLabel").value = "";
+    $("newIsExplicit").checked = false;
+    await refreshMapSync();
   } catch (e) {
     $("mapMsg").textContent = String(e);
   }
