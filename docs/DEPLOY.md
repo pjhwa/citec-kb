@@ -76,6 +76,42 @@ scripts/git_pull_deploy.sh --no-restart -y
 
 ---
 
+## 운영 데이터를 개발로 가져오기: `prod_pull_export.sh` / `prod_pull_apply.sh` (신규)
+
+**목적이 다른 두 도구를 구분할 것:**
+
+| 스크립트 | 방향 | 성격 |
+|---|---|---|
+| `scripts/sync_manifest.sh`/`sync_export.sh`/`sync_apply.sh` | 운영→개발 | **증분**. 신규/변경분만, 삭제는 무시(개발 전용 데이터가 그대로 남음). `documents`/`document_sections`/`chunks`/`checkitems`/`issue_frames`/`failure_buckets` 6테이블 + `data/raw`만 |
+| `scripts/prod_pull_export.sh`/`prod_pull_apply.sh` | 운영→개발 | **전체 동일화**. Postgres 전체(pg_dump, `embeddings`/`sources`/`insights` 등 전부 포함) + `data/raw` 전체를 통째로 가져와 개발을 운영과 완전히 동일하게 맞춤. **개발 전용 DB 행·파일은 삭제됨** |
+
+테스트를 위해 "운영과 완전히 동일한 상태"가 필요할 때는 후자를 씁니다.
+
+```bash
+# 운영에서 실행 — 전체 DB + data/raw 번들 생성
+scripts/prod_pull_export.sh
+# data/raw 는 개발에 이미 동일 코퍼스가 있어 필요 없다면:
+scripts/prod_pull_export.sh --no-raw
+
+# 전송 (out.sh/in.sh와 동일 패턴 — 사람이 scp)
+scp user@ops:~/tmp/citec-kb-prod-full-*.tar.gz ~/tmp/
+
+# 개발에서 실행 — 먼저 내용만 확인
+scripts/prod_pull_apply.sh --dry-run ~/tmp/citec-kb-prod-full-*.tar.gz
+# 실제 적용
+scripts/prod_pull_apply.sh -y ~/tmp/citec-kb-prod-full-*.tar.gz
+```
+
+**`prod_pull_apply.sh`가 하는 일:**
+1. (기본) 적용 전 현재 개발 DB를 `data/backups/pre-prod-pull-<TS>.sql.gz`로 백업 (`--no-backup`으로 생략 가능 — 복구용 안전망이므로 웬만하면 켜 둘 것)
+2. `DROP SCHEMA public CASCADE` 후 운영 덤프로 전체 복원 (`in.sh`의 `--restore-pg`와 동일한 절차)
+3. `data/raw`를 `rsync -a --delete`로 완전히 미러링 (`--no-raw`로 생략 가능 — 개발 전용 raw 파일은 이때 삭제됨)
+4. `api`/`worker` 재시작 (`--no-restart`로 생략 가능; alembic은 재시작 시 자동 적용)
+
+반복적으로(테스트 데이터 새로고침 목적) 쓸 수 있게 `-y`만으로 확인을 생략할 수 있지만, 백업은 별도 플래그 없이는 항상 실행됩니다.
+
+---
+
 ## 번들 구성
 
 | 번들 | 파일명 | 언제 | 크기 |
