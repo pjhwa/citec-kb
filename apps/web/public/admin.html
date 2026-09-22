@@ -430,6 +430,8 @@ $("btnAddSpace").onclick = async () => {
     return;
   }
   $("mapMsg").textContent = "추가 중…";
+  const btn = $("btnAddSpace");
+  btn.disabled = true;
   try {
     const r = await CitecAuth.apiFetch("/v1/confluence-map/sources", {
       method: "POST",
@@ -444,6 +446,7 @@ $("btnAddSpace").onclick = async () => {
     const d = await r.json();
     if (!r.ok) {
       $("mapMsg").textContent = "추가 실패: " + (d.detail || r.status);
+      btn.disabled = false;
       return;
     }
     $("mapMsg").textContent = "공간 추가됨: " + d.source_id;
@@ -452,9 +455,11 @@ $("btnAddSpace").onclick = async () => {
     $("newPageId").value = "";
     $("newPageLabel").value = "";
     $("newIsExplicit").checked = false;
+    btn.disabled = false;
     await refreshMapSync();
   } catch (e) {
     $("mapMsg").textContent = String(e);
+    btn.disabled = false;
   }
 };
 
