@@ -40,6 +40,28 @@ def _clear_engine_cache():
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_seeded_documents():
+    """Pre-existing gap: _seed_document() below inserts fixed-id Document
+    rows (test_inv:111/test_inv:999) that none of this file's tests ever
+    cleaned up, so running all 3 in one pytest invocation against a DB
+    that isn't wiped between tests hits a duplicate-key IntegrityError on
+    the 2nd/3rd test. Delete them after every test (regardless of pass/
+    fail) so this file stays safely re-runnable against the shared
+    scratch DB.
+    """
+    try:
+        yield
+    finally:
+        from app.db.models import Document
+        from app.db.session import session_scope
+
+        with session_scope() as session:
+            session.query(Document).filter(
+                Document.id.in_(["test_inv:111", "test_inv:999"])
+            ).delete(synchronize_session=False)
+
+
 def _seed_document(session, *, external_id: str, space_key: str, root_label: str, title: str):
     from app.db.models import Document
 
@@ -66,13 +88,13 @@ def _seed_document(session, *, external_id: str, space_key: str, root_label: str
 
 
 def test_run_map_inventory_archives_a_page_no_longer_returned(tmp_path, monkeypatch):
-    from app.confluence.map_sync import MAP_SOURCE_DEFS, run_map_inventory
+    from app.confluence.map_sync import get_source_defs, run_map_inventory
     from app.db.models import Document
     from app.db.session import session_scope
     from sqlalchemy import select
 
     source_id = "confluence_map_devops001"
-    space_key = MAP_SOURCE_DEFS[source_id]["space_key"]
+    space_key = get_source_defs()[source_id]["space_key"]
 
     with session_scope() as session:
         # "111" is still returned by the mocked full listing below; "999" is
@@ -119,14 +141,14 @@ def test_run_map_inventory_skips_archive_when_crawl_had_errors(tmp_path, monkeyp
     archived — the whole listing is untrustworthy, not just the errored
     root, so archiving is skipped entirely and reported via
     archive_skipped_due_to_errors/would_archive instead."""
-    from app.confluence.map_sync import MAP_SOURCE_DEFS, run_map_inventory
+    from app.confluence.map_sync import get_source_defs, run_map_inventory
     from app.db.models import Document
     from app.db.session import session_scope
     from sqlalchemy import select
 
     source_id = "confluence_map_devops001"
-    space_key = MAP_SOURCE_DEFS[source_id]["space_key"]
-    roots = list(MAP_SOURCE_DEFS[source_id]["roots"])
+    space_key = get_source_defs()[source_id]["space_key"]
+    roots = list(get_source_defs()[source_id]["roots"])
     failing_root = roots[1]  # not "111"/"999" related — just some other root
 
     with session_scope() as session:
@@ -175,13 +197,13 @@ def test_run_map_inventory_dry_run_previews_without_mutating(tmp_path, monkeypat
     """dry_run=True must still compute and report would_archive (the full
     diff) so a caller gets a real preview, while leaving archived == [] and
     the DB untouched."""
-    from app.confluence.map_sync import MAP_SOURCE_DEFS, run_map_inventory
+    from app.confluence.map_sync import get_source_defs, run_map_inventory
     from app.db.models import Document
     from app.db.session import session_scope
     from sqlalchemy import select
 
     source_id = "confluence_map_devops001"
-    space_key = MAP_SOURCE_DEFS[source_id]["space_key"]
+    space_key = get_source_defs()[source_id]["space_key"]
 
     with session_scope() as session:
         _seed_document(session, external_id="111", space_key=space_key, root_label="R", title="Still here")
