@@ -17,7 +17,8 @@ Two endpoints:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import re
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -25,7 +26,6 @@ from sqlalchemy import select
 
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
-from app.confluence.map_sync import MAP_SOURCE_DEFS
 from app.db.models import Document, Source
 from app.db.session import session_scope
 from app.settings import get_settings
@@ -140,19 +140,17 @@ def get_status(
         by_id = {
             r.id: {
                 "space_key": (r.config or {}).get("space_key"),
+                "space_name": (r.config or {}).get("space_name"),
+                "status": r.status,
                 "last_sync_at": r.last_sync_at.isoformat() if r.last_sync_at else None,
                 "checkpoint": (r.config or {}).get("checkpoint") or {},
             }
             for r in rows
         }
-    # Sources never run yet have no row — report them too so the admin page
-    # always shows every configured source, not just whichever have already
-    # synced once.
-    for source_id, sd in MAP_SOURCE_DEFS.items():
-        by_id.setdefault(
-            source_id,
-            {"space_key": sd["space_key"], "last_sync_at": None, "checkpoint": {}},
-        )
+        # Every confluence_map source now has a row up front (seeded by the
+        # 20260922_0007 migration, or created via POST /sources below) — no
+        # more "never run yet, report it anyway from the hardcoded defs"
+        # fallback needed.
     lock_error = None
     try:
         running = is_sync_running()
@@ -176,3 +174,62 @@ def get_status(
         "current": get_progress(),
         "sources": by_id,
     }
+
+
+def _slugify_space_key(space_key: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", space_key.lower())
+
+
+class CreateSourceBody(BaseModel):
+    space_key: str
+    space_name: str
+    page_id: str
+    label: str
+    is_explicit_page: bool = False
+
+
+@router.post("/sources")
+def create_source(
+    body: CreateSourceBody,
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    _ = principal
+    source_id = f"confluence_map_{_slugify_space_key(body.space_key)}"
+    config: dict[str, Any] = {
+        "space_key": body.space_key,
+        "space_name": body.space_name,
+        "roots": {} if body.is_explicit_page else {body.page_id: body.label},
+        "explicit_pages": {body.page_id: body.label} if body.is_explicit_page else {},
+    }
+    with session_scope() as session:
+        if session.get(Source, source_id):
+            raise HTTPException(status_code=409, detail=f"source {source_id} already exists")
+        session.add(
+            Source(
+                id=source_id,
+                type="confluence_map",
+                name=f"Confluence Map {body.space_key}",
+                config=config,
+                status="active",
+            )
+        )
+    return {"source_id": source_id, "space_key": body.space_key, "status": "active"}
+
+
+class UpdateSourceStatusBody(BaseModel):
+    status: Literal["active", "disabled"]
+
+
+@router.patch("/sources/{source_id}")
+def update_source_status(
+    source_id: str,
+    body: UpdateSourceStatusBody,
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    _ = principal
+    with session_scope() as session:
+        src = session.get(Source, source_id)
+        if not src or src.type != "confluence_map":
+            raise HTTPException(status_code=404, detail=f"source {source_id} not found")
+        src.status = body.status
+    return {"source_id": source_id, "status": body.status}
