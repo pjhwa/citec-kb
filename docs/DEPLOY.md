@@ -50,9 +50,27 @@ scripts/git_pull_deploy.sh --no-restart -y
   롤백 자체를 끌 수도 있음)
 - 동시 실행 방지 (flock)
 
-**최초 1회:** 운용 서버에 저장소가 아직 없다면(맨 처음 구축) `git clone` 또는 기존 `out.sh --code` +
-`in.sh --code -y` 번들 적용으로 `~/citec-kb`를 먼저 만들어야 합니다. `git_pull_deploy.sh`는 이미 클론된
-저장소를 최신화하는 용도입니다.
+**최초 1회 — 저장소 연결:**
+
+- 운용 서버에 `~/citec-kb`가 **전혀 없다면**: 그냥 `git clone`으로 새로 만듭니다.
+- 운용 서버에 `~/citec-kb`가 **이미 있다면**(지금까지 `out.sh`/`in.sh` 번들로만 배포해서 `.git` 이력이
+  없고, DB·컨테이너가 이미 운영 중인 경우) — `git_pull_deploy.sh --attach-git --remote-url <URL>`을
+  사용합니다:
+  ```bash
+  cd ~/citec-kb
+  scripts/git_pull_deploy.sh --attach-git \
+    --remote-url git@code.sdsdev.co.kr:jooksan/citec-kb.git
+  ```
+  `git init` → `remote add` → `fetch` 후 **현재 디렉토리 파일과 `origin/main`의 차이(파일 목록·통계)를
+  화면에 보여주고**, 정확히 `ATTACH`를 입력해야만 실제로 덮어씁니다(그 외 입력 시 `.git`을 다시 지우고
+  원상복구). `-y`로도 이 확인은 건너뛸 수 없습니다 — 일회성·고위험 작업이라 항상 diff를 직접 보고
+  진행하도록 강제합니다. `.env`/`data/`/`models/`/`logs/`는 `.gitignore` 대상이라 영향받지 않습니다.
+  **이 단계는 컨테이너를 재시작하지 않습니다** — 반영하려면 이후 `--attach-git` 없이 스크립트를 다시
+  실행(또는 수동 재시작)해야 합니다.
+
+  운영 배포 시점과 사내 GitHub `main` 사이에 변경이 많이 쌓여 있었다면, 보여지는 diff도 그만큼 커집니다
+  — 진행 전 `scripts/backup_postgres.sh`로 DB를 먼저 백업하고, 트래픽이 적은 시간대에 하는 것을
+  권장합니다.
 
 배포 이력은 `~/bin/.citec_kb_git_deployed`에 마지막으로 적용된 커밋 SHA가 기록됩니다.
 
