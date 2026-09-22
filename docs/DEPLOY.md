@@ -3,10 +3,58 @@
 wiki-qa `out.sh` / `in.sh` 와 같은 **분리 번들 + 버전 추적 + 변경분만 배포** 패턴입니다.  
 citec-kb 는 **multi-service + Postgres(pgvector)** 이므로, wiki-qa 의 `db/vec.db` 와 달리 **인덱스는 PG 볼륨**에 있습니다.
 
+운용 서버가 사내 GitHub(`code.sdsdev.co.kr`)에 접속 가능해진 뒤부터는, **코드만 바뀌는 배포**(Dockerfile·requirements·pyproject·package.json·docker-compose.yml 변경이 없는 경우)는 `scripts/git_pull_deploy.sh` 로 `out.sh`/`in.sh` 번들 왕복 없이 바로 적용할 수 있습니다. 이미지 재빌드가 필요한 변경(Dockerfile/의존성/compose 구조)은 여전히 `out.sh`/`in.sh`를 사용합니다.
+
 | 스크립트 | 실행 위치 | 역할 |
 |----------|-----------|------|
-| `scripts/out.sh` | 개발 | 패키징 |
-| `scripts/in.sh` | 운용 | 배포 적용 |
+| `scripts/git_pull_deploy.sh` | 운용 | **코드만** 배포 (git pull → 재시작, 이미지 재빌드 없음) — 신규 |
+| `scripts/out.sh` | 개발 | 패키징 (코드/이미지/데이터/모델 번들) |
+| `scripts/in.sh` | 운용 | 번들 배포 적용 (이미지 재빌드 필요 시, 최초 구축, 데이터/모델 배포) |
+
+---
+
+## 코드만 배포: `git_pull_deploy.sh` (신규, 운용 전용)
+
+**전제:** `docker-compose.yml`의 `api`/`worker`/`web`/`mcp` 서비스는 `apps/api/app`, `apps/api/alembic`,
+`apps/worker/app`, `apps/web/public`, `mcp-server/server.py`를 호스트 bind-mount 합니다 — 즉 **Python/HTML/JS/alembic
+마이그레이션/MCP 로직 변경은 이미지 재빌드 없이 `git pull` + `docker compose restart` 만으로 반영**됩니다.
+alembic 마이그레이션은 `api` 컨테이너 entrypoint(`scripts/api-entrypoint.sh`)가 기동할 때마다 자동으로
+`alembic upgrade head`를 실행하므로, 재시작만으로 스키마도 함께 따라옵니다.
+
+**이 스크립트가 다루지 않는 것:** Dockerfile / `requirements*.txt` / `pyproject.toml` / `package*.json` /
+`docker-compose.yml` 변경 — 즉 이미지를 다시 빌드해야 하는 변경. 이런 변경은 지금처럼 `out.sh` + `in.sh`를
+사용합니다. `git_pull_deploy.sh`는 pull 대상 diff에 이런 파일이 섞여 있으면 기본적으로 **중단**하고
+(`--force-image-diff`로만 무시 가능) 안내 메시지를 출력합니다.
+
+```bash
+cd ~/citec-kb
+
+scripts/git_pull_deploy.sh --help
+scripts/git_pull_deploy.sh --dry-run     # fetch 후 적용될 커밋/위험 파일만 확인, pull/재시작 없음
+scripts/git_pull_deploy.sh -y            # 기본: api worker web mcp 재시작
+
+# 특정 서비스만
+scripts/git_pull_deploy.sh --services "api worker" -y
+
+# 재시작은 나중에 수동으로 (pull 만)
+scripts/git_pull_deploy.sh --no-restart -y
+```
+
+**안전장치**
+
+- `origin`이 사내 GitHub(`code.sdsdev.co.kr`)를 가리키는지 확인 후 아니면 중단
+- 작업 트리가 dirty(커밋 안 된 변경 존재)하면 중단 — 임의로 버리지 않음
+- `git pull --ff-only`만 사용 — 로컬이 원격과 갈라졌으면 중단 (수동 확인 필요)
+- 재시작 후 헬스체크(`/v1/health`, web, mcp 포트, worker 컨테이너 상태) 실패 시 **배포 직전 커밋으로 자동
+  롤백 + 재시작**. 롤백 후에도 실패하면 자동 복구를 멈추고 수동 개입을 요청 (`--no-rollback`으로 자동
+  롤백 자체를 끌 수도 있음)
+- 동시 실행 방지 (flock)
+
+**최초 1회:** 운용 서버에 저장소가 아직 없다면(맨 처음 구축) `git clone` 또는 기존 `out.sh --code` +
+`in.sh --code -y` 번들 적용으로 `~/citec-kb`를 먼저 만들어야 합니다. `git_pull_deploy.sh`는 이미 클론된
+저장소를 최신화하는 용도입니다.
+
+배포 이력은 `~/bin/.citec_kb_git_deployed`에 마지막으로 적용된 커밋 SHA가 기록됩니다.
 
 ---
 
@@ -172,16 +220,17 @@ scripts/in.sh --data --restore-pg -y
 
 ## 권장 워크플로
 
-| 변경 내용 | out | in |
-|-----------|-----|-----|
-| Python/HTML/JS/alembic/MCP 로직 | `--code` | `--code -y` |
-| MCP requirements | `--docker-mcp` | `--docker-mcp -y` |
-| api/worker Dockerfile·pip | `--code --docker --docker-mcp` | 동일 `-y` |
-| raw 코퍼스 (+ 검색 복제) | `--data --pg-dump` | `--data --restore-pg -y` |
-| raw 만 (재인덱싱 예정) | `--data` | `--data -y` + ingest/embed |
-| 임베딩 모델 | `--model` | `--model -y` |
-| Keycloak | `--docker-keycloak` | `--docker-keycloak -y` |
-| 최초 구축 | `--regen` (+ `--pg-dump`) | `in.sh -y` (+ `--restore-pg`) |
+| 변경 내용 | 방법 |
+|-----------|------|
+| Python/HTML/JS/alembic/MCP 로직 (사내 GitHub push 후) | `git_pull_deploy.sh -y` (권장, 이미지 재빌드 없음) |
+| Python/HTML/JS/alembic/MCP 로직 (git 접속 불가·최초 구축) | out `--code` → in `--code -y` |
+| MCP requirements | out `--docker-mcp` → in `--docker-mcp -y` |
+| api/worker Dockerfile·pip | out `--code --docker --docker-mcp` → in 동일 `-y` |
+| raw 코퍼스 (+ 검색 복제) | out `--data --pg-dump` → in `--data --restore-pg -y` |
+| raw 만 (재인덱싱 예정) | out `--data` → in `--data -y` + ingest/embed |
+| 임베딩 모델 | out `--model` → in `--model -y` |
+| Keycloak | out `--docker-keycloak` → in `--docker-keycloak -y` |
+| 최초 구축 | out `--regen` (+ `--pg-dump`) → in `-y` (+ `--restore-pg`) |
 
 포트: **web 8572 · api 8573 · postgres 8574 · redis 8575 · keycloak 8576 · mcp 8577**
 
@@ -254,4 +303,5 @@ scripts/out.sh --model
 2. `api`/`worker` 는 compose 에 **명시적 `image:`** 태그 (폐쇄망 load 후 build 금지)  
 3. model 번들은 **실파일 복사** (symlink tar 금지)  
 4. 비밀키·`.env` 는 번들 제외, 운용 보존  
-5. `rebuild.sh` 는 개발용 — 운용에서는 `run_stack.sh` / `in.sh` 사용  
+5. `rebuild.sh` 는 개발용 — 운용에서는 `run_stack.sh` / `in.sh` / `git_pull_deploy.sh` 사용  
+6. `git_pull_deploy.sh` 는 **코드만** 대상 — `.env`/`data/`/`models/`는 gitignore 라 pull 로 건드리지 않음  

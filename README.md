@@ -3,8 +3,7 @@
 부서 지식(Jira 지원이력 · Confluence Tech-Repo · PISA 등) 통합 검색 · RAG · 유사장애 브리핑 플랫폼.
 
 - **설계:** 폐쇄망 · Docker 경량 · GLM 5.2 (dev: OpenRouter, prod: Fabrix)
-- **현재:** **P1 완료 · P2/P3 핵심 엔지니어링 강** — full planner · catalog route+answer 110/110  
-- **계획:** `docs/IMPLEMENTATION_PLAN.md` **v1.25** (Insight promote+index · feedback · ops · worker)
+- **계획·현재 상태:** `docs/IMPLEMENTATION_PLAN.md` (문서 자체의 "현재 상태" 표가 최신 페이즈/게이트를 기준)
 
 ## 빠른 시작 (개발 서버)
 
@@ -45,6 +44,15 @@ scripts/out.sh --help
 # 전송 후 운용
 scripts/in.sh --code -y
 scripts/in.sh --help
+```
+
+**코드만 바뀌는 배포**(Dockerfile/의존성/compose 변경 없음)는 운용 서버가 사내 GitHub(`code.sdsdev.co.kr`)에
+접속 가능하면 번들 왕복 없이 바로 적용할 수 있습니다:
+
+```bash
+# 운용 서버에서
+scripts/git_pull_deploy.sh --dry-run   # 적용될 커밋 미리 확인
+scripts/git_pull_deploy.sh -y          # git pull + 재시작 (헬스체크 실패 시 자동 롤백)
 ```
 
 상세: [`docs/DEPLOY.md`](docs/DEPLOY.md) · 번들 `~/tmp/citec-kb-*.tar.gz`
@@ -200,15 +208,17 @@ curl -s -X POST localhost:8573/v1/query -H 'Content-Type: application/json' \
 > **기간·목록·집계·공수·체크리스트·유사장애**는 planner가 경로를 고릅니다 (`POST /v1/query`).  
 > Catalog answer eval은 multi-query hybrid(원질+any+sample id)를 사용합니다. exhaustive/prevention·prod multi-query 이식은 후속.
 
-## 서비스 (5)
+## 서비스 (6, + Keycloak optional)
 
 | Service | 역할 |
 |---------|------|
 | `web` | nginx + static UI, `/v1` 프록시 |
 | `api` | FastAPI |
-| `worker` | 잡 워커 스텁 (heartbeat) |
+| `worker` | 잡 워커 (job queue) |
+| `mcp` | MCP 서버 (Claude/Cursor 연동), `api` 프록시 |
 | `postgres` | pgvector/pg16 |
 | `redis` | 큐/캐시 |
+| `keycloak` | (optional profile) 로컬 OIDC IdP |
 
 LLM은 compose **밖** (OpenRouter 또는 사내 Fabrix).
 
@@ -222,11 +232,15 @@ LLM은 compose **밖** (OpenRouter 또는 사내 Fabrix).
 ## 레포 구조
 
 ```
-apps/api apps/worker apps/web
+apps/api apps/worker apps/web    # 서비스 코드 (web = nginx 정적 UI)
+mcp-server/                       # MCP 서버 (server.py)
 packages/domain
 config/models.json
-data/gold data/seeds
-docs/
+data/gold data/seeds data/raw     # data/raw, data/backups 는 gitignore
+docs/                              # docs/*.md 소스 (웹 렌더는 apps/web/public/docs/*.html)
+references/                        # failure-bucket-domains 등 참조 문서
+deploy/keycloak/                   # Keycloak realm 등
+scripts/                           # out.sh/in.sh/git_pull_deploy.sh/migrate.sh 등 운영 스크립트
 docker-compose.yml
 ```
 
@@ -250,7 +264,7 @@ docker compose exec api alembic upgrade head
 
 ## 로드맵
 
-`docs/IMPLEMENTATION_PLAN.md` **v1.25** — Insight approve/promote/index · feedback · worker jobs · load smoke · ops.
+`docs/IMPLEMENTATION_PLAN.md` — 문서 자체의 버전/갱신일과 "현재 상태" 표가 최신 기준. 웹: http://localhost:8572/docs/implementation-plan.html
 
 ## 보안
 
