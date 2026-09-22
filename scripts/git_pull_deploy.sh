@@ -98,10 +98,32 @@ USAGE
      # 연결 테스트 (known_hosts 등록 겸)
      ssh -T git@code.sdsdev.co.kr
 
+   ⚠ 문제 해결 — ssh -T 가 아무 출력도 없이 멈추기만 하면(에러 메시지조차 없음):
+     보통 키/인증 문제가 아니라 **방화벽이 22번 포트를 막고 있는 것**입니다.
+     (인증이 잘못됐다면 보통 몇 초 안에 "Permission denied" 라도 뜸 — 완전
+     무응답은 패킷이 그냥 버려지고 있다는 신호). 폐쇄망 환경에서 사내 Git 서버가
+     "HTTPS(443)만 허용, SSH(22)는 차단" 인 구성이 흔합니다. 빠른 확인:
+       timeout 5 bash -c 'cat < /dev/null > /dev/tcp/code.sdsdev.co.kr/22'  && echo 22-OK || echo 22-BLOCKED
+       timeout 5 bash -c 'cat < /dev/null > /dev/tcp/code.sdsdev.co.kr/443' && echo 443-OK || echo 443-BLOCKED
+     22 는 막히고 443 만 열려 있다면 SSH 는 포기하고 아래 HTTPS+PAT 방식으로
+     진행하세요 — git clone 이 https:// 로는 이미 됐었다면 거의 확실히 이 경우.
+
    [HTTPS + Personal Access Token 방식]
      # code.sdsdev.co.kr 웹 UI 에서 PAT 발급(repo read 권한만)
-     # clone/remote 시 https://<user>:<PAT>@code.sdsdev.co.kr/... 형태로 쓰거나
-     # git credential helper(store/cache) 로 한 번만 입력해 저장
+     #
+     # git_pull_deploy.sh 는 무인(non-interactive) 실행이라 매번 비밀번호
+     # 프롬프트가 뜨면 안 됨 — PAT 를 credential 으로 한 번 저장해두면 이후
+     # 자동 사용됨 (참고: 운용 서버의 .env 도 이미 평문으로 비밀키를 담고
+     # 있으므로, 이 서버에서 자격증명을 평문 저장하는 것 자체는 기존과 같은
+     # 보안 수준입니다):
+     git config --global credential.helper store
+     cd ~/citec-kb   # DB·컨테이너가 실제로 떠 있는 그 디렉토리 (테스트용 별도 클론 아님)
+     scripts/git_pull_deploy.sh --attach-git \
+       --remote-url https://code.sdsdev.co.kr/jooksan/citec-kb.git
+     # → Username/Password 프롬프트에서 계정 / PAT 입력 → 이후 자동 재사용됨
+     #
+     # 또는 URL 에 직접 내장(최초 remote 설정 시 한 번만 타이핑 필요할 때):
+     #   --remote-url https://<user>:<PAT>@code.sdsdev.co.kr/jooksan/citec-kb.git
 
 3) 저장소 준비
 
