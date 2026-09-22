@@ -20,10 +20,12 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> int:
-    from app.confluence.map_sync import MAP_SOURCE_DEFS
+    from app.confluence.map_sync import get_source_defs
+
+    active_defs = get_source_defs(active_only=True)
 
     parser = argparse.ArgumentParser(
-        description="Confluence 맵(구조 전용) 증분 동기화 — 5개 신규 공간"
+        description="Confluence 맵(구조 전용) 증분 동기화 — 활성 소스 전체"
     )
     parser.add_argument(
         "--raw-dir",
@@ -32,8 +34,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--source-ids",
-        default=",".join(MAP_SOURCE_DEFS.keys()),
-        help=f"Comma list of source_id, e.g. {next(iter(MAP_SOURCE_DEFS))}",
+        default=",".join(active_defs.keys()),
+        help=f"Comma list of source_id, e.g. {next(iter(active_defs), '')}",
     )
     parser.add_argument(
         "--max-pages",
