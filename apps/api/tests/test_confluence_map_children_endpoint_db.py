@@ -35,6 +35,21 @@ def _clear_engine_cache():
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_seeded_documents():
+    """_seed() uses fixed doc ids (test_children:<external_id>), so
+    re-running these tests without cleanup hits a documents_pkey
+    duplicate-key error on the 2nd run."""
+    yield
+    from app.db.session import session_scope
+    from app.db.models import Document
+
+    with session_scope() as session:
+        session.query(Document).filter(Document.id.like("test_children:%")).delete(
+            synchronize_session=False
+        )
+
+
 def _seed(session, *, external_id, space_key, path, is_folder):
     from app.db.models import Document
 
