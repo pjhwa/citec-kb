@@ -40,6 +40,7 @@ FORCE_IMAGE_DIFF=false
 NO_ROLLBACK=false
 ATTACH_GIT=false
 ATTACH_REMOTE_URL=""
+RESTART_ONLY=false
 
 # 이미지 재빌드가 필요한 변경으로 간주하는 파일 패턴 (grep -E, git diff 경로 기준)
 IMAGE_SENSITIVE_PATTERN='(^|/)Dockerfile$|requirements.*\.txt$|pyproject\.toml$|package(-lock)?\.json$|^docker-compose\.ya?ml$'
@@ -173,12 +174,17 @@ USAGE
   --attach-git           최초 1회: 기존 디렉토리에 git 연결 (diff 확인 후 진행,
                         재시작 없음) — --remote-url 필수, 위 "사전 준비" 3) 참고
   --remote-url URL      --attach-git 과 함께 사용할 원격 저장소 URL
+  --restart-only         git pull 은 하지 않고 재시작 + 헬스체크만 실행. git 상태와
+                        무관하게 동작(git 저장소가 아니어도 됨) — 예: --attach-git
+                        직후처럼 "파일은 이미 최신인데 컨테이너만 못 띄운" 상황.
+                        실패해도 롤백은 하지 않음(되돌릴 이전 커밋 개념이 없음)
   --yes, -y             확인 프롬프트 생략 (--attach-git 의 ATTACH 확인은 예외)
   --dry-run, -n          fetch 후 계획만 표시, pull/restart 없음
   -h, --help            도움말
 
 예시
   scripts/git_pull_deploy.sh --attach-git --remote-url git@code.sdsdev.co.kr:jooksan/citec-kb.git
+  scripts/git_pull_deploy.sh --restart-only -y   # attach 직후 등, 재시작만 필요할 때
   scripts/git_pull_deploy.sh --dry-run
   scripts/git_pull_deploy.sh -y
   scripts/git_pull_deploy.sh --services "api worker" -y
@@ -271,9 +277,100 @@ attach_git_flow() {
   echo ""
   banner "✅ git 연결 완료"
   echo "  commit: $(git rev-parse --short HEAD) ($BRANCH)"
-  echo "  다음: 반영하려면 --attach-git 없이 이 스크립트를 다시 실행하세요"
-  echo "        (재시작이 필요하면 ${SERVICES[*]} 가 docker compose restart 됩니다)"
+  echo "  파일은 이미 ${REMOTE}/${BRANCH} 상태지만 컨테이너는 아직 이전 코드로 떠 있습니다."
+  echo "  지금 반영하려면: scripts/git_pull_deploy.sh --restart-only -y"
+  echo "  (이후 새 커밋이 생기면 --attach-git 없이 평소처럼 실행하면 됩니다)"
   exit 0
+}
+
+# 재시작/헬스체크 헬퍼 — 평소 pull 플로우와 --restart-only 양쪽에서 사용하므로
+# 인자 파싱보다 앞에 정의해 둔다 (호출 시점에 이미 정의돼 있어야 함).
+compose() { sudo docker compose "$@"; }
+
+wait_http() {
+  local url="$1" name="$2" deadline=$((SECONDS + WAIT_TIMEOUT))
+  while (( SECONDS < deadline )); do
+    if curl -sf --max-time 3 "$url" >/dev/null 2>&1; then
+      log "  ✓ $name  ready  ($url)"
+      return 0
+    fi
+    sleep 2
+  done
+  log "  ✗ $name  timeout after ${WAIT_TIMEOUT}s  ($url)"
+  return 1
+}
+
+wait_health() {
+  log "헬스 대기 (timeout=${WAIT_TIMEOUT}s)…"
+  local failed=0 s
+  for s in "${SERVICES[@]}"; do
+    case "$s" in
+      api)
+        wait_http "http://127.0.0.1:8573/v1/health" "api" || failed=1
+        ;;
+      web)
+        wait_http "http://127.0.0.1:8572/" "web" || failed=1
+        ;;
+      mcp)
+        local deadline=$((SECONDS + WAIT_TIMEOUT)) ok=0
+        while (( SECONDS < deadline )); do
+          if (echo >/dev/tcp/127.0.0.1/8577) >/dev/null 2>&1; then
+            log "  ✓ mcp   port 8577 open"; ok=1; break
+          fi
+          sleep 2
+        done
+        [[ "$ok" -eq 1 ]] || { log "  ✗ mcp   port 8577 timeout"; failed=1; }
+        ;;
+      worker)
+        # worker has no HTTP endpoint of its own — confirm the container is
+        # actually up (not restarting/crash-looping) instead.
+        if compose ps worker 2>/dev/null | grep -qE "Up|running"; then
+          log "  ✓ worker  container up"
+        else
+          log "  ✗ worker  not running"
+          failed=1
+        fi
+        ;;
+    esac
+  done
+  return "$failed"
+}
+
+restart_services() {
+  log "docker compose restart ${SERVICES[*]}"
+  compose restart "${SERVICES[@]}"
+}
+
+# restart_only_flow: git pull 을 전혀 하지 않고 재시작 + 헬스체크만 한다.
+# --attach-git 직후("파일은 최신, 컨테이너만 구버전")처럼 git SHA 비교로는
+# 감지되지 않는 "재시작만 밀린" 상태를 위한 것 — 롤백 대상 커밋 개념이 없으므로
+# 실패해도 자동 롤백은 하지 않는다.
+restart_only_flow() {
+  banner "citec-kb 재시작 전용 (--restart-only)  |  $(date '+%Y-%m-%d %H:%M:%S')"
+  info "project: $PROJECT_DIR"
+  info "services: ${SERVICES[*]}"
+
+  if ! $YES; then
+    echo -e "${RED}${BOLD}${#SERVICES[@]}개 서비스(${SERVICES[*]})를 재시작합니다 (git pull 없음). 계속할까요? [y/N]${RESET} "
+    read -r CONFIRM
+    [[ "${CONFIRM}" =~ ^[Yy]$ ]] || { warn "취소"; exit 0; }
+  fi
+
+  restart_services
+  if wait_health; then
+    echo ""
+    banner "✅ 재시작 완료"
+    echo "  services: ${SERVICES[*]}"
+    echo "  web  http://localhost:8572"
+    echo "  api  http://localhost:8573/v1/health"
+    echo "  mcp  http://localhost:8577"
+    exit 0
+  else
+    err "헬스체크 실패 — git 배포 실패가 아니라 현재 코드/컨테이너 자체 문제일 수 있습니다."
+    err "  롤백 대상 커밋이 없어 자동 롤백하지 않습니다."
+    err "  로그 확인: docker compose logs --tail 100 ${SERVICES[*]}"
+    exit 1
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -288,6 +385,7 @@ while [[ $# -gt 0 ]]; do
     --force-image-diff) FORCE_IMAGE_DIFF=true; shift ;;
     --attach-git) ATTACH_GIT=true; shift ;;
     --remote-url) ATTACH_REMOTE_URL="${2:?}"; shift 2 ;;
+    --restart-only) RESTART_ONLY=true; shift ;;
     --yes|-y) YES=true; shift ;;
     --dry-run|-n) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -312,8 +410,16 @@ if ! flock -n 200; then
   die "다른 git_pull_deploy.sh 가 이미 실행 중입니다 (lock: $LOCK_FILE)"
 fi
 
+if $ATTACH_GIT && $RESTART_ONLY; then
+  die "--attach-git 과 --restart-only 는 동시에 쓸 수 없습니다"
+fi
+
 if $ATTACH_GIT; then
   attach_git_flow
+fi
+
+if $RESTART_ONLY; then
+  restart_only_flow
 fi
 
 [[ -d ".git" ]] || die "git 저장소가 아닙니다: $PROJECT_DIR — 최초 연결은 --attach-git --remote-url <URL> (--help 참고)"
@@ -400,62 +506,6 @@ if $NO_RESTART; then
   warn "--no-restart — 컨테이너 재시작 생략 (수동으로 재시작하세요)"
   exit 0
 fi
-
-compose() { sudo docker compose "$@"; }
-
-wait_http() {
-  local url="$1" name="$2" deadline=$((SECONDS + WAIT_TIMEOUT))
-  while (( SECONDS < deadline )); do
-    if curl -sf --max-time 3 "$url" >/dev/null 2>&1; then
-      log "  ✓ $name  ready  ($url)"
-      return 0
-    fi
-    sleep 2
-  done
-  log "  ✗ $name  timeout after ${WAIT_TIMEOUT}s  ($url)"
-  return 1
-}
-
-wait_health() {
-  log "헬스 대기 (timeout=${WAIT_TIMEOUT}s)…"
-  local failed=0 s
-  for s in "${SERVICES[@]}"; do
-    case "$s" in
-      api)
-        wait_http "http://127.0.0.1:8573/v1/health" "api" || failed=1
-        ;;
-      web)
-        wait_http "http://127.0.0.1:8572/" "web" || failed=1
-        ;;
-      mcp)
-        local deadline=$((SECONDS + WAIT_TIMEOUT)) ok=0
-        while (( SECONDS < deadline )); do
-          if (echo >/dev/tcp/127.0.0.1/8577) >/dev/null 2>&1; then
-            log "  ✓ mcp   port 8577 open"; ok=1; break
-          fi
-          sleep 2
-        done
-        [[ "$ok" -eq 1 ]] || { log "  ✗ mcp   port 8577 timeout"; failed=1; }
-        ;;
-      worker)
-        # worker has no HTTP endpoint of its own — confirm the container is
-        # actually up (not restarting/crash-looping) instead.
-        if compose ps worker 2>/dev/null | grep -qE "Up|running"; then
-          log "  ✓ worker  container up"
-        else
-          log "  ✗ worker  not running"
-          failed=1
-        fi
-        ;;
-    esac
-  done
-  return "$failed"
-}
-
-restart_services() {
-  log "docker compose restart ${SERVICES[*]}"
-  compose restart "${SERVICES[@]}"
-}
 
 do_rollback() {
   err "헬스체크 실패 — 배포 직전 커밋(${CURRENT_SHA:0:12})으로 롤백합니다"
