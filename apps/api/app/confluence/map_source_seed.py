@@ -40,6 +40,20 @@ from typing import Any
 # 스냅샷과 실제 사이 326건 격차 같은 것). 홈페이지 자기 자신은 `ancestor=`
 # CQL 특성상 결과에 안 잡힌다(자손만 반환) — confluence_docs/tech_repo도
 # 동일한 특성이라 새로운 제약이 아니다.
+# --- ACL scope decision (2026-09-21) -----------------------------------
+# citec-kb has no mechanism to delegate a KB caller's identity to
+# Confluence and check their live read permission before returning a
+# search result — apps/api/app/auth/ is role-based only (viewer/author/
+# senior/admin), and POST /v1/search has no auth dependency at all. A
+# separate handoff design proposed building that delegation before any
+# confluence_map rollout; this codebase makes the opposite call instead:
+# every space/page registered below (roots or explicit_pages) is a
+# deliberate scope decision that its title/breadcrumb/URL are safe to show
+# to any KB user, not a temporary gap pending an ACL system. Do not add a
+# space or page here on the assumption that per-user filtering will catch
+# anything this list gets wrong — there is no such filtering, on this path
+# or on kb_query/kb_search/kb_ask generally.
+# -------------------------------------------------------------------------
 SEED_MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
     "confluence_map_lookin": {
         "space_key": "LOOKIN",
