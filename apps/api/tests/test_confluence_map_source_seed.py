@@ -37,7 +37,11 @@ def test_seed_each_have_own_space_key_and_roots_or_explicit_pages():
     assert len(space_keys) == len(SEED_MAP_SOURCE_DEFS)
 
 
-def test_seed_explicit_pages_scoped_to_the_six_github_question_pages():
+def test_seed_explicit_pages_match_known_page_ids():
+    """SPC/GUID/genaibusiness's explicit_pages are the 6-page GitHub
+    question gap-closure batch; DevOps001/Openstack101's are unrelated
+    personal-workspace seeds. Both are asserted here for known page ids,
+    not because they share a common scope/origin."""
     assert SEED_MAP_SOURCE_DEFS["confluence_map_spc"]["explicit_pages"].keys() == {
         "155680474", "383755011",
     }
