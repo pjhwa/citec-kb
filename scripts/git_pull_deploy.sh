@@ -63,6 +63,67 @@ USAGE
 전제: Dockerfile/requirements/pyproject/package.json/docker-compose.yml
       변경이 없는 "코드만" 배포. 이미지 재빌드가 필요하면 out.sh/in.sh 사용.
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+사전 준비 (최초 1회 — 이 스크립트를 처음 쓰기 전에 운용 서버에서)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1) 사내 GitHub(code.sdsdev.co.kr) 계정/접근 권한 신청
+   - citec-kb 저장소(예: jooksan/citec-kb)에 대한 read 권한이 있는 계정 필요.
+   - 운용 서버 전용이면 개인 계정보다 "배포용 서비스 계정" 또는 저장소
+     Deploy Key(읽기 전용) 발급을 권장 — 담당자/IT 에 문의.
+
+2) 인증 방식 하나 선택 — SSH(권장) 또는 HTTPS + PAT
+
+   [SSH 방식]
+     # 운용 서버에서 배포 계정으로 키 생성 (이미 있으면 생략)
+     ssh-keygen -t ed25519 -C "citec-kb-ops@$(hostname)" -f ~/.ssh/id_ed25519_citec_kb
+
+     # 공개키를 사내 GitHub 계정(또는 저장소 Deploy Key)에 등록
+     cat ~/.ssh/id_ed25519_citec_kb.pub
+     # → code.sdsdev.co.kr 웹 UI: Settings > SSH Keys 에 붙여넣기
+     #   (Deploy Key 라면 저장소 Settings > Deploy keys, read-only 로)
+
+     # code.sdsdev.co.kr 호스트용으로 이 키를 쓰도록 ~/.ssh/config 에 등록
+     cat >> ~/.ssh/config <<CFG
+     Host code.sdsdev.co.kr
+       User git
+       IdentityFile ~/.ssh/id_ed25519_citec_kb
+       IdentitiesOnly yes
+     CFG
+
+     # 연결 테스트 (known_hosts 등록 겸)
+     ssh -T git@code.sdsdev.co.kr
+
+   [HTTPS + Personal Access Token 방식]
+     # code.sdsdev.co.kr 웹 UI 에서 PAT 발급(repo read 권한만)
+     # clone/remote 시 https://<user>:<PAT>@code.sdsdev.co.kr/... 형태로 쓰거나
+     # git credential helper(store/cache) 로 한 번만 입력해 저장
+
+3) 저장소 준비
+   - 아직 ~/citec-kb 가 없다면(최초 구축) 클론:
+       git clone git@code.sdsdev.co.kr:jooksan/citec-kb.git ~/citec-kb
+     (URL 은 실제 경로로 교체. HTTPS 라면 https://code.sdsdev.co.kr/jooksan/citec-kb.git)
+   - 이미 out.sh/in.sh 번들로 만들어진 ~/citec-kb 라면(git 이력 없이 코드만 있음),
+     git 이 아니므로 remote 를 새로 추가해야 함:
+       cd ~/citec-kb
+       git init   # .git 이 없을 때만
+       git remote add origin git@code.sdsdev.co.kr:jooksan/citec-kb.git
+       git fetch origin main
+       git checkout -B main --track origin/main
+     주의: 기존 파일이 원격 커밋과 내용이 다르면 checkout 이 충돌할 수 있음 —
+     처음 한 번은 신중하게 diff 를 확인하고 진행할 것.
+
+4) 원격/브랜치 확인 (이후 이 스크립트가 매번 검증하는 항목이기도 함)
+     cd ~/citec-kb
+     git remote -v                 # origin 이 code.sdsdev.co.kr 를 가리키는지
+     git rev-parse --abbrev-ref HEAD   # main 브랜치인지
+     git fetch origin main && git status   # 연결/인증이 실제로 되는지
+
+5) 준비 확인 후 dry-run 으로 먼저 점검
+     scripts/git_pull_deploy.sh --dry-run
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 옵션
   --project DIR        프로젝트 경로 (기본: $HOME/citec-kb)
   --remote NAME         git remote 이름 (기본: origin)
