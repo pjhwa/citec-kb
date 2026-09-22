@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import uuid
 
 import pytest
 
@@ -36,6 +37,22 @@ def _clear_engine_cache():
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_seeded_documents():
+    """_seed() uses fixed doc ids (test_fresh:<source_type>:<external_id>),
+    so re-running these tests without cleanup hits a documents_pkey
+    duplicate-key error on the 2nd run. Delete them after each test —
+    the Chunk row cascades via document_id's ON DELETE CASCADE."""
+    yield
+    from app.db.session import session_scope
+    from app.db.models import Document
+
+    with session_scope() as session:
+        session.query(Document).filter(Document.id.like("test_fresh:%")).delete(
+            synchronize_session=False
+        )
+
+
 def _seed(session, *, source_type: str, external_id: str, title: str, evidence_grade: str):
     from app.db.models import Chunk, Document
 
@@ -55,14 +72,27 @@ def _seed(session, *, source_type: str, external_id: str, title: str, evidence_g
     )
     session.add(doc)
     session.flush()
+    chunk_text = f"{title} unique_marker_freshness_test"
+    chunk_id = str(uuid.uuid4())
     session.add(
         Chunk(
-            id=f"{doc_id}:chunk",
+            id=chunk_id,
             document_id=doc_id,
             ordinal=0,
-            text=f"{title} unique_marker_freshness_test",
+            text=chunk_text,
             header_context="",
         )
+    )
+    session.flush()
+    # hybrid_search's FTS branch requires tsv to be populated (Chunk.tsv.is_not(None))
+    # — mirrors app.ingest.pipeline.run_ingest's real chunk-write path, which
+    # populates it via this same raw UPDATE rather than the ORM (Postgres has
+    # no portable way to set a TSVECTOR column via a plain SQLAlchemy insert).
+    from sqlalchemy import text as sql_text
+
+    session.execute(
+        sql_text("UPDATE chunks SET tsv = to_tsvector('simple', :t) WHERE id = :id"),
+        {"t": f"\n{chunk_text}", "id": chunk_id},
     )
     return doc_id
 
