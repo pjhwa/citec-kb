@@ -302,9 +302,19 @@ def run_backfill(
         "sources": {},
     }
     if dry_run:
+        logger.info("backfill dry-run sources=%s pages=%s", len(order), pages)
         return report
 
     state = load_state(raw_root) if resume else {"sources": {}, "ingest": None, "embed": None}
+    _touch(
+        raw_root,
+        state,
+        phase="starting",
+        sources_total=len(order),
+        message=f"백필 시작, 소스 {len(order)}개",
+        ok=None,
+        finished_at=None,
+    )
     state["sources_total"] = len(order)
     crawled_this_run = False
     failures: list[dict[str, Any]] = list(state.get("leftover_errors") or []) if resume else []

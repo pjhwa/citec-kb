@@ -53,15 +53,21 @@ def main(argv: list[str] | None = None) -> int:
         handlers=handlers,
     )
 
+    logging.info("map backfill cli start raw_dir=%s args=%s", args.raw_dir, args)
     from app.confluence.map_backfill import run_backfill
 
     source_ids = [s.strip() for s in args.source_ids.split(",") if s.strip()] or None
-    report = run_backfill(
-        args.raw_dir,
-        source_ids=source_ids,
-        resume=not args.from_scratch,
-        dry_run=args.dry_run,
-    )
+    try:
+        report = run_backfill(
+            args.raw_dir,
+            source_ids=source_ids,
+            resume=not args.from_scratch,
+            dry_run=args.dry_run,
+        )
+    except Exception:
+        logging.exception("map backfill crashed before a normal finish")
+        raise
+    logging.info("map backfill cli finish ok=%s", report.get("ok"))
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
     if report.get("skipped"):
         return 2

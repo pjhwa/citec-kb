@@ -78,9 +78,32 @@ if $dry || $FOREGROUND; then
   exit $?
 fi
 
+LOG="${PROJECT_DIR}/${LOG_REL}"
+echo "$(date -Is) host launching map_backfill" >> "$LOG"
+# -T: no tty. Without it, detaching sends SIGHUP and the process dies
+# before it can write a log line. trap keeps that disposition across exec.
 echo "백필을 백그라운드로 시작합니다."
-docker compose exec -d "$SERVICE" python -m app.confluence.map_backfill_cli "${PY_ARGS[@]+"${PY_ARGS[@]}"}"
-echo "로그:  tail -f ${PROJECT_DIR}/${LOG_REL}"
+docker compose exec -d -T "$SERVICE" \
+  sh -c 'trap "" HUP; cd /app; exec python -u -m app.confluence.map_backfill_cli "$@" >> /data/raw/confluence_map/.backfill.log 2>&1' \
+  sh "${PY_ARGS[@]+"${PY_ARGS[@]}"}"
+sleep 2
+if ! docker compose exec -T "$SERVICE" python -c 'import os,sys
+needle="app.confluence.map_backfill_cli"
+for pid in os.listdir("/proc"):
+    if not pid.isdigit() or int(pid)==os.getpid():
+        continue
+    try:
+        cmd=open(f"/proc/{pid}/cmdline","rb").read().replace(b"\x00",b" ").decode()
+    except OSError:
+        continue
+    if needle in cmd:
+        sys.exit(0)
+sys.exit(1)' >/dev/null 2>&1; then
+  echo "프로세스가 바로 종료됐습니다. 로그 끝:" >&2
+  tail -n 40 "$LOG" >&2 || true
+  exit 1
+fi
+echo "로그:  tail -f ${LOG}"
 echo "상태:  ${PROJECT_DIR}/data/raw/confluence_map/.backfill_state.json"
 echo "화면:  admin.html 의 맵 백필 줄. 임베딩이 끝나면 '백필 완료'가 남습니다."
 echo "컨테이너(api)를 재시작하면 이 작업도 같이 종료됩니다. 다시 실행하면 끝난 소스부터 이어갑니다."
