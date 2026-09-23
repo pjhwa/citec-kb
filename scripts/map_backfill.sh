@@ -79,7 +79,10 @@ if $dry || $FOREGROUND; then
 fi
 
 LOG="${PROJECT_DIR}/${LOG_REL}"
-echo "$(date -Is) host launching map_backfill" >> "$LOG"
+# Write the stamp inside the container. The log is often root-owned, so the
+# host user cannot append to it.
+docker compose exec -T "$SERVICE" sh -c \
+  'mkdir -p /data/raw/confluence_map && printf "%s host launching map_backfill\n" "$(date -Is)" >> /data/raw/confluence_map/.backfill.log'
 # -T: no tty. Without it, detaching sends SIGHUP and the process dies
 # before it can write a log line. trap keeps that disposition across exec.
 echo "백필을 백그라운드로 시작합니다."

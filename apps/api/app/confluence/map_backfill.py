@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.confluence.map_sync import (
     _run_map_inventory_locked,
@@ -65,11 +65,16 @@ def save_state(raw_dir: str | Path, state: dict[str, Any]) -> None:
 
 
 def _doc_counts() -> dict[str, int]:
+    # metadata ->> 'space_key' compiled twice gets two bind names, and
+    # Postgres then rejects GROUP BY as a different expression.
     with session_scope() as session:
         rows = session.execute(
-            select(Document.metadata_["space_key"].astext, func.count())
-            .where(Document.source_type == "confluence_map", Document.status == "active")
-            .group_by(Document.metadata_["space_key"].astext)
+            text(
+                "SELECT metadata->>'space_key' AS space, count(*) "
+                "FROM documents "
+                "WHERE source_type = 'confluence_map' AND status = 'active' "
+                "GROUP BY 1"
+            )
         ).all()
     return {str(space or ""): int(n) for space, n in rows}
 
