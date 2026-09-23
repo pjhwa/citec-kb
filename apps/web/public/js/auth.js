@@ -77,7 +77,12 @@
 
   function status() {
     return fetch("/v1/auth/status").then(function (r) {
-      return r.json();
+      return r.text().then(function (t) {
+        if (!t || t.trim().charAt(0) === "<") {
+          throw new Error("auth/status 가 HTML을 반환했습니다 (HTTP " + r.status + "). API가 내려갔거나 프록시 오류입니다.");
+        }
+        return JSON.parse(t);
+      });
     });
   }
 

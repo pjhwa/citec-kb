@@ -186,41 +186,63 @@ function jobBadgeClass(status) {
   return "na";
 }
 
+async function readJson(res, label) {
+  const text = await res.text();
+  const trimmed = text.trimStart();
+  if (!trimmed || trimmed.charAt(0) === "<") {
+    throw new Error(label + " 이(가) JSON 대신 HTML을 반환했습니다 (HTTP " + res.status + "). API가 재시작 중이거나 프록시 오류입니다.");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(label + " JSON 파싱 실패 (HTTP " + res.status + ")");
+  }
+}
+
 async function refresh() {
   $("msg").textContent = "loading…";
+  const problems = [];
   try {
     const me = await CitecAuth.me();
     const p = (me.data && me.data.principal) || {};
     $("who").textContent = (p.sub || "?") + " · " + ((p.roles || []).join(",") || "—") + " · " + (p.auth_via || "");
+  } catch (e) { problems.push(String(e)); }
 
+  try {
     const auth = await CitecAuth.status();
     $("auth").textContent = JSON.stringify(auth, null, 2);
     badge($("amode"), null, auth.auth_mode || "?");
     badge($("aenf"), !!auth.enforced, String(!!auth.enforced));
     const oc = !!(auth.oidc && auth.oidc.configured);
     badge($("aoidc"), oc, oc ? "yes" : "no");
+  } catch (e) { problems.push(String(e)); }
 
+  try {
     const hr = await fetch("/v1/health");
-    const health = await hr.json();
+    const health = await readJson(hr, "/v1/health");
     badge($("hapi"), health.status === "ok", health.status || "?");
     badge($("hpg"), !!(health.checks && health.checks.postgres && health.checks.postgres.ok), "pg");
     badge($("hredis"), !!(health.checks && health.checks.redis && health.checks.redis.ok), "redis");
     badge($("hllm"), !!(health.checks && health.checks.llm && health.checks.llm.ok), (health.checks && health.checks.llm && health.checks.llm.backend) || "llm");
+  } catch (e) { problems.push(String(e)); }
 
+  try {
     const or = await CitecAuth.apiFetch("/v1/ops/status");
-    const ops = await or.json();
+    const ops = await readJson(or, "/v1/ops/status");
     $("ops").textContent = JSON.stringify(ops, null, 2);
     const w = ops.checks && ops.checks.worker;
     badge($("hworker"), !!(w && w.ok), w && w.ok ? "up" : "down");
     badge($("hpilot"), !!ops.pilot_engineering_ready, ops.pilot_engineering_ready ? "ready" : "no");
+  } catch (e) { problems.push(String(e)); }
 
-    await refreshDashboard();
-    await refreshMapSync();
+  try { await refreshDashboard(); }
+  catch (e) { problems.push(String(e)); }
+  try { await refreshMapSync(); }
+  catch (e) { problems.push(String(e)); }
 
-    $("msg").textContent = "ok " + new Date().toLocaleTimeString();
-  } catch (e) {
-    $("msg").textContent = String(e);
-  }
+  $("msg").textContent = problems.length
+    ? problems.join(" | ")
+    : "ok " + new Date().toLocaleTimeString();
 }
 
 async function refreshDashboard() {
@@ -231,7 +253,7 @@ async function refreshDashboard() {
     $("fbBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
     return;
   }
-  const d = await dr.json();
+  const d = await readJson(dr, "/v1/ops/dashboard");
 
   const res = d.resources || {};
   $("rRss").textContent = res.process_rss_mb != null ? res.process_rss_mb + " MB" : "—";
@@ -356,7 +378,7 @@ async function refreshMapSync() {
       badge($("mapRunning"), null, "?");
       return;
     }
-    const d = await r.json();
+    const d = await readJson(r, "/v1/confluence-map/status");
     badge($("mapRunning"), d.running === true, d.running ? "실행 중" : (d.running === false ? "대기" : "확인 불가"));
 
     const cur = d.current;
