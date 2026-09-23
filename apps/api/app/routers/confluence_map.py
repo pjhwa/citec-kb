@@ -173,7 +173,18 @@ def get_status(
         # or if Redis is unreachable.
         "current": get_progress(),
         "sources": by_id,
+        "backfill": _backfill_view(),
     }
+
+
+def _backfill_view() -> dict[str, Any]:
+    from app.confluence.map_backfill import backfill_status
+    from app.settings import get_settings
+
+    try:
+        return backfill_status(get_settings().raw_dir)
+    except Exception as exc:  # noqa: BLE001 — status page must still render
+        return {"phase": "unknown", "message": str(exc)}
 
 
 def _slugify_space_key(space_key: str) -> str:

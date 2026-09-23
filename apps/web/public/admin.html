@@ -136,6 +136,7 @@
       Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).
     </p>
     <div id="mapCurrent" class="row"><span>지금 처리 중</span><span class="meta">…</span></div>
+    <div id="backfillBox" class="meta" style="margin:6px 0 8px">백필 대기</div>
     <table class="tbl">
       <thead><tr><th>source_id</th><th>space</th><th>상태</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th><th></th></tr></thead>
       <tbody id="mapSyncBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
@@ -325,6 +326,28 @@ function fmtCheckpoint(cp) {
   }).join("<br/>");
 }
 
+function renderBackfill(b) {
+  const box = $("backfillBox");
+  if (!box) return;
+  if (!b || !b.phase || b.phase === "idle") {
+    box.innerHTML = "맵 백필: 기록 없음";
+    return;
+  }
+  const embed = b.embed || {};
+  const done = b.phase === "done" && embed.status === "done";
+  const head = done
+    ? '<span class="badge ok">백필 완료</span> 임베딩까지 끝났습니다. ' + esc(b.message || "") + " · " + fmtTs(b.finished_at)
+    : '<span class="badge warn">' + esc(b.phase) + '</span> ' + esc(b.message || "") +
+      " · 소스 " + esc(b.sources_done ?? "?") + "/" + esc(b.sources_total ?? "?") +
+      (b.current_source_id ? " · " + esc(b.current_source_id) : "") +
+      (b.retry_attempt ? " · 재시도 " + esc(b.retry_attempt) + "/3" : "");
+  const tail = " · 남은 오류 " + esc(b.leftover_error_count || 0) +
+    " · 임베딩 대기 " + esc(embed.pending ?? "—") +
+    (embed.status ? " · embed=" + esc(embed.status) : "") +
+    " · 갱신 " + fmtTs(b.updated_at);
+  box.innerHTML = head + '<span class="meta">' + tail + "</span>";
+}
+
 async function refreshMapSync() {
   try {
     const r = await CitecAuth.apiFetch("/v1/confluence-map/status");
@@ -337,17 +360,21 @@ async function refreshMapSync() {
     badge($("mapRunning"), d.running === true, d.running ? "실행 중" : (d.running === false ? "대기" : "확인 불가"));
 
     const cur = d.current;
-    if (!cur || !cur.source_id) {
+    if (!cur || (!cur.source_id && !cur.phase)) {
       $("mapCurrent").innerHTML = '<span>지금 처리 중</span><span class="meta">' +
         (d.running ? '—' : '실행 중 아님') + '</span>';
     } else {
-      const label = esc(cur.source_id) + (cur.space_key ? ' (' + esc(cur.space_key) + ')' : '') +
+      const label = esc(cur.phase || "") + " " + esc(cur.source_id || "") +
+        (cur.space_key ? ' (' + esc(cur.space_key) + ')' : '') +
         (cur.root_label ? ' → ' + esc(cur.root_label) : '') +
         (cur.pages_done_this_root ? ' · ' + cur.pages_done_this_root + '페이지 처리됨' : '') +
-        ' · 소스 ' + (cur.source_index || "?") + '/' + (cur.source_total || "?");
-      const staleTag = d.running ? '' : ' <span class="badge bad">중단됨 (재시작/크래시 의심)</span>';
+        (cur.source_index ? ' · 소스 ' + esc(cur.source_index) + '/' + esc(cur.source_total || "?") : '') +
+        (cur.message ? ' · ' + esc(cur.message) : '');
+      const staleTag = (d.running || (cur.phase && cur.phase !== "backfill-done")) ? '' :
+        (cur.phase === "backfill-done" ? '' : ' <span class="badge bad">중단됨 (재시작/크래시 의심)</span>');
       $("mapCurrent").innerHTML = '<span>지금 처리 중</span><span>' + label + staleTag + '</span>';
     }
+    renderBackfill(d.backfill);
 
     const sources = Object.keys(d.sources || {}).sort();
     const activeCount = sources.filter((id) => d.sources[id].status !== "disabled").length;

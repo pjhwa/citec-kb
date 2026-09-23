@@ -310,7 +310,14 @@ async def _crawl_map_source(
                         "confluence map search failed root=%s start=%s cql=%r — abandoning this root",
                         root_id, start, cql,
                     )
-                    errors.append({"page_id": None, "root_id": root_id, "error": str(exc)})
+                    errors.append(
+                        {
+                            "page_id": None,
+                            "root_id": root_id,
+                            "start": start,
+                            "error": str(exc),
+                        }
+                    )
                     break
                 results = data.get("results") or []
                 cql_note = f"cql={cql!r} start={start} got={len(results)}"
@@ -626,6 +633,7 @@ def run_map_inventory(
     raw_dir: str | Path,
     *,
     dry_run: bool = False,
+    ingest: bool = True,
 ) -> dict[str, Any]:
     """Weekly full-metadata reconciliation for one confluence_map source.
 
@@ -705,7 +713,13 @@ def run_map_inventory(
                 "archive_skipped_due_to_errors": False,
             }
         return _run_map_inventory_locked(
-            source_id, raw_root, client=client, settings=settings, sd=sd, dry_run=dry_run
+            source_id,
+            raw_root,
+            client=client,
+            settings=settings,
+            sd=sd,
+            dry_run=dry_run,
+            ingest=ingest,
         )
 
 
@@ -717,6 +731,8 @@ def _run_map_inventory_locked(
     settings: Any,
     sd: dict[str, Any],
     dry_run: bool,
+    ingest: bool = True,
+    progress: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     with session_scope() as session:
         previous_ids = {
@@ -743,6 +759,7 @@ def _run_map_inventory_locked(
             rps=settings.confluence_rate_limit_rps,
             tz_name=settings.confluence_timezone,
             use_checkpoint=False,
+            progress=progress,
         )
     )
     explicit_pages = sd.get("explicit_pages") or {}
@@ -785,7 +802,7 @@ def _run_map_inventory_locked(
                 doc.status = "archived"
                 archived.append(doc.external_id)
 
-    if not dry_run:
+    if not dry_run and ingest:
         from app.ingest.pipeline import run_ingest
 
         run_ingest(raw_root, sources=["confluence_map"])

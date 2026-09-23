@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from sqlalchemy import func, select, text
 
-from app.db.models import Chunk, Embedding, IngestJob
+from app.db.models import Chunk, Document, Embedding, IngestJob
 from app.db.session import session_scope
 from app.embed.model import EMBEDDING_DIM, MODEL_ID, embed_passages, get_model
 
@@ -31,6 +31,7 @@ def _fetch_pending_batch(
     after_id: Optional[str],
     remaining: Optional[int],
     document_id: Optional[str] = None,
+    source_type: Optional[str] = None,
 ) -> list[Any]:
     """Keyset page of active chunks missing an embedding for model_name."""
     limit = batch_size if remaining is None else min(batch_size, remaining)
@@ -55,6 +56,10 @@ def _fetch_pending_batch(
         )
         if document_id:
             stmt = stmt.where(Chunk.document_id == document_id)
+        if source_type:
+            stmt = stmt.join(Document, Document.id == Chunk.document_id).where(
+                Document.source_type == source_type
+            )
         if after_id:
             stmt = stmt.where(Chunk.id > after_id)
         rows = list(session.execute(stmt).all())
@@ -83,6 +88,7 @@ def embed_pending_chunks(
     limit: Optional[int] = None,
     model_name: str = MODEL_ID,
     document_id: Optional[str] = None,
+    source_type: Optional[str] = None,
 ) -> dict[str, Any]:
     """Embed chunks that lack a row in embeddings for this model (streamed)."""
     try:
@@ -102,6 +108,7 @@ def embed_pending_chunks(
         "batch_size": batch_size,
         "limit": limit,
         "document_id": document_id,
+        "source_type": source_type,
     }
     t_job = time.perf_counter()
 
@@ -139,6 +146,7 @@ def embed_pending_chunks(
             after_id=after_id,
             remaining=remaining,
             document_id=document_id,
+            source_type=source_type,
         )
         fetch_ms = (time.perf_counter() - t_fetch) * 1000
         if not batch:
