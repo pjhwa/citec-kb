@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.query.planner import plan_query, route_query
+from app.query.planner import route_query
 from app.query.time_range import parse_relative_range
 from app.tickets.query import get_ticket_by_external_id, list_tickets
 
@@ -73,8 +73,7 @@ def post_query_route(body: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="q required")
     execute = (body or {}).get("execute", True)
     if execute is False or str(execute).lower() in {"0", "false", "no"}:
-        plan = plan_query(q)
-        return {"intent": plan.get("intent"), "params": plan, "executed": False}
+        return route_query(q, body=body or {}, execute=False)
     out = route_query(q, body=body or {}, execute=True)
     if out.get("intent") == "error":
         raise HTTPException(status_code=400, detail=out.get("error") or "bad query")

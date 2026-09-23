@@ -23,7 +23,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 
 | Tool | 설명 | 백엔드 |
 |------|------|--------|
-| `kb_search` / `wiki_search` | 하이브리드 FTS+vector (section/area/environment/work_type) | `POST /v1/search` (기본) |
+| `kb_search` / `wiki_search` | 하이브리드 FTS+vector. `exclude_page_ids`, `exclude_source_types` 로 후보 제외. `total` 은 이번 페이지 건수이고 `total_candidates` 가 페이지를 자르기 전 후보 수 | `POST /v1/search` (기본) |
 | `kb_get_document` / `wiki_get_document` | 문서 본문 | `GET /api/wiki/file` |
 | `kb_ask` / `wiki_ask` | RAG 답변 (SSE) | `POST /api/query` |
 

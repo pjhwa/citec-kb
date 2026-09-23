@@ -47,11 +47,37 @@ def _frame_blob(fr: IssueFrame, doc: Document, hit_snippet: str = "") -> str:
     return " ".join(parts).lower()
 
 
+# Forms that should count as the same token across Korean and English titles.
+_TOKEN_EQUIV: dict[str, tuple[str, ...]] = {
+    "타임아웃": ("timeout", "time-out"),
+    "timeout": ("타임아웃",),
+    "redis": ("레디스",),
+    "레디스": ("redis",),
+}
+
+
+def _token_in(token: str, blob: str) -> bool:
+    low = blob.lower()
+    forms = (token.lower(),) + tuple(f.lower() for f in _TOKEN_EQUIV.get(token.lower(), ()))
+    return any(form in low for form in forms)
+
+
+def _title_coverage_boost(query: str, title: str) -> float:
+    """Prefer a case whose title contains the query over one that only shares a word in the resolution."""
+    tokens = _query_tokens(query)
+    if not tokens or not title:
+        return 0.0
+    hits = sum(1 for tok in tokens if _token_in(tok, title))
+    if hits == len(tokens) and len(tokens) >= 2:
+        return 1.5
+    return 0.25 * hits
+
+
 def _text_match_boost(query: str, blob: str) -> float:
     tokens = _query_tokens(query)
     if not tokens or not blob:
         return 0.0
-    hits = sum(1 for t in tokens if t in blob)
+    hits = sum(1 for t in tokens if _token_in(t, blob))
     # strong multi-token match (e.g. gpu+fabric+spine)
     if hits >= 3:
         return 0.55 + 0.05 * min(hits - 3, 4)
@@ -179,17 +205,23 @@ def similar_incidents(
         # (fixes cases like GPU/fabric/spine → CITECTS-2502).
         if tokens:
             like_clauses = []
+            seen_forms: set[str] = set()
             for t in tokens[:8]:
-                like = f"%{t}%"
-                like_clauses.extend(
-                    [
-                        IssueFrame.symptom.ilike(like),
-                        IssueFrame.root_cause.ilike(like),
-                        IssueFrame.resolution.ilike(like),
-                        Document.title.ilike(like),
-                        Document.external_id.ilike(like),
-                    ]
-                )
+                forms = (t,) + _TOKEN_EQUIV.get(t, ())
+                for form in forms:
+                    if form in seen_forms:
+                        continue
+                    seen_forms.add(form)
+                    like = f"%{form}%"
+                    like_clauses.extend(
+                        [
+                            IssueFrame.symptom.ilike(like),
+                            IssueFrame.root_cause.ilike(like),
+                            IssueFrame.resolution.ilike(like),
+                            Document.title.ilike(like),
+                            Document.external_id.ilike(like),
+                        ]
+                    )
             inj = session.execute(
                 select(IssueFrame, Document)
                 .join(Document, Document.id == IssueFrame.document_id)
@@ -226,7 +258,12 @@ def similar_incidents(
                 hit = hit_by_doc[did]
                 blob = f"{hit.title or ''} {hit.snippet or ''}".lower()
                 tboost = _text_match_boost(q, blob)
-            scored.append((base + qboost + tboost, did))
+            title = ""
+            if fr_doc:
+                title = fr_doc[1].title or ""
+            elif did in hit_by_doc:
+                title = hit_by_doc[did].title or ""
+            scored.append((base + qboost + tboost + _title_coverage_boost(q, title), did))
         scored.sort(key=lambda x: x[0], reverse=True)
 
         cases = []

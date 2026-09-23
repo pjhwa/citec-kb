@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.db.models import Chunk, Embedding, IngestJob
 from app.db.session import session_scope
@@ -61,6 +61,22 @@ def _fetch_pending_batch(
     return rows
 
 
+def purge_inactive_embeddings() -> int:
+    """Remove vectors whose chunk was soft-deleted by rechunk.
+
+    Safe to call often: after the backlog is gone this deletes zero rows.
+    """
+    with session_scope() as session:
+        result = session.execute(
+            text(
+                "DELETE FROM embeddings e "
+                "USING chunks c "
+                "WHERE e.chunk_id = c.id AND c.is_active = false"
+            )
+        )
+        return int(result.rowcount or 0)
+
+
 def embed_pending_chunks(
     *,
     batch_size: int = 16,
@@ -69,6 +85,12 @@ def embed_pending_chunks(
     document_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Embed chunks that lack a row in embeddings for this model (streamed)."""
+    try:
+        purged = purge_inactive_embeddings()
+        if purged:
+            logger.info("purged %s embeddings on inactive chunks", purged)
+    except Exception:  # noqa: BLE001
+        logger.exception("purge_inactive_embeddings failed")
     job_id = str(uuid.uuid4())
     stats: dict[str, Any] = {
         "embedded": 0,

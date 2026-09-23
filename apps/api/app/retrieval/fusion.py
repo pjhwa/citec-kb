@@ -89,7 +89,7 @@ def quality_gate(
     """Drop weak lists: if top score below threshold, return empty."""
     if not hits:
         return []
-    ordered = sorted(hits, key=lambda h: h.score, reverse=True)
+    ordered = sorted(hits, key=lambda h: (-h.score, h.document_id or "", h.chunk_id or ""))
     if ordered[0].score < min_top_score:
         return []
     filtered = [h for h in ordered if h.score >= min_score]

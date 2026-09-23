@@ -1,4 +1,5 @@
 from app.query.planner import plan_query
+from app.routers.checkitems import _phrase_forms
 
 
 def test_capacity_plan():
@@ -22,6 +23,17 @@ def test_checklist_plan():
     p = plan_query("리눅스 파일시스템 관련 PISA 진단 체크리스트 항목은?")
     assert p["intent"] == "checklist"
     assert p.get("area") == "Linux"
+    # "파일시스템" must not also fire the disk term. That glued q was
+    # "파일시스템 디스크", which ILIKE-missed every "파일 시스템" row.
+    q = p.get("q") or ""
+    assert "디스크" not in q
+    assert "파일 시스템" in q
+
+
+def test_filesystem_phrase_expands_without_splitting():
+    forms = [f.lower() for f in _phrase_forms("파일시스템")]
+    assert "파일 시스템" in forms
+    assert "파일" not in forms
 
 
 def test_similar_incident_plan():

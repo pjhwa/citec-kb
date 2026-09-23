@@ -59,12 +59,89 @@ def _today_kst(now: Optional[datetime] = None) -> date:
     return now.date()
 
 
+_ABS_ISO = re.compile(
+    r"(?P<a>\d{4}[-./]\d{1,2}[-./]\d{1,2})"
+    r"\s*(?:부터|~|～)\s*"
+    r"(?P<b>\d{4}[-./]\d{1,2}[-./]\d{1,2})"
+    r"(?:\s*까지)?"
+)
+_ABS_DOTTED = re.compile(
+    r"(?P<a>\d{4}\.\d{1,2}\.\d{1,2})\s*[-–—]\s*(?P<b>\d{4}\.\d{1,2}\.\d{1,2})"
+)
+_ABS_KO = re.compile(
+    r"(?P<y1>\d{4})\s*년\s*(?P<m1>\d{1,2})\s*월\s*(?P<d1>\d{1,2})\s*일\s*부터\s*"
+    r"(?P<y2>\d{4})\s*년\s*(?P<m2>\d{1,2})\s*월\s*(?P<d2>\d{1,2})\s*일\s*까지"
+)
+_DATE_ATTEMPT = re.compile(
+    r"\d{4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}[-./]\d{1,2}[-./]\d{1,2}"
+)
+
+
+def _ymd(y: int, m: int, d: int) -> Optional[date]:
+    try:
+        return date(y, m, d)
+    except ValueError:
+        return None
+
+
+def _parse_ymd_token(token: str) -> Optional[date]:
+    parts = re.split(r"[-./]", token.strip())
+    if len(parts) != 3:
+        return None
+    try:
+        return _ymd(int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return None
+
+
+def _ordered_range(a: date, b: date, label: str) -> DateRange:
+    if a <= b:
+        return DateRange(a, b, label)
+    return DateRange(b, a, label)
+
+
+def parse_absolute_range(text: str) -> Optional[DateRange]:
+    """Inclusive literal ranges. Relative phrases are not handled here."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = _ABS_KO.search(t)
+    if m:
+        a = _ymd(int(m.group("y1")), int(m.group("m1")), int(m.group("d1")))
+        b = _ymd(int(m.group("y2")), int(m.group("m2")), int(m.group("d2")))
+        if a and b:
+            return _ordered_range(a, b, f"{a.isoformat()}~{b.isoformat()}")
+    m = _ABS_ISO.search(t) or _ABS_DOTTED.search(t)
+    if not m:
+        return None
+    a = _parse_ymd_token(m.group("a"))
+    b = _parse_ymd_token(m.group("b"))
+    if not a or not b:
+        return None
+    return _ordered_range(a, b, f"{a.isoformat()}~{b.isoformat()}")
+
+
+def has_unparsed_date_span(text: str) -> bool:
+    """A date-shaped phrase is present but neither absolute nor relative parse worked."""
+    t = text or ""
+    if not _DATE_ATTEMPT.search(t):
+        return False
+    return parse_absolute_range(t) is None and parse_relative_range(t) is None
+
+
 def parse_relative_range(
     text: str,
     *,
     now: Optional[datetime] = None,
 ) -> Optional[DateRange]:
-    """Parse Korean relative time expressions into an inclusive date range."""
+    """Parse Korean relative time expressions, or an absolute literal range, into an inclusive date range."""
+    absolute = parse_absolute_range(text)
+    if absolute:
+        return absolute
+    # A broken absolute span ("2026-09-07부터 어제까지") must not collapse
+    # to whichever relative word happens to appear in the same sentence.
+    if _DATE_ATTEMPT.search(text or "") and re.search(r"부터|까지", text or ""):
+        return None
     t = (text or "").strip()
     if not t:
         return None

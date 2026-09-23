@@ -1,5 +1,5 @@
-"""Confluence *map* sync: structure-only index (title/URL/breadcrumb, no
-body) for spaces CI-TEC references but does not fully ingest.
+"""Confluence *map* sync: title, breadcrumb, and a short excerpt (not the
+full body) for spaces CI-TEC references but does not fully ingest.
 
 Why a separate module instead of extending app.confluence.sync: that
 module's `_SOURCE_DEFS`/`sync()`/`_crawl_source()` assume exactly one
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -96,6 +97,40 @@ def get_source_defs(active_only: bool = False) -> dict[str, dict[str, Any]]:
         }
 
 
+_EXCERPT_CHARS = 400
+_NON_TECH = re.compile(r"손익|P&L|\bKPI\b|매출액|조직도|휴가\s*신청|근태", re.I)
+
+
+def excerpt_from_storage(storage_html: str, *, limit: int = _EXCERPT_CHARS) -> str:
+    """Tag-stripped leading excerpt. 300–500 chars so it is not a body substitute."""
+    from app.confluence.sync import clean_body, storage_html_to_text
+
+    text = clean_body(storage_html_to_text(storage_html or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "…"
+
+
+def classify_map_tech(title: str, excerpt: str) -> tuple[str, list[str]]:
+    """Return (tech_relevant, citec_domains).
+
+    tag_citec_domains is an incident-keyword tagger. An empty result is
+    NOT treated as non-technical: design pages often miss those keywords.
+    irrelevant is only a non-tech marker (P&L, KPI, …) with no domain hit.
+    Otherwise relevant if any domain matched, else unknown (kept in search).
+    """
+    from app.frames.citec_taxonomy import tag_citec_domains
+
+    domains = tag_citec_domains(excerpt, title)
+    blob = f"{title}\n{excerpt}"
+    if domains:
+        return "relevant", domains
+    if _NON_TECH.search(blob):
+        return "irrelevant", []
+    return "unknown", []
+
+
 def build_frontmatter_confluence_map(
     *,
     space_key: str,
@@ -107,6 +142,9 @@ def build_frontmatter_confluence_map(
     path_breadcrumb: str,
     last_modified: str,
     is_folder: bool,
+    excerpt: str = "",
+    tech_relevant: str = "",
+    citec_domains: Optional[list[str]] = None,
 ) -> str:
     lines = [
         "---",
@@ -120,9 +158,14 @@ def build_frontmatter_confluence_map(
         f"경로 : {_sanitize_line_value(path_breadcrumb)}",
         f"최종수정일 : {last_modified}",
         f"유형 : {'폴더' if is_folder else '문서'}",
-        "---",
     ]
-    return "\n".join(lines) + "\n"
+    if tech_relevant:
+        lines.append(f"tech_relevant : {tech_relevant}")
+    if citec_domains:
+        lines.append("citec_domains : " + ",".join(citec_domains))
+    lines.append("---")
+    front = "\n".join(lines) + "\n"
+    return front
 
 
 def _is_folder_title(title: str) -> bool:
@@ -161,6 +204,9 @@ def _write_map_page(
     ancestors = meta.get("ancestors") or []
     path_breadcrumb = directory_breadcrumb(ancestors, title)
 
+    storage = ((meta.get("body") or {}).get("storage") or {}).get("value") or ""
+    excerpt = excerpt_from_storage(storage) if storage else ""
+    tech_relevant, domains = classify_map_tech(title, excerpt)
     front = build_frontmatter_confluence_map(
         space_key=space_key,
         space_name=space_name,
@@ -171,12 +217,18 @@ def _write_map_page(
         path_breadcrumb=path_breadcrumb,
         last_modified=last_modified,
         is_folder=_is_folder_title(title),
+        excerpt=excerpt,
+        tech_relevant=tech_relevant,
+        citec_domains=domains,
     )
 
     out_dir = raw_dir / "confluence_map"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"confluence_map_{page_id}.md"
-    out_path.write_text(front + "\n" + path_breadcrumb + "\n", encoding="utf-8")
+    body = path_breadcrumb
+    if excerpt:
+        body = f"{path_breadcrumb}\n\n{excerpt}"
+    out_path.write_text(front + "\n" + body + "\n", encoding="utf-8")
     return WrittenPage(page_id=page_id, path=out_path)
 
 
@@ -285,7 +337,7 @@ async def _crawl_map_source(
                         break
                     page_id = str(summary.get("id"))
                     try:
-                        meta = await client.get_page_meta(
+                        meta = await client.get_page_full(
                             page_id, client=http_client, limiter=limiter
                         )
                         wp = _write_map_page(
@@ -361,7 +413,7 @@ async def _crawl_explicit_pages(
     async with client.bulk_client() as http_client:
         for page_id, label in pages.items():
             try:
-                meta = await client.get_page_meta(
+                meta = await client.get_page_full(
                     page_id, client=http_client, limiter=limiter
                 )
                 wp = _write_map_page(

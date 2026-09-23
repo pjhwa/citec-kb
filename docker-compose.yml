@@ -147,6 +147,7 @@ services:
     volumes:
       # server.py mount: MCP logic can ship with code bundle; pip deps still need docker-mcp
       - ./mcp-server/server.py:/app/server.py:ro
+      - ./mcp-server/ask_fold.py:/app/ask_fold.py:ro
     depends_on:
       api:
         condition: service_healthy

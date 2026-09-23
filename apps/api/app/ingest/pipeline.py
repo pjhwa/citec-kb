@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from sqlalchemy import func, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
-from app.db.models import Checkitem, Chunk, Document, DocumentSection, IngestJob, Source
+from app.db.models import Checkitem, Chunk, Document, DocumentSection, Embedding, IngestJob, Source
 from app.db.session import session_scope
 from app.ingest.adapters import DocumentDraft, iter_all
 from app.ingest.chunking import chunk_markdown
@@ -142,7 +142,12 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             doc.lang = draft.lang
         doc.updated_at = _now()
         action = "updated"
-        # soft-deactivate old chunks
+        # Drop vectors of chunks we are about to retire. Leaving them in the
+        # HNSW index made filtered ANN return those neighbors and then discard
+        # them (104k inactive embeddings on the live corpus).
+        old_chunk_ids = [ch.id for ch in doc.chunks]
+        if old_chunk_ids:
+            session.execute(delete(Embedding).where(Embedding.chunk_id.in_(old_chunk_ids)))
         for ch in list(doc.chunks):
             ch.is_active = False
         # remove sections (cascade chunks FK set null / we delete sections)

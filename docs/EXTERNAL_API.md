@@ -84,6 +84,8 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
     }
   ],
   "total": 1,
+  "returned_count": 1,
+  "total_candidates": 1,
   "fts_ready": true,
   "backend": "citec-kb"
 }

@@ -23,6 +23,7 @@ from app.retrieval.search import (
     SearchResponse,
     build_fts_variants,
     hybrid_search,
+    retrieval_trust,
 )
 
 _CITECTS = re.compile(r"\bCITECTS-\d+\b", re.I)
@@ -330,19 +331,25 @@ def multi_hybrid_search(
                 # store hit with adjusted score for ranking
                 best[eid] = replace(hit, score=score)
 
-    merged = sorted(best.values(), key=lambda h: float(h.score or 0), reverse=True)[: req.top_k]
+    merged = sorted(
+        best.values(),
+        key=lambda h: (-float(h.score or 0), h.document_id or "", h.external_id or ""),
+    )[: req.top_k]
     ranked: list[SearchHit] = []
     for i, h in enumerate(merged, 1):
         ranked.append(replace(h, rank=i))
 
     base = first_resp or hybrid_search(session, req, query_vector=query_vector)
+    returned = len(ranked)
     out = SearchResponse(
         query=req.q,
         exact_tokens=base.exact_tokens,
-        total=len(ranked),
-        gated=base.gated if ranked else True,
-        trust_retrieval=base.trust_retrieval if ranked else "low",
+        total=returned,
+        gated=False if ranked else True,
+        trust_retrieval=retrieval_trust(ranked),
         results=ranked,
+        returned_count=returned,
+        total_candidates=len(best),
     )
     meta = {
         "multi_query": True,

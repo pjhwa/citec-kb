@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 
 from app.db.models import Checkitem
 from app.db.session import session_scope
@@ -141,6 +142,33 @@ def _snippet(r: Checkitem) -> str:
     return " · ".join(p for p in parts if p)[:400]
 
 
+def _contains_pattern(term: str) -> str:
+    esc = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
+
+
+def _phrase_forms(phrase: str) -> list[str]:
+    """Search forms for one checklist phrase. Do not split on spaces —
+    '파일 시스템' is one phrase, and splitting it matches every '파일' row."""
+    text = (phrase or "").strip()
+    if not text:
+        return []
+    forms = [text]
+    compact = re.sub(r"\s+", "", text).lower()
+    if compact in {"파일시스템", "filesystem"}:
+        forms.extend(["파일 시스템", "파일시스템", "filesystem"])
+    forms.extend(_expand_terms(text))
+    seen: set[str] = set()
+    out: list[str] = []
+    for form in forms:
+        key = form.lower()
+        if key in seen or len(form) < 2:
+            continue
+        seen.add(key)
+        out.append(form)
+    return out
+
+
 def list_checkitems_core(
     *,
     q: Optional[str] = None,
@@ -158,38 +186,48 @@ def list_checkitems_core(
             stmt = stmt.where(Checkitem.area.ilike(area.strip()))
         if category_1 and isinstance(category_1, str) and category_1.strip():
             stmt = stmt.where(Checkitem.category_1.ilike(f"%{category_1.strip()}%"))
+        rank_score = None
         if q and isinstance(q, str) and q.strip():
-            terms = [q.strip()] + _expand_terms(q.strip())
-            # de-dupe
-            seen: set[str] = set()
-            uniq_terms: list[str] = []
-            for t in terms:
-                tl = t.lower()
-                if tl not in seen:
-                    seen.add(tl)
-                    uniq_terms.append(t)
+            forms = _phrase_forms(q)
             clauses = []
-            for t in uniq_terms:
-                like = f"%{t}%"
+            for t in forms:
+                like = _contains_pattern(t)
                 clauses.extend(
                     [
-                        Checkitem.subject.ilike(like),
-                        Checkitem.code.ilike(like),
-                        Checkitem.area.ilike(like),
-                        Checkitem.category_1.ilike(like),
-                        Checkitem.subcategory.ilike(like),
-                        Checkitem.check_method.ilike(like),
-                        Checkitem.check_criteria.ilike(like),
-                        Checkitem.risk_if_vulnerable.ilike(like),
-                        Checkitem.remediation.ilike(like),
+                        Checkitem.subject.ilike(like, escape="\\"),
+                        Checkitem.code.ilike(like, escape="\\"),
+                        Checkitem.area.ilike(like, escape="\\"),
+                        Checkitem.category_1.ilike(like, escape="\\"),
+                        Checkitem.subcategory.ilike(like, escape="\\"),
+                        Checkitem.check_method.ilike(like, escape="\\"),
+                        Checkitem.check_criteria.ilike(like, escape="\\"),
+                        Checkitem.risk_if_vulnerable.ilike(like, escape="\\"),
+                        Checkitem.remediation.ilike(like, escape="\\"),
                     ]
                 )
-            stmt = stmt.where(or_(*clauses))
+            if clauses:
+                stmt = stmt.where(or_(*clauses))
+            # Subject hits outrank a match that only lives in 점검방법.
+            # The original phrase weighs more than an expansion (kdump, swap).
+            origin = q.strip().lower()
+            rank_score = case(
+                (Checkitem.subject.ilike(_contains_pattern(q.strip()), escape="\\"), 8),
+                else_=0,
+            )
+            for form in forms:
+                if form.lower() == origin:
+                    continue
+                like = _contains_pattern(form)
+                rank_score = rank_score + case(
+                    (Checkitem.subject.ilike(like, escape="\\"), 2), else_=0
+                )
 
         total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-        rows = session.scalars(
-            stmt.order_by(Checkitem.area, Checkitem.code).offset(offset).limit(limit)
-        ).all()
+        if rank_score is not None:
+            stmt = stmt.order_by(rank_score.desc(), Checkitem.area, Checkitem.code)
+        else:
+            stmt = stmt.order_by(Checkitem.area, Checkitem.code)
+        rows = session.scalars(stmt.offset(offset).limit(limit)).all()
         items = [_checkitem_to_dict(r) for r in rows]
 
     return {

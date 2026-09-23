@@ -22,6 +22,8 @@ class SearchFiltersIn(BaseModel):
     work_type: Optional[str] = None
     path_l2: Optional[str] = None
     status: str = "active"
+    exclude_page_ids: Optional[list[str]] = None
+    exclude_source_types: Optional[list[str]] = None
 
 
 class SearchBody(BaseModel):
@@ -76,6 +78,8 @@ def search(body: SearchBody) -> dict[str, Any]:
         "query": resp.query,
         "exact_tokens": resp.exact_tokens,
         "total": resp.total,
+        "returned_count": resp.returned_count,
+        "total_candidates": resp.total_candidates,
         "gated": resp.gated,
         "trust_retrieval": resp.trust_retrieval,
         "vector_used": vector_used,

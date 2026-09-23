@@ -10,7 +10,9 @@ import json
 import logging
 import os
 import signal
+import threading
 import time
+from urllib.parse import quote
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
@@ -110,9 +112,10 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         doc_id = payload.get("document_id")
         if not doc_id:
             raise ValueError("embed_document requires document_id or insight_id")
-        # No public embed-by-doc endpoint; report for ops
-        raise ValueError(
-            f"embed_document by document_id={doc_id} unsupported; pass insight_id"
+        return _http_json(
+            "POST",
+            f"/v1/embed/document?document_id={quote(str(doc_id), safe='')}",
+            timeout=600,
         )
     raise ValueError(f"unknown job type: {job_type}")
 
@@ -131,6 +134,21 @@ def _process_one(client: redis.Redis, job_id: str) -> None:
 
     client.hset(key, mapping={"status": "running", "started_at": str(int(time.time()))})
     logger.info("job start id=%s type=%s", job_id, job_type)
+    # Long jobs (confluence map sync can run for hours) block this loop, so
+    # the heartbeat below would expire and the admin page shows the worker down.
+    stop_hb = threading.Event()
+
+    def _beat() -> None:
+        while True:
+            try:
+                client.set(HEARTBEAT_KEY, str(int(time.time())), ex=60)
+            except Exception:  # noqa: BLE001
+                logger.warning("heartbeat during job failed", exc_info=True)
+            if stop_hb.wait(5):
+                return
+
+    beater = threading.Thread(target=_beat, name="worker-heartbeat", daemon=True)
+    beater.start()
     try:
         result = _handle(job_type, payload if isinstance(payload, dict) else {})
         # sync_map()-shaped results (confluence_map_sync) can come back
@@ -159,6 +177,8 @@ def _process_one(client: redis.Redis, job_id: str) -> None:
             },
         )
         logger.exception("job failed id=%s: %s", job_id, exc)
+    finally:
+        stop_hb.set()
 
 
 def main() -> None:

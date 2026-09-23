@@ -102,7 +102,9 @@ async function runSearch() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || r.statusText);
     $("meta").textContent =
-      `결과 ${j.total}건 · trust=${j.trust_retrieval} · vector=${j.vector_used} · exact=[${(j.exact_tokens||[]).join(", ")}]`;
+      `결과 ${j.returned_count ?? j.total}건`
+      + (j.total_candidates > (j.returned_count ?? j.total) ? ` · 후보 ${j.total_candidates}` : "")
+      + ` · trust=${j.trust_retrieval} · vector=${j.vector_used} · exact=[${(j.exact_tokens||[]).join(", ")}]`;
     if (!j.results || !j.results.length) {
       $("results").innerHTML = "<p class='meta'>결과 없음 (quality gate 또는 미매칭).</p>";
       return;

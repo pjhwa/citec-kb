@@ -41,6 +41,34 @@ def test_exact_boost_raises_matching_chunk():
     assert out["c1"] == 0.1 + 0.15
 
 
+def test_lexical_support_rejects_vector_only_nonsense():
+    from app.retrieval.search import content_tokens, lexical_supported
+
+    tokens = content_tokens("존재하지않는질의어 zxqv 플라움")
+    assert tokens
+    assert not lexical_supported(
+        fts_rank=None,
+        title="1차 테스트",
+        external_id="1185277761",
+        snippet="증상",
+        tokens=tokens,
+    )
+    assert lexical_supported(
+        fts_rank=1,
+        title="1차 테스트",
+        external_id="1185277761",
+        snippet="",
+        tokens=tokens,
+    )
+    assert lexical_supported(
+        fts_rank=None,
+        title="Exadata 2번 노드 Down",
+        external_id="CITECTS-2637",
+        snippet="",
+        tokens=content_tokens("Exadata 노드 Down"),
+    )
+
+
 def test_quality_gate_empties_weak_top_score():
     hits = [
         RankedHit(chunk_id="a", document_id="d1", score=0.001),

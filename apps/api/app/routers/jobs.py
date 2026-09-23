@@ -53,6 +53,14 @@ def get_job_route(job_id: str) -> dict[str, Any]:
     return job
 
 
+@router.post("/embed/document")
+def post_embed_document(document_id: str = Query(..., min_length=1)) -> dict[str, Any]:
+    """Embed active chunks of one document. Used by the worker `embed_document` job."""
+    from app.embed.job import embed_pending_chunks
+
+    return embed_pending_chunks(document_id=document_id, batch_size=16)
+
+
 @router.get("/worker/status")
 def get_worker_status() -> dict[str, Any]:
     try:

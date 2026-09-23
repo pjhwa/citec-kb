@@ -75,8 +75,11 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
+    # Bearer 토큰은 Authorization 헤더로 보낸다. 쿠키 인증이 아니므로
+    # credentials 를 켜지 않는다. '*' 와 allow_credentials=True 는 브라우저가
+    # 거절하는 조합이다. 나중에 쿠키 SSO 를 쓰면 origin 목록을 명시해야 한다.
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -166,22 +169,21 @@ async def health() -> HealthResponse:
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = {"ok": False, "error": str(exc)}
 
-    # raw dir (registered knowledge corpus)
+    # raw dir presence only. Counting every file (confluence_map alone is
+    # ~34k) made /v1/health take ~1s and it is the compose healthcheck.
     raw = Path(settings.raw_dir)
-    source_counts: dict[str, int] = {}
-    total = 0
-    if raw.is_dir():
-        for child in sorted(raw.iterdir()):
-            if child.is_dir():
-                n = sum(1 for f in child.rglob("*") if f.is_file() and f.name != ".gitkeep")
-                source_counts[child.name] = n
-                total += n
+    source_names = (
+        sorted(p.name for p in raw.iterdir() if p.is_dir() and not p.name.startswith("."))
+        if raw.is_dir()
+        else []
+    )
     checks["raw_dir"] = {
-        "ok": raw.is_dir() and total > 0,
+        "ok": raw.is_dir() and bool(source_names),
         "path": str(raw),
         "exists": raw.exists(),
-        "total_files": total,
-        "sources": source_counts,
+        "total_files": None,
+        "file_counts": "omitted",
+        "sources": source_names,
     }
 
     # LLM config presence (not full probe on every health — use /v1/health/llm)

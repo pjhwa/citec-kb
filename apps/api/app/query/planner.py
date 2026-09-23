@@ -19,7 +19,11 @@ from app.doc_access import attach_document_access
 from app.query.analytics_intent import detect_analytics_intent
 from app.query.exhaustive import detect_exhaustive_intent, run_exhaustive
 from app.query.prevention import detect_prevention_intent, run_prevention
-from app.query.time_range import detect_time_scoped_list
+from app.query.time_range import (
+    detect_time_scoped_list,
+    has_unparsed_date_span,
+    parse_absolute_range,
+)
 from app.tickets.query import resolve_date_field
 
 # --- additional intent detectors ---
@@ -64,7 +68,7 @@ def detect_checklist_intent(text: str) -> Optional[dict[str, Any]]:
     # Topic keywords for checkitems q= (do not drop tech tokens like OOM)
     terms: list[str] = []
     for pat, term in [
-        (r"파일\s*시스템|filesystem|fsck|\bFS\b", "파일시스템"),
+        (r"파일\s*시스템|filesystem|fsck|\bFS\b", "파일 시스템"),
         (r"네트워크|network", "네트워크"),
         (r"Oracle|오라클", "Oracle"),
         (r"\bOOM\b|Out\s*of\s*Memory|아웃\s*오브\s*메모리", "OOM"),
@@ -74,7 +78,7 @@ def detect_checklist_intent(text: str) -> Optional[dict[str, Any]]:
         (r"CommitLimit|커밋\s*리밋", "CommitLimit"),
         (r"과다\s*사용|메모리\s*과다", "메모리 과다"),
         (r"패닉|panic", "panic"),
-        (r"디스크|disk|파일시스템", "디스크"),
+        (r"디스크|\bdisk\b", "디스크"),
     ]:
         if re.search(pat, t, re.I):
             terms.append(term)
@@ -155,6 +159,13 @@ def plan_query(q: str) -> dict[str, Any]:
     q = (q or "").strip()
     if not q:
         return {"intent": "error", "error": "q required"}
+
+    # An explicit calendar span must beat "2026년" analytics. Relative
+    # phrases ("지난 주") stay after analytics, as before.
+    if parse_absolute_range(q):
+        listed = detect_time_scoped_list(q)
+        if listed:
+            return listed
 
     capacity = detect_capacity_intent(q)
     if capacity:
@@ -409,7 +420,11 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             req = SearchRequest(
                 q=q,
                 top_k=int(body.get("top_k") or 10),
-                filters=SearchFilters(status="active"),
+                filters=SearchFilters(
+                    status="active",
+                    exclude_page_ids=body.get("exclude_page_ids") or None,
+                    exclude_source_types=body.get("exclude_source_types") or None,
+                ),
             )
             with session_scope() as session:
                 resp, meta = multi_hybrid_search(
@@ -417,6 +432,8 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                 )
             result = {
                 "total": resp.total,
+                "returned_count": resp.returned_count,
+                "total_candidates": resp.total_candidates,
                 "vector_used": meta.get("vector_used"),
                 "multi_query": meta.get("multi_query"),
                 "expanded_queries": meta.get("queries"),
@@ -448,10 +465,26 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
     return {"intent": intent or "error", "params": plan, "note": "unhandled intent"}
 
 
+_DATE_UNPARSED_NOTE = (
+    "날짜로 보이는 표현이 있으나 기간으로 해석하지 못해 날짜 필터 없이 처리합니다."
+)
+
+
 def route_query(q: str, *, body: Optional[dict[str, Any]] = None, execute: bool = True) -> dict[str, Any]:
     plan = plan_query(q)
     if plan.get("intent") == "error":
         return plan
+    unparsed = has_unparsed_date_span(q)
+    if unparsed:
+        plan = {**plan, "date_parse": "unrecognized"}
     if not execute:
-        return {"intent": plan.get("intent"), "params": plan, "executed": False}
-    return execute_plan(plan, body=body or {"q": q})
+        out = {"intent": plan.get("intent"), "params": plan, "executed": False}
+        if unparsed:
+            out["date_parse"] = "unrecognized"
+            out["note"] = _DATE_UNPARSED_NOTE
+        return out
+    out = execute_plan(plan, body=body or {"q": q})
+    if unparsed:
+        out["date_parse"] = "unrecognized"
+        out["note"] = ((out.get("note") or "") + " " + _DATE_UNPARSED_NOTE).strip()
+    return out

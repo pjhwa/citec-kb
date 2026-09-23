@@ -14,6 +14,14 @@ def test_query_tokens_filters_short():
     assert "spine" in toks
 
 
+def test_title_coverage_beats_a_resolution_only_redis_mention():
+    from app.si.retrieve import _title_coverage_boost
+
+    q = "Redis 타임아웃 유사 장애"
+    assert _title_coverage_boost(q, "[CITECTS-2502] 모니모 Redis TimeOut 이슈") >= 1.5
+    assert _title_coverage_boost(q, "[삼성SDS] SCP 사용자 포털 신규 로그인 불가") == 0.0
+
+
 def test_text_match_boost_multi_token():
     blob = "gpu server fabric spine peak traffic redis timeout bfd"
     b = _text_match_boost("GPU burst traffic fabric spine congestion", blob)

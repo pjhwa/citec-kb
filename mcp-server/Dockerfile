@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY server.py .
+COPY server.py ask_fold.py .
 
 RUN useradd -m -u 1000 mcp && chown -R mcp:mcp /app
 USER mcp

@@ -28,7 +28,9 @@ async def check_llm(settings: Settings | None = None) -> dict[str, Any]:
             "ok": True,
             "backend": backend,
             "model": settings.company_model_id,
-            "note": "Fabrix configured; live probe deferred to PR-09",
+            "chat_supported": False,
+            "chat_stream_supported": False,
+            "note": "Fabrix configured; live chat is not implemented (PR-09). health ok is not chat ok.",
         }
 
     # OpenRouter: list models is heavier; do a tiny chat completion

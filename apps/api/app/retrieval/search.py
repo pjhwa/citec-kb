@@ -222,6 +222,58 @@ def build_fts_variants(q: str) -> list[str]:
     return variants
 
 
+def _contains_pattern(term: str) -> str:
+    esc = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{esc}%"
+
+
+def content_tokens(q: str) -> list[str]:
+    """Query tokens worth matching in a title. Drops stopwords and 1-char noise."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in re.split(r"\s+", (q or "").strip()):
+        if len(raw) < 2 or raw.lower() in _STOPWORDS or raw in _STOPWORDS:
+            continue
+        key = raw.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(raw)
+    return out
+
+
+def lexical_supported(
+    *,
+    fts_rank: Optional[int],
+    title: str,
+    external_id: str,
+    snippet: str,
+    tokens: list[str],
+) -> bool:
+    """True when the hit is backed by FTS or actually contains a query token.
+
+    A pure ANN neighbor of a nonsense string has neither, and must not be
+    returned as a result (precision over coverage).
+    """
+    if fts_rank is not None:
+        return True
+    if not tokens:
+        return True
+    blob = f"{title or ''}\n{external_id or ''}\n{snippet or ''}".lower()
+    return any(tok.lower() in blob for tok in tokens)
+
+
+def retrieval_trust(results: list[SearchHit]) -> str:
+    if not results:
+        return "empty"
+    top = results[0]
+    if top.score >= 0.05 or top.fts_rank == 1:
+        return "strong"
+    if top.score >= 0.02:
+        return "medium"
+    return "weak"
+
+
 def _variant_weight(v: str) -> float:
     """Down-weight ultra-common single tokens so they do not drown checkitems."""
     v = v.strip()
@@ -246,6 +298,14 @@ class SearchFilters:
     work_type: Optional[str] = None
     path_l2: Optional[str] = None
     status: str = "active"
+    # Equality filters stay singular. Exclusions are separate lists so a
+    # caller can drop known answer pages or a source without changing
+    # source_type's type (that change was reverted once already).
+    exclude_page_ids: Optional[list[str]] = None
+    exclude_source_types: Optional[list[str]] = None
+    # False drops confluence_map rows tagged tech_relevant=irrelevant.
+    # Explicit source_type=confluence_map sets this True.
+    include_irrelevant_maps: bool = False
 
 
 @dataclass
@@ -298,10 +358,12 @@ class SearchHit:
 class SearchResponse:
     query: str
     exact_tokens: list[str]
-    total: int
+    total: int  # deprecated alias of returned_count (this page, not the corpus)
     gated: bool
     results: list[SearchHit]
     trust_retrieval: str  # strong | medium | weak | empty
+    returned_count: int = 0
+    total_candidates: int = 0
 
 
 def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
@@ -316,6 +378,17 @@ def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
         stmt = stmt.where(Document.work_type == filters.work_type)
     if filters.path_l2:
         stmt = stmt.where(Document.path_l2 == filters.path_l2)
+    if filters.exclude_page_ids:
+        stmt = stmt.where(Document.external_id.notin_(list(filters.exclude_page_ids)))
+    if filters.exclude_source_types:
+        stmt = stmt.where(Document.source_type.notin_(list(filters.exclude_source_types)))
+    if not filters.include_irrelevant_maps:
+        tech = Document.metadata_["tech_relevant"].astext
+        stmt = stmt.where(
+            (Document.source_type != "confluence_map")
+            | tech.is_(None)
+            | (tech != "irrelevant")
+        )
     return stmt
 
 
@@ -397,21 +470,14 @@ def vector_search(
     if not query_vector:
         return []
 
-    # pgvector 0.8+: filtered HNSW without iterative_scan often yields empty sets.
-    has_meta_filter = any(
-        [
-            req.filters.source_type,
-            req.filters.domain,
-            req.filters.environment,
-            req.filters.work_type,
-            req.filters.path_l2,
-        ]
-    )
-    if has_meta_filter:
-        try:
-            session.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
-        except Exception:  # noqa: BLE001
-            logger.debug("hnsw.iterative_scan not available", exc_info=True)
+    # pgvector 0.8+: HNSW post-filtering (is_active, and any metadata filter)
+    # returns the unfiltered neighbors and then drops them, so a corpus with
+    # many inactive chunk vectors comes back empty. iterative_scan keeps
+    # scanning until the filter has enough survivors.
+    try:
+        session.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
+    except Exception:  # noqa: BLE001
+        logger.debug("hnsw.iterative_scan not available", exc_info=True)
 
     dist = Embedding.vector.cosine_distance(query_vector)
     stmt = (
@@ -451,9 +517,28 @@ def hybrid_search(
     *,
     query_vector: Optional[list[float]] = None,
 ) -> SearchResponse:
+    if (req.filters.source_type or "") == "confluence_map":
+        req.filters.include_irrelevant_maps = True
     exact = extract_exact_tokens(req.q)
     fts_ids = fts_search(session, req)
     vec_ids = vector_search(session, req, query_vector)
+    tokens = content_tokens(req.q)
+
+    # Title coverage: a document whose title contains every content token
+    # must enter the pool even when FTS rank is buried by noisy variants
+    # (verified: "Exadata 노드 Down" matched CITECTS-2637 in tsv but not top 10).
+    if len(tokens) >= 2:
+        stmt = (
+            select(Chunk.id)
+            .join(Document, Document.id == Chunk.document_id)
+            .where(Chunk.is_active.is_(True))
+        )
+        for tok in tokens:
+            stmt = stmt.where(Document.title.ilike(_contains_pattern(tok), escape="\\"))
+        stmt = _apply_doc_filters(stmt, req.filters).limit(20)
+        for cid in session.scalars(stmt).all():
+            if cid not in fts_ids:
+                fts_ids.insert(0, cid)
 
     # Exact-token pass: prefer indexed/meta fields only (avoid full-text ILIKE scan).
     if exact:
@@ -542,6 +627,12 @@ def hybrid_search(
             if ext.startswith("PISAOLNX") and re.search(r"리눅스|linux", req.q, re.I):
                 fused[cid] = fused[cid] + 0.015
 
+    if len(tokens) >= 2 and fused and meta_by_id:
+        for cid in list(fused):
+            title = str((meta_by_id.get(cid) or {}).get("title") or "").lower()
+            if title and all(tok.lower() in title for tok in tokens):
+                fused[cid] = fused[cid] + 0.25
+
     before_boost = dict(fused)
     fused = apply_exact_boost(
         fused, id_to_text=text_by_id, exact_tokens=exact, boost=req.exact_boost
@@ -559,25 +650,30 @@ def hybrid_search(
         meta_by_id=meta_by_id,
         exact_boosts=exact_boosts,
     )
+    # Keep extra chunks so document-level dedupe can still fill top_k.
     gated_list = quality_gate(
-        ranked, min_top_score=req.min_top_score, max_results=req.top_k
+        ranked, min_top_score=req.min_top_score, max_results=max(req.top_k * 5, req.top_k)
     )
     gated = len(ranked) > 0 and len(gated_list) == 0
 
-    # Deduplicate by document_id keeping best chunk
+    # Deduplicate by document_id before the page cut. Cutting first dropped
+    # unique documents that sat just outside a chunk-duplicated top_k.
     seen_docs: set[str] = set()
-    results: list[SearchHit] = []
+    unique_hits: list[RankedHit] = []
     for h in gated_list:
-        doc_id = h.document_id
-        if doc_id in seen_docs:
+        if h.document_id in seen_docs:
             continue
-        seen_docs.add(doc_id)
+        seen_docs.add(h.document_id)
+        unique_hits.append(h)
+    total_candidates = len(unique_hits)
+    results: list[SearchHit] = []
+    for h in unique_hits[: req.top_k]:
         m = h.meta
         results.append(
             SearchHit(
                 rank=len(results) + 1,
                 score=round(h.score, 6),
-                document_id=doc_id,
+                document_id=h.document_id,
                 chunk_id=h.chunk_id,
                 title=str(m.get("title") or ""),
                 snippet=_snippet(str(m.get("text") or ""), req.q),
@@ -599,23 +695,30 @@ def hybrid_search(
                 ),
             )
         )
-        if len(results) >= req.top_k:
-            break
+    if results and not any(
+        lexical_supported(
+            fts_rank=h.fts_rank,
+            title=h.title,
+            external_id=h.external_id,
+            snippet=h.snippet,
+            tokens=tokens,
+        )
+        for h in results
+    ):
+        results = []
+        total_candidates = 0
+        gated = True
 
-    if not results:
-        trust = "empty"
-    elif results[0].score >= 0.05 or results[0].fts_rank == 1:
-        trust = "strong"
-    elif results[0].score >= 0.02:
-        trust = "medium"
-    else:
-        trust = "weak"
+    trust = retrieval_trust(results)
+    returned = len(results)
 
     return SearchResponse(
         query=req.q,
         exact_tokens=exact,
-        total=len(results),
+        total=returned,
         gated=gated,
         results=results,
         trust_retrieval=trust,
+        returned_count=returned,
+        total_candidates=total_candidates,
     )

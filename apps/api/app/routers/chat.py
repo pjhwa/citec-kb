@@ -24,6 +24,8 @@ class ChatFiltersIn(BaseModel):
     work_type: Optional[str] = None
     path_l2: Optional[str] = None
     status: str = "active"
+    exclude_page_ids: Optional[list[str]] = None
+    exclude_source_types: Optional[list[str]] = None
 
 
 class ChatBody(BaseModel):

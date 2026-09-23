@@ -441,6 +441,23 @@ def _search_results(
     }
 
 
+_PATH_SOURCE_ALIASES = {
+    "checkitems": "checkitem",
+    "incident": "incident_reports",
+    "synthesis": "insight",
+    "insights": "insight",
+    "dept-archive": "dept_archive",
+}
+
+
+def _source_type_from_path(raw: str) -> Optional[str]:
+    """First path segment is the source_type filter. None for a bare id."""
+    parts = list(Path(raw).parts) if raw else []
+    if len(parts) < 2:
+        return None
+    return _PATH_SOURCE_ALIASES.get(parts[0], parts[0])
+
+
 def _resolve_document(path: str) -> Optional[Document]:
     raw = (path or "").strip().lstrip("/")
     if not raw:
@@ -449,25 +466,13 @@ def _resolve_document(path: str) -> Optional[Document]:
         if raw.startswith(prefix):
             raw = raw[len(prefix) :]
     p = Path(raw)
-    parts = list(p.parts)
     stem = p.stem if p.suffix else p.name
     candidates = [stem, p.name, raw]
-    source_type = parts[0] if len(parts) >= 2 else None
-    if source_type and source_type in {
-        "support_history",
-        "tech_repo",
-        "checkitem",
-        "tuning_ai",
-        "confluence_docs",
-        "vendor_docs",
-        "insight",
-        "incident_reports",
-        "failure_bucket",
-    }:
-        if source_type == "incident_reports":
-            source_type = "support_history"
-        if source_type == "checkitems":
-            source_type = "checkitem"
+    # Keep the path's own source_type. incident_reports used to be rewritten
+    # to support_history here (same staleness _SECTION_MAP already fixed),
+    # which 404'd every SWIM hit's `path` from search. checkitems is an
+    # alias only — it is not itself a stored source_type.
+    source_type = _source_type_from_path(raw)
 
     with session_scope() as session:
         # by primary key
@@ -554,6 +559,7 @@ def api_wiki_stats() -> dict[str, Any]:
     if "checkitem" in sections and "checkitems" not in sections:
         sections["checkitems"] = sections["checkitem"]
     return {
+        "as_of": datetime.now(timezone.utc).isoformat(),
         "total": total,
         "by_source_type": by_type,
         "sections": sections,
@@ -687,6 +693,8 @@ class WikiQueryRequest(BaseModel):
     )
     mode: str = Field(default="fast", description="fast|deep (citec-kb extension)")
     stream: bool = Field(default=True, description="SSE when true (wiki-qa default)")
+    exclude_page_ids: Optional[list[str]] = None
+    exclude_source_types: Optional[list[str]] = None
 
 
 @router.post("/api/query")
@@ -703,7 +711,12 @@ def api_query(req: WikiQueryRequest) -> Any:
     template = (req.template or "general").strip().lower()
     source_type = _map_section(template)
     mode = req.mode if req.mode in {"fast", "deep"} else "fast"
-    filters = SearchFilters(source_type=source_type, status="active")
+    filters = SearchFilters(
+        source_type=source_type,
+        status="active",
+        exclude_page_ids=req.exclude_page_ids,
+        exclude_source_types=req.exclude_source_types,
+    )
     top_k = 16 if mode == "deep" else 8
     label = _TEMPLATE_LABELS.get(template, template)
 
@@ -805,20 +818,25 @@ def _sse(obj: dict[str, Any]) -> str:
 
 
 @router.get("/api/synthesis")
-def api_list_synthesis(limit: int = 20, offset: int = 0) -> dict[str, Any]:
-    """wiki-qa synthesis list → citec-kb insights."""
+def api_list_synthesis(
+    limit: int = 20,
+    offset: int = 0,
+    status: str = "approved",
+) -> dict[str, Any]:
+    """wiki-qa synthesis list → citec-kb insights.
+
+    Default status is approved. The live table is full of review/draft
+    smoke rows (mock-idp-e2e, auth-off smoke). Pass status=all to see them.
+    The admin list is GET /v1/insights, which still returns every status.
+    """
     limit = max(1, min(int(limit), 100))
     offset = max(0, int(offset))
     with session_scope() as session:
-        total = int(session.scalar(select(func.count()).select_from(Insight)) or 0)
-        rows = list(
-            session.scalars(
-                select(Insight)
-                .order_by(Insight.updated_at.desc())
-                .offset(offset)
-                .limit(limit)
-            ).all()
-        )
+        stmt = select(Insight).order_by(Insight.updated_at.desc())
+        if status and status != "all":
+            stmt = stmt.where(Insight.status == status)
+        total = int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
+        rows = list(session.scalars(stmt.offset(offset).limit(limit)).all())
         items = [
             {
                 "slug": r.id,

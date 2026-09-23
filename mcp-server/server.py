@@ -13,6 +13,8 @@ from typing import Any, Optional
 import httpx
 from mcp.server.fastmcp import FastMCP
 
+from ask_fold import KbAskError, fold_ask_events
+
 CITEC_KB_BASE_URL = os.environ.get(
     "CITEC_KB_BASE_URL",
     os.environ.get("WIKI_QA_BASE_URL", "http://api:8000"),
@@ -94,12 +96,16 @@ async def kb_search(
     work_type: str = "",
     multi_query: bool = True,
     use_v1: bool = True,
+    exclude_page_ids: Optional[list[str]] = None,
+    exclude_source_types: Optional[list[str]] = None,
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
     section/source_type: support_history|checkitems|tech_repo|tuning_ai|confluence_docs|incident_reports|dept_archive|…
     area: domain 필터 (os|dbms|network|cloud|storage|…)
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
+    exclude_page_ids: 결과에서 뺄 external_id (페이지 ID 포함)
+    exclude_source_types: 결과에서 뺄 source_type
     multi_query: 동의어·구문 확장 검색 (기본 true)
     use_v1: true면 POST /v1/search (필터 풍부), false면 GET /api/wiki/search
     """
@@ -113,6 +119,8 @@ async def kb_search(
         work_type=work_type,
         multi_query=multi_query,
         use_v1=use_v1,
+        exclude_page_ids=exclude_page_ids,
+        exclude_source_types=exclude_source_types,
     )
 
 
@@ -138,6 +146,8 @@ async def _search_impl(
     work_type: str = "",
     multi_query: bool = True,
     use_v1: bool = True,
+    exclude_page_ids: Optional[list[str]] = None,
+    exclude_source_types: Optional[list[str]] = None,
 ) -> str:
     try:
         async with _client(timeout=60.0) as client:
@@ -151,6 +161,10 @@ async def _search_impl(
                     filters["environment"] = environment
                 if work_type:
                     filters["work_type"] = work_type
+                if exclude_page_ids:
+                    filters["exclude_page_ids"] = list(exclude_page_ids)
+                if exclude_source_types:
+                    filters["exclude_source_types"] = list(exclude_source_types)
                 resp = await client.post(
                     "/v1/search",
                     json={
@@ -249,9 +263,9 @@ async def _get_document_impl(path: str) -> str:
 
 
 @mcp.tool()
-async def kb_list_insights(limit: int = 20) -> str:
-    """Insight(승인 플로우) / 합성 지식 목록을 조회한다."""
-    return await _list_synthesis_impl(limit)
+async def kb_list_insights(limit: int = 20, status: str = "approved") -> str:
+    """승인된 Insight 목록. status=review|draft|rejected|all 로만 그 외를 본다."""
+    return await _list_synthesis_impl(limit, status)
 
 
 @mcp.tool()
@@ -260,10 +274,10 @@ async def wiki_list_synthesis(limit: int = 20) -> str:
     return await _list_synthesis_impl(limit)
 
 
-async def _list_synthesis_impl(limit: int) -> str:
+async def _list_synthesis_impl(limit: int, status: str = "approved") -> str:
     try:
         async with _client() as client:
-            resp = await client.get("/api/synthesis", params={"limit": limit})
+            resp = await client.get("/api/synthesis", params={"limit": limit, "status": status or "approved"})
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
@@ -331,9 +345,7 @@ async def wiki_ask(query: str, template: str = "general") -> str:
 
 
 async def _ask_impl(query: str, template: str, mode: str) -> str:
-    answer_parts: list[str] = []
-    sources: list[str] = []
-    cite_lines: list[str] = []
+    events: list[dict] = []
     try:
         async with _client(timeout=180.0) as client:
             async with client.stream(
@@ -354,52 +366,20 @@ async def _ask_impl(query: str, template: str, mode: str) -> str:
                         event = json.loads(line[len("data: ") :])
                     except json.JSONDecodeError:
                         continue
-                    etype = event.get("type")
-                    if etype == "token":
-                        answer_parts.append(event.get("text") or "")
-                    elif etype == "sources":
-                        sources = list(event.get("files") or [])
-                    elif etype == "error":
-                        return f"오류: {event.get('text') or event.get('error') or '알 수 없는 오류'}"
-                    elif etype == "done":
-                        result = event.get("result") or {}
-                        if not answer_parts and result.get("answer"):
-                            answer_parts.append(str(result.get("answer")))
-                        for c in result.get("citations") or []:
-                            if not isinstance(c, dict):
-                                continue
-                            eid = c.get("external_id") or ""
-                            st = c.get("source_type") or ""
-                            path = c.get("path") or (
-                                f"{st}/{eid}.md" if eid and st else eid
-                            )
-                            web = c.get("web_url") or c.get("web_path") or ""
-                            body = c.get("body_api") or c.get("body_api_url") or ""
-                            if path:
-                                sources.append(path)
-                            cite_lines.append(
-                                f"- {c.get('id') or ''} {c.get('title') or eid}\n"
-                                f"  path: {path}\n"
-                                f"  body_api: {body}\n"
-                                f"  web_url: {web}\n"
-                                f"  mcp: kb_get_document(path={path!r})"
-                            )
+                    if isinstance(event, dict):
+                        events.append(event)
     except httpx.HTTPError as e:
-        return _err(e)
-
-    answer = "".join(answer_parts).strip()
-    if not answer:
-        return "답변을 생성하지 못했습니다."
-    if cite_lines:
-        answer += "\n\n**출처 (원문 접근)**\n" + "\n".join(cite_lines)
-    elif sources:
-        answer += "\n\n**출처 path**: " + ", ".join(sources)
-        answer += "\n원문: kb_get_document(path=…)"
-    return answer
+        raise KbAskError(_err(e)) from e
+    return fold_ask_events(events)
 
 
 @mcp.tool()
-async def kb_query(q: str, top_k: int = 10) -> str:
+async def kb_query(
+    q: str,
+    top_k: int = 10,
+    exclude_page_ids: Optional[list[str]] = None,
+    exclude_source_types: Optional[list[str]] = None,
+) -> str:
     """통합 의도 분류 질의 — 홈 UI와 동일 플래너 (권장 엔트리포인트).
 
     자동 분기: 기간 목록·집계·유사장애·체크리스트·용량·예방·하이브리드 검색.
@@ -411,10 +391,12 @@ async def kb_query(q: str, top_k: int = 10) -> str:
     """
     try:
         async with _client(timeout=120.0) as client:
-            resp = await client.post(
-                "/v1/query",
-                json={"q": q, "include_search": True, "top_k": top_k},
-            )
+            body: dict[str, Any] = {"q": q, "include_search": True, "top_k": top_k}
+            if exclude_page_ids:
+                body["exclude_page_ids"] = list(exclude_page_ids)
+            if exclude_source_types:
+                body["exclude_source_types"] = list(exclude_source_types)
+            resp = await client.post("/v1/query", json=body)
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
@@ -1328,6 +1310,8 @@ async def kb_health() -> str:
             full_data: dict[str, Any] = {}
             if full.status_code == 200:
                 full_data = full.json()
+            llm = await client.get("/v1/health/llm")
+            llm_data: dict[str, Any] = llm.json() if llm.status_code == 200 else {}
             light_data = light.json()
     except httpx.HTTPError as e:
         return _err(e)
@@ -1336,13 +1320,15 @@ async def kb_health() -> str:
         f"ok={light_data.get('ok')} version={light_data.get('version')} "
         f"service={light_data.get('service')}\n"
         f"full_status={full_data.get('status')} env={full_data.get('env')}\n"
+        f"llm_backend={llm_data.get('backend')} chat_supported={llm_data.get('chat_supported', True)} "
+        f"chat_stream_supported={llm_data.get('chat_stream_supported', True)}\n"
         f"checks={json.dumps(full_data.get('checks') or {}, ensure_ascii=False)[:800]}"
     )
 
 
 @mcp.tool()
 async def kb_stats() -> str:
-    """코퍼스 통계 (소스 타입별 문서 수)."""
+    """코퍼스 통계 (소스 타입별 문서 수). as_of 는 조회 시각(UTC)이다."""
     try:
         async with _client() as client:
             resp = await client.get("/api/wiki-stats")
@@ -1352,7 +1338,7 @@ async def kb_stats() -> str:
         return _err(e)
 
     lines = [
-        f"total_documents={data.get('total')} insights={data.get('insights')}",
+        f"as_of={data.get('as_of')} total_documents={data.get('total')} insights={data.get('insights')}",
         "by_source_type:",
     ]
     for k, v in sorted((data.get("by_source_type") or {}).items(), key=lambda x: -int(x[1] or 0)):

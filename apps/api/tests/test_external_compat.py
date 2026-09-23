@@ -9,6 +9,7 @@ from app.routers.external_compat import (
     _resolve_upload_source_type,
     _safe_upload_filename,
     _SECTION_MAP,
+    _source_type_from_path,
     _UPLOAD_PARSERS,
     _UPLOAD_RAW_SUBDIR,
     _validate_upload_extension,
@@ -28,6 +29,19 @@ def test_section_map_checkitems():
 def test_section_passthrough():
     assert _map_section("tech_repo") == "tech_repo"
     assert _map_section("tuning_ai") == "tuning_ai"
+
+
+def test_path_source_type_keeps_incident_reports_and_aliases_checkitems():
+    """Search returns path incident_reports/{id}.md. Resolving that path used
+    to rewrite the source to support_history and 404 the SWIM document.
+    checkitems/ is an alias, not a stored source_type, so it must map."""
+    assert _source_type_from_path("incident_reports/26092061384.md") == "incident_reports"
+    assert _source_type_from_path("incident_reports/26092061384") == "incident_reports"
+    assert _source_type_from_path("checkitems/PISAVSOS_01.03.05") == "checkitem"
+    assert _source_type_from_path("checkitem/PISAVSOS_01.03.05.md") == "checkitem"
+    assert _source_type_from_path("support_history/CITECTS-2659.md") == "support_history"
+    assert _source_type_from_path("confluence_map/1185269989.md") == "confluence_map"
+    assert _source_type_from_path("26092061384") is None
 
 
 def test_section_map_incident_reports_not_aliased_to_support_history():
