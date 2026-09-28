@@ -278,3 +278,28 @@ Confluence 페이지에 그대로 남아 있다 — 이 표는 그 문서의 요
 ## 커버리지 갭
 
 등록된 root 밖의 서브트리는 색인되지 않는다. 검색이 약한 주제가 "코퍼스 공백"인지 확인하는 순서, 기존 source에 root를 추가하는 `POST /v1/confluence-map/sources/{source_id}/roots`, 재감사 스크립트는 `docs/CITEC_KB_MAP_COVERAGE_GAP.md` 참고.
+
+## 공간 root 재구성 (`scripts/map_space_setup.sh`)
+
+부분 크롤이던 공간을 "최상위 페이지 root = 전체 공간"으로 바꾸고, 신규 공간 추가·폐기 공간 제거를 한 번에
+한다. 대상은 `apps/api/app/confluence/map_space_setup.py` 의 `SPACE_HOMES`/`REMOVE_SOURCES`
+(DevOps001, Openstack101, sysops, CLDENG, EMCloud, DFTRTS, GUID, STORAGE, SCPTechTree, CATT, SI 추가/전환,
+genaibusiness 제거). LOOKIN/TechRepo/ServiceExcellenceTeam/ICLOUDUT/SPC 는 건드리지 않는다.
+
+```
+scripts/map_space_setup.sh                     # 1) 계획 출력 + Confluence 검증 (DB 변경 없음)
+scripts/map_space_setup.sh --apply             # 2) DB 반영 (크롤 안 함)
+scripts/map_space_setup.sh --apply --backfill  # 2) 후 대상 소스만 전체 백필 시작 (map_backfill.sh --from-scratch)
+```
+
+- 각 페이지를 Confluence로 검증한다: 존재, 예상 스페이스 소속, 조상 없음(최상위). 하나라도 실패하면 아무것도
+  바꾸지 않는다. 신규 공간의 이름은 Confluence에서 읽는다.
+- 기존 소스는 `roots`를 새 root 하나로 **교체**한다(옛 root가 그 안에 포함돼 중복 크롤이 되므로).
+  `explicit_pages`, `space_name`, `last_sync_at` 은 유지하고 옛 root id의 checkpoint는 지운다.
+- 신규 소스는 커서를 현재 시각으로 심는다. 없으면 일상 `sync_map`이 백필과 별개로 전체 크롤을 시작한다.
+- genaibusiness 는 소스 행을 삭제하고 색인 문서는 삭제하지 않고 `archived` 로 돌린다(검색에서 제외).
+- 백필은 소스 전체를 다시 크롤한다 (이미 수집된 페이지도 다시 가져온다). `ancestor_ids` 를 채우는 데도
+  필요한 작업이다. 새 root 아래만 가져오는 기능은 아직 없다. 마이그레이션 0008(Openstack101/DevOps001의
+  트러블슈팅 root)은 이 스크립트가 root를 교체하므로 결과적으로 무해하다.
+- 전체 공간이 되면 손익/KPI/개인 페이지도 함께 색인된다. 검색에서는 `tech_relevant=irrelevant` 필터가 기본으로
+  이를 걸러 준다(`section=confluence_map` 지정 시는 예외).
