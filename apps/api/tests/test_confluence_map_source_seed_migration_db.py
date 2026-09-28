@@ -161,3 +161,79 @@ def test_seed_source_merges_into_pre_existing_lazy_created_row():
                 sa.text("SELECT count(*) FROM sources WHERE type = 'confluence_map'")
             ).scalar_one()
         assert count == 12
+
+
+def test_0008_merges_troubleshooting_roots_and_keeps_existing_state():
+    """Runs the 0008 upgrade()/downgrade() against real rows: merges the
+    new root, keeps other roots and the checkpoint, is idempotent, and is a
+    no-op for a source whose row does not exist. Restores both rows."""
+    import importlib.util
+
+    import sqlalchemy as sa
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    from app.db.session import get_engine
+
+    path = _MIGRATION_PATH.with_name("20260928_0008_confluence_map_troubleshooting_roots.py")
+    spec = importlib.util.spec_from_file_location("m0008", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    engine = get_engine()
+    ids = list(mod._NEW_ROOTS)
+    with engine.begin() as conn:
+        saved = {
+            r.id: r.config
+            for r in conn.execute(
+                sa.text("SELECT id, config FROM sources WHERE id = ANY(:ids)"), {"ids": ids}
+            )
+        }
+    try:
+        os_id, dev_id = ids
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM sources WHERE id = ANY(:ids)"), {"ids": ids})
+            # openstack: pre-0008 shape with a checkpoint; devops: row absent
+            conn.execute(
+                sa.text(
+                    "INSERT INTO sources (id, type, name, config, status) VALUES "
+                    "(:id, 'confluence_map', 'n', CAST(:c AS jsonb), 'active')"
+                ),
+                {
+                    "id": os_id,
+                    "c": '{"space_key": "Openstack101", "roots": {"1148203906": "knowledge base"},'
+                    ' "checkpoint": {"1148203906": {"start": 7}}}',
+                },
+            )
+
+        def run(fn):
+            with engine.begin() as conn:
+                with Operations.context(MigrationContext.configure(conn)):
+                    fn()
+
+        def cfg(sid):
+            with engine.begin() as conn:
+                return conn.execute(
+                    sa.text("SELECT config FROM sources WHERE id = :i"), {"i": sid}
+                ).scalar_one_or_none()
+
+        run(mod.upgrade)
+        run(mod.upgrade)  # idempotent
+        c = cfg(os_id)
+        assert c["roots"] == {"1148203906": "knowledge base", "1816390936": "운영매뉴얼/트러블슈팅"}
+        assert c["checkpoint"] == {"1148203906": {"start": 7}}
+        assert cfg(dev_id) is None  # no row -> not created
+
+        run(mod.downgrade)
+        assert cfg(os_id)["roots"] == {"1148203906": "knowledge base"}
+    finally:
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM sources WHERE id = ANY(:ids)"), {"ids": ids})
+            for sid, config in saved.items():
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO sources (id, type, name, config, status) VALUES "
+                        "(:id, 'confluence_map', 'Confluence Map', CAST(:c AS jsonb), 'active')"
+                    ),
+                    {"id": sid, "c": __import__("json").dumps(config)},
+                )

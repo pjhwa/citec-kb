@@ -53,3 +53,15 @@ def test_seed_explicit_pages_match_known_page_ids():
     }
     assert "1475349722" in SEED_MAP_SOURCE_DEFS["confluence_map_devops001"]["explicit_pages"]
     assert "2254661271" in SEED_MAP_SOURCE_DEFS["confluence_map_openstack101"]["explicit_pages"]
+
+
+def test_seed_has_troubleshooting_roots_for_openstack101_and_devops001():
+    """Neutron runbooks lived under these folders, outside every earlier
+    root, so the whole subtree was missing from the map."""
+    os_roots = SEED_MAP_SOURCE_DEFS["confluence_map_openstack101"]["roots"]
+    dev_roots = SEED_MAP_SOURCE_DEFS["confluence_map_devops001"]["roots"]
+    assert os_roots["1816390936"] == "운영매뉴얼/트러블슈팅"
+    assert dev_roots["2125217911"] == "운영매뉴얼/트러블슈팅"
+    # the original roots are untouched
+    assert {"1148203906", "2318695720", "1176274225", "1204002143"} <= set(os_roots)
+    assert {"601879661", "468085983", "370644108"} <= set(dev_roots)

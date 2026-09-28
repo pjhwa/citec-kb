@@ -2,7 +2,10 @@
 
 Used only by alembic/versions/20260922_0007_confluence_map_sources_seed.py
 (to upsert the 12 originally-hardcoded spaces into the `sources` table) and
-by test_confluence_map_source_seed.py. Nothing at runtime imports this —
+by test_confluence_map_source_seed.py. That migration never touches an
+existing row's `roots`, so a root added here later needs its own migration
+to reach a deployed DB (see 20260928_0008) or a call to
+POST /v1/confluence-map/sources/{source_id}/roots. Nothing at runtime imports this —
 see app.confluence.map_sync.get_source_defs(), which reads the registry
 from the DB. Do not add new spaces here; use POST /v1/confluence-map/sources
 instead (see apps/api/app/routers/confluence_map.py).
@@ -90,6 +93,13 @@ SEED_MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
             "601879661": "005. 이슈/문제/KDB/SOP",
             "468085983": "006. SCP CASE study",
             "370644108": "★★ SCP (SCP SRE + SCP NW Share) ★★",
+            # Added 2026-09-28: Nuri 트러블슈팅 매뉴얼 (Neutron 등 컴포넌트별
+            # 장애 대응) sits under B-18 셀별 공간 > SRE파트 > 2.N셀, a tree
+            # created after the roots above were picked — see
+            # docs/CITEC_KB_MAP_COVERAGE_GAP.md. Kept to the troubleshooting
+            # folder itself; its parent 운영매뉴얼 also holds install/config
+            # guides that would only add ranking noise.
+            "2125217911": "운영매뉴얼/트러블슈팅",
         },
         # Added 2026-09-21: lives under 개인별 업무공간 > 이정수, outside all
         # 3 curated roots above. Registered as a single-page seed rather
@@ -108,6 +118,9 @@ SEED_MAP_SOURCE_DEFS: dict[str, dict[str, Any]] = {
             "2318695720": "9. 팀 ISSUE 관리",
             "1176274225": "Nuri 운영구성",
             "1204002143": "Nuri 운영 관련",
+            # Added 2026-09-28: same coverage gap as DevOps001's
+            # 운영매뉴얼/트러블슈팅 (Neutron etc.), outside all 4 roots above.
+            "1816390936": "운영매뉴얼/트러블슈팅",
         },
         # Added 2026-09-21: lives under Personal Space > 정지원, outside all
         # 4 curated roots above — same rationale as confluence_map_devops001's
