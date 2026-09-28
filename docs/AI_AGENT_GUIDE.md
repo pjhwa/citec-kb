@@ -240,11 +240,12 @@ Title token frequency (optional `component`).
 | Arg | Description |
 |-----|-------------|
 | `symptom` | Free-text symptom (required) |
-| `environment` / `product` / `service` | optional context |
+| `environment` / `product` / `service` | optional context. `environment` is a ranking weight, not a filter: a matching case is moved up, a differing one down, and a case with no recorded environment (most SWIM records) is kept as is |
 | `top_k` | 1–10 |
+| `source_types` | optional subset of `support_history`, `incident_reports` (SWIM). Default searches both |
 
 **API:** `POST /v1/similar-incident`  
-Report applicability labels; load ticket body for resolution details.
+Each case reports its `source_type`. Report applicability labels; load ticket body for resolution details.
 
 ### 4.9 Checklist
 

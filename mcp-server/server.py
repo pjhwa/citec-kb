@@ -741,9 +741,15 @@ async def kb_similar_incident(
     product: str = "",
     service: str = "",
     top_k: int = 3,
+    source_types: Optional[list[str]] = None,
 ) -> str:
     """유사 장애(SI) 검색 — 증상 문장 기반 과거 사례 + 적용성.
     예: symptom='Redis timeout after deploy', product='모니모'
+
+    기본은 지원이력(support_history)과 SWIM 장애(incident_reports)를 함께 검색한다.
+    source_types=['incident_reports'] 처럼 지정하면 그 소스만 본다.
+    environment 는 필터가 아니라 가중치다 — 환경이 같으면 올리고 다르면 내리되, 환경 정보가 없는
+    사례(SWIM 의 대부분)는 제외하지 않는다.
     """
     if not (symptom or "").strip():
         return "오류: symptom 이 비어 있습니다."
@@ -757,6 +763,8 @@ async def kb_similar_incident(
         body["product"] = product.strip()
     if service.strip():
         body["service"] = service.strip()
+    if source_types:
+        body["source_types"] = list(source_types)
     try:
         async with _client(timeout=90.0) as client:
             resp = await client.post("/v1/similar-incident", json=body)
@@ -770,8 +778,9 @@ async def kb_similar_incident(
         if not isinstance(c, dict):
             continue
         appl = c.get("applicability") or {}
+        src = f"[{c['source_type']}] " if c.get("source_type") else ""
         lines.append(
-            f"- {c.get('external_id')} {c.get('title')}\n"
+            f"- {src}{c.get('external_id')} {c.get('title')}\n"
             f"  적용성={appl.get('label')} score={c.get('score')}"
         )
         acc = _access_lines(c)

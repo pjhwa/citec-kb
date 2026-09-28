@@ -64,3 +64,34 @@ def test_new_filters_are_forwarded_only_when_set(monkeypatch):
     assert f["exclude_subtree_ids"] == ["2525893483"]
     assert f["include_irrelevant_maps"] is False
     assert f["diversify_copies"] is False
+
+
+def test_similar_incident_forwards_source_types_and_shows_the_source(monkeypatch):
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "brief": "b",
+                "cases": [
+                    {"external_id": "26090761356", "title": "이라크 정전", "source_type": "incident_reports",
+                     "applicability": {"label": "가능"}, "score": 1}
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        server,
+        "_client",
+        lambda timeout=30.0: httpx.AsyncClient(
+            base_url="http://t", transport=httpx.MockTransport(handler)
+        ),
+    )
+    out = asyncio.run(server.kb_similar_incident("정전", source_types=["incident_reports"]))
+    assert seen["body"]["source_types"] == ["incident_reports"]
+    assert "[incident_reports] 26090761356" in out
+
+    asyncio.run(server.kb_similar_incident("정전"))
+    assert "source_types" not in seen["body"]
