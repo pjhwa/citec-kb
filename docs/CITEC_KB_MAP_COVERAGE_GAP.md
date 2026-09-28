@@ -18,8 +18,10 @@
 | 재감사 | `scripts/audit_map_root_coverage.py` (운영 환경 전용, 읽기 전용) |
 
 **배포와 재크롤은 별개 단계다.** 마이그레이션은 설정만 바꾼다. 새 root 아래 페이지가 색인되려면 배포 후
-두 소스만 따로 돌려야 한다 (예: 관리자 트리거 `run_map_inventory` / `scripts/map_sync.sh --source-ids
-confluence_map_openstack101,confluence_map_devops001`, 먼저 `--dry-run`).
+두 소스를 따로 돌려야 하고, **반드시 `run_map_inventory`(관리자 `_run-inventory`)여야 한다.** 일상
+`sync_map`/`scripts/map_sync.sh`는 소스 단위 커서(`last_sync_at`) 이후 수정된 페이지만 가져오므로, root를
+나중에 추가하면 그 아래 오래된 페이지는 커서보다 이전이라 영영 들어오지 않는다. inventory만 모든 root를
+`since=None`으로 전체 나열한다 (`dry_run=true`로 먼저 확인).
 
 root를 "운영매뉴얼" 한 단계 위로 잡지 않고 트러블슈팅 폴더 자체로 좁게 잡았다 — 상위에는 설치/구성
 가이드도 있어 유사장애 검색에 노이즈만 늘린다.
