@@ -24,6 +24,14 @@ _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]{3,}")
 # exists" signal even without a structured cause/resolution frame.
 SI_SOURCE_TYPES = ("support_history", "incident_reports")
 
+# Score adjustment for the caller's `environment` (csp/onprem/msp/...). It is
+# soft on purpose: Document.environment is empty for 92% of SWIM records and
+# 44% of support_history tickets, so a hard equality filter silently drops
+# most of them. A known match is favoured, a known mismatch demoted, an
+# unknown environment left alone.
+_ENV_MATCH_BOOST = 0.15
+_ENV_MISMATCH_PENALTY = 0.3
+
 _TRUST_RANK = {"strong": 3, "medium": 2, "weak": 1, "empty": 0}
 
 
@@ -136,8 +144,20 @@ def similar_incidents(
     environment: Optional[str] = None,
     product: Optional[str] = None,
     service: Optional[str] = None,
+    source_types: Optional[list[str]] = None,
 ) -> dict[str, Any]:
-    """Retrieve similar past incidents with frames and applicability."""
+    """Retrieve similar past incidents with frames and applicability.
+
+    source_types narrows the corpus to a subset of SI_SOURCE_TYPES (default:
+    all of them, i.e. support tickets and SWIM incident reports).
+    """
+    if source_types:
+        unknown = [t for t in source_types if t not in SI_SOURCE_TYPES]
+        if unknown:
+            raise ValueError(f"unsupported source_types {unknown}; allowed: {list(SI_SOURCE_TYPES)}")
+        search_types = tuple(t for t in SI_SOURCE_TYPES if t in source_types)
+    else:
+        search_types = SI_SOURCE_TYPES
     q_parts = [symptom]
     if product:
         q_parts.append(product)
@@ -164,10 +184,8 @@ def similar_incidents(
         # per source_type (not a single filter with source_type as a list) to
         # keep SearchFilters/hybrid_search's shared, corpus-wide contract
         # (Optional[str], == comparison) unchanged for other callers.
-        for st in SI_SOURCE_TYPES:
+        for st in search_types:
             filters = SearchFilters(source_type=st, status="active")
-            if environment:
-                filters.environment = environment
             resp = hybrid_search(
                 session,
                 SearchRequest(q=q, top_k=max(top_k * 8, 40), filters=filters),
@@ -222,21 +240,24 @@ def similar_incidents(
                             Document.external_id.ilike(like),
                         ]
                     )
-            inj = session.execute(
-                select(IssueFrame, Document)
-                .join(Document, Document.id == IssueFrame.document_id)
-                .where(Document.source_type == "support_history")
-                .where(Document.status == "active")
-                .where(IssueFrame.quality >= 0.45)
-                .where(or_(*like_clauses))
-                .order_by(IssueFrame.quality.desc())
-                .limit(25)
-            ).all()
-            for fr, doc in inj:
-                frames[fr.document_id] = (fr, doc)
-                if doc.id not in seen:
-                    seen.add(doc.id)
-                    ordered_docs.append(doc.id)
+            # Per source_type so the ~10k high-quality SWIM frames cannot crowd
+            # out support_history injections (or the reverse) under one limit.
+            for inject_type in search_types:
+                inj = session.execute(
+                    select(IssueFrame, Document)
+                    .join(Document, Document.id == IssueFrame.document_id)
+                    .where(Document.source_type == inject_type)
+                    .where(Document.status == "active")
+                    .where(IssueFrame.quality >= 0.45)
+                    .where(or_(*like_clauses))
+                    .order_by(IssueFrame.quality.desc())
+                    .limit(25)
+                ).all()
+                for fr, doc in inj:
+                    frames[fr.document_id] = (fr, doc)
+                    if doc.id not in seen:
+                        seen.add(doc.id)
+                        ordered_docs.append(doc.id)
 
         # Rank: search order + frame quality + free-text token match
         scored: list[tuple[float, str]] = []
@@ -263,7 +284,21 @@ def similar_incidents(
                 title = fr_doc[1].title or ""
             elif did in hit_by_doc:
                 title = hit_by_doc[did].title or ""
-            scored.append((base + qboost + tboost + _title_coverage_boost(q, title), did))
+            cand_env = None
+            if fr_doc:
+                cand_env = fr_doc[0].environment or fr_doc[1].environment
+            elif did in hit_by_doc:
+                cand_env = hit_by_doc[did].environment
+            eadj = 0.0
+            if environment and cand_env:
+                eadj = (
+                    _ENV_MATCH_BOOST
+                    if cand_env.lower() == environment.lower()
+                    else -_ENV_MISMATCH_PENALTY
+                )
+            scored.append(
+                (base + qboost + tboost + eadj + _title_coverage_boost(q, title), did)
+            )
         scored.sort(key=lambda x: x[0], reverse=True)
 
         cases = []
@@ -286,6 +321,7 @@ def similar_incidents(
                 cases.append(
                     {
                         "document_id": doc.id,
+                        "source_type": doc.source_type,
                         "external_id": doc.external_id,
                         "title": doc.title,
                         "source_uri": doc.source_uri,
@@ -315,6 +351,7 @@ def similar_incidents(
                 cases.append(
                     {
                         "document_id": hit.document_id,
+                        "source_type": hit.source_type,
                         "external_id": hit.external_id,
                         "title": hit.title,
                         "source_uri": hit.source_uri,

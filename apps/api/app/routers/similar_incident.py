@@ -18,6 +18,10 @@ class SimilarIncidentBody(BaseModel):
     product: Optional[str] = None
     service: Optional[str] = None
     top_k: int = Field(default=3, ge=1, le=10)
+    source_types: Optional[list[str]] = Field(
+        default=None,
+        description="subset of support_history|incident_reports; default searches both",
+    )
 
 
 @router.post("/similar-incident")
@@ -29,6 +33,9 @@ def similar_incident(body: SimilarIncidentBody) -> dict[str, Any]:
             environment=body.environment,
             product=body.product,
             service=body.service,
+            source_types=body.source_types,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
