@@ -91,7 +91,8 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 }
 ```
 
-각 결과의 `duplicate_count` 는 사본
+`total` 은 이번 페이지에 반환된 건수(deprecated 별칭), `total_candidates` 는 중복 제거 후 `top_k`
+로 자르기 전 후보 수이며 코퍼스 전체 매칭 수가 아니다. 각 결과의 `duplicate_count` 는 사본
 접기(`diversify_copies`)로 그 결과에 합쳐진 `confluence_map` 사본 수다.
 
 검색 요청 필터(`filters` 또는 `/api/query` 본문): `exclude_page_ids`(그 페이지만),

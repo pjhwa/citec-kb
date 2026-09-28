@@ -435,6 +435,7 @@ def _search_results(
     return {
         "results": results,
         "total": len(results),
+        "total_candidates": resp.total_candidates,
         "fts_ready": True,
         "vector_used": bool(qvec is not None),
         "backend": "citec-kb",

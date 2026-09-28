@@ -45,6 +45,7 @@ _PAYLOAD = {
 
 def test_output_shows_total_candidates_next_to_total_and_folded_copies(monkeypatch):
     out, _ = _run(monkeypatch, _PAYLOAD)
+    assert "total=1 total_candidates=27" in out
     assert "(사본 2건 접힘)" in out
 
 

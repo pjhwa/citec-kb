@@ -210,6 +210,11 @@ async def _search_impl(
     lines = [
         f"검색 결과 {len(results)}건"
         + (f" total={data.get('total')}" if data.get("total") is not None else "")
+        + (
+            f" total_candidates={data.get('total_candidates')}"
+            if data.get("total_candidates") is not None
+            else ""
+        )
         + (f" vector={data.get('vector_used')}" if "vector_used" in data else "")
         + (f" expanded={data.get('expanded_queries')}" if data.get("expanded_queries") else "")
         + ". 원문: kb_get_document(path=…)"
@@ -463,7 +468,11 @@ def _format_query_response(data: dict[str, Any]) -> str:
         result.get("items") and intent not in {"time_scoped_list", "checklist"}
     ):
         items = result.get("items") or result.get("results") or []
-        lines.append(f"hits={result.get('total', len(items))}")
+        cand = result.get("total_candidates")
+        lines.append(
+            f"hits={result.get('total', len(items))}"
+            + (f" total_candidates={cand}" if cand is not None else "")
+        )
         for it in items[:12]:
             if not isinstance(it, dict):
                 continue
