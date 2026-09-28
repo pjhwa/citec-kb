@@ -274,3 +274,7 @@ Confluence 페이지에 그대로 남아 있다 — 이 표는 그 문서의 요
   추적 검증했지만(그리고 이미 검증된 `test_confluence_sync.py` 패턴을 그대로
   따름), 실제 `pytest`/CI 통과는 운영자가 의존성이 설치된 환경(Docker
   컨테이너 또는 `.venv`)에서 한 번 돌려 확인해야 한다.
+
+## 커버리지 갭
+
+등록된 root 밖의 서브트리는 색인되지 않는다. 검색이 약한 주제가 "코퍼스 공백"인지 확인하는 순서, 기존 source에 root를 추가하는 `POST /v1/confluence-map/sources/{source_id}/roots`, 재감사 스크립트는 `docs/CITEC_KB_MAP_COVERAGE_GAP.md` 참고.
