@@ -23,7 +23,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 
 | Tool | 설명 | 백엔드 |
 |------|------|--------|
-| `kb_search` / `wiki_search` | 하이브리드 FTS+vector. `exclude_page_ids`, `exclude_source_types` 로 후보 제외. `total` 은 이번 페이지 건수이고 `total_candidates` 가 페이지를 자르기 전 후보 수 | `POST /v1/search` (기본) |
+| `kb_search` / `wiki_search` | 하이브리드 FTS+vector. 후보 제외·필터는 아래 「검색 필터 파라미터」 참고. `total` 은 이번 페이지 건수이고 `total_candidates` 가 페이지를 자르기 전 후보 수 | `POST /v1/search` (기본) |
 | `kb_get_document` / `wiki_get_document` | 문서 본문 | `GET /api/wiki/file` |
 | `kb_ask` / `wiki_ask` | RAG 답변 (SSE) | `POST /api/query` |
 
@@ -161,3 +161,11 @@ stdio 예시는 `mcp-server/claude_desktop_stdio.example.json` 참고.
 ```bash
 claude mcp add --transport http citec-kb http://localhost:8577/mcp
 ```
+
+## 검색 필터 파라미터 (`kb_search` / `kb_query`, `POST /v1/search`·`/v1/query`·`/api/query`)
+
+| 파라미터 | 동작 |
+|----------|------|
+| `exclude_page_ids` | 그 `external_id` **한 건만** 제외. 하위 페이지·사본은 남는다 (기존 동작 유지) |
+| `exclude_subtree_ids` | 지정한 페이지 **와 모든 하위 페이지** 제외. 정답 누출 방지에는 `exclude_page_ids` 가 아니라 이것을 쓸 것. 하위 관계는 `confluence_map` 색인의 `ancestor_ids` 로 판정하므로 map 재동기화 전 문서에는 적용되지 않고(자기 id 제외만 동작), `confluence_docs` 등 다른 소스는 지정한 id 자체만 제외된다 |
+| `exclude_source_types` | 해당 `source_type` 전부 제외 |

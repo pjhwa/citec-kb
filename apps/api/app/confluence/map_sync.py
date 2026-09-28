@@ -145,6 +145,7 @@ def build_frontmatter_confluence_map(
     excerpt: str = "",
     tech_relevant: str = "",
     citec_domains: Optional[list[str]] = None,
+    ancestor_ids: Optional[list[str]] = None,
 ) -> str:
     lines = [
         "---",
@@ -163,6 +164,11 @@ def build_frontmatter_confluence_map(
         lines.append(f"tech_relevant : {tech_relevant}")
     if citec_domains:
         lines.append("citec_domains : " + ",".join(citec_domains))
+    if ancestor_ids:
+        # Ancestor page ids (root first) plus the page's own id, so one
+        # membership test answers "this page or anything below it" —
+        # see SearchFilters.exclude_subtree_ids.
+        lines.append("조상ID목록 : " + ",".join(ancestor_ids))
     lines.append("---")
     front = "\n".join(lines) + "\n"
     return front
@@ -203,6 +209,7 @@ def _write_map_page(
     url = page_url(base_url, page_id)
     ancestors = meta.get("ancestors") or []
     path_breadcrumb = directory_breadcrumb(ancestors, title)
+    ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
 
     storage = ((meta.get("body") or {}).get("storage") or {}).get("value") or ""
     excerpt = excerpt_from_storage(storage) if storage else ""
@@ -220,6 +227,7 @@ def _write_map_page(
         excerpt=excerpt,
         tech_relevant=tech_relevant,
         citec_domains=domains,
+        ancestor_ids=ancestor_ids,
     )
 
     out_dir = raw_dir / "confluence_map"

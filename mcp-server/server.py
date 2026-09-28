@@ -98,13 +98,16 @@ async def kb_search(
     use_v1: bool = True,
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
+    exclude_subtree_ids: Optional[list[str]] = None,
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
     section/source_type: support_history|checkitems|tech_repo|tuning_ai|confluence_docs|incident_reports|dept_archive|…
     area: domain 필터 (os|dbms|network|cloud|storage|…)
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
-    exclude_page_ids: 결과에서 뺄 external_id (페이지 ID 포함)
+    exclude_page_ids: 결과에서 뺄 external_id — 그 페이지 하나만 빠지고 하위 페이지는 남는다
+    exclude_subtree_ids: 그 페이지와 모든 하위 페이지를 뺀다 (정답 누출 방지에는 이쪽을 쓸 것.
+        하위 관계는 confluence_map 색인에만 있다)
     exclude_source_types: 결과에서 뺄 source_type
     multi_query: 동의어·구문 확장 검색 (기본 true)
     use_v1: true면 POST /v1/search (필터 풍부), false면 GET /api/wiki/search
@@ -121,6 +124,7 @@ async def kb_search(
         use_v1=use_v1,
         exclude_page_ids=exclude_page_ids,
         exclude_source_types=exclude_source_types,
+        exclude_subtree_ids=exclude_subtree_ids,
     )
 
 
@@ -148,6 +152,7 @@ async def _search_impl(
     use_v1: bool = True,
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
+    exclude_subtree_ids: Optional[list[str]] = None,
 ) -> str:
     try:
         async with _client(timeout=60.0) as client:
@@ -165,6 +170,8 @@ async def _search_impl(
                     filters["exclude_page_ids"] = list(exclude_page_ids)
                 if exclude_source_types:
                     filters["exclude_source_types"] = list(exclude_source_types)
+                if exclude_subtree_ids:
+                    filters["exclude_subtree_ids"] = list(exclude_subtree_ids)
                 resp = await client.post(
                     "/v1/search",
                     json={
@@ -379,6 +386,7 @@ async def kb_query(
     top_k: int = 10,
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
+    exclude_subtree_ids: Optional[list[str]] = None,
 ) -> str:
     """통합 의도 분류 질의 — 홈 UI와 동일 플래너 (권장 엔트리포인트).
 
@@ -396,6 +404,8 @@ async def kb_query(
                 body["exclude_page_ids"] = list(exclude_page_ids)
             if exclude_source_types:
                 body["exclude_source_types"] = list(exclude_source_types)
+            if exclude_subtree_ids:
+                body["exclude_subtree_ids"] = list(exclude_subtree_ids)
             resp = await client.post("/v1/query", json=body)
             resp.raise_for_status()
             data = resp.json()

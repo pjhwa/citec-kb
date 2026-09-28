@@ -35,7 +35,12 @@ class DocumentDraft:
     content_hash: str = ""
 
     def finalize(self) -> "DocumentDraft":
-        payload = f"{self.title}\n{self.body_md}\n{json.dumps(self.metadata, ensure_ascii=False, sort_keys=True)}"
+        # ancestor_ids is left out of the hash on purpose: adding it to
+        # already-indexed pages must not look like a content change (that
+        # would rechunk and re-embed every page); the pipeline refreshes
+        # it in place instead.
+        hashed = {k: v for k, v in self.metadata.items() if k != "ancestor_ids"}
+        payload = f"{self.title}\n{self.body_md}\n{json.dumps(hashed, ensure_ascii=False, sort_keys=True)}"
         self.content_hash = hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
         return self
 
@@ -262,6 +267,13 @@ def iter_confluence_map(root: Path) -> Iterator[DocumentDraft]:
         page_id = meta.get("Page ID") or path.stem
         title = meta.get("제목") or path.stem
         path_breadcrumb = meta.get("경로") or ""
+        # Structured copy of the comma-separated frontmatter field, so the
+        # search filter can test membership in JSONB instead of parsing text.
+        ancestor_ids = [
+            t.strip() for t in str(meta.pop("조상ID목록", "") or "").split(",") if t.strip()
+        ]
+        if ancestor_ids:
+            meta["ancestor_ids"] = ancestor_ids
         body_text = body.strip() or path_breadcrumb
         yield DocumentDraft(
             source_type="confluence_map",

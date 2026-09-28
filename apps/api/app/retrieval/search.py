@@ -7,7 +7,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from sqlalchemy import Select, func, select, text
+from sqlalchemy import Select, false, func, select, text
+from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.orm import Session
 
 from app.db.models import Chunk, Document, Embedding
@@ -303,6 +304,13 @@ class SearchFilters:
     # source_type's type (that change was reverted once already).
     exclude_page_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
+    # Drops each listed page and every page below it. exclude_page_ids only
+    # matches the page itself, so it cannot keep a known answer page's
+    # children out of the results. Subtree membership comes from
+    # metadata.ancestor_ids, which only confluence_map rows carry (and only
+    # after the map has been re-synced); other source types match by
+    # external_id alone.
+    exclude_subtree_ids: Optional[list[str]] = None
     # False drops confluence_map rows tagged tech_relevant=irrelevant.
     # Explicit source_type=confluence_map sets this True.
     include_irrelevant_maps: bool = False
@@ -382,6 +390,14 @@ def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
         stmt = stmt.where(Document.external_id.notin_(list(filters.exclude_page_ids)))
     if filters.exclude_source_types:
         stmt = stmt.where(Document.source_type.notin_(list(filters.exclude_source_types)))
+    if filters.exclude_subtree_ids:
+        ids = list(filters.exclude_subtree_ids)
+        # coalesce: rows without ancestor_ids give NULL for ?|, and NOT NULL
+        # would drop them instead of keeping them.
+        in_subtree = func.coalesce(
+            Document.metadata_["ancestor_ids"].has_any(pg_array(ids)), false()
+        )
+        stmt = stmt.where(Document.external_id.notin_(ids)).where(~in_subtree)
     if not filters.include_irrelevant_maps:
         tech = Document.metadata_["tech_relevant"].astext
         stmt = stmt.where(

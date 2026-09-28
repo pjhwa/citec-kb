@@ -24,6 +24,7 @@ class SearchFiltersIn(BaseModel):
     status: str = "active"
     exclude_page_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
+    exclude_subtree_ids: Optional[list[str]] = None
 
 
 class SearchBody(BaseModel):

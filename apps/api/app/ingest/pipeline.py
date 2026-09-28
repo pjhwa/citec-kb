@@ -120,6 +120,12 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             if not existing.work_type and draft.work_type:
                 existing.work_type = draft.work_type
                 dirty = True
+            # ancestor_ids is excluded from content_hash (see
+            # DocumentDraft.finalize), so a backfill lands here.
+            new_anc = (draft.metadata or {}).get("ancestor_ids")
+            if new_anc and (existing.metadata_ or {}).get("ancestor_ids") != new_anc:
+                existing.metadata_ = {**(existing.metadata_ or {}), "ancestor_ids": new_anc}
+                dirty = True
             return "updated" if dirty else "skipped"
         # same hash but no active chunks (e.g. bare promote) → fall through rechunk
 

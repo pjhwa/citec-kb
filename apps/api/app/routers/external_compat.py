@@ -694,6 +694,7 @@ class WikiQueryRequest(BaseModel):
     mode: str = Field(default="fast", description="fast|deep (citec-kb extension)")
     stream: bool = Field(default=True, description="SSE when true (wiki-qa default)")
     exclude_page_ids: Optional[list[str]] = None
+    exclude_subtree_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
 
 
@@ -715,6 +716,7 @@ def api_query(req: WikiQueryRequest) -> Any:
         source_type=source_type,
         status="active",
         exclude_page_ids=req.exclude_page_ids,
+        exclude_subtree_ids=req.exclude_subtree_ids,
         exclude_source_types=req.exclude_source_types,
     )
     top_k = 16 if mode == "deep" else 8
