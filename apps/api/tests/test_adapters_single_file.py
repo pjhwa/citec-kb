@@ -152,3 +152,93 @@ def test_iter_support_history_matches_single_file_parse(tmp_path: Path):
     assert len(drafts) == 1
     assert drafts[0].external_id == "CITECTS-9999"
     assert drafts[0].content_hash == parse_support_history_file(d / "CITECTS-9999.md").content_hash
+
+
+# Extended format written by swim-kb-sync's buildIncidentMarkdown(): the same
+# ■ sections plus 근본원인(상세)/조치이력요약/CI/재발방지*/보고서. Sections
+# with no value in SWIM are omitted, so the set varies per record.
+_INCIDENT_REPORT_MD_EXTENDED = """[26092261386] [대외고객사 S-OIL] 법인카드 시스템 접속 불가
+발생일시(한국): 2026-09-22 09:12 | 고객사: 대외고객사 | 진행상태: 원인분석완료 | 예상등급_SDS: 4등급 | 장애유형: Infra | 운영부서: MSP인프라운영팀 | 신고자: 홍길동 | 기록구분: 실장애
+■ 장애상황: 법인카드 시스템 접속 불가
+■ 장애원인: Acronis 외부 솔루션 이슈로 강제 재기동
+추가분석: Acronis-CrowdStrike 감시 충돌에 따른 OS 강제 재기동
+■ 장애조치: 서버 재기동 후 정상화
+■ 근본원인(상세): 직접원인 Reboot / 근본원인 SW 오류>Unknown Bug
+■ 조치이력요약: 2026-09-22 09:40 동보 발송: 장애 인지 및 확인 중
+2026-09-22 11:05 동보 발송: 재기동 후 정상화 확인
+■ CI: 모델명 PowerEdge R750 / 자산코드 A-100234
+■ 재발방지대책: 진행중
+■ 재발방지(미수립사유): 지역 정전으로 발생건으로 미수립합니다
+■ 보고서: FRB결과서 1건 (확정)
+"""
+
+
+def test_parse_incident_report_file_extended_sections(tmp_path: Path):
+    p = tmp_path / "swim_26092261386.md"
+    p.write_text(_INCIDENT_REPORT_MD_EXTENDED, encoding="utf-8")
+
+    draft = parse_incident_report_file(p)
+
+    assert draft.external_id == "26092261386"
+    assert draft.title == "[대외고객사 S-OIL] 법인카드 시스템 접속 불가"
+    assert draft.evidence_grade == "B"  # 진행상태: 원인분석완료 is not a completed state
+    md = draft.metadata
+    # the three original sections still parse, including a multi-line body
+    assert md["장애상황"] == "법인카드 시스템 접속 불가"
+    assert md["장애원인"].endswith("OS 강제 재기동")
+    assert "추가분석: Acronis" in md["장애원인"]  # a "label: value" line stays in its section
+    assert md["장애조치"] == "서버 재기동 후 정상화"
+    # every new section becomes its own key, names with parentheses intact
+    assert md["근본원인(상세)"] == "직접원인 Reboot / 근본원인 SW 오류>Unknown Bug"
+    assert md["조치이력요약"].splitlines() == [
+        "2026-09-22 09:40 동보 발송: 장애 인지 및 확인 중",
+        "2026-09-22 11:05 동보 발송: 재기동 후 정상화 확인",
+    ]
+    assert md["CI"] == "모델명 PowerEdge R750 / 자산코드 A-100234"
+    assert md["재발방지대책"] == "진행중"
+    assert md["재발방지(미수립사유)"] == "지역 정전으로 발생건으로 미수립합니다"
+    assert md["보고서"] == "FRB결과서 1건 (확정)"
+    # header fields are not swallowed by the sections
+    assert md["장애유형"] == "Infra" and md["신고자"] == "홍길동"
+    # and the new text is in the indexed body, so it is searchable
+    assert "동보 발송" in draft.body_md and "미수립합니다" in draft.body_md
+
+
+def test_extended_record_changes_content_hash_of_the_old_record(tmp_path: Path):
+    """The re-upload of a backfilled record must not be skipped as unchanged."""
+    old = "\n".join(_INCIDENT_REPORT_MD_EXTENDED.splitlines()[:5]) + "\n"
+    a = tmp_path / "swim_old.md"
+    b = tmp_path / "swim_new.md"
+    a.write_text(old, encoding="utf-8")
+    b.write_text(_INCIDENT_REPORT_MD_EXTENDED, encoding="utf-8")
+    da, db = parse_incident_report_file(a), parse_incident_report_file(b)
+    assert da.external_id == db.external_id == "26092261386"
+    assert da.content_hash != db.content_hash
+
+
+def test_omitted_sections_stay_absent(tmp_path: Path):
+    p = tmp_path / "swim_26083161343.md"
+    p.write_text(
+        "[26083161343] [SCP Nuri] L3스위치 이중화 전환\n"
+        "발생일시(한국): 2026-08-31 | 진행상태: 조치완료 | 장애유형: NW\n"
+        "■ 장애상황: 자동 이중화 전환\n"
+        "■ 재발방지대책: 해당없음\n",
+        encoding="utf-8",
+    )
+    md = parse_incident_report_file(p).metadata
+    assert md["재발방지대책"] == "해당없음"
+    for absent in ("근본원인(상세)", "조치이력요약", "CI", "보고서", "재발방지(미수립사유)"):
+        assert absent not in md
+
+
+def test_frame_extraction_still_reads_the_original_sections_from_extended_records(tmp_path: Path):
+    """The new sections must not shadow 장애원인/장애조치 in the frame extractor."""
+    from app.frames.extract import extract_frame_from_markdown
+
+    p = tmp_path / "swim_26092261386.md"
+    p.write_text(_INCIDENT_REPORT_MD_EXTENDED, encoding="utf-8")
+    draft = parse_incident_report_file(p)
+    frame = extract_frame_from_markdown(draft.body_md, title=draft.title)
+    assert "Acronis" in (frame.get("root_cause") or "")
+    assert "재기동" in (frame.get("resolution") or "")
+    assert "미수립" not in (frame.get("root_cause") or "")
