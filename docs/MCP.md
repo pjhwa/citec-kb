@@ -169,3 +169,4 @@ claude mcp add --transport http citec-kb http://localhost:8577/mcp
 | `exclude_page_ids` | 그 `external_id` **한 건만** 제외. 하위 페이지·사본은 남는다 (기존 동작 유지) |
 | `exclude_subtree_ids` | 지정한 페이지 **와 모든 하위 페이지** 제외. 정답 누출 방지에는 `exclude_page_ids` 가 아니라 이것을 쓸 것. 하위 관계는 `confluence_map` 색인의 `ancestor_ids` 로 판정하므로 map 재동기화 전 문서에는 적용되지 않고(자기 id 제외만 동작), `confluence_docs` 등 다른 소스는 지정한 id 자체만 제외된다 |
 | `exclude_source_types` | 해당 `source_type` 전부 제외 |
+| `diversify_copies` | 기본 `true`. 같은 space·같은 정규화 제목(`사본 `/`Copy of `/`백업-`/`백업 ` 접두 제거, 10자 이상)의 `confluence_map` 사본을 최고 점수 1건으로 접고 `duplicate_count` 로 접힌 수를 알린다(텍스트 출력: `사본 N건 접힘`). `false` 면 전부 반환 |

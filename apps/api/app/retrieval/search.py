@@ -314,6 +314,9 @@ class SearchFilters:
     # False drops confluence_map rows tagged tech_relevant=irrelevant.
     # Explicit source_type=confluence_map sets this True.
     include_irrelevant_maps: bool = False
+    # Fold confluence_map copies ("사본 X", "Copy of X", "백업-X") into the
+    # best-scoring page with the same title; False returns them all.
+    diversify_copies: bool = True
 
 
 @dataclass
@@ -360,6 +363,9 @@ class SearchHit:
     # that merely re-touches an unchanged page. None for non-confluence_map
     # hits and for confluence_map hits never re-touched since ingest.
     map_synced_at: Optional[str] = None
+    # Number of same-titled confluence_map copies folded into this hit by
+    # diversify_copies. 0 when nothing was folded.
+    duplicate_count: int = 0
 
 
 @dataclass
@@ -372,6 +378,54 @@ class SearchResponse:
     trust_retrieval: str  # strong | medium | weak | empty
     returned_count: int = 0
     total_candidates: int = 0
+
+
+_COPY_PREFIX = re.compile(r"^(?:사본|copy\s+of|백업)(?:\s*[-–]\s*|\s+)", re.IGNORECASE)
+# Below this a normalized title is too generic ("회의록") to trust as proof
+# that two pages are copies of each other.
+_MIN_COPY_TITLE_CHARS = 10
+
+
+def _normalize_map_title(title: str) -> str:
+    t = re.sub(r"\s+", " ", title or "").strip()
+    while True:
+        stripped = _COPY_PREFIX.sub("", t, count=1).strip()
+        if stripped == t:
+            break
+        t = stripped
+    return t.lower()
+
+
+def _map_copy_key(source_type: str, path_l2: Optional[str], title: str) -> Optional[tuple]:
+    if source_type != "confluence_map":
+        return None
+    norm = _normalize_map_title(title)
+    if len(norm) < _MIN_COPY_TITLE_CHARS:
+        return None
+    return (path_l2 or "", norm)
+
+
+def collapse_map_copies(items: list, key_of, folded_of=lambda _i: 0) -> tuple[list, dict[int, int]]:
+    """Keep the first (best-scoring) item of each copy group, in order.
+
+    key_of(item) -> group key or None (never grouped). folded_of(item) is how
+    many copies the item already stands for. Returns (kept, {id(item): total
+    copies folded into it}).
+    """
+    kept: list = []
+    first_of: dict[tuple, Any] = {}
+    folded: dict[int, int] = {}
+    for it in items:
+        key = key_of(it)
+        head = first_of.get(key) if key is not None else None
+        if head is None:
+            kept.append(it)
+            if key is not None:
+                first_of[key] = it
+            folded[id(it)] = folded_of(it)
+        else:
+            folded[id(head)] += 1 + folded_of(it)
+    return kept, folded
 
 
 def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
@@ -681,6 +735,16 @@ def hybrid_search(
             continue
         seen_docs.add(h.document_id)
         unique_hits.append(h)
+    folded: dict[int, int] = {}
+    if req.filters.diversify_copies:
+        unique_hits, folded = collapse_map_copies(
+            unique_hits,
+            lambda h: _map_copy_key(
+                str(h.meta.get("source_type") or ""),
+                h.meta.get("path_l2"),
+                str(h.meta.get("title") or ""),
+            ),
+        )
     total_candidates = len(unique_hits)
     results: list[SearchHit] = []
     for h in unique_hits[: req.top_k]:
@@ -709,6 +773,7 @@ def hybrid_search(
                     if m.get("source_type") == "confluence_map" and m.get("updated_at")
                     else None
                 ),
+                duplicate_count=folded.get(id(h), 0),
             )
         )
     if results and not any(

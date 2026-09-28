@@ -25,6 +25,7 @@ class SearchFiltersIn(BaseModel):
     exclude_page_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
     exclude_subtree_ids: Optional[list[str]] = None
+    diversify_copies: bool = True
 
 
 class SearchBody(BaseModel):
@@ -107,6 +108,7 @@ def search(body: SearchBody) -> dict[str, Any]:
                     "vec_rank": r.vec_rank,
                     "evidence_eligible": r.evidence_eligible,
                     "map_synced_at": r.map_synced_at,
+                    "duplicate_count": r.duplicate_count,
                 }
             )
             for r in resp.results

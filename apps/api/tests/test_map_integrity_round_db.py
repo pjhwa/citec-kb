@@ -114,6 +114,28 @@ def test_exclude_subtree_ids_drops_parent_child_and_keeps_unrelated():
     assert "D1" not in _ids(_search(exclude_subtree_ids=["D1"]))
 
 
+def test_copies_fold_and_diversify_off_restores_them():
+    from app.db.session import session_scope
+
+    t = "[성능] Ceph 스토리지 RBD 성능 테스트"
+    with session_scope() as session:
+        _seed(session, "K1", t)
+        _seed(session, "K2", "사본 " + t)
+        _seed(session, "K3", "Copy of " + t)
+        _seed(session, "M1", "회의록")
+        _seed(session, "M2", "회의록")
+        _seed(session, "K4", t, path_l2="OTHER")
+
+    resp = _search()
+    ceph = [h for h in resp.results if "Ceph" in h.title and h.path_l2 == "SPC"]
+    assert len(ceph) == 1 and ceph[0].duplicate_count == 2
+    assert {"M1", "M2", "K4"} <= _ids(resp)
+
+    raw = _search(diversify_copies=False)
+    assert {"K1", "K2", "K3"} <= _ids(raw)
+    assert all(h.duplicate_count == 0 for h in raw.results)
+
+
 def test_upsert_backfills_ancestor_ids_without_rechunking():
     """A re-synced page whose only change is the new ancestor_ids must be
     updated in place (same content_hash → no rechunk/re-embed)."""

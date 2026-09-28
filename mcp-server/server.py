@@ -99,6 +99,7 @@ async def kb_search(
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
     exclude_subtree_ids: Optional[list[str]] = None,
+    diversify_copies: bool = True,
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
@@ -109,6 +110,7 @@ async def kb_search(
     exclude_subtree_ids: 그 페이지와 모든 하위 페이지를 뺀다 (정답 누출 방지에는 이쪽을 쓸 것.
         하위 관계는 confluence_map 색인에만 있다)
     exclude_source_types: 결과에서 뺄 source_type
+    diversify_copies: confluence_map 의 사본/Copy of/백업 페이지를 최고 점수 1건으로 접는다 (기본 true)
     multi_query: 동의어·구문 확장 검색 (기본 true)
     use_v1: true면 POST /v1/search (필터 풍부), false면 GET /api/wiki/search
     """
@@ -125,6 +127,7 @@ async def kb_search(
         exclude_page_ids=exclude_page_ids,
         exclude_source_types=exclude_source_types,
         exclude_subtree_ids=exclude_subtree_ids,
+        diversify_copies=diversify_copies,
     )
 
 
@@ -153,6 +156,7 @@ async def _search_impl(
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
     exclude_subtree_ids: Optional[list[str]] = None,
+    diversify_copies: bool = True,
 ) -> str:
     try:
         async with _client(timeout=60.0) as client:
@@ -172,6 +176,8 @@ async def _search_impl(
                     filters["exclude_source_types"] = list(exclude_source_types)
                 if exclude_subtree_ids:
                     filters["exclude_subtree_ids"] = list(exclude_subtree_ids)
+                if not diversify_copies:
+                    filters["diversify_copies"] = False
                 resp = await client.post(
                     "/v1/search",
                     json={
@@ -214,7 +220,9 @@ async def _search_impl(
         score = r.get("score")
         score_s = f" score={score:.4f}" if isinstance(score, (int, float)) else ""
         eid = r.get("external_id") or ""
-        lines.append(f"- [{st}] {title}{score_s}" + (f" ({eid})" if eid else ""))
+        dup = r.get("duplicate_count") or 0
+        dup_s = f" (사본 {dup}건 접힘)" if dup else ""
+        lines.append(f"- [{st}] {title}{score_s}" + (f" ({eid})" if eid else "") + dup_s)
         acc = _access_lines(r)
         if acc:
             lines.append(acc)
@@ -387,6 +395,7 @@ async def kb_query(
     exclude_page_ids: Optional[list[str]] = None,
     exclude_source_types: Optional[list[str]] = None,
     exclude_subtree_ids: Optional[list[str]] = None,
+    diversify_copies: bool = True,
 ) -> str:
     """통합 의도 분류 질의 — 홈 UI와 동일 플래너 (권장 엔트리포인트).
 
@@ -406,6 +415,8 @@ async def kb_query(
                 body["exclude_source_types"] = list(exclude_source_types)
             if exclude_subtree_ids:
                 body["exclude_subtree_ids"] = list(exclude_subtree_ids)
+            if not diversify_copies:
+                body["diversify_copies"] = False
             resp = await client.post("/v1/query", json=body)
             resp.raise_for_status()
             data = resp.json()
@@ -456,9 +467,11 @@ def _format_query_response(data: dict[str, Any]) -> str:
         for it in items[:12]:
             if not isinstance(it, dict):
                 continue
+            dup = it.get("duplicate_count") or 0
             lines.append(
                 f"- {it.get('title') or it.get('external_id')} "
                 f"[{it.get('source_type', '')}] score={it.get('score', '')}"
+                + (f" (사본 {dup}건 접힘)" if dup else "")
             )
             acc = _access_lines(it)
             if acc:

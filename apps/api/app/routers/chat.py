@@ -27,6 +27,7 @@ class ChatFiltersIn(BaseModel):
     exclude_page_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
     exclude_subtree_ids: Optional[list[str]] = None
+    diversify_copies: bool = True
 
 
 class ChatBody(BaseModel):

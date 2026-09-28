@@ -21,7 +21,9 @@ from app.retrieval.search import (
     SearchHit,
     SearchRequest,
     SearchResponse,
+    _map_copy_key,
     build_fts_variants,
+    collapse_map_copies,
     hybrid_search,
     retrieval_trust,
 )
@@ -334,7 +336,19 @@ def multi_hybrid_search(
     merged = sorted(
         best.values(),
         key=lambda h: (-float(h.score or 0), h.document_id or "", h.external_id or ""),
-    )[: req.top_k]
+    )
+    total_candidates = len(merged)
+    if req.filters.diversify_copies:
+        # Each query already folded copies inside hybrid_search, but two
+        # queries can surface different copies of the same page.
+        merged, folded = collapse_map_copies(
+            merged,
+            lambda h: _map_copy_key(h.source_type, h.path_l2, h.title),
+            lambda h: h.duplicate_count,
+        )
+        merged = [replace(h, duplicate_count=folded[id(h)]) for h in merged]
+        total_candidates = len(merged)
+    merged = merged[: req.top_k]
     ranked: list[SearchHit] = []
     for i, h in enumerate(merged, 1):
         ranked.append(replace(h, rank=i))
@@ -349,7 +363,7 @@ def multi_hybrid_search(
         trust_retrieval=retrieval_trust(ranked),
         results=ranked,
         returned_count=returned,
-        total_candidates=len(best),
+        total_candidates=total_candidates,
     )
     meta = {
         "multi_query": True,
