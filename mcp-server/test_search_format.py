@@ -57,8 +57,10 @@ def test_new_filters_are_forwarded_only_when_set(monkeypatch):
         monkeypatch,
         _PAYLOAD,
         exclude_subtree_ids=["2525893483"],
+        include_irrelevant_maps=False,
         diversify_copies=False,
     )
     f = body["filters"]
     assert f["exclude_subtree_ids"] == ["2525893483"]
+    assert f["include_irrelevant_maps"] is False
     assert f["diversify_copies"] is False

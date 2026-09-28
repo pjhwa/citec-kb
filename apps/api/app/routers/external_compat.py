@@ -698,6 +698,7 @@ class WikiQueryRequest(BaseModel):
     exclude_page_ids: Optional[list[str]] = None
     exclude_subtree_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
+    include_irrelevant_maps: Optional[bool] = None
     diversify_copies: bool = True
 
 
@@ -721,6 +722,7 @@ def api_query(req: WikiQueryRequest) -> Any:
         exclude_page_ids=req.exclude_page_ids,
         exclude_subtree_ids=req.exclude_subtree_ids,
         exclude_source_types=req.exclude_source_types,
+        include_irrelevant_maps=req.include_irrelevant_maps,
         diversify_copies=req.diversify_copies,
     )
     top_k = 16 if mode == "deep" else 8

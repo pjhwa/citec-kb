@@ -136,6 +136,20 @@ def test_copies_fold_and_diversify_off_restores_them():
     assert all(h.duplicate_count == 0 for h in raw.results)
 
 
+def test_explicit_false_keeps_irrelevant_filter_on_confluence_map_section():
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        _seed(session, "R1", "relevant map page", meta={"tech_relevant": "relevant"})
+        _seed(session, "X1", "irrelevant map page", meta={"tech_relevant": "irrelevant"})
+
+    assert "X1" in _ids(_search(source_type="confluence_map"))  # auto: filter off
+    filtered = _ids(_search(source_type="confluence_map", include_irrelevant_maps=False))
+    assert "X1" not in filtered and "R1" in filtered
+    assert "X1" not in _ids(_search())  # no section: filter on
+    assert "X1" in _ids(_search(include_irrelevant_maps=True))
+
+
 def test_upsert_backfills_ancestor_ids_without_rechunking():
     """A re-synced page whose only change is the new ancestor_ids must be
     updated in place (same content_hash → no rechunk/re-embed)."""

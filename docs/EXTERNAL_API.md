@@ -97,6 +97,7 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 
 검색 요청 필터(`filters` 또는 `/api/query` 본문): `exclude_page_ids`(그 페이지만),
 `exclude_subtree_ids`(그 페이지+모든 하위 — 정답 누출 방지는 이쪽), `exclude_source_types`,
+`include_irrelevant_maps`(미지정: `source_type=confluence_map` 일 때만 true, 명시 값 우선),
 `diversify_copies`(기본 true). 자세한 의미는 `docs/MCP.md` 「검색 필터 파라미터」.
 
 적용 엔드포인트: `POST /v1/search` · `POST /v1/query` items · `POST /v1/chat` citations ·

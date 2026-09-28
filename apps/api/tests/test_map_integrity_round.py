@@ -20,6 +20,7 @@ from app.retrieval.search import (
     SearchRequest,
     SearchResponse,
     _apply_doc_filters,
+    _include_irrelevant_maps,
     _map_copy_key,
     _normalize_map_title,
     collapse_map_copies,
@@ -202,3 +203,28 @@ def test_multi_query_diversify_off_keeps_all(monkeypatch):
     )
     assert [h.external_id for h in resp.results] == ["1", "2"]
     assert all(h.duplicate_count == 0 for h in resp.results)
+
+
+# ── 4. include_irrelevant_maps resolution ────────────────────────────
+
+
+def test_include_irrelevant_maps_auto_and_explicit_override():
+    assert _include_irrelevant_maps(SearchFilters()) is False
+    assert _include_irrelevant_maps(SearchFilters(source_type="tech_repo")) is False
+    assert _include_irrelevant_maps(SearchFilters(source_type="confluence_map")) is True
+    assert (
+        _include_irrelevant_maps(
+            SearchFilters(source_type="confluence_map", include_irrelevant_maps=False)
+        )
+        is False
+    )
+    assert _include_irrelevant_maps(SearchFilters(include_irrelevant_maps=True)) is True
+
+
+def test_irrelevant_filter_sql_follows_resolution_and_does_not_mutate():
+    f = SearchFilters(source_type="confluence_map", include_irrelevant_maps=False)
+    assert "irrelevant" in _sql(f)
+    auto = SearchFilters(source_type="confluence_map")
+    assert "irrelevant" not in _sql(auto)
+    assert auto.include_irrelevant_maps is None
+    assert "irrelevant" in _sql(SearchFilters())

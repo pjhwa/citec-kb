@@ -311,9 +311,10 @@ class SearchFilters:
     # after the map has been re-synced); other source types match by
     # external_id alone.
     exclude_subtree_ids: Optional[list[str]] = None
-    # False drops confluence_map rows tagged tech_relevant=irrelevant.
-    # Explicit source_type=confluence_map sets this True.
-    include_irrelevant_maps: bool = False
+    # False drops confluence_map rows tagged tech_relevant=irrelevant, True
+    # keeps them. None (unset) resolves to True when source_type is
+    # confluence_map and False otherwise; an explicit value always wins.
+    include_irrelevant_maps: Optional[bool] = None
     # Fold confluence_map copies ("사본 X", "Copy of X", "백업-X") into the
     # best-scoring page with the same title; False returns them all.
     diversify_copies: bool = True
@@ -378,6 +379,12 @@ class SearchResponse:
     trust_retrieval: str  # strong | medium | weak | empty
     returned_count: int = 0
     total_candidates: int = 0
+
+
+def _include_irrelevant_maps(filters: SearchFilters) -> bool:
+    if filters.include_irrelevant_maps is not None:
+        return filters.include_irrelevant_maps
+    return (filters.source_type or "") == "confluence_map"
 
 
 _COPY_PREFIX = re.compile(r"^(?:사본|copy\s+of|백업)(?:\s*[-–]\s*|\s+)", re.IGNORECASE)
@@ -452,7 +459,7 @@ def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
             Document.metadata_["ancestor_ids"].has_any(pg_array(ids)), false()
         )
         stmt = stmt.where(Document.external_id.notin_(ids)).where(~in_subtree)
-    if not filters.include_irrelevant_maps:
+    if not _include_irrelevant_maps(filters):
         tech = Document.metadata_["tech_relevant"].astext
         stmt = stmt.where(
             (Document.source_type != "confluence_map")
@@ -587,8 +594,6 @@ def hybrid_search(
     *,
     query_vector: Optional[list[float]] = None,
 ) -> SearchResponse:
-    if (req.filters.source_type or "") == "confluence_map":
-        req.filters.include_irrelevant_maps = True
     exact = extract_exact_tokens(req.q)
     fts_ids = fts_search(session, req)
     vec_ids = vector_search(session, req, query_vector)

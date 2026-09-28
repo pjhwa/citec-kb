@@ -425,6 +425,7 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
                     exclude_page_ids=body.get("exclude_page_ids") or None,
                     exclude_subtree_ids=body.get("exclude_subtree_ids") or None,
                     exclude_source_types=body.get("exclude_source_types") or None,
+                    include_irrelevant_maps=body.get("include_irrelevant_maps"),
                     diversify_copies=body.get("diversify_copies", True),
                 ),
             )
