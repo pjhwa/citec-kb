@@ -144,3 +144,51 @@ def test_toggle_source_status_roundtrip():
             "confluence_map_does_not_exist", UpdateSourceStatusBody(status="active"), principal=_admin()
         )
     assert exc.value.status_code == 404
+
+
+def test_add_root_merges_and_is_idempotent():
+    from fastapi import HTTPException
+
+    from app.db.models import Source
+    from app.db.session import session_scope
+    from app.routers.confluence_map import (
+        AddRootBody,
+        CreateSourceBody,
+        add_source_root,
+        create_source,
+    )
+
+    create_source(
+        CreateSourceBody(
+            space_key="TOGSPC", space_name="x", page_id="1", label="첫 root"
+        ),
+        principal=_admin(),
+    )
+    sid = "confluence_map_togspc"
+    with session_scope() as session:
+        src = session.get(Source, sid)
+        src.config = {**src.config, "checkpoint": {"1": {"start": 5}}}
+
+    out = add_source_root(sid, AddRootBody(page_id="2", label="둘째"), principal=_admin())
+    assert out["added"] is True and out["roots"] == {"1": "첫 root", "2": "둘째"}
+
+    again = add_source_root(sid, AddRootBody(page_id="2", label="둘째"), principal=_admin())
+    assert again["added"] is False and again["roots"] == {"1": "첫 root", "2": "둘째"}
+
+    with session_scope() as session:
+        cfg = session.get(Source, sid).config
+        assert cfg["roots"] == {"1": "첫 root", "2": "둘째"}
+        assert cfg["checkpoint"] == {"1": {"start": 5}}  # runtime state kept
+        assert cfg["space_key"] == "TOGSPC"
+
+    # create_source's own 409 for an existing space is unchanged
+    with pytest.raises(HTTPException) as exc:
+        create_source(
+            CreateSourceBody(space_key="TOGSPC", space_name="x", page_id="3", label="l"),
+            principal=_admin(),
+        )
+    assert exc.value.status_code == 409
+
+    with pytest.raises(HTTPException) as nf:
+        add_source_root("confluence_map_nope", AddRootBody(page_id="9", label="l"), principal=_admin())
+    assert nf.value.status_code == 404

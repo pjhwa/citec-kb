@@ -244,3 +244,40 @@ def update_source_status(
             raise HTTPException(status_code=404, detail=f"source {source_id} not found")
         src.status = body.status
     return {"source_id": source_id, "status": body.status}
+
+
+class AddRootBody(BaseModel):
+    page_id: str
+    label: str
+
+
+@router.post("/sources/{source_id}/roots")
+def add_source_root(
+    source_id: str,
+    body: AddRootBody,
+    principal: Principal = Depends(require_roles("admin")),
+) -> dict[str, Any]:
+    """Merge one `{page_id: label}` into an existing source's config["roots"].
+
+    create_source only adds new spaces (409 when the space exists), so this
+    is how a root is added to a space that is already registered. Merges,
+    never replaces: other roots and runtime keys (checkpoint, ...) are kept.
+    Re-posting the same page_id is idempotent and just refreshes its label.
+    Changes configuration only — nothing is crawled until a sync/inventory
+    run is triggered.
+    """
+    _ = principal
+    page_id = body.page_id.strip()
+    if not page_id:
+        raise HTTPException(status_code=422, detail="page_id must not be empty")
+    with session_scope() as session:
+        src = session.get(Source, source_id)
+        if not src or src.type != "confluence_map":
+            raise HTTPException(status_code=404, detail=f"source {source_id} not found")
+        config = dict(src.config or {})
+        roots = dict(config.get("roots") or {})
+        already = page_id in roots
+        roots[page_id] = body.label
+        config["roots"] = roots  # new dict so the JSONB column registers the change
+        src.config = config
+    return {"source_id": source_id, "roots": roots, "added": not already}
