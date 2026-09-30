@@ -322,6 +322,34 @@ retry/dead-letter 추적, source_version을 실제 change-detection에 연결하
 전환(백필 비용 미산정). 이들은 §9가 요구하는 "기존 backfill/inventory
 재사용" 원칙과 운영 정책 결정이 필요해 이번 라운드에도 시작하지 않았다.
 
+## 1-D. 네 번째 라운드 — PR 생성 + coverage_gaps + 사용자 확인
+
+PR #1을 생성(`https://github.com/pjhwa/citec-kb/pull/1`)한 뒤 "계속
+진행해" 요청에 따라 진행. 먼저 PR 전체 diff를 커밋 단위가 아니라
+파일 단위(`search.py`/`adapters.py`/`map_sync.py` — 3개 이상 커밋이 겹친
+파일)로 재검토했고, 이상 없음을 확인했다(자체 재검토 이력상 처음).
+
+**source_version→change-detection 연결 여부를 사용자에게 직접 확인**
+(§1-C에서 "별도 승인 필요"로 남겼던 항목) — 배포 후 첫 sync에서 기존
+confluence_map 문서 전체(로컬 스냅샷 34,173건)가 재청크·재임베딩되는
+비용을 설명하고, confluence_map을 confluence_docs/tech_repo처럼 전체
+본문 수집으로 바꾸는 대안도 함께 확인했다. **사용자 결정: 둘 다 보류,
+현재 구조(필드만 추가, provenance 전용) 유지.** 커밋 `4c3d794`에 기록.
+
+**추가 구현**: `coverage_gaps` — §9 "source→raw→document→active chunk→
+embedding→frame 각 단계의 건수를 source ID로 대조" 중 기존
+`ingest_progress()`가 다루지 않던 부분(ancestor_ids/source_version/
+tech_relevant/frame 결측 카운트)을 같은 dashboard 모듈에 함수로
+추가(`coverage_gaps`, `GET /v1/ops/dashboard`의 새 키) — 신규
+서브시스템이 아니라 기존 모듈 확장(§9 원칙 준수). source-side 분모
+(실제 Confluence/Jira에 몇 건이 있는지)는 여전히 `run_map_inventory()`의
+몫이며 재구현하지 않았다.
+
+**재현성**: `scripts/scratch_db_test.sh` 추가 — 매 커밋마다 손으로 치던
+scratch DB 생성/마이그레이션/pytest 3단계를 한 명령으로. PR 리뷰어가
+`scripts/scratch_db_test.sh`만 실행하면 이 세션의 모든 DB-integration
+테스트를 재현할 수 있다.
+
 ## 2. 테스트 로그 (실행/실패/SKIP/BLOCKED 네 가지로 구분)
 
 ### 실행 — unit + contract (DB 불필요, `pytest tests/ -k "not _db"`)
@@ -329,6 +357,9 @@ retry/dead-letter 추적, source_version을 실제 change-detection에 연결하
 ```
 368 passed, 10 skipped, 42 deselected, 1 failed in 8.00s
 ```
+
+(§1-D의 coverage_gaps 3건은 DB 테스트라 이 unit 카운트에는 포함되지 않음 —
+아래 DB 섹션 참고.)
 
 (1차 라운드 종료 시점은 344 passed → §1-B에서 364 → §1-C의 P1-B 테스트
 4건(source_version round-trip 3 + hash-exclusion 1)이 이후 추가되어 368.)
@@ -341,8 +372,16 @@ retry/dead-letter 추적, source_version을 실제 change-detection에 연결하
 - 10 skipped: `_db` 마커가 아닌데도 skip된 항목 — DB 접근성과 무관하게
   기존에 이미 skip 처리된 케이스(예: 외부 서비스 필요).
 
-### 실행 — DB integration (`CONFLUENCE_SYNC_TEST_DATABASE_URL`로 scratch DB 지정)
+### 실행 — DB integration
 
+`scripts/scratch_db_test.sh`(§1-D에서 추가)로 재현:
+
+```
+scripts/scratch_db_test.sh              # tests/ -k _db 전체
+scripts/scratch_db_test.sh -q           # 전체 스위트(unit+db) 한 번에
+```
+
+내부적으로는 여전히:
 ```
 docker exec citec-kb-postgres-1 psql -U citec -d postgres -c "CREATE DATABASE citec_kb_test;"
 docker exec citec-kb-postgres-1 psql -U citec -d citec_kb_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
@@ -351,7 +390,7 @@ CONFLUENCE_SYNC_TEST_DATABASE_URL=postgresql+psycopg://citec:citec@127.0.0.1:857
 ```
 
 ```
-41 passed, 1 failed, 379 deselected in 85.23s
+44 passed, 1 failed, 379 deselected
 ```
 
 (1차 라운드 35 → §1-B에서 37(tie-break 결정성 2건) → §1-C에서 41(cursor
