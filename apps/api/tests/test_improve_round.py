@@ -87,3 +87,31 @@ def test_empty_citec_tags_stay_unknown_not_irrelevant():
 def test_openshift_title_is_not_auto_irrelevant():
     label, _domains = classify_map_tech("OpenShift Virtualization", "KubeVirt notes")
     assert label != "irrelevant"
+
+
+# --- P1-A / D07: a single incidental domain-keyword hit must not outweigh
+# explicit non-tech markers (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+# §8 "기술 무관 분류", REVIEW.md item 7).
+
+
+def test_single_domain_hit_in_a_finance_doc_is_irrelevant():
+    """The exact D07 shape: an HR/finance doc that only mentions '네트워크'
+    once as an aside used to be tagged relevant purely on that one word."""
+    label, domains = classify_map_tech(
+        "팀 손익 관리 방안",
+        "조직변경 및 손익 기준 변경. 기존 시스템 국내 + 네트워크 국/내외. 해외법인 재무관리.",
+    )
+    assert label == "irrelevant"
+    assert domains == []
+
+
+def test_two_or_more_domain_hits_still_win_over_non_tech_markers():
+    """A doc with multiple concrete technical domain hits alongside
+    financial wording (e.g. a real network cost/revenue-impact analysis)
+    must not be suppressed — only a single weak hit is."""
+    label, domains = classify_map_tech(
+        "네트워크 장비 매출 영향 분석",
+        "Kubernetes POD와 Network 스위치 장애로 인한 매출액 손실 분석 보고서.",
+    )
+    assert label == "relevant"
+    assert len(domains) >= 2

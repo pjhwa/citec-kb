@@ -115,18 +115,38 @@ def excerpt_from_storage(storage_html: str, *, limit: int = _EXCERPT_CHARS) -> s
 def classify_map_tech(title: str, excerpt: str) -> tuple[str, list[str]]:
     """Return (tech_relevant, citec_domains).
 
-    tag_citec_domains is an incident-keyword tagger. An empty result is
-    NOT treated as non-technical: design pages often miss those keywords.
-    irrelevant is only a non-tech marker (P&L, KPI, …) with no domain hit.
-    Otherwise relevant if any domain matched, else unknown (kept in search).
+    tag_citec_domains is an incident-keyword tagger, reused here for a
+    different job (deciding whether a map page is worth surfacing at all).
+    That reuse has a known failure mode (P1-A / D07,
+    docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §8
+    "기술 무관 분류"): a page whose content is clearly organizational/
+    financial (조직도/손익/근태/KPI…) still gets domains=["Network"] purely
+    because the word "네트워크" appears once in an aside — one incidental
+    keyword hit outweighing every explicit non-tech marker.
+
+    This is a bounded fix, not the full "content purpose vs. tech domain as
+    two independent axes" redesign §8 asks for (that needs a real purpose
+    classifier — tech_procedure/incident/design/org_work/finance/other —
+    which is out of scope for this pass). What's fixed here: when explicit
+    non-tech markers are present, a *single* domain hit is treated as too
+    weak to override them (that's the D07 shape — one generic word, no other
+    technical signal) — but *two or more* distinct domain hits alongside
+    non-tech markers still wins as "relevant" (e.g. a genuine 네트워크 원가
+    분석 doc that also happens to discuss 매출 영향 keeps its multiple
+    concrete domain hits). An empty domains result is still NOT treated as
+    non-technical on its own — design pages often miss the incident
+    keywords; irrelevant only fires alongside an explicit non-tech marker.
     """
     from app.frames.citec_taxonomy import tag_citec_domains
 
     domains = tag_citec_domains(excerpt, title)
     blob = f"{title}\n{excerpt}"
+    non_tech = bool(_NON_TECH.search(blob))
     if domains:
+        if non_tech and len(domains) < 2:
+            return "irrelevant", []
         return "relevant", domains
-    if _NON_TECH.search(blob):
+    if non_tech:
         return "irrelevant", []
     return "unknown", []
 
