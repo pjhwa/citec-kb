@@ -151,6 +151,7 @@ def build_frontmatter_confluence_docs(
     url: str,
     last_modified: str,
     ancestor_ids: Optional[list[str]] = None,
+    source_version: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -173,6 +174,13 @@ def build_frontmatter_confluence_docs(
     # additive line, order-independent parser (adapters.py), both updated together.
     if ancestor_ids:
         lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    if source_version:
+        # P1-B (§9, REVIEW.md item 8): Confluence's page version number —
+        # fetched (version.get("number")) but previously discarded, only
+        # version.when's date survived as 최종수정일. Provenance only for
+        # now; see DocumentDraft.finalize()'s hash-exclusion comment for why
+        # it does not yet drive content-change detection.
+        lines.append(f"버전번호 : {source_version}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -186,6 +194,7 @@ def build_frontmatter_tech_repo(
     url: str,
     last_modified: str,
     ancestor_ids: Optional[list[str]] = None,
+    source_version: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -199,6 +208,8 @@ def build_frontmatter_tech_repo(
     ]
     if ancestor_ids:  # see build_frontmatter_confluence_docs's comment above
         lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    if source_version:  # see build_frontmatter_confluence_docs's comment above
+        lines.append(f"버전번호 : {source_version}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -238,6 +249,7 @@ def _write_page(
     # page id plus this page's own id (self-inclusive, matching how
     # exclude_subtree_ids / ancestor_ids membership checks are written).
     ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
+    source_version = str(version["number"]) if version.get("number") is not None else None
 
     if source_type == "confluence_docs":
         front = build_frontmatter_confluence_docs(
@@ -248,6 +260,7 @@ def _write_page(
             url=url,
             last_modified=last_modified,
             ancestor_ids=ancestor_ids,
+            source_version=source_version,
         )
     else:
         directory = directory_breadcrumb(ancestors, title)
@@ -260,6 +273,7 @@ def _write_page(
             url=url,
             last_modified=last_modified,
             ancestor_ids=ancestor_ids,
+            source_version=source_version,
         )
 
     out_dir = raw_dir / source_type

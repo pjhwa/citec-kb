@@ -34,12 +34,35 @@ class DocumentDraft:
     lang: Optional[str] = None
     content_hash: str = ""
 
+    # Keys intentionally excluded from content_hash — see finalize()'s
+    # comment. Adding a new key here is safe for already-indexed pages
+    # (no rechunk/re-embed); removing one, or making an *existing* key
+    # start influencing the hash, is a full-corpus rechunk and must be a
+    # deliberate, separately-flagged change (see source_version's comment).
+    _HASH_EXCLUDED_METADATA_KEYS = frozenset({"ancestor_ids", "source_version"})
+
     def finalize(self) -> "DocumentDraft":
         # ancestor_ids is left out of the hash on purpose: adding it to
         # already-indexed pages must not look like a content change (that
         # would rechunk and re-embed every page); the pipeline refreshes
         # it in place instead.
-        hashed = {k: v for k, v in self.metadata.items() if k != "ancestor_ids"}
+        #
+        # source_version (P1-B, docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+        # §9) is excluded for the same reason, with an additional wrinkle:
+        # for confluence_map specifically, body_md is only a ~400-char
+        # excerpt (see app.confluence.map_sync's module docstring), so a
+        # real content edit past that excerpt never changes content_hash
+        # today regardless of source_version. Using source_version as an
+        # independent staleness signal (not folded into this hash, but
+        # compared against a stored watermark) is the right fix for that —
+        # REVIEW.md item 8 says so explicitly — but that is a *separate*,
+        # not-yet-made follow-up with its own backfill/comparison-logic cost
+        # named up front, deliberately not bundled with adding the field
+        # here. Excluding it from the hash now means introducing it costs
+        # zero rechunk/re-embed on the existing 113k+ document corpus.
+        hashed = {
+            k: v for k, v in self.metadata.items() if k not in self._HASH_EXCLUDED_METADATA_KEYS
+        }
         payload = f"{self.title}\n{self.body_md}\n{json.dumps(hashed, ensure_ascii=False, sort_keys=True)}"
         self.content_hash = hashlib.sha256(payload.encode("utf-8", errors="ignore")).hexdigest()
         return self
@@ -47,6 +70,23 @@ class DocumentDraft:
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def _pop_source_version(meta: dict[str, Any]) -> None:
+    """P1-B: fold the raw 버전번호 frontmatter line (see
+    app.confluence.{sync,map_sync}'s build_frontmatter_* functions) into a
+    normalized metadata["source_version"] int when present and numeric,
+    otherwise drop it rather than leave a stray Korean-labeled raw key
+    sitting next to the normalized ones. Absent means "not captured for
+    this document" (older raw file, or the Confluence API didn't return a
+    version block), not "version 0" — never defaulted."""
+    raw = meta.pop("버전번호", None)
+    if raw is None or str(raw).strip() == "":
+        return
+    try:
+        meta["source_version"] = int(str(raw).strip())
+    except ValueError:
+        meta["source_version"] = str(raw).strip()
 
 
 def _clip(s: str | None, n: int) -> str:
@@ -176,6 +216,7 @@ def parse_tech_repo_file(path: Path) -> DocumentDraft:
     ]
     if _ancestor_ids:
         meta["ancestor_ids"] = _ancestor_ids
+    _pop_source_version(meta)
     page_id = meta.get("Page ID") or path.stem.replace("confluence_", "")
     title = meta.get("제목") or ""
     if not title or len(title) < 2:
@@ -235,6 +276,7 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
         ]
         if _ancestor_ids:
             meta["ancestor_ids"] = _ancestor_ids
+        _pop_source_version(meta)
         page_id = meta.get("Page ID") or path.stem
         title = meta.get("제목") or path.stem
         yield DocumentDraft(
@@ -290,6 +332,7 @@ def iter_confluence_map(root: Path) -> Iterator[DocumentDraft]:
         ]
         if ancestor_ids:
             meta["ancestor_ids"] = ancestor_ids
+        _pop_source_version(meta)
         body_text = body.strip() or path_breadcrumb
         yield DocumentDraft(
             source_type="confluence_map",

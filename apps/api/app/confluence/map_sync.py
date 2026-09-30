@@ -174,6 +174,7 @@ def build_frontmatter_confluence_map(
     tech_relevant: str = "",
     citec_domains: Optional[list[str]] = None,
     ancestor_ids: Optional[list[str]] = None,
+    source_version: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -197,6 +198,18 @@ def build_frontmatter_confluence_map(
         # membership test answers "this page or anything below it" —
         # see SearchFilters.exclude_subtree_ids.
         lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    if source_version:
+        # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+        # §9, REVIEW.md item 8 "map frontmatter는 source version.number를
+        # 저장하지 않는다"): Confluence's own page version number, fetched
+        # from the API response but previously discarded (only
+        # version.when's date survived, as 최종수정일). Stored here purely
+        # as provenance for now — see app.ingest.adapters.DocumentDraft
+        # .finalize()'s hash-exclusion comment for why this does NOT yet
+        # feed content-change detection (that's a separate, not-yet-made
+        # follow-up with its own backfill cost, deliberately not bundled
+        # with this additive field).
+        lines.append(f"버전번호 : {source_version}")
     lines.append("---")
     front = "\n".join(lines) + "\n"
     return front
@@ -238,6 +251,7 @@ def _write_map_page(
     ancestors = meta.get("ancestors") or []
     path_breadcrumb = directory_breadcrumb(ancestors, title)
     ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
+    source_version = str(version["number"]) if version.get("number") is not None else None
 
     storage = ((meta.get("body") or {}).get("storage") or {}).get("value") or ""
     excerpt = excerpt_from_storage(storage) if storage else ""
@@ -256,6 +270,7 @@ def _write_map_page(
         tech_relevant=tech_relevant,
         citec_domains=domains,
         ancestor_ids=ancestor_ids,
+        source_version=source_version,
     )
 
     out_dir = raw_dir / "confluence_map"
