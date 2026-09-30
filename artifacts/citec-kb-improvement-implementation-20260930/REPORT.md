@@ -299,15 +299,39 @@ deadline)는 p50/p95·후보수·토큰수 계측 없이는 "병목이 아닌 �
 - 두 항목 모두 §12B가 요구하는 완전한 ablation이 아니라 **일부 실측**이다.
   다음 세션에서 운영 DB 또는 라이브 크롤 데이터로 재확인이 필요하다.
 
+## 1-C. 세 번째 라운드 — P1-B 커서/신선도 정합성
+
+사용자가 다시 "계속 진행해"라고 요청. §1-B에서 "P1-B는 성장하는 실제
+코퍼스가 있어야 검증 가능해 손대지 않는다"고 썼던 판단을 재검토했다 —
+**틀린 구분선이었다.** 성장하는 코퍼스가 있어야 하는 것은 watermark/coverage
+**신규 스키마**이고, cursor 전진 순서 같은 **정합성 버그**는 P0-B/P0-C와
+동일하게 "정상 동작 → fault injection → 재현 → 수정 → 재현 안 됨" 패턴으로
+로컬에서 완전히 증명 가능하다. 이 구분으로 4개 커밋 추가.
+
+| 커밋 | 내용 |
+|---|---|
+| `a877db0` | `sync()`/`_sync_map_body()` 둘 다 크롤 성공 직후 **ingest/embed 실행 전에** cursor를 전진시키고(map은 checkpoint도 삭제) 있었다(REVIEW.md item 8). ingest/embed 도중 프로세스가 죽으면 크롤된 페이지가 DB에 없는데 cursor는 이미 지나가 다음 실행이 Confluence에 재요청도 안 함 — 자동 재시도 창구가 영구히 닫힘. cursor/checkpoint 커밋을 ingest+embed 성공 이후로 미루도록 수정. DB 테스트 2개로 수정 전 코드가 실제로 실패함을 확인 후 복원. |
+| `4507ab8` | 자체 재검토(advisor)에서 위 수정이 `embed_pending_chunks()` 실패도 cursor를 막는 것을 지적 — 이 함수는 모델 전체의 미임베딩 청크를 도는 전역 큐라 다음 성공 호출에서 자연 회복되는데, cursor를 막으면 "1건 일시 오류가 매번 전체 재부트스트랩을 강제" 문제(이 파일에 이미 있던 error-rate 완화 로직의 존재 이유)를 임베딩 경로에서 재현하게 된다. ingest만 cursor를 게이트하도록 분리, embed 실패는 try/except로 잡아 `embed_error`로만 노출. |
+| `9a6b4a2` | confluence_map/confluence_docs/tech_repo 셋 다 Confluence API의 `version.number`를 가져오고도 버렸다(REVIEW.md item 8 "map frontmatter는 source version.number를 저장하지 않는다"). `버전번호` frontmatter 줄 → `metadata["source_version"]`으로 보존. **함정 확인**: `DocumentDraft.finalize()`의 content_hash 제외 목록에 `source_version`도 포함시키지 않으면 기존 113,611건 전체가 "내용 변경"으로 오인되어 전체 재청크·재임베딩된다 — 이를 막는 hash-exclusion을 함께 추가하고 단위테스트로 고정. source_version을 실제 신선도 판단(§9가 원하는 최종 형태)에 쓰는 것은 **의도적으로 미룸** — watermark 비교 로직·백필 비용 결정이 별도 필요. |
+| `f2ea2d2` | `/v1/health`의 `documents_count`(전체 COUNT)와 `/api/wiki/stats`의 `total`(active만 COUNT)이 이름도 다르고 엔드포인트도 달라 대조 불가(REVIEW.md item 8). 기존 필드명은 그대로 두고 `active_documents_count`를 health에 추가(§9 "이름을 구분한다" — rename이 아님). |
+
+**§9에서 여전히 미착수**: source→raw→document→active chunk→embedding→frame
+단계별 coverage 리포트(existing `run_map_inventory`/ops dashboard 확장이
+먼저 검토되어야 함 — 신규 서브시스템을 새로 만들지 않는다), scope/pending/
+retry/dead-letter 추적, source_version을 실제 change-detection에 연결하는
+전환(백필 비용 미산정). 이들은 §9가 요구하는 "기존 backfill/inventory
+재사용" 원칙과 운영 정책 결정이 필요해 이번 라운드에도 시작하지 않았다.
+
 ## 2. 테스트 로그 (실행/실패/SKIP/BLOCKED 네 가지로 구분)
 
 ### 실행 — unit + contract (DB 불필요, `pytest tests/ -k "not _db"`)
 
 ```
-364 passed, 10 skipped, 38 deselected, 1 failed in 8.12s
+368 passed, 10 skipped, 42 deselected, 1 failed in 8.00s
 ```
 
-(1차 라운드 종료 시점은 344 passed — §1-B의 P1-A/P1-C 테스트 20건이 이후 추가됨.)
+(1차 라운드 종료 시점은 344 passed → §1-B에서 364 → §1-C의 P1-B 테스트
+4건(source_version round-trip 3 + hash-exclusion 1)이 이후 추가되어 368.)
 
 - **1 failed**: `test_ops_dashboard_auth.py::test_dashboard_allowed_when_auth_off_reaches_db_call`.
   이번 세션이 건드린 어떤 파일과도 무관한 서브시스템(auth/ops dashboard)이며,
@@ -327,11 +351,12 @@ CONFLUENCE_SYNC_TEST_DATABASE_URL=postgresql+psycopg://citec:citec@127.0.0.1:857
 ```
 
 ```
-37 passed, 1 failed, 375 deselected in 85.01s
+41 passed, 1 failed, 379 deselected in 85.23s
 ```
 
-(1차 라운드 종료 시점은 35 passed — §1-B의 tie-break 결정성 DB 테스트 2건이
-이후 추가됨.) 같은 pre-existing 실패 1건(위와 동일 테스트, 동일 원인).
+(1차 라운드 35 → §1-B에서 37(tie-break 결정성 2건) → §1-C에서 41(cursor
+fault-injection 2건 + embed-failure 1건 + health active_documents_count
+1건).) 같은 pre-existing 실패 1건(위와 동일 테스트, 동일 원인).
 **citec_knowledge(운영 DB)는 이번 세션에서 한 번도 쓰기 연결하지 않았다**
 — scratch DB `citec_kb_test`를 커밋마다(총 4회) 새로 만들고 검증 직후
 `DROP DATABASE`로 정리했다(운영 컨테이너에 남기지 않음). §1-B의
@@ -361,7 +386,7 @@ title_match_bonus A/B에서도 같은 scratch DB에 `data/raw/`의 실제
 |---|---|---|
 | P0-A 나머지 | `EvidenceRef` 공통 dataclass, kb_query intent별 적용범위 명세, 문서 조회 length/offset 계약, localhost:8572 교정 | 이번 세션은 "포인터가 근거로 위장되는 구체적 경로"를 닫는 데 집중 — 전체 계약 재설계는 더 큰 단위 |
 | P1-A 나머지 | 원질 보존(multi_query 재평가), 사본 content-fingerprint 다양성(D02/D03), 폴더/허브 표시, "content purpose vs 기술도메인" 완전한 2축 재설계 | D06/D07(부분)/§8 item5·6은 §1-B에서 구현. 나머지는 회귀 질의+holdout 코퍼스, 또는 사본 실체 확인용 라이브 Confluence 접근이 필요 |
-| P1-B | source별 watermark/coverage, 절별 검색용 내용 확장 | 대규모 backfill·운영 정책 결정 필요. 로컬 scratch DB는 매번 비운 상태로 시작해 "성장하는 코퍼스"를 흉내낼 수 없음 |
+| P1-B 나머지 | source→document→chunk→embedding→frame coverage 리포트(기존 ops dashboard/run_map_inventory 확장 검토 필요), scope/pending/retry/dead-letter 추적, source_version을 실제 change-detection에 연결 | cursor 순서/source_version 보존/health 네이밍은 §1-C에서 구현(fault-injection으로 로컬 증명 가능했음). 나머지는 대규모 backfill·운영 정책 결정 또는 기존 서브시스템 확장 검토가 먼저 필요 |
 | P1-C 나머지 | 내장 생성 capability 정직화(status/answer_kind 필드), trust/engine의 canonical-source 완전 dedup(D10 완전판) | D13/citation-repair 위장은 §1-B에서 구현. Fabrix가 현재도 미지원이라 생성 capability 자체의 실사용 영향은 적음 |
 | P2 | 계측/성능 튜닝 | §11 1단계(결정론적 경로 우선)는 §1-B에서 **이미 충족됨을 확인**. 2단계 이후는 p50/p95 등 라이브 계측 없이는 손대지 않음(§11 원칙) |
 | 파일럿(§12C) | Direct vs KB-assisted 업무효용 비교 | §12C 자체가 "차기 별도 파일럿"으로 설계 지정 — 이번 세션 범위 아님 |
