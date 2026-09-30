@@ -1,6 +1,11 @@
 """Unit tests for rule-based issue frame extraction."""
 
-from app.frames.extract import extract_frame_from_markdown, quality_score
+from app.frames.extract import (
+    EXTRACTOR_VERSION,
+    body_hash,
+    extract_frame_from_markdown,
+    quality_score,
+)
 
 
 SAMPLE = """
@@ -95,3 +100,51 @@ def test_swim_bullet_recognized():
     assert fr["root_cause"] and "지역정전" in fr["root_cause"]
     assert fr["resolution"] and "전원복구" in fr["resolution"]
     assert fr["quality"] >= 0.8
+
+
+# --- P0-C / D08 regression: a shorter, explicit "완료" line in the raw body
+# must not lose to a longer "검토 중" LLM-요약 line. See
+# docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §6 and
+# REVIEW.md §140-160 (frames/extract.py:178-201,293-301).
+
+_D08_MD = """## LLM 요약
+### 조치
+GPU 트래픽의 버스트 발생 여부를 확인하기 위해 모니터링을 진행 중이며 차단 방법과 대응 방안을 계속 검토 중이다.
+
+## 원본 내용
+### 조치
+5/13 17:00 PB2 Fabric 연결 변경 완료
+"""
+
+
+def test_explicit_completion_beats_longer_in_progress_summary():
+    fr = extract_frame_from_markdown(_D08_MD, title="[CITECTS-D08] test")
+    assert fr["resolution"] is not None
+    assert "완료" in fr["resolution"]
+    assert "검토 중" not in fr["resolution"]
+
+
+def test_stale_in_progress_cannot_overwrite_an_already_completed_slot():
+    """Guard against the reverse ordering too: once a slot holds an explicit
+    completion status, a later in-progress candidate (of any length) must not
+    overwrite it — length is never a freshness signal on its own."""
+    md_reversed = """## LLM 요약
+### 조치
+5/13 17:00 PB2 Fabric 연결 변경 완료
+
+## 원본 내용
+### 조치
+GPU 트래픽의 버스트 발생 여부를 확인하기 위해 모니터링을 진행 중이며 차단 방법과 대응 방안을 계속 검토 중이다.
+"""
+    fr = extract_frame_from_markdown(md_reversed, title="[CITECTS-D08b] test")
+    assert fr["resolution"] is not None
+    assert "완료" in fr["resolution"]
+
+
+def test_frame_carries_body_hash_and_extractor_version():
+    fr = extract_frame_from_markdown(_D08_MD, title="x")
+    assert fr["body_hash"] == body_hash(_D08_MD)
+    assert fr["extractor_version"] == EXTRACTOR_VERSION
+    # a body_md change must change the hash (it's what job.py compares to
+    # decide a stored frame is stale)
+    assert body_hash(_D08_MD) != body_hash(_D08_MD + "\nmore")

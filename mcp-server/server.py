@@ -64,17 +64,42 @@ def _api_error_detail(resp: httpx.Response) -> str:
 
 
 def _access_lines(d: dict[str, Any], *, indent: str = "  ") -> str:
-    path = d.get("path") or (d.get("access") or {}).get("path") or ""
-    body = d.get("body_api") or d.get("body_api_url") or (d.get("access") or {}).get("body_api") or ""
-    web = d.get("web_url") or d.get("web_path") or (d.get("access") or {}).get("web_url") or ""
+    """Render access/freshness hints for a search/citation row.
+
+    P0-A (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §4
+    item 3/9): this used to unconditionally print
+    "mcp: kb_get_document(path=...)" for every hit, including confluence_map
+    rows — which makes kb_get_document sound like it returns the map's full
+    current body when it only re-returns the same ~400-char stored snapshot
+    (evidence_eligible=false). It now labels that call as a snapshot fetch
+    and, when the API supplied verify_via (map hits with a pageId), also
+    surfaces the confluence-mcp call that actually reads the live page.
+    """
+    acc = d.get("access") or {}
+    path = d.get("path") or acc.get("path") or ""
+    body = d.get("body_api") or d.get("body_api_url") or acc.get("body_api") or ""
+    web = d.get("web_url") or d.get("web_path") or acc.get("web_url") or ""
+    body_kind = d.get("body_kind") or acc.get("body_kind")
+    verify_via = d.get("verify_via") or acc.get("verify_via")
+    evidence_eligible = d.get("evidence_eligible")
+    map_synced_at = d.get("map_synced_at")
     bits = []
     if path:
         bits.append(f"{indent}path: {path}")
-        bits.append(f"{indent}mcp: kb_get_document(path={path!r})")
+        label = "kb_get_document snapshot 조회" if body_kind == "snapshot" else "kb_get_document"
+        bits.append(f"{indent}mcp: {label}(path={path!r})")
     if body:
         bits.append(f"{indent}body_api: {body}")
     if web:
         bits.append(f"{indent}web_url: {web}")
+    if evidence_eligible is False:
+        bits.append(f"{indent}⚠ pointer만 있음 — 원문 미확인 (evidence_eligible=false)")
+    if map_synced_at:
+        bits.append(f"{indent}map_synced_at: {map_synced_at} (원문 실시간 확인 아님)")
+    if verify_via and isinstance(verify_via, dict):
+        vt = verify_via.get("tool")
+        va = verify_via.get("args") or {}
+        bits.append(f"{indent}원문 확인: {vt}({', '.join(f'{k}={v!r}' for k, v in va.items())})")
     return "\n".join(bits)
 
 
@@ -163,6 +188,41 @@ async def _search_impl(
     include_irrelevant_maps: Optional[bool] = None,
     diversify_copies: bool = True,
 ) -> str:
+    # P0-A / D11 (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    # §4 item 5, §5): the legacy GET /api/wiki/search path only forwards
+    # q/section/area/category/limit — every other filter used to be silently
+    # dropped when use_v1=False, which is exactly how an exclusion meant to
+    # keep an evaluation's own answer page out of results (exclude_subtree_ids
+    # etc.) could pass validation while doing nothing. A caller-requested
+    # filter that legacy cannot carry now forces the v1 path instead of being
+    # dropped; this is reported back, never silent.
+    #
+    # The reverse also holds: SearchFilters (v1) has no `category` field at
+    # all — it is a legacy-only concept, not something v1 can be asked to
+    # carry. So auto-upgrading to v1 while `category` is set would silently
+    # drop *that* filter instead, the same bug in the other direction. When
+    # both are requested together there is no side that carries both, so
+    # this returns an explicit unsupported-combination error rather than
+    # silently picking one (§4 item 5's other option).
+    _v1_only_filters_requested = bool(
+        exclude_page_ids
+        or exclude_source_types
+        or exclude_subtree_ids
+        or environment
+        or work_type
+        or include_irrelevant_maps is not None
+        or not diversify_copies
+    )
+    if not use_v1 and category and _v1_only_filters_requested:
+        return (
+            "오류: category와 exclude_*/environment/work_type/include_irrelevant_maps/"
+            "diversify_copies=false를 함께 쓸 수 없습니다 — category는 legacy 전용이고 "
+            "나머지는 v1 전용이라 어느 한쪽도 둘 다 지원하지 않습니다. use_v1=true로 "
+            "category 없이 다시 호출하거나, category를 빼고 호출하세요."
+        )
+    _auto_upgraded_to_v1 = (not use_v1) and _v1_only_filters_requested
+    if _auto_upgraded_to_v1:
+        use_v1 = True
     try:
         async with _client(timeout=60.0) as client:
             if use_v1:
@@ -212,6 +272,8 @@ async def _search_impl(
 
     results = data.get("results") or data.get("hits") or []
     if not results:
+        if _auto_upgraded_to_v1:
+            return "검색 결과가 없습니다. (참고: use_v1=false였지만 지원되지 않는 필터가 있어 v1로 자동 전환했습니다)"
         return "검색 결과가 없습니다."
 
     lines = [
@@ -224,6 +286,11 @@ async def _search_impl(
         )
         + (f" vector={data.get('vector_used')}" if "vector_used" in data else "")
         + (f" expanded={data.get('expanded_queries')}" if data.get("expanded_queries") else "")
+        + (
+            " [note: use_v1=false였지만 지원되지 않는 필터가 있어 v1로 자동 전환]"
+            if _auto_upgraded_to_v1
+            else ""
+        )
         + ". 원문: kb_get_document(path=…)"
     ]
     for r in results:
@@ -357,12 +424,33 @@ async def _get_synthesis_impl(slug: str) -> str:
 
 
 @mcp.tool()
-async def kb_ask(query: str, template: str = "general", mode: str = "fast") -> str:
+async def kb_ask(
+    query: str,
+    template: str = "general",
+    mode: str = "fast",
+    exclude_page_ids: Optional[list[str]] = None,
+    exclude_source_types: Optional[list[str]] = None,
+    exclude_subtree_ids: Optional[list[str]] = None,
+    include_irrelevant_maps: Optional[bool] = None,
+) -> str:
     """CI-TEC 지식 근거로 자연어 질문에 답변한다 (RAG + Trust).
     template: general|checkitems|support_history|tech_repo|tuning_ai|incident_reports|synthesis
     mode: fast|deep
+    exclude_page_ids/exclude_subtree_ids/exclude_source_types/include_irrelevant_maps:
+        kb_search/kb_query와 동일한 제외 정책. 독립 평가에서 자신의 정답 문서를
+        근거로 쓰지 않으려면 지정할 것 — 이전에는 kb_ask에 이 인자가 없어
+        /api/query(WikiQueryRequest)가 이미 지원하는 제외 옵션을 MCP에서 쓸 수
+        없었다(REVIEW.md §2 kb_ask 인자 불일치).
     """
-    return await _ask_impl(query, template, mode)
+    return await _ask_impl(
+        query,
+        template,
+        mode,
+        exclude_page_ids=exclude_page_ids,
+        exclude_source_types=exclude_source_types,
+        exclude_subtree_ids=exclude_subtree_ids,
+        include_irrelevant_maps=include_irrelevant_maps,
+    )
 
 
 @mcp.tool()
@@ -371,19 +459,37 @@ async def wiki_ask(query: str, template: str = "general") -> str:
     return await _ask_impl(query, template, "fast")
 
 
-async def _ask_impl(query: str, template: str, mode: str) -> str:
+async def _ask_impl(
+    query: str,
+    template: str,
+    mode: str,
+    *,
+    exclude_page_ids: Optional[list[str]] = None,
+    exclude_source_types: Optional[list[str]] = None,
+    exclude_subtree_ids: Optional[list[str]] = None,
+    include_irrelevant_maps: Optional[bool] = None,
+) -> str:
     events: list[dict] = []
+    body: dict[str, Any] = {
+        "query": query,
+        "template": template or "general",
+        "mode": mode if mode in {"fast", "deep"} else "fast",
+        "stream": True,
+    }
+    if exclude_page_ids:
+        body["exclude_page_ids"] = list(exclude_page_ids)
+    if exclude_source_types:
+        body["exclude_source_types"] = list(exclude_source_types)
+    if exclude_subtree_ids:
+        body["exclude_subtree_ids"] = list(exclude_subtree_ids)
+    if include_irrelevant_maps is not None:
+        body["include_irrelevant_maps"] = include_irrelevant_maps
     try:
         async with _client(timeout=180.0) as client:
             async with client.stream(
                 "POST",
                 "/api/query",
-                json={
-                    "query": query,
-                    "template": template or "general",
-                    "mode": mode if mode in {"fast", "deep"} else "fast",
-                    "stream": True,
-                },
+                json=body,
             ) as resp:
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():

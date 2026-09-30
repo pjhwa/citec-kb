@@ -143,7 +143,14 @@ def _sanitize_line_value(s: str) -> str:
 
 
 def build_frontmatter_confluence_docs(
-    *, space_key: str, folder: str, page_id: str, title: str, url: str, last_modified: str
+    *,
+    space_key: str,
+    folder: str,
+    page_id: str,
+    title: str,
+    url: str,
+    last_modified: str,
+    ancestor_ids: Optional[list[str]] = None,
 ) -> str:
     lines = [
         "---",
@@ -154,13 +161,31 @@ def build_frontmatter_confluence_docs(
         f"제목 : {_sanitize_line_value(title)}",
         f"URL : {url}",
         f"최종수정일 : {last_modified}",
-        "---",
     ]
+    # P0-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §5,
+    # REVIEW.md "전체본문 수집 sync.py:192–235에는 조상 ID 저장이 없어 맵
+    # 이외 Confluence 사본으로 우회할 여지가 있다"): confluence_docs/tech_repo
+    # used to never write ancestor lineage, so an evaluation's exclude_subtree_ids
+    # (which reads Document.metadata_["ancestor_ids"], populated below via
+    # app.ingest.adapters) could be defeated simply by the same page also
+    # existing here. Same field name/format as
+    # app.confluence.map_sync.build_frontmatter_confluence_map's 조상ID목록 —
+    # additive line, order-independent parser (adapters.py), both updated together.
+    if ancestor_ids:
+        lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    lines.append("---")
     return "\n".join(lines) + "\n"
 
 
 def build_frontmatter_tech_repo(
-    *, space_key: str, directory: str, page_id: str, title: str, url: str, last_modified: str
+    *,
+    space_key: str,
+    directory: str,
+    page_id: str,
+    title: str,
+    url: str,
+    last_modified: str,
+    ancestor_ids: Optional[list[str]] = None,
 ) -> str:
     lines = [
         "---",
@@ -171,8 +196,10 @@ def build_frontmatter_tech_repo(
         f"제목 : {_sanitize_line_value(title)}",
         f"URL : {url}",
         f"최종수정일 : {last_modified}",
-        "---",
     ]
+    if ancestor_ids:  # see build_frontmatter_confluence_docs's comment above
+        lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    lines.append("---")
     return "\n".join(lines) + "\n"
 
 
@@ -207,6 +234,10 @@ def _write_page(
     body_storage = ((full.get("body") or {}).get("storage") or {}).get("value") or ""
     text = clean_body(storage_html_to_text(body_storage))
     ancestors = full.get("ancestors") or []
+    # Same shape as app.confluence.map_sync's ancestor_ids: every ancestor
+    # page id plus this page's own id (self-inclusive, matching how
+    # exclude_subtree_ids / ancestor_ids membership checks are written).
+    ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
 
     if source_type == "confluence_docs":
         front = build_frontmatter_confluence_docs(
@@ -216,6 +247,7 @@ def _write_page(
             title=title,
             url=url,
             last_modified=last_modified,
+            ancestor_ids=ancestor_ids,
         )
     else:
         directory = directory_breadcrumb(ancestors, title)
@@ -227,6 +259,7 @@ def _write_page(
             title=title,
             url=url,
             last_modified=last_modified,
+            ancestor_ids=ancestor_ids,
         )
 
     out_dir = raw_dir / source_type

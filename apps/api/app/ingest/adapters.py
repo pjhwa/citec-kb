@@ -166,6 +166,16 @@ def parse_tech_repo_file(path: Path) -> DocumentDraft:
                 if len(parts) == 2:
                     meta[parts[0].strip()] = parts[1].strip()
         body = raw[fm.end() :]
+    # P0-B: same structured-copy treatment as iter_confluence_map below — a
+    # tech_repo page previously carried its 조상ID목록 frontmatter line (if
+    # app.confluence.sync wrote one) as an opaque comma string, invisible to
+    # the exclude_subtree_ids JSONB membership check, which reads
+    # metadata_["ancestor_ids"] as a list.
+    _ancestor_ids = [
+        t.strip() for t in str(meta.pop("조상ID목록", "") or "").split(",") if t.strip()
+    ]
+    if _ancestor_ids:
+        meta["ancestor_ids"] = _ancestor_ids
     page_id = meta.get("Page ID") or path.stem.replace("confluence_", "")
     title = meta.get("제목") or ""
     if not title or len(title) < 2:
@@ -219,6 +229,12 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
                 if len(parts) == 2:
                     meta[parts[0].strip()] = parts[1].strip()
             body = raw[fm.end() :]
+        # P0-B: see parse_tech_repo_file's matching comment above.
+        _ancestor_ids = [
+            t.strip() for t in str(meta.pop("조상ID목록", "") or "").split(",") if t.strip()
+        ]
+        if _ancestor_ids:
+            meta["ancestor_ids"] = _ancestor_ids
         page_id = meta.get("Page ID") or path.stem
         title = meta.get("제목") or path.stem
         yield DocumentDraft(

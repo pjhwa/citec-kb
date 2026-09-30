@@ -6,6 +6,7 @@ import re
 from datetime import date
 from typing import Optional
 
+from app.query.component_map import COMP_MAP as _COMP_MAP
 from app.query.time_range import parse_relative_range
 from app.tickets.query import resolve_date_field
 
@@ -59,12 +60,6 @@ _ENTITIES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(?<![A-Za-z0-9_])SCP(?![A-Za-z0-9_])|에스씨피", re.I), "SCP"),
     (re.compile(r"오라클|Oracle", re.I), "Oracle"),
     (re.compile(r"(?<![A-Za-z0-9_])Redis(?![A-Za-z0-9_])|레디스", re.I), "Redis"),
-]
-
-_COMP_MAP: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"장애\s*지원|장애지원", re.I), "장애지원"),
-    (re.compile(r"기술\s*지원|기술지원", re.I), "기술지원"),
-    (re.compile(r"진단\s*컨설팅|진단컨설팅", re.I), "진단컨설팅"),
 ]
 
 # SWIM(전사 장애관리 시스템) incident_reports 질의 감지. 매치 시 source_type을

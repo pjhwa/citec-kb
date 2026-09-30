@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+from app.query.component_map import extract_component
 from app.tickets.query import resolve_date_field
 
 KST = ZoneInfo("Asia/Seoul")
@@ -222,6 +223,11 @@ def detect_time_scoped_list(text: str) -> Optional[dict]:
     else:
         source = None
     resolved_source = source or "support_history"
+    # Constraint extraction is independent of intent selection (P0-D): an
+    # absolute date span must not swallow an explicit Component word such as
+    # "기술지원"/"장애지원". A bare "지원건"/"지원 이력" stays unfiltered —
+    # see component_map.extract_component's docstring.
+    component = extract_component(t, swim=swimish)
     return {
         "intent": "time_scoped_list",
         "date_from": dr.date_from.isoformat(),
@@ -229,4 +235,5 @@ def detect_time_scoped_list(text: str) -> Optional[dict]:
         "range_label": dr.label,
         "source_type": resolved_source,
         "date_field": resolve_date_field(resolved_source, None),
+        "component": component,
     }

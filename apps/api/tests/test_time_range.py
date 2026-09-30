@@ -96,3 +96,42 @@ def test_detect_time_scoped_list_swim_alt_phrasing():
     intent = detect_time_scoped_list("지난 주 전사 장애 보고서 목록")
     assert intent is not None
     assert intent["source_type"] == "incident_reports"
+
+
+# --- P0-D / D12 regression: absolute-range early return must not drop the
+# Component constraint. See docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §7
+# and REVIEW.md §4 item 4 ("2026년 9월 7일부터 13일까지 기술지원 이력의 총
+# 건수"가 component 없는 계획으로 변환됨).
+
+
+def test_absolute_range_preserves_explicit_component_ko():
+    intent = detect_time_scoped_list("2026년 9월 7일부터 2026년 9월 13일까지 기술지원 이력의 총 건수")
+    assert intent is not None
+    assert intent["intent"] == "time_scoped_list"
+    assert intent["date_from"] == "2026-09-07"
+    assert intent["date_to"] == "2026-09-13"
+    assert intent["component"] == "기술지원"
+
+
+def test_absolute_range_preserves_explicit_component_iso():
+    intent = detect_time_scoped_list("2026-09-07~2026-09-13 장애지원 목록")
+    assert intent is not None
+    assert intent["date_from"] == "2026-09-07"
+    assert intent["date_to"] == "2026-09-13"
+    assert intent["component"] == "장애지원"
+
+
+def test_absolute_range_bare_support_word_has_no_component():
+    """'지원건 전체' (no 기술/장애 prefix) must NOT be narrowed to a single
+    Component — this is the distinction §7 requires between "지원건 전체" and
+    "기술지원 이력"."""
+    intent = detect_time_scoped_list("2026-09-07~2026-09-13 지원건 전체 목록")
+    assert intent is not None
+    assert intent["component"] is None
+
+
+def test_absolute_range_swim_never_gets_a_component():
+    intent = detect_time_scoped_list("2026-09-07~2026-09-13 전사 장애 보고서 목록 기술지원")
+    assert intent is not None
+    assert intent["source_type"] == "incident_reports"
+    assert intent["component"] is None

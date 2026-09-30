@@ -361,6 +361,15 @@ class IssueFrame(Base):
     raw_extract: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # P0-C (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §6):
+    # a frame is a derivative of Document.body_md as of a given extractor
+    # version. body_hash is sha256(body_md) at extraction time; extractor_version
+    # is app.frames.extract.EXTRACTOR_VERSION. Both NULL means "extracted before
+    # this column existed" — extract_frames() treats that as stale-unknown, not
+    # as fresh, so pre-existing rows get one regeneration pass rather than being
+    # silently trusted forever.
+    body_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    extractor_version: Mapped[Optional[str]] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

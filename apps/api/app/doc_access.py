@@ -67,6 +67,31 @@ def document_access(
         qparts.append("kind=checkitem")
     web_rel += "&".join(qparts)
 
+    # P0-A (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §4
+    # item 3): confluence_map only ever stores a ~400-char excerpt of the
+    # source page, never its full body (see app/retrieval/search.py's
+    # evidence_eligible=False for this source_type). kb_get_document on a map
+    # row therefore returns that same snapshot again — never the current
+    # Confluence body — so callers must not be told "full body" for it.
+    # body_kind names which of those two `mcp_tool` actually returns; a
+    # non-map body_kind stays "fulltext" (kb_get_document does return the
+    # ingested full body_md for every other source_type).
+    is_map = st == "confluence_map"
+    body_kind = "snapshot" if is_map else "fulltext"
+    verify_via: Optional[dict[str, Any]] = None
+    if is_map and eid and eid.isdigit():
+        # confluence_map's external_id is normally the Confluence pageId
+        # (see app/confluence/map_sync.py), but iter_confluence_map falls
+        # back to the filename stem when a row has no Page ID frontmatter —
+        # that stem is not a real pageId, so only emit this guidance when
+        # eid actually looks like one. Point at the real source lookup
+        # instead of re-querying the KB snapshot — §4 item 3's required
+        # default: confluence-mcp.getPageByID(pageId, body.storage, version).
+        verify_via = {
+            "tool": "confluence-mcp.getPageByID",
+            "args": {"pageId": eid, "expand": "body.storage,version"},
+            "note": "이 결과는 KB에 저장된 발췌(snapshot)입니다. 현재 원문/버전은 이 도구로 직접 확인하세요.",
+        }
     out: dict[str, Any] = {
         "path": p,
         "external_id": eid or None,
@@ -76,7 +101,10 @@ def document_access(
         "body_api": body_api_rel or body_api_file_rel,
         "body_api_file": body_api_file_rel,
         "web_path": web_rel,
-        # MCP / agents: which tool to call for full text
+        "body_kind": body_kind,
+        "verify_via": verify_via,
+        # MCP / agents: which tool to call. For confluence_map this still
+        # returns the stored snapshot, not the current page — see body_kind.
         "mcp_tool": "kb_get_checkitem" if st == "checkitem" else "kb_get_document",
         "mcp_args": (
             {"code": eid} if st == "checkitem" and eid else {"path": p}

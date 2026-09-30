@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.db.models import Document, IssueFrame
 from app.db.session import session_scope
 from app.frames.citec_taxonomy import classify_severity_tier, tag_citec_domains
-from app.frames.extract import extract_frame_from_markdown
+from app.frames.extract import EXTRACTOR_VERSION, body_hash, extract_frame_from_markdown
 
 logger = logging.getLogger("citec.frames.job")
 
@@ -30,15 +30,40 @@ def extract_frames(
 ) -> dict[str, Any]:
     """Idempotent upsert of issue_frames for documents.
 
-    When force=False, skips documents that already have a frame.
+    P0-C (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §6):
+    when force=False this used to skip any document that already had a frame
+    row, full stop — so a frame extracted once (e.g. from a "검토 중" summary)
+    was never revisited even after body_md changed to a resolved state
+    (frames/job.py:64-66 in the review's line numbering). It now skips a
+    document only when its existing frame's body_hash AND extractor_version
+    still match the current body_md/extractor — i.e. "already have a frame"
+    is replaced by "already have a frame derived from this exact content".
+    force=True still unconditionally regenerates every matched document
+    regardless of hash/version, as before.
+
+    Cost note: detecting a body_md content change requires computing
+    body_hash() for every candidate row, which requires fetching its
+    body_md — there is no way to push that comparison into SQL without a
+    DB-maintained content hash column on Document itself (out of scope for
+    this pass). So this now fetches body_md for every active
+    source_type-matched document on every call, then applies `limit` in
+    Python (previously `limit` was a SQL LIMIT applied to the
+    frame-doesn't-exist-yet subset, which was cheap but is no longer
+    correct — see the module's P0-C history). A caller doing many small
+    `limit=N` batches to sweep the whole corpus therefore re-fetches the
+    same full body_md set on every batch (O(passes × corpus) row reads,
+    not O(corpus)); prefer a single `limit=None` pass over repeated small
+    batches when running a full sweep.
     """
     stats: dict[str, Any] = {
         "processed": 0,
         "upserted": 0,
-        "skipped_existing": 0,
+        "regenerated_stale": 0,
+        "skipped_fresh": 0,
         "skipped_low_quality": 0,
         "errors": 0,
         "source_type": source_type,
+        "extractor_version": EXTRACTOR_VERSION,
     }
 
     with session_scope() as session:
@@ -49,7 +74,11 @@ def extract_frames(
                 Document.title,
                 Document.body_md,
                 Document.environment,
+                IssueFrame.id.label("frame_id"),
+                IssueFrame.body_hash.label("frame_body_hash"),
+                IssueFrame.extractor_version.label("frame_extractor_version"),
             )
+            .outerjoin(IssueFrame, IssueFrame.document_id == Document.id)
             .where(Document.source_type == source_type)
             .where(Document.status == "active")
             .order_by(Document.external_id)
@@ -61,12 +90,21 @@ def extract_frames(
             # filter would otherwise wrongly exclude every one of their documents
             # (their external_id is a numeric failSeq, never "CITECTS-...").
             stmt = stmt.where(Document.external_id.like("CITECTS-%"))
-        if not force:
-            existing = select(IssueFrame.document_id)
-            stmt = stmt.where(Document.id.not_in(existing))
-        if limit:
-            stmt = stmt.limit(limit)
-        docs = list(session.execute(stmt).all())
+        rows = list(session.execute(stmt).all())
+
+    docs = []
+    for row in rows:
+        if not force and row.frame_id is not None:
+            current_hash = body_hash(row.body_md or "")
+            if (
+                row.frame_body_hash == current_hash
+                and row.frame_extractor_version == EXTRACTOR_VERSION
+            ):
+                stats["skipped_fresh"] += 1
+                continue
+        docs.append(row)
+    if limit:
+        docs = docs[: int(limit)]
 
     for doc in docs:
         stats["processed"] += 1
@@ -87,6 +125,8 @@ def extract_frames(
                 if frame is None:
                     frame = IssueFrame(id=str(uuid.uuid4()), document_id=doc.id)
                     session.add(frame)
+                else:
+                    stats["regenerated_stale"] += 1
                 frame.symptom = extracted.get("symptom")
                 frame.root_cause = extracted.get("root_cause")
                 frame.resolution = extracted.get("resolution")
@@ -96,6 +136,8 @@ def extract_frames(
                 frame.commands = list(extracted.get("commands") or [])
                 frame.quality = q
                 frame.raw_extract = extracted.get("raw_extract") or {}
+                frame.body_hash = extracted.get("body_hash")
+                frame.extractor_version = extracted.get("extractor_version")
                 frame.updated_at = _now()
                 stats["upserted"] += 1
         except Exception:  # noqa: BLE001
