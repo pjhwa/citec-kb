@@ -127,26 +127,34 @@ def classify_map_tech(title: str, excerpt: str) -> tuple[str, list[str]]:
     This is a bounded fix, not the full "content purpose vs. tech domain as
     two independent axes" redesign §8 asks for (that needs a real purpose
     classifier — tech_procedure/incident/design/org_work/finance/other —
-    which is out of scope for this pass). What's fixed here: when explicit
-    non-tech markers are present, a *single* domain hit is treated as too
-    weak to override them (that's the D07 shape — one generic word, no other
-    technical signal) — but *two or more* distinct domain hits alongside
-    non-tech markers still wins as "relevant" (e.g. a genuine 네트워크 원가
-    분석 doc that also happens to discuss 매출 영향 keeps its multiple
-    concrete domain hits). An empty domains result is still NOT treated as
-    non-technical on its own — design pages often miss the incident
-    keywords; irrelevant only fires alongside an explicit non-tech marker.
+    which is out of scope for this pass). What's fixed here: when a
+    non-tech marker is in the **title** specifically, a single domain hit
+    (found anywhere in title+excerpt) is treated as too weak to override it
+    (the D07 shape — one generic word in an aside, no other technical
+    signal) — two or more distinct domain hits still win as "relevant". A
+    non-tech marker appearing only in the excerpt (not the title) does NOT
+    demote — a technically-titled page that happens to footnote "매출
+    영향" or similar must not flip to irrelevant on that alone.
+
+    Deliberately narrow: this session could not measure the fix's blast
+    radius against real data (the locally available data/raw/confluence_map/
+    snapshot has zero rows with excerpt/tech_relevant populated —
+    classification only runs against live Confluence body_storage, which
+    only the production crawl has). Title-only demotion is the more
+    conservative of the two options considered, chosen specifically because
+    that measurement wasn't possible here — see REPORT.md.
     """
     from app.frames.citec_taxonomy import tag_citec_domains
 
     domains = tag_citec_domains(excerpt, title)
     blob = f"{title}\n{excerpt}"
-    non_tech = bool(_NON_TECH.search(blob))
+    non_tech_anywhere = bool(_NON_TECH.search(blob))
+    non_tech_in_title = bool(_NON_TECH.search(title or ""))
     if domains:
-        if non_tech and len(domains) < 2:
+        if non_tech_in_title and len(domains) < 2:
             return "irrelevant", []
         return "relevant", domains
-    if non_tech:
+    if non_tech_anywhere:
         return "irrelevant", []
     return "unknown", []
 
