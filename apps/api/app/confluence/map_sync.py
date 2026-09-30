@@ -1061,12 +1061,22 @@ def _sync_map_body(
         from app.embed.job import embed_pending_chunks
         from app.ingest.pipeline import run_ingest
 
-        # If either raises, execution never reaches the commit loop below —
-        # every source's crawl this run stays un-advanced and its checkpoint
-        # (if any) stays intact, so the next run resumes/re-crawls the same
-        # window instead of silently skipping it forever.
+        # If run_ingest raises, execution never reaches the commit loop
+        # below — every source's crawl this run stays un-advanced and its
+        # checkpoint (if any) stays intact, so the next run resumes/
+        # re-crawls the same window instead of silently skipping it forever.
         stats["ingest"] = run_ingest(raw_root, sources=["confluence_map"])
-        stats["embed"] = embed_pending_chunks()
+        # embed_pending_chunks() is NOT gated the same way — see
+        # app.confluence.sync.sync()'s matching comment: it's a global queue
+        # over every chunk lacking an embedding, self-heals on the next
+        # successful call regardless of source, and blocking the cursor on
+        # it would force a pointless full re-crawl loop until embedding
+        # recovers without that re-crawl fixing anything.
+        try:
+            stats["embed"] = embed_pending_chunks()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("embed_pending_chunks failed after successful map ingest")
+            stats["embed_error"] = str(exc)
         for source_id, (run_started_at, use_checkpoint) in pending_commits.items():
             _advance_cursor(source_id, run_started_at)
             if use_checkpoint:

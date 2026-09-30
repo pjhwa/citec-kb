@@ -458,3 +458,46 @@ def test_sync_map_ingest_failure_does_not_advance_cursor_or_clear_checkpoint(tmp
     finally:
         with session_scope() as session:
             session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_embed_failure_does_not_block_cursor_advance(tmp_path, monkeypatch):
+    """embed_pending_chunks() is a global self-healing queue over every
+    chunk lacking an embedding, not scoped to this run — unlike a
+    run_ingest failure, its failure must NOT re-block the cursor, or a
+    transient embedding-model outage would force a pointless full re-crawl
+    of the same window on every run until it recovers, without the
+    re-crawl doing anything to actually fix the missing embeddings."""
+    import app.confluence.sync as sync_mod
+    import app.embed.job as embed_job_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        return sync_mod.CrawlResult(written=[], errors=[], cql_log=["cql=fake"])
+
+    def fake_embed_pending_chunks(*args, **kwargs):
+        raise RuntimeError("simulated embedding model outage")
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+    monkeypatch.setattr(embed_job_mod, "embed_pending_chunks", fake_embed_pending_chunks)
+
+    try:
+        stats = sync_mod.sync(
+            tmp_path,
+            dry_run=False,
+            sources=["confluence_docs"],
+            run_ingest_and_embed=True,
+        )
+        assert stats["sources"]["confluence_docs"]["cursor_advanced"] is True
+        assert "simulated embedding model outage" in stats.get("embed_error", "")
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            assert src is not None
+            assert src.last_sync_at is not None  # cursor DID advance
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()

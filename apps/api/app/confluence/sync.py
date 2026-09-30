@@ -514,15 +514,30 @@ def sync(
         from app.embed.job import embed_pending_chunks
         from app.ingest.pipeline import run_ingest
 
-        # If either of these raises, the function exits without reaching
-        # the cursor-commit loop below — every source_type's crawl this run
-        # stays un-advanced, and the next sync() call re-crawls the same
-        # `since` window. That re-crawl is safe: _write_page() always
-        # rewrites the raw file, and run_ingest's content_hash upsert makes
-        # re-ingesting byte-identical content a no-op ("skipped"), not a
-        # duplicate or a re-embed.
+        # If run_ingest raises, execution never reaches the cursor-commit
+        # loop below — every source_type's crawl this run stays
+        # un-advanced, and the next sync() call re-crawls the same `since`
+        # window. That re-crawl is safe: _write_page() always rewrites the
+        # raw file, and run_ingest's content_hash upsert makes re-ingesting
+        # byte-identical content a no-op ("skipped"), not a duplicate.
         stats["ingest"] = run_ingest(raw_root, sources=source_types)
-        stats["embed"] = embed_pending_chunks()
+        # embed_pending_chunks() is deliberately NOT gated the same way: it
+        # is a global queue over every chunk lacking an embedding for the
+        # current model, not scoped to this run's newly-ingested documents
+        # — any chunk it fails to embed here stays queryable by FTS and is
+        # simply picked up again by the very next successful call, from
+        # this source or any other. Blocking the cursor on it would force a
+        # full re-crawl of the same window on every run until embedding
+        # recovers, without that re-crawl doing anything to fix embedding —
+        # exactly the "1 transient error forces a permanent re-bootstrap"
+        # failure mode the error-rate tolerance above this function exists
+        # to avoid. A failure here is caught and surfaced in stats, not
+        # allowed to block the cursor commit that run_ingest already earned.
+        try:
+            stats["embed"] = embed_pending_chunks()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("embed_pending_chunks failed after successful ingest")
+            stats["embed_error"] = str(exc)
         for source_id, run_started_at in pending_cursor_advances.items():
             _advance_cursor(source_id, run_started_at)
     elif not dry_run:
