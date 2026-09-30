@@ -428,6 +428,10 @@ def sync(
     run_started = _now()
 
     stats: dict[str, Any] = {"dry_run": dry_run, "started_at": run_started.isoformat(), "sources": {}}
+    # source_id -> new cursor value, staged during the crawl loop below and
+    # only committed to Source.last_sync_at after ingest+embed succeed (or
+    # are confirmed skipped) — see the P1-B comment further down.
+    pending_cursor_advances: dict[str, datetime] = {}
 
     for source_type in source_types:
         if source_type not in _SOURCE_DEFS:
@@ -480,8 +484,21 @@ def sync(
                 len(result.errors), error_rate, settings.confluence_max_error_rate,
                 source_type, [e.get("page_id") for e in result.errors],
             )
+        # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+        # §9, REVIEW.md item 8 "수집 cursor는 ingest/embed 전에 전진한다"):
+        # this used to call _advance_cursor() right here, before run_ingest/
+        # embed_pending_chunks even start. If the process crashed or raised
+        # between here and those calls (OOM, DB outage, embedding model
+        # unavailable) — plausible for a synchronous cron-style job — the
+        # crawled pages sat on disk but were never ingested, and the next
+        # run's `since` filter would have skipped re-fetching them from
+        # Confluence forever, because Confluence itself had nothing newer to
+        # report. The crawl outcome now only stages a cursor advance;
+        # whether it's actually written to Source.last_sync_at is decided
+        # after ingest+embed either succeed or are confirmed not to run
+        # (dry_run / run_ingest_and_embed=False), see below.
         if can_advance:
-            _advance_cursor(sd["source_id"], run_started)
+            pending_cursor_advances[sd["source_id"]] = run_started
 
         stats["sources"][source_type] = {
             "written": len(result.written),
@@ -497,8 +514,24 @@ def sync(
         from app.embed.job import embed_pending_chunks
         from app.ingest.pipeline import run_ingest
 
+        # If either of these raises, the function exits without reaching
+        # the cursor-commit loop below — every source_type's crawl this run
+        # stays un-advanced, and the next sync() call re-crawls the same
+        # `since` window. That re-crawl is safe: _write_page() always
+        # rewrites the raw file, and run_ingest's content_hash upsert makes
+        # re-ingesting byte-identical content a no-op ("skipped"), not a
+        # duplicate or a re-embed.
         stats["ingest"] = run_ingest(raw_root, sources=source_types)
         stats["embed"] = embed_pending_chunks()
+        for source_id, run_started_at in pending_cursor_advances.items():
+            _advance_cursor(source_id, run_started_at)
+    elif not dry_run:
+        # Caller explicitly opted out of ingest+embed for this call (e.g.
+        # crawling raw files only, to ingest separately/manually later) —
+        # there is no ingest step in *this* call to wait for, so the old
+        # immediate-advance semantics are correct here.
+        for source_id, run_started_at in pending_cursor_advances.items():
+            _advance_cursor(source_id, run_started_at)
 
     logger.info("confluence sync complete dry_run=%s stats=%s", dry_run, stats)
     return stats

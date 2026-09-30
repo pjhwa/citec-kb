@@ -959,6 +959,15 @@ def _sync_map_body(
     run_ingest_and_embed: bool,
     all_defs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    # §9, REVIEW.md item 8): mirrors app.confluence.sync.sync()'s same fix —
+    # source_id -> (run_started, use_checkpoint), staged during the crawl
+    # loop and only committed (cursor advance + checkpoint clear) after
+    # ingest+embed succeed. Previously both were applied immediately after
+    # each source's crawl, before run_ingest/embed_pending_chunks even ran —
+    # a crash in between would advance cursors and drop checkpoints for
+    # pages that were crawled but never made it into the DB.
+    pending_commits: dict[str, tuple[datetime, bool]] = {}
     for idx, source_id in enumerate(defs, start=1):
         if source_id not in all_defs:
             logger.error("unknown or disabled confluence_map source_id=%s (valid: %s)", source_id, list(all_defs))
@@ -1036,9 +1045,7 @@ def _sync_map_body(
         error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance:
-            _advance_cursor(source_id, run_started)
-            if use_checkpoint:
-                _clear_checkpoints(source_id)
+            pending_commits[source_id] = (run_started, use_checkpoint)
 
         stats["sources"][source_id] = {
             "written": len(result.written),
@@ -1054,8 +1061,23 @@ def _sync_map_body(
         from app.embed.job import embed_pending_chunks
         from app.ingest.pipeline import run_ingest
 
+        # If either raises, execution never reaches the commit loop below —
+        # every source's crawl this run stays un-advanced and its checkpoint
+        # (if any) stays intact, so the next run resumes/re-crawls the same
+        # window instead of silently skipping it forever.
         stats["ingest"] = run_ingest(raw_root, sources=["confluence_map"])
         stats["embed"] = embed_pending_chunks()
+        for source_id, (run_started_at, use_checkpoint) in pending_commits.items():
+            _advance_cursor(source_id, run_started_at)
+            if use_checkpoint:
+                _clear_checkpoints(source_id)
+    elif not dry_run:
+        # No ingest step in *this* call to wait for (caller opted out) — old
+        # immediate-commit semantics are correct.
+        for source_id, (run_started_at, use_checkpoint) in pending_commits.items():
+            _advance_cursor(source_id, run_started_at)
+            if use_checkpoint:
+                _clear_checkpoints(source_id)
 
     logger.info("confluence map sync complete dry_run=%s stats=%s", dry_run, stats)
     return stats
