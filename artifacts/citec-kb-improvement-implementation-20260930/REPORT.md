@@ -386,7 +386,8 @@ title_match_bonus A/B에서도 같은 scratch DB에 `data/raw/`의 실제
 |---|---|---|
 | P0-A 나머지 | `EvidenceRef` 공통 dataclass, kb_query intent별 적용범위 명세, 문서 조회 length/offset 계약, localhost:8572 교정 | 이번 세션은 "포인터가 근거로 위장되는 구체적 경로"를 닫는 데 집중 — 전체 계약 재설계는 더 큰 단위 |
 | P1-A 나머지 | 원질 보존(multi_query 재평가), 사본 content-fingerprint 다양성(D02/D03), 폴더/허브 표시, "content purpose vs 기술도메인" 완전한 2축 재설계 | D06/D07(부분)/§8 item5·6은 §1-B에서 구현. 나머지는 회귀 질의+holdout 코퍼스, 또는 사본 실체 확인용 라이브 Confluence 접근이 필요 |
-| P1-B 나머지 | source→document→chunk→embedding→frame coverage 리포트(기존 ops dashboard/run_map_inventory 확장 검토 필요), scope/pending/retry/dead-letter 추적, source_version을 실제 change-detection에 연결 | cursor 순서/source_version 보존/health 네이밍은 §1-C에서 구현(fault-injection으로 로컬 증명 가능했음). 나머지는 대규모 backfill·운영 정책 결정 또는 기존 서브시스템 확장 검토가 먼저 필요 |
+| P1-B 나머지 | source→document→chunk→embedding→frame coverage 리포트(기존 ops dashboard/run_map_inventory 확장 검토 필요), scope/pending/retry/dead-letter 추적 | cursor 순서/source_version 보존/health 네이밍은 §1-C에서 구현(fault-injection으로 로컬 증명 가능했음). 나머지는 대규모 backfill·운영 정책 결정 또는 기존 서브시스템 확장 검토가 먼저 필요 |
+| source_version→change-detection 연결 | confluence_map의 400자 이후 본문 변경 감지(§9 최종 형태) | **사용자에게 직접 확인함(2026-10-01)**: 연결 시 배포 후 첫 sync에서 기존 confluence_map 문서 전체(로컬 스냅샷 기준 34,173건)가 "버전 정보 없음"으로 재청크·재임베딩되는 비용을 설명 — "지금은 필드만 유지, 연결은 보류"로 명시적 결정. confluence_map을 confluence_docs/tech_repo처럼 전체 본문 수집으로 확장하는 대안도 함께 물었으나 "현재 구조 유지"로 결정. 코드는 이미 이 결정과 일치하는 상태(source_version은 provenance로만 존재, content_hash에서 제외되어 재임베딩을 유발하지 않음) — 추가 구현 불필요. |
 | P1-C 나머지 | 내장 생성 capability 정직화(status/answer_kind 필드), trust/engine의 canonical-source 완전 dedup(D10 완전판) | D13/citation-repair 위장은 §1-B에서 구현. Fabrix가 현재도 미지원이라 생성 capability 자체의 실사용 영향은 적음 |
 | P2 | 계측/성능 튜닝 | §11 1단계(결정론적 경로 우선)는 §1-B에서 **이미 충족됨을 확인**. 2단계 이후는 p50/p95 등 라이브 계측 없이는 손대지 않음(§11 원칙) |
 | 파일럿(§12C) | Direct vs KB-assisted 업무효용 비교 | §12C 자체가 "차기 별도 파일럿"으로 설계 지정 — 이번 세션 범위 아님 |
