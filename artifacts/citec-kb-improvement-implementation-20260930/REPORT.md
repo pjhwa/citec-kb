@@ -479,6 +479,17 @@ Scan을 고르는 것이 일반적으로 올바른 선택**이다(§5가 경고�
    실행하지 않는다(§0 "운영 배포/대규모 백필은 해당 단계의 기존 승인
    범위를 확인하고 진행하라").
 
+**2026-10-01 추가**: 사용자 요청으로 위 3개를 수행하는 스크립트
+`scripts/backfill_p0b_p1b_metadata.sh`를 작성했다. 전부 **기존 도구
+재사용**(새 수집기 없음): frames는 `app.frames.cli`, docs는
+`Source.last_sync_at`을 NULL로 되돌린 뒤 기존 `scripts/confluence_sync.sh`
+재실행(코드 변경 없이 `since=None`이면 전체 크롤하는 기존 동작을 그대로
+이용), map은 기존 `scripts/map_backfill.sh --from-scratch`를 그대로 호출.
+인자 없이 실행하면 현재 결측 수치만 재조회하고 아무것도 바꾸지 않음(기본값
+항상 plan-only), `--apply {docs|map|frames|all}`로만 실제 적용되며 단계별
+y/N 확인을 거친다. **이 스크립트 자체는 실행하지 않았다** — 운영 승인은
+여전히 별도.
+
 원본 진단 파일(제목/발췌 등 실제 운영 콘텐츠 포함, 3.6MB)은 git에 커밋하지
 않고 세션 스크래치패드에만 보관했다 — `.gitignore`에 `diagnostics_*.txt`
 패턴을 추가해 앞으로도 실수로 커밋되지 않게 했다.
