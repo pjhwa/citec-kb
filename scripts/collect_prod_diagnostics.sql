@@ -51,6 +51,25 @@ GROUP BY source_type
 ORDER BY source_type;
 
 \echo ''
+\echo '=== [2b] confluence_map: 공간(path_l2)별 ancestor_ids 결측 분포 ==='
+\echo '-- Document.source_id는 파일 기반 수집이라 전부 "fs_raw"로 고정돼 있어'
+\echo '-- (app.ingest.pipeline._upsert_document 기본값) 실제 Confluence 공간별'
+\echo '-- 구분은 metadata.space_key(=path_l2, app.ingest.adapters.iter_confluence_map)'
+\echo '-- 로만 가능하다. 2026-09-28~30 백필 로그(사용자 제공)가 11개 공간을'
+\echo '-- 이미 전체 재크롤했음을 보여주므로, 이 쿼리로 "그 11개 공간은 이미'
+\echo '-- 결측이 없는지 / 남은 결측이 다른 공간에 몰려 있는지"를 확인해'
+\echo '-- --source-ids로 좁혀 돌릴 대상을 정확히 고를 수 있다.'
+SELECT
+  path_l2 AS space_key,
+  COUNT(*) AS total_active,
+  COUNT(*) FILTER (WHERE NOT (metadata ? 'ancestor_ids')) AS missing_ancestor_ids,
+  COUNT(*) FILTER (WHERE NOT (metadata ? 'source_version')) AS missing_source_version
+FROM documents
+WHERE status = 'active' AND source_type = 'confluence_map'
+GROUP BY path_l2
+ORDER BY missing_ancestor_ids DESC NULLS LAST;
+
+\echo ''
 \echo '-- confluence_map만: tech_relevant 분류 결측/분포'
 SELECT
   COUNT(*) AS total_active,
