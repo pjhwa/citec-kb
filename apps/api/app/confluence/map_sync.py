@@ -115,18 +115,46 @@ def excerpt_from_storage(storage_html: str, *, limit: int = _EXCERPT_CHARS) -> s
 def classify_map_tech(title: str, excerpt: str) -> tuple[str, list[str]]:
     """Return (tech_relevant, citec_domains).
 
-    tag_citec_domains is an incident-keyword tagger. An empty result is
-    NOT treated as non-technical: design pages often miss those keywords.
-    irrelevant is only a non-tech marker (P&L, KPI, …) with no domain hit.
-    Otherwise relevant if any domain matched, else unknown (kept in search).
+    tag_citec_domains is an incident-keyword tagger, reused here for a
+    different job (deciding whether a map page is worth surfacing at all).
+    That reuse has a known failure mode (P1-A / D07,
+    docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §8
+    "기술 무관 분류"): a page whose content is clearly organizational/
+    financial (조직도/손익/근태/KPI…) still gets domains=["Network"] purely
+    because the word "네트워크" appears once in an aside — one incidental
+    keyword hit outweighing every explicit non-tech marker.
+
+    This is a bounded fix, not the full "content purpose vs. tech domain as
+    two independent axes" redesign §8 asks for (that needs a real purpose
+    classifier — tech_procedure/incident/design/org_work/finance/other —
+    which is out of scope for this pass). What's fixed here: when a
+    non-tech marker is in the **title** specifically, a single domain hit
+    (found anywhere in title+excerpt) is treated as too weak to override it
+    (the D07 shape — one generic word in an aside, no other technical
+    signal) — two or more distinct domain hits still win as "relevant". A
+    non-tech marker appearing only in the excerpt (not the title) does NOT
+    demote — a technically-titled page that happens to footnote "매출
+    영향" or similar must not flip to irrelevant on that alone.
+
+    Deliberately narrow: this session could not measure the fix's blast
+    radius against real data (the locally available data/raw/confluence_map/
+    snapshot has zero rows with excerpt/tech_relevant populated —
+    classification only runs against live Confluence body_storage, which
+    only the production crawl has). Title-only demotion is the more
+    conservative of the two options considered, chosen specifically because
+    that measurement wasn't possible here — see REPORT.md.
     """
     from app.frames.citec_taxonomy import tag_citec_domains
 
     domains = tag_citec_domains(excerpt, title)
     blob = f"{title}\n{excerpt}"
+    non_tech_anywhere = bool(_NON_TECH.search(blob))
+    non_tech_in_title = bool(_NON_TECH.search(title or ""))
     if domains:
+        if non_tech_in_title and len(domains) < 2:
+            return "irrelevant", []
         return "relevant", domains
-    if _NON_TECH.search(blob):
+    if non_tech_anywhere:
         return "irrelevant", []
     return "unknown", []
 
@@ -146,6 +174,7 @@ def build_frontmatter_confluence_map(
     tech_relevant: str = "",
     citec_domains: Optional[list[str]] = None,
     ancestor_ids: Optional[list[str]] = None,
+    source_version: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -169,6 +198,18 @@ def build_frontmatter_confluence_map(
         # membership test answers "this page or anything below it" —
         # see SearchFilters.exclude_subtree_ids.
         lines.append("조상ID목록 : " + ",".join(ancestor_ids))
+    if source_version:
+        # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+        # §9, REVIEW.md item 8 "map frontmatter는 source version.number를
+        # 저장하지 않는다"): Confluence's own page version number, fetched
+        # from the API response but previously discarded (only
+        # version.when's date survived, as 최종수정일). Stored here purely
+        # as provenance for now — see app.ingest.adapters.DocumentDraft
+        # .finalize()'s hash-exclusion comment for why this does NOT yet
+        # feed content-change detection (that's a separate, not-yet-made
+        # follow-up with its own backfill cost, deliberately not bundled
+        # with this additive field).
+        lines.append(f"버전번호 : {source_version}")
     lines.append("---")
     front = "\n".join(lines) + "\n"
     return front
@@ -210,6 +251,7 @@ def _write_map_page(
     ancestors = meta.get("ancestors") or []
     path_breadcrumb = directory_breadcrumb(ancestors, title)
     ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
+    source_version = str(version["number"]) if version.get("number") is not None else None
 
     storage = ((meta.get("body") or {}).get("storage") or {}).get("value") or ""
     excerpt = excerpt_from_storage(storage) if storage else ""
@@ -228,6 +270,7 @@ def _write_map_page(
         tech_relevant=tech_relevant,
         citec_domains=domains,
         ancestor_ids=ancestor_ids,
+        source_version=source_version,
     )
 
     out_dir = raw_dir / "confluence_map"
@@ -931,6 +974,15 @@ def _sync_map_body(
     run_ingest_and_embed: bool,
     all_defs: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
+    # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    # §9, REVIEW.md item 8): mirrors app.confluence.sync.sync()'s same fix —
+    # source_id -> (run_started, use_checkpoint), staged during the crawl
+    # loop and only committed (cursor advance + checkpoint clear) after
+    # ingest+embed succeed. Previously both were applied immediately after
+    # each source's crawl, before run_ingest/embed_pending_chunks even ran —
+    # a crash in between would advance cursors and drop checkpoints for
+    # pages that were crawled but never made it into the DB.
+    pending_commits: dict[str, tuple[datetime, bool]] = {}
     for idx, source_id in enumerate(defs, start=1):
         if source_id not in all_defs:
             logger.error("unknown or disabled confluence_map source_id=%s (valid: %s)", source_id, list(all_defs))
@@ -1008,9 +1060,7 @@ def _sync_map_body(
         error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance:
-            _advance_cursor(source_id, run_started)
-            if use_checkpoint:
-                _clear_checkpoints(source_id)
+            pending_commits[source_id] = (run_started, use_checkpoint)
 
         stats["sources"][source_id] = {
             "written": len(result.written),
@@ -1026,8 +1076,33 @@ def _sync_map_body(
         from app.embed.job import embed_pending_chunks
         from app.ingest.pipeline import run_ingest
 
+        # If run_ingest raises, execution never reaches the commit loop
+        # below — every source's crawl this run stays un-advanced and its
+        # checkpoint (if any) stays intact, so the next run resumes/
+        # re-crawls the same window instead of silently skipping it forever.
         stats["ingest"] = run_ingest(raw_root, sources=["confluence_map"])
-        stats["embed"] = embed_pending_chunks()
+        # embed_pending_chunks() is NOT gated the same way — see
+        # app.confluence.sync.sync()'s matching comment: it's a global queue
+        # over every chunk lacking an embedding, self-heals on the next
+        # successful call regardless of source, and blocking the cursor on
+        # it would force a pointless full re-crawl loop until embedding
+        # recovers without that re-crawl fixing anything.
+        try:
+            stats["embed"] = embed_pending_chunks()
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("embed_pending_chunks failed after successful map ingest")
+            stats["embed_error"] = str(exc)
+        for source_id, (run_started_at, use_checkpoint) in pending_commits.items():
+            _advance_cursor(source_id, run_started_at)
+            if use_checkpoint:
+                _clear_checkpoints(source_id)
+    elif not dry_run:
+        # No ingest step in *this* call to wait for (caller opted out) — old
+        # immediate-commit semantics are correct.
+        for source_id, (run_started_at, use_checkpoint) in pending_commits.items():
+            _advance_cursor(source_id, run_started_at)
+            if use_checkpoint:
+                _clear_checkpoints(source_id)
 
     logger.info("confluence map sync complete dry_run=%s stats=%s", dry_run, stats)
     return stats

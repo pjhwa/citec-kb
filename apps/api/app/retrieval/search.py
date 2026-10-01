@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from sqlalchemy import Select, false, func, select, text
 from sqlalchemy.dialects.postgresql import array as pg_array
@@ -264,14 +264,55 @@ def lexical_supported(
     return any(tok.lower() in blob for tok in tokens)
 
 
+_MEDIUM_SCORE_FLOOR = 0.02
+_STRONG_SCORE_FLOOR = 0.05
+_TITLE_MATCH_BONUS_CEILING = 0.25
+_TITLE_MATCH_BONUS_FLOOR = 0.05
+
+
+def title_match_bonus(fused_scores: Iterable[float]) -> float:
+    """Bonus added when every query token appears in a candidate's title.
+
+    P1-A (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §8,
+    REVIEW.md item 5): this used to be a flat +0.25 regardless of anything
+    else. A 2-list RRF top score is at most ~1/(60+1)*2 ≈ 0.033 (fusion.py's
+    k=60), so a flat 0.25 was ~7-8x the entire attainable fusion scale — any
+    exact full-title-token match, including one from a heavily relaxed
+    multi-query subquery expansion (which may have already dropped the
+    query's most identifying terms), unconditionally won over every other
+    candidate regardless of how weak its actual retrieval signal was.
+
+    The bonus is now scaled to this batch's own top fused score instead of
+    a fixed constant: it still guarantees a title match jumps to the front
+    of *its own batch* (a match can still add up to the old 0.25 ceiling),
+    but it can no longer dwarf the whole scoring scale by an order of
+    magnitude when that batch's actual signal is weak. This is a bounded
+    mitigation of the magnitude mismatch, not the "완화한 질의에서 얻은
+    결과도 원질 기준으로 재평가" redesign §8 asks for — that needs the
+    regression corpus this pass doesn't have (see REPORT.md).
+    """
+    scores = list(fused_scores)
+    top = max(scores) if scores else 0.0
+    return min(_TITLE_MATCH_BONUS_CEILING, max(top * 1.2, _TITLE_MATCH_BONUS_FLOOR))
+
+
 def retrieval_trust(results: list[SearchHit]) -> str:
+    """D06 (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    §8, REVIEW.md item 9): fts_rank==1 used to force "strong" on its own,
+    regardless of score — being the single best (or only) FTS match says
+    nothing about how good that match actually is; a fusion score of 0.001
+    at fts_rank=1 is not meaningfully different from the same score with no
+    FTS hit at all. fts_rank==1 now only lifts a result that has already
+    cleared the medium score floor up to strong — it can raise trust by one
+    step, never manufacture it from a near-zero score.
+    """
     if not results:
         return "empty"
     top = results[0]
-    if top.score >= 0.05 or top.fts_rank == 1:
+    if top.score >= _STRONG_SCORE_FLOOR:
         return "strong"
-    if top.score >= 0.02:
-        return "medium"
+    if top.score >= _MEDIUM_SCORE_FLOOR:
+        return "strong" if top.fts_rank == 1 else "medium"
     return "weak"
 
 
@@ -495,7 +536,12 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
             .where(Chunk.tsv.op("@@")(tsq))
         )
         stmt = _apply_doc_filters(stmt, req.filters)
-        stmt = stmt.order_by(rank_expr.desc()).limit(req.fts_limit)
+        # Chunk.id tie-break (§8 item 6): ts_rank_cd ties are common,
+        # especially across OR-variant branches, and Postgres does not
+        # guarantee a stable row order without one — without this, repeated
+        # identical searches could return a different top-N when rank ties,
+        # which is exactly what §2's "반복 top1 동일 16/16→14/16" measured.
+        stmt = stmt.order_by(rank_expr.desc(), Chunk.id).limit(req.fts_limit)
         for cid, rk in session.execute(stmt).all():
             contrib = w * float(rk or 0.0)
             # Keep best weighted contribution (avoid DF-sum flooding)
@@ -526,7 +572,11 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
                 | (Document.external_id.ilike(f"%{term}%"))
             )
         )
-        stmt = _apply_doc_filters(stmt, req.filters).limit(40)
+        # Chunk.id tie-break (§8 item 6): this had no ORDER BY at all — which
+        # of the matching rows beyond 40 gets returned (and in what order,
+        # which directly sets the 0.08*(1/(1+i)) positional score below) was
+        # left to whatever order Postgres happened to scan in.
+        stmt = _apply_doc_filters(stmt, req.filters).order_by(Chunk.id).limit(40)
         for i, cid in enumerate(session.scalars(stmt).all()):
             scored[cid] = scored.get(cid, 0.0) + 0.08 * (1.0 / (1 + i))
 
@@ -564,7 +614,9 @@ def vector_search(
         .where(Chunk.is_active.is_(True))
     )
     stmt = _apply_doc_filters(stmt, req.filters)
-    stmt = stmt.order_by(dist).limit(req.vec_limit)
+    # Chunk.id tie-break (§8 item 6): cosine-distance ties happen (near-
+    # duplicate chunks, or a corpus with genuinely identical embeddings).
+    stmt = stmt.order_by(dist, Chunk.id).limit(req.vec_limit)
     return list(session.scalars(stmt).all())
 
 
@@ -610,7 +662,9 @@ def hybrid_search(
         )
         for tok in tokens:
             stmt = stmt.where(Document.title.ilike(_contains_pattern(tok), escape="\\"))
-        stmt = _apply_doc_filters(stmt, req.filters).limit(20)
+        # Chunk.id tie-break (§8 item 6) — see fts_search's LIKE-terms loop
+        # comment for why an unordered LIMIT here is nondeterministic.
+        stmt = _apply_doc_filters(stmt, req.filters).order_by(Chunk.id).limit(20)
         for cid in session.scalars(stmt).all():
             if cid not in fts_ids:
                 fts_ids.insert(0, cid)
@@ -629,7 +683,8 @@ def hybrid_search(
                     | (Chunk.header_context.ilike(f"%{tok}%"))
                 )
             )
-            stmt = _apply_doc_filters(stmt, req.filters).limit(20)
+            # Chunk.id tie-break (§8 item 6) — same rationale as above.
+            stmt = _apply_doc_filters(stmt, req.filters).order_by(Chunk.id).limit(20)
             for cid in session.scalars(stmt).all():
                 if cid not in fts_ids:
                     fts_ids.insert(0, cid)
@@ -703,10 +758,11 @@ def hybrid_search(
                 fused[cid] = fused[cid] + 0.015
 
     if len(tokens) >= 2 and fused and meta_by_id:
+        bonus = title_match_bonus(fused.values())
         for cid in list(fused):
             title = str((meta_by_id.get(cid) or {}).get("title") or "").lower()
             if title and all(tok.lower() in title for tok in tokens):
-                fused[cid] = fused[cid] + 0.25
+                fused[cid] = fused[cid] + bonus
 
     before_boost = dict(fused)
     fused = apply_exact_boost(

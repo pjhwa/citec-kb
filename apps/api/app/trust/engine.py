@@ -42,8 +42,20 @@ def assess_trust(
     answer: str,
     context_blobs: Sequence[str],
     force_abstain: bool = False,
+    n_verified_citations_used: Optional[int] = None,
 ) -> TrustAssessment:
-    """Combine retrieval / evidence / lightweight faithfulness into one banner level."""
+    """Combine retrieval / evidence / lightweight faithfulness into one banner level.
+
+    n_verified_citations_used (P0-A, docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    §4 item 4 / REVIEW.md D10): of the citations the answer actually used,
+    how many point at evidence_eligible=True (verified/fulltext) sources —
+    as opposed to confluence_map pointers nobody has read yet. When the
+    caller supplies it, it gates the "evidence" level instead of the raw
+    citation count, so two citations to the same unread map excerpt can no
+    longer read as "strong". Callers that don't pass it (not yet updated to
+    carry evidence_eligible through) keep the old citation-count behavior —
+    this is additive, not yet threaded through every call site.
+    """
     reasons: list[str] = []
     retrieval = retrieval_trust if retrieval_trust in {"strong", "medium", "weak", "empty"} else "weak"
 
@@ -59,11 +71,23 @@ def assess_trust(
             reasons=reasons,
         )
 
-    # Evidence: how many distinct sources the answer cites
-    if n_citations_used >= 2 and n_hits >= 2:
+    # Evidence: how many distinct *verified* sources the answer cites. An
+    # unverified pointer citation still counts toward n_citations_used (so
+    # the "무인용" reason below stays accurate) but never toward evidence
+    # strength on its own.
+    evidence_count = n_citations_used if n_verified_citations_used is None else n_verified_citations_used
+    if n_verified_citations_used is not None and n_verified_citations_used < n_citations_used:
+        reasons.append(
+            f"인용 {n_citations_used}건 중 원문 미확인 pointer {n_citations_used - n_verified_citations_used}건 포함 — 근거로 미반영"
+        )
+    if evidence_count >= 2 and n_hits >= 2:
         evidence = "strong"
-    elif n_citations_used >= 1:
+    elif evidence_count >= 1:
         evidence = "medium"
+    elif n_citations_used >= 1:
+        # cited, but only pointers — never silently "strong"/"medium"
+        evidence = "weak"
+        reasons.append("인용이 모두 원문 미확인 pointer — 근거로 인정하지 않음")
     else:
         evidence = "weak"
         reasons.append("답변에 [C#] 인용이 없거나 매핑 실패")

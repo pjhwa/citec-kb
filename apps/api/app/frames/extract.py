@@ -6,8 +6,26 @@ original body. No LLM call required for v1.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, Optional
+
+# Bump whenever _fill_from_text/_better/_SECTION_PATTERNS/etc. change in a way
+# that could change a document's extracted slots — app.frames.job compares
+# this against IssueFrame.extractor_version to decide whether a stored frame
+# is stale relative to the extractor itself, not just relative to body_md.
+EXTRACTOR_VERSION = "2026-09-30.1"
+
+
+def body_hash(body_md: Optional[str]) -> str:
+    """Content hash a stored frame is pinned to (P0-C).
+
+    Deliberately keyed on body_md only, not the whole Document row — title/
+    environment changes are folded into the frame at extract time regardless,
+    but don't by themselves make a *prior* extraction stale, since they don't
+    change what _fill_from_text found in the body text.
+    """
+    return hashlib.sha256((body_md or "").encode("utf-8")).hexdigest()
 
 
 _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
@@ -175,14 +193,42 @@ def _section_body(text: str, start: int, next_starts: list[int]) -> str:
     return text[start:end]
 
 
+# A longer-is-newer rule (below) mistakes a verbose "still under review"
+# summary for the better slot value over a short but explicit "완료" line —
+# see docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §6 (D08:
+# 긴 "조사/검토 중" 요약이 짧은 "완료" 원문을 이긴다). Length is never used as
+# a freshness/status signal on its own; an explicit completion marker beats an
+# in-progress one regardless of which text is longer, and the reverse
+# direction is blocked so a stale in-progress candidate can never overwrite an
+# already-resolved slot. Neither marker asserts *when* — a real fact_status
+# field (추정/확인/예정/완료/충돌) with timestamps is out of scope for this
+# pass; this only fixes the ordering bug, not full provenance-aware conflict
+# resolution.
+_COMPLETION_MARKER = re.compile(
+    r"완료(?:되었습니다|됨|하였습니다|함)?|반영\s*완료|적용\s*완료|배포\s*완료|변경\s*완료|조치\s*완료|처리\s*완료",
+    re.I,
+)
+_INPROGRESS_MARKER = re.compile(
+    r"검토\s*중|확인\s*중|조사\s*중|진행\s*중|모니터링\s*(?:을|중)|대응\s*중|분석\s*중",
+    re.I,
+)
+
+
 def _better(new: Optional[str], old: Optional[str]) -> bool:
-    """Prefer longer, non-placeholder content."""
+    """Prefer non-placeholder content; explicit completion status beats an
+    in-progress one regardless of length. Otherwise prefer longer content."""
     if not new or _is_placeholder(new):
         return False
     if not old:
         return True
     if _is_placeholder(old) and not _is_placeholder(new):
         return True
+    new_done, old_done = bool(_COMPLETION_MARKER.search(new)), bool(_COMPLETION_MARKER.search(old))
+    new_wip, old_wip = bool(_INPROGRESS_MARKER.search(new)), bool(_INPROGRESS_MARKER.search(old))
+    if new_done and old_wip and not old_done:
+        return True
+    if new_wip and old_done and not new_done:
+        return False
     # require meaningful improvement
     if len(new) >= len(old) + 20:
         return True
@@ -336,6 +382,8 @@ def extract_frame_from_markdown(
             "used_llm_summary": bool(m_sum),
             "sections_found": sorted(set(sections_found)),
         },
+        "body_hash": body_hash(body_md),
+        "extractor_version": EXTRACTOR_VERSION,
     }
 
 

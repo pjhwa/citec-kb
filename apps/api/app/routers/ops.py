@@ -24,6 +24,7 @@ from app.db.models import (
 from app.db.session import session_scope
 from app.jobs.queue import list_jobs, worker_status
 from app.ops.dashboard import (
+    coverage_gaps,
     ingest_progress,
     query_stats,
     read_raw_manifest,
@@ -147,6 +148,12 @@ def ops_dashboard(
             result["ingest_progress"] = ingest_progress(session, raw_totals)
     except Exception as exc:  # noqa: BLE001
         result["ingest_progress"] = {"error": str(exc)}
+
+    try:
+        with session_scope() as session:
+            result["coverage_gaps"] = coverage_gaps(session)
+    except Exception as exc:  # noqa: BLE001
+        result["coverage_gaps"] = {"error": str(exc)}
 
     try:
         result["jobs"] = list_jobs(limit=20)

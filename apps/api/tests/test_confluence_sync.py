@@ -242,3 +242,175 @@ def test_tech_repo_frontmatter_round_trips_through_adapter(tmp_path):
     assert d.title == "메모리 관련 커널 파라미터"
     assert d.metadata["디렉토리"] == directory
     assert d.path_l2 == "★★분야별 기술 자료★★"
+
+
+# --- P0-B / ancestor_ids parity (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+# §5, REVIEW.md "전체본문 수집 sync.py:192–235에는 조상 ID 저장이 없어 맵
+# 이외 Confluence 사본으로 우회할 여지가 있다"): confluence_docs/tech_repo
+# must carry the same structured ancestor_ids metadata as confluence_map, or
+# exclude_subtree_ids can be defeated by the same page also existing under
+# one of these two full-body source_types.
+
+
+def test_confluence_docs_carries_ancestor_ids(tmp_path):
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id="2510261901",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=2510261901",
+        last_modified="2026-09-07",
+        ancestor_ids=["100", "200", "2510261901"],
+    )
+    out_dir = tmp_path / "confluence_docs"
+    out_dir.mkdir()
+    (out_dir / "confluence_2510261901.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_confluence_docs(tmp_path))
+    assert drafts[0].metadata.get("ancestor_ids") == ["100", "200", "2510261901"]
+    # 조상ID목록 is consumed into the structured field, not left as raw text
+    assert "조상ID목록" not in drafts[0].metadata
+
+
+def test_confluence_docs_without_ancestors_has_no_ancestor_ids_key(tmp_path):
+    """A root page (no ancestors) must not get a spurious ancestor_ids=[] —
+    absent means unknown/none, same convention as confluence_map."""
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id="1",
+        title="root",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2026-09-07",
+        ancestor_ids=None,
+    )
+    out_dir = tmp_path / "confluence_docs"
+    out_dir.mkdir()
+    (out_dir / "confluence_1.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_confluence_docs(tmp_path))
+    assert "ancestor_ids" not in drafts[0].metadata
+
+
+def test_tech_repo_carries_ancestor_ids(tmp_path):
+    front = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="148554390",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=148554390",
+        last_modified="2020-04-13",
+        ancestor_ids=["5", "148554390"],
+    )
+    out_dir = tmp_path / "tech_repo"
+    out_dir.mkdir()
+    (out_dir / "confluence_148554390.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_tech_repo(tmp_path))
+    assert drafts[0].metadata.get("ancestor_ids") == ["5", "148554390"]
+
+
+# --- P1-B / source_version parity (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+# §9, REVIEW.md item 8 "map frontmatter는 source version.number를 저장하지
+# 않는다"): Confluence's page version number, additive across all three
+# full-body/map source types.
+
+
+def test_confluence_docs_carries_source_version(tmp_path):
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id="2510261901",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=2510261901",
+        last_modified="2026-09-07",
+        source_version="97",
+    )
+    out_dir = tmp_path / "confluence_docs"
+    out_dir.mkdir()
+    (out_dir / "confluence_2510261901.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_confluence_docs(tmp_path))
+    assert drafts[0].metadata.get("source_version") == 97
+    assert "버전번호" not in drafts[0].metadata
+
+
+def test_tech_repo_carries_source_version(tmp_path):
+    front = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="148554390",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=148554390",
+        last_modified="2020-04-13",
+        source_version="12",
+    )
+    out_dir = tmp_path / "tech_repo"
+    out_dir.mkdir()
+    (out_dir / "confluence_148554390.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_tech_repo(tmp_path))
+    assert drafts[0].metadata.get("source_version") == 12
+
+
+def test_confluence_docs_without_source_version_has_no_key(tmp_path):
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id="1",
+        title="root",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2026-09-07",
+        source_version=None,
+    )
+    out_dir = tmp_path / "confluence_docs"
+    out_dir.mkdir()
+    (out_dir / "confluence_1.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_confluence_docs(tmp_path))
+    assert "source_version" not in drafts[0].metadata
+
+
+def test_source_version_is_excluded_from_content_hash(tmp_path):
+    """The critical P1-B trap: adding source_version to metadata must NOT
+    change content_hash for otherwise-unchanged content — see
+    DocumentDraft.finalize()'s hash-exclusion comment. If this regresses,
+    a live sync that starts populating source_version would look like a
+    content change on every already-indexed page and trigger a full
+    rechunk/re-embed of the corpus."""
+    from app.ingest.adapters import parse_tech_repo_file
+
+    front_v1 = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="1",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2020-04-13",
+        source_version=None,
+    )
+    front_v2 = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="1",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2020-04-13",
+        source_version="97",
+    )
+    # Same filename in two different dirs — metadata["filename"] (path.name)
+    # must also be identical between the two variants, or that alone would
+    # change the hash and this test would prove nothing about source_version.
+    dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    p1 = dir_a / "confluence_1.md"
+    p1.write_text(front_v1 + "\n동일한 본문\n", encoding="utf-8")
+    p2 = dir_b / "confluence_1.md"
+    p2.write_text(front_v2 + "\n동일한 본문\n", encoding="utf-8")
+
+    d1 = parse_tech_repo_file(p1)
+    d2 = parse_tech_repo_file(p2)
+    assert d1.metadata.get("source_version") is None
+    assert d2.metadata.get("source_version") == 97
+    assert d1.content_hash == d2.content_hash

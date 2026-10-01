@@ -332,6 +332,7 @@ def execute_plan(plan: dict[str, Any], *, body: Optional[dict[str, Any]] = None)
             date_field=resolve_date_field(tsl_source, plan.get("date_field")),
             date_from=df,
             date_to=dt,
+            component=plan.get("component"),
             limit=int(body.get("limit") or 50),
             offset=int(body.get("offset") or 0),
             order=str(body.get("order") or "desc"),

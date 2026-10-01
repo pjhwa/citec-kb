@@ -152,6 +152,7 @@ async def health() -> HealthResponse:
                 )
                 table_count = int(cur.fetchone()[0])
                 docs_count = None
+                active_docs_count = None
                 if rev:
                     cur.execute(
                         "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
@@ -160,11 +161,25 @@ async def health() -> HealthResponse:
                     if cur.fetchone()[0]:
                         cur.execute("SELECT COUNT(*) FROM documents")
                         docs_count = int(cur.fetchone()[0])
+                        cur.execute(
+                            "SELECT COUNT(*) FROM documents WHERE status = 'active'"
+                        )
+                        active_docs_count = int(cur.fetchone()[0])
         checks["postgres"] = {
             "ok": True,
             "alembic_revision": rev,
             "public_tables": table_count,
+            # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+            # §9, REVIEW.md item 8): documents_count is every row regardless
+            # of status (active/superseded/archived/...) — /api/wiki/stats's
+            # `total` counts only status='active', a different scope under a
+            # different name. Naming both explicitly here (rather than
+            # renaming documents_count, which external clients may already
+            # read) so an operator comparing the two endpoints sees the
+            # active/total distinction without having to discover it by
+            # diffing numbers that don't match.
             "documents_count": docs_count,
+            "active_documents_count": active_docs_count,
         }
     except Exception as exc:  # noqa: BLE001
         checks["postgres"] = {"ok": False, "error": str(exc)}

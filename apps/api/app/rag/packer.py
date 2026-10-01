@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 
 @dataclass
@@ -18,6 +18,14 @@ class PackedChunk:
     source_uri: str | None
     score: float
     est_tokens: int
+    # P0-A (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §4):
+    # carried through from SearchHit.evidence_eligible — False means this is a
+    # discovery pointer (e.g. confluence_map excerpt), not a verified-source
+    # citation. Before this field existed, pack_chunks silently dropped the
+    # flag (REVIEW.md D09: "포인터가 인용 문맥으로 포장됨") and every packed
+    # chunk was indistinguishable from a fulltext-verified one downstream.
+    evidence_eligible: bool = True
+    map_synced_at: Optional[str] = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -59,6 +67,8 @@ def pack_chunks(
                 source_uri=getattr(h, "source_uri", None),
                 score=float(getattr(h, "score", 0.0) or 0.0),
                 est_tokens=est,
+                evidence_eligible=bool(getattr(h, "evidence_eligible", True)),
+                map_synced_at=getattr(h, "map_synced_at", None),
             )
         )
         used += est
@@ -68,8 +78,11 @@ def pack_chunks(
 def format_context_block(packed: Sequence[PackedChunk]) -> str:
     parts: list[str] = []
     for p in packed:
+        # A pointer chunk (evidence_eligible=False) must not read like a
+        # verified excerpt to the generator — see PackedChunk.evidence_eligible.
+        tag = "" if p.evidence_eligible else " (POINTER — 원문 미확인, 사실 근거로 인용 금지)"
         parts.append(
-            f"[{p.cite_id}] title={p.title}\n"
+            f"[{p.cite_id}]{tag} title={p.title}\n"
             f"source={p.source_type} id={p.external_id}\n"
             f"{p.snippet}"
         )

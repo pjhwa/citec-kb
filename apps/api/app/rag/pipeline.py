@@ -161,6 +161,12 @@ def _prepare(
                 snippet=text[:2000],
                 source_uri=h.source_uri,
                 score=h.score,
+                # P0-A: SearchHit already computes these (retrieval/search.py)
+                # — this rebuild used to drop them (REVIEW.md D09), so every
+                # pointer-only hit reached pack_chunks looking identical to a
+                # verified one.
+                evidence_eligible=h.evidence_eligible,
+                map_synced_at=h.map_synced_at,
             )
         )
     # 2) inject highest-content sibling chunks not already included
@@ -186,6 +192,13 @@ def _prepare(
                 snippet=blob[:2000],
                 source_uri=m.source_uri,
                 score=0.01 * sc,
+                # Sibling chunks come from a raw Chunk/Document join, not from
+                # hybrid_search's SearchHit — same evidence_eligible rule as
+                # retrieval/search.py (confluence_map is pointer-only). No
+                # map_synced_at here: that requires Document.updated_at, not
+                # selected in the sibling join above.
+                evidence_eligible=(m.source_type != "confluence_map"),
+                map_synced_at=None,
             )
         )
 
@@ -204,6 +217,9 @@ def _prepare(
                 "snippet": p.snippet,
                 "source_uri": p.source_uri,
                 "score": p.score,
+                "evidence_eligible": p.evidence_eligible,
+                "evidence_kind": "excerpt" if p.evidence_eligible else "pointer",
+                "map_synced_at": p.map_synced_at,
             }
         )
         for p in packed
@@ -278,6 +294,10 @@ def _finalize(
     llm_error: Optional[str],
 ) -> dict[str, Any]:
     used_cites = [c for c in _extract_citation_ids(answer) if c in {p.cite_id for p in packed}]
+    packed_by_cite = {p.cite_id: p for p in packed}
+    n_verified_used = sum(
+        1 for c in used_cites if packed_by_cite[c].evidence_eligible
+    )
     trust = assess_trust(
         retrieval_trust=str(retrieval_meta.get("trust_retrieval") or "weak"),
         n_hits=len(packed),
@@ -285,6 +305,7 @@ def _finalize(
         answer=answer,
         context_blobs=[p.snippet for p in packed],
         force_abstain=False,
+        n_verified_citations_used=n_verified_used,
     )
     if trust.abstain and not llm_error:
         answer = (
@@ -377,7 +398,21 @@ def run_fast_rag(
         if not answer:
             llm_error = "empty_completion"
             answer = _snippet_fallback(packed, "모델이 빈 응답을 반환해 검색 근거만 요약합니다.")
-        # Final safety: still no cites → append grounded bullet summary with cites
+        # Final safety: still no cites → append a candidate-source list.
+        #
+        # P1-C (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+        # §10, REVIEW.md item 9 "citation repair 후 단순 출처 목록 추가를
+        # factual verification으로 보지 않는다"): this used to format each
+        # bullet as "[C1] title: snippet" — the exact `\[C\d+\]` shape
+        # _extract_citation_ids() looks for. _finalize() would then read
+        # these as citations the *model* used to support specific claims
+        # (used_cites, n_verified_citations_used, trust level) even though
+        # the model asserted nothing tied to them — an uncited, unverified
+        # answer could read as "medium"/"strong" trust purely from this
+        # cosmetic append. The list is still useful to show the user, but
+        # must not look like a real inline citation to the parser that
+        # decides trust — so it drops the bracket syntax and is only
+        # appended when the answer isn't already an abstain.
         if (
             answer
             and not _looks_like_abstain(answer)
@@ -386,10 +421,8 @@ def run_fast_rag(
         ):
             answer = (
                 answer.rstrip()
-                + "\n\n(자동 보강 근거)\n"
-                + "\n".join(
-                    f"- [{p.cite_id}] {p.title}: {p.snippet[:120]}" for p in packed[:3]
-                )
+                + "\n\n(자동 첨부 — 모델이 인용하지 않은 검색 후보. 사실 근거로 확정하지 말 것)\n"
+                + "\n".join(f"- 후보 {p.cite_id}: {p.title} — {p.snippet[:120]}" for p in packed[:3])
             )
     except LLMChatError as exc:
         logger.warning("LLM failed: %s", exc)

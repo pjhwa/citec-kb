@@ -343,3 +343,161 @@ def test_ingest_insert_skip_update_cycle_scoped_to_tmp_raw_dir(tmp_path):
         assert stats3.get("skipped", 0) == 0
     finally:
         _cleanup_document(external_id, "confluence_docs")
+
+
+def test_sync_ingest_failure_does_not_advance_cursor(tmp_path, monkeypatch):
+    """P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
+    §9, REVIEW.md item 8 "수집 cursor는 ingest/embed 전에 전진한다"): a crawl
+    can succeed (pages written to disk) while the subsequent run_ingest call
+    fails (DB outage, crash, ...). The cursor must NOT have advanced in that
+    case — otherwise the next run's `since` filter permanently skips
+    re-fetching those pages from Confluence, since Confluence itself has
+    nothing newer to report once the cursor is past their lastmodified."""
+    import app.confluence.sync as sync_mod
+    import app.ingest.pipeline as pipeline_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        return sync_mod.CrawlResult(
+            written=[sync_mod.WrittenPage(page_id="1", path=tmp_path / "x.md")],
+            errors=[],
+            cql_log=["cql=fake"],
+        )
+
+    def fake_run_ingest(*args, **kwargs):
+        raise RuntimeError("simulated ingest crash")
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+    monkeypatch.setattr(pipeline_mod, "run_ingest", fake_run_ingest)
+
+    try:
+        with pytest.raises(RuntimeError, match="simulated ingest crash"):
+            sync_mod.sync(
+                tmp_path,
+                dry_run=False,
+                sources=["confluence_docs"],
+                run_ingest_and_embed=True,
+            )
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            # row was created (bootstrap) by _ensure_source_row, but the
+            # cursor itself must still be untouched — the crash happened
+            # before the commit loop that would have advanced it.
+            assert src is not None
+            assert src.last_sync_at is None
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_map_ingest_failure_does_not_advance_cursor_or_clear_checkpoint(tmp_path, monkeypatch):
+    """Same P1-B fix, mirrored in app.confluence.map_sync._sync_map_body
+    (which the module's own docstring says mirrors app.confluence.sync.sync()
+    exactly). Calls _sync_map_body directly (bypassing sync_map()'s advisory
+    lock / DB-backed source registry, which aren't needed to exercise this
+    logic) with a synthetic single-source def."""
+    import app.confluence.map_sync as map_sync_mod
+    import app.ingest.pipeline as pipeline_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+    from app.settings import get_settings
+
+    source_id = "test_p1b_map_source"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+        # _advance_cursor() only *updates* an existing row (session.get +
+        # `if src:` — it never creates one), so the row must pre-exist here
+        # for this test to actually distinguish "cursor untouched" from
+        # "there was never a row to touch" in the first place.
+        session.add(
+            Source(id=source_id, type="confluence_map", name="Test Space", config={})
+        )
+
+    async def fake_crawl_map_source(*args, **kwargs):
+        return map_sync_mod.CrawlResult(
+            written=[map_sync_mod.WrittenPage(page_id="1", path=tmp_path / "x.md")],
+            errors=[],
+            cql_log=["cql=fake"],
+        )
+
+    def fake_run_ingest(*args, **kwargs):
+        raise RuntimeError("simulated ingest crash")
+
+    monkeypatch.setattr(map_sync_mod, "_crawl_map_source", fake_crawl_map_source)
+    monkeypatch.setattr(pipeline_mod, "run_ingest", fake_run_ingest)
+
+    all_defs = {
+        source_id: {"space_key": "TESTSPACE", "space_name": "Test Space", "roots": {"1": "root"}}
+    }
+    run_started = datetime.now(timezone.utc)
+
+    try:
+        with pytest.raises(RuntimeError, match="simulated ingest crash"):
+            map_sync_mod._sync_map_body(
+                defs=[source_id],
+                raw_root=tmp_path,
+                settings=get_settings(),
+                client=None,
+                run_started=run_started,
+                stats={"dry_run": False, "started_at": run_started.isoformat(), "sources": {}},
+                dry_run=False,
+                max_pages_per_root=None,
+                root_id=None,
+                run_ingest_and_embed=True,
+                all_defs=all_defs,
+            )
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            assert src is not None
+            assert src.last_sync_at is None
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_embed_failure_does_not_block_cursor_advance(tmp_path, monkeypatch):
+    """embed_pending_chunks() is a global self-healing queue over every
+    chunk lacking an embedding, not scoped to this run — unlike a
+    run_ingest failure, its failure must NOT re-block the cursor, or a
+    transient embedding-model outage would force a pointless full re-crawl
+    of the same window on every run until it recovers, without the
+    re-crawl doing anything to actually fix the missing embeddings."""
+    import app.confluence.sync as sync_mod
+    import app.embed.job as embed_job_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        return sync_mod.CrawlResult(written=[], errors=[], cql_log=["cql=fake"])
+
+    def fake_embed_pending_chunks(*args, **kwargs):
+        raise RuntimeError("simulated embedding model outage")
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+    monkeypatch.setattr(embed_job_mod, "embed_pending_chunks", fake_embed_pending_chunks)
+
+    try:
+        stats = sync_mod.sync(
+            tmp_path,
+            dry_run=False,
+            sources=["confluence_docs"],
+            run_ingest_and_embed=True,
+        )
+        assert stats["sources"]["confluence_docs"]["cursor_advanced"] is True
+        assert "simulated embedding model outage" in stats.get("embed_error", "")
+        with session_scope() as session:
+            src = session.get(Source, source_id)
+            assert src is not None
+            assert src.last_sync_at is not None  # cursor DID advance
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()

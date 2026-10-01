@@ -35,6 +35,9 @@ def get_tickets(
     relative: Optional[str] = Query(
         None, description="지난 주 / 이번 달 / 최근 7일 등 (date_from/to 대체)"
     ),
+    component: Optional[str] = Query(
+        None, description="Jira Component, e.g. 기술지원/장애지원/진단컨설팅"
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     order: str = Query("desc"),
@@ -52,6 +55,7 @@ def get_tickets(
         date_field=date_field,
         date_from=df,
         date_to=dt,
+        component=component,
         limit=limit,
         offset=offset,
         order=order,

@@ -112,12 +112,20 @@ def list_tickets(
     date_field: str = "Created",
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
+    component: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     order: str = "desc",
 ) -> dict[str, Any]:
-    """List documents filtered by metadata date field in [from, to] inclusive."""
+    """List documents filtered by metadata date field in [from, to] inclusive.
+
+    component (Jira Component, e.g. "기술지원"/"장애지원") uses the same
+    substring-or-exact predicate as analytics.aggregate.aggregate_tickets so
+    a list's row count and a COUNT query over the same filters agree —
+    see docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §7.
+    """
     date_field = resolve_date_field(source_type, date_field)
+    component_q = (component or "").strip() or None
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     descending = (order or "desc").lower() != "asc"
@@ -144,6 +152,10 @@ def list_tickets(
                 continue
             if date_to and dt > date_to:
                 continue
+            if component_q:
+                c = str(meta.get("Component") or "").strip()
+                if c != component_q and component_q.lower() not in c.lower():
+                    continue
             rows.append(
                 {
                     "document_id": d.id,
@@ -179,5 +191,6 @@ def list_tickets(
             "date_field": date_field,
             "date_from": date_from.isoformat() if date_from else None,
             "date_to": date_to.isoformat() if date_to else None,
+            "component": component_q,
             "items": page,
         }

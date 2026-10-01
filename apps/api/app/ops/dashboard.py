@@ -239,6 +239,82 @@ def ingest_progress(session, raw_totals: dict[str, int]) -> dict[str, Any]:
     return rows
 
 
+# Which metadata coverage checks apply to which source_type — "ancestor_ids"/
+# "source_version" are Confluence-only (see app.ingest.adapters), "tech_relevant"
+# is confluence_map's own classification (app.confluence.map_sync.classify_map_tech).
+_METADATA_COVERAGE_SOURCE_TYPES = {
+    "ancestor_ids": ("confluence_map", "confluence_docs", "tech_repo"),
+    "source_version": ("confluence_map", "confluence_docs", "tech_repo"),
+    "tech_relevant": ("confluence_map",),
+}
+# issue_frames is only populated for these two (see app.frames.job.extract_frames).
+_FRAME_ELIGIBLE_SOURCE_TYPES = ("support_history", "incident_reports")
+
+
+def coverage_gaps(session) -> dict[str, Any]:
+    """Per-source_type counts of active documents missing a metadata field
+    or a derived frame — the numerator half of §9's "source→raw→document→
+    active chunk→embedding→frame 각 단계의 건수를 source ID로 대조" ask
+    (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §9).
+
+    This does NOT give the source-side denominator (how many pages actually
+    exist upstream in Confluence/Jira right now) — that's
+    run_map_inventory()'s job (app.confluence.map_backfill), which already
+    exists and is not rebuilt here. This only answers "of what's already in
+    our DB, how much is missing each piece" — a narrower, purely additive
+    read extending ingest_progress() above, not a new coverage subsystem.
+
+    total_active=0 for a source_type means it isn't in this corpus at all —
+    that row is included so callers see 0/0 rather than a KeyError, not
+    conflated with "somehow has 0 missing".
+    """
+    from sqlalchemy import func, select
+
+    from app.db.models import Document, IssueFrame
+
+    total_active = dict(
+        session.execute(
+            select(Document.source_type, func.count())
+            .where(Document.status == "active")
+            .group_by(Document.source_type)
+        ).all()
+    )
+
+    source_types = sorted(
+        set(total_active)
+        | {st for sts in _METADATA_COVERAGE_SOURCE_TYPES.values() for st in sts}
+        | set(_FRAME_ELIGIBLE_SOURCE_TYPES)
+    )
+
+    rows: dict[str, Any] = {}
+    for st in source_types:
+        row: dict[str, Any] = {"total_active": int(total_active.get(st, 0))}
+        for field_name, eligible in _METADATA_COVERAGE_SOURCE_TYPES.items():
+            if st not in eligible:
+                continue
+            missing = session.scalar(
+                select(func.count())
+                .select_from(Document)
+                .where(Document.status == "active")
+                .where(Document.source_type == st)
+                .where(~Document.metadata_.has_key(field_name))  # type: ignore[attr-defined]
+            )
+            row[f"missing_{field_name}"] = int(missing or 0)
+        if st in _FRAME_ELIGIBLE_SOURCE_TYPES:
+            missing_frame = session.scalar(
+                select(func.count())
+                .select_from(Document)
+                .outerjoin(IssueFrame, IssueFrame.document_id == Document.id)
+                .where(Document.status == "active")
+                .where(Document.source_type == st)
+                .where(IssueFrame.id.is_(None))
+            )
+            row["missing_frame"] = int(missing_frame or 0)
+        rows[st] = row
+
+    return rows
+
+
 def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
     """Most recently registered/refined failure buckets, for the admin dashboard.
 
