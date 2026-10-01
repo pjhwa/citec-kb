@@ -75,6 +75,16 @@ def _cleanup(doc_ids: list[str]) -> None:
 
 
 def test_confluence_map_reports_missing_ancestor_ids_source_version_tech_relevant():
+    """Delta-based, not absolute-count-based: the scratch DB may carry other
+    fixtures' confluence_map rows from earlier tests in the same run (same
+    fragility class as the skipped_fresh==0 issue fixed earlier this
+    session — see test_frames_job_staleness_db.py's history), so this
+    compares coverage_gaps before/after adding exactly our own two
+    documents instead of asserting on the global total_active/missing
+    counts directly. A bug that counted *every* row (or zero rows) as
+    missing, regardless of content, would fail these delta assertions even
+    when other fixtures are present; the old absolute `missing < total`
+    check would not have caught that."""
     from app.db.session import session_scope
     from app.ops.dashboard import coverage_gaps
 
@@ -82,6 +92,9 @@ def test_confluence_map_reports_missing_ancestor_ids_source_version_tech_relevan
     doc_without = f"{_PREFIX}:confluence_map:2"
     _cleanup([doc_with, doc_without])
     try:
+        with session_scope() as session:
+            before = coverage_gaps(session)["confluence_map"]
+
         with session_scope() as session:
             _make_doc(
                 session,
@@ -92,24 +105,20 @@ def test_confluence_map_reports_missing_ancestor_ids_source_version_tech_relevan
             _make_doc(session, external_id="2", source_type="confluence_map", metadata={})
 
         with session_scope() as session:
-            gaps = coverage_gaps(session)
+            after = coverage_gaps(session)["confluence_map"]
 
-        row = gaps["confluence_map"]
-        assert row["total_active"] >= 2
-        assert row["missing_ancestor_ids"] >= 1
-        assert row["missing_source_version"] >= 1
-        assert row["missing_tech_relevant"] >= 1
-        # the fully-populated doc must not itself be counted as missing —
-        # i.e. the count is exactly the gap, not "every row" or "zero rows"
-        # regardless of content (a constant-function bug this pins).
-        with session_scope() as session:
-            gaps_again = coverage_gaps(session)
-        assert gaps_again["confluence_map"]["missing_ancestor_ids"] < row["total_active"]
+        # +2 total_active (one fully populated, one fully empty) → exactly
+        # +1 to each missing_* count, never +0 or +2.
+        assert after["total_active"] - before["total_active"] == 2
+        assert after["missing_ancestor_ids"] - before["missing_ancestor_ids"] == 1
+        assert after["missing_source_version"] - before["missing_source_version"] == 1
+        assert after["missing_tech_relevant"] - before["missing_tech_relevant"] == 1
     finally:
         _cleanup([doc_with, doc_without])
 
 
 def test_support_history_reports_missing_frame():
+    """Delta-based for the same reason as the confluence_map test above."""
     from app.db.session import session_scope
     from app.ops.dashboard import coverage_gaps
 
@@ -117,6 +126,9 @@ def test_support_history_reports_missing_frame():
     doc_without_frame = f"{_PREFIX}:support_history:CITECTS-2"
     _cleanup([doc_with_frame, doc_without_frame])
     try:
+        with session_scope() as session:
+            before = coverage_gaps(session)["support_history"]
+
         with session_scope() as session:
             _make_doc(session, external_id="CITECTS-1", source_type="support_history", metadata={})
             _make_doc(session, external_id="CITECTS-2", source_type="support_history", metadata={})
@@ -129,15 +141,15 @@ def test_support_history_reports_missing_frame():
             session.add(IssueFrame(id=str(uuid.uuid4()), document_id=doc_with_frame, quality=0.5))
 
         with session_scope() as session:
-            gaps = coverage_gaps(session)
+            after = coverage_gaps(session)["support_history"]
 
-        row = gaps["support_history"]
-        assert row["total_active"] >= 2
-        assert row["missing_frame"] >= 1
-        assert row["missing_frame"] < row["total_active"]
+        assert after["total_active"] - before["total_active"] == 2
+        # one of the two new docs has a frame, the other doesn't → +1, not
+        # +0 or +2.
+        assert after["missing_frame"] - before["missing_frame"] == 1
         # confluence_map-only fields must not appear for support_history
-        assert "missing_ancestor_ids" not in row
-        assert "missing_tech_relevant" not in row
+        assert "missing_ancestor_ids" not in after
+        assert "missing_tech_relevant" not in after
     finally:
         _cleanup([doc_with_frame, doc_without_frame])
 
