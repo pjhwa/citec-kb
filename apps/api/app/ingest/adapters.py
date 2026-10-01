@@ -39,7 +39,9 @@ class DocumentDraft:
     # (no rechunk/re-embed); removing one, or making an *existing* key
     # start influencing the hash, is a full-corpus rechunk and must be a
     # deliberate, separately-flagged change (see source_version's comment).
-    _HASH_EXCLUDED_METADATA_KEYS = frozenset({"ancestor_ids", "source_version"})
+    _HASH_EXCLUDED_METADATA_KEYS = frozenset(
+        {"ancestor_ids", "source_version", "source_modified_at"}
+    )
 
     def finalize(self) -> "DocumentDraft":
         # ancestor_ids is left out of the hash on purpose: adding it to
@@ -47,19 +49,24 @@ class DocumentDraft:
         # would rechunk and re-embed every page); the pipeline refreshes
         # it in place instead.
         #
-        # source_version (P1-B, docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
-        # §9) is excluded for the same reason, with an additional wrinkle:
-        # for confluence_map specifically, body_md is only a ~400-char
-        # excerpt (see app.confluence.map_sync's module docstring), so a
-        # real content edit past that excerpt never changes content_hash
-        # today regardless of source_version. Using source_version as an
-        # independent staleness signal (not folded into this hash, but
-        # compared against a stored watermark) is the right fix for that —
-        # REVIEW.md item 8 says so explicitly — but that is a *separate*,
-        # not-yet-made follow-up with its own backfill/comparison-logic cost
-        # named up front, deliberately not bundled with adding the field
-        # here. Excluding it from the hash now means introducing it costs
-        # zero rechunk/re-embed on the existing 113k+ document corpus.
+        # source_version/source_modified_at (P1-B,
+        # docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md §9)
+        # are excluded for the same reason: adding either to an already-
+        # indexed row must not look like a content edit on its own.
+        #
+        # 2026-10-01 update: confluence_map's body_md used to be only a
+        # ~400-char excerpt, so a real content edit past that excerpt never
+        # changed content_hash regardless of source_version — which is why
+        # REVIEW.md item 8 proposed source_version as an independent
+        # staleness signal in the first place. That gap is now closed a
+        # different way: app.confluence.map_sync._write_map_page stores the
+        # full cleaned page text as body_md (same as confluence_docs/
+        # tech_repo always have), so content_hash itself now changes on any
+        # real content edit, anywhere in the page — no separate source_version
+        # comparison logic needed for this purpose. source_version/
+        # source_modified_at remain stored as plain provenance (and stay
+        # hash-excluded, since they're metadata-only facts about the page,
+        # not body content).
         hashed = {
             k: v for k, v in self.metadata.items() if k not in self._HASH_EXCLUDED_METADATA_KEYS
         }
@@ -87,6 +94,18 @@ def _pop_source_version(meta: dict[str, Any]) -> None:
         meta["source_version"] = int(str(raw).strip())
     except ValueError:
         meta["source_version"] = str(raw).strip()
+
+
+def _pop_source_modified_at(meta: dict[str, Any]) -> None:
+    """2026-10-01 backfill round: fold the raw 최종수정일시각 frontmatter
+    line (version.when's full ISO8601 timestamp, date+time+offset — see
+    build_frontmatter_* functions) into metadata["source_modified_at"].
+    Kept as the raw string (no parsing/reformatting here) — same
+    "absent means not captured, never defaulted" rule as source_version."""
+    raw = meta.pop("최종수정일시각", None)
+    if raw is None or str(raw).strip() == "":
+        return
+    meta["source_modified_at"] = str(raw).strip()
 
 
 def _clip(s: str | None, n: int) -> str:
@@ -217,6 +236,7 @@ def parse_tech_repo_file(path: Path) -> DocumentDraft:
     if _ancestor_ids:
         meta["ancestor_ids"] = _ancestor_ids
     _pop_source_version(meta)
+    _pop_source_modified_at(meta)
     page_id = meta.get("Page ID") or path.stem.replace("confluence_", "")
     title = meta.get("제목") or ""
     if not title or len(title) < 2:
@@ -277,6 +297,7 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
         if _ancestor_ids:
             meta["ancestor_ids"] = _ancestor_ids
         _pop_source_version(meta)
+        _pop_source_modified_at(meta)
         page_id = meta.get("Page ID") or path.stem
         title = meta.get("제목") or path.stem
         yield DocumentDraft(
@@ -333,6 +354,7 @@ def iter_confluence_map(root: Path) -> Iterator[DocumentDraft]:
         if ancestor_ids:
             meta["ancestor_ids"] = ancestor_ids
         _pop_source_version(meta)
+        _pop_source_modified_at(meta)
         body_text = body.strip() or path_breadcrumb
         yield DocumentDraft(
             source_type="confluence_map",

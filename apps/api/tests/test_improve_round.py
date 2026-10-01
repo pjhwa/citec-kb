@@ -75,6 +75,39 @@ def test_map_page_writes_excerpt_and_does_not_call_pnl_technical(tmp_path: Path)
     assert domains == []
 
 
+def test_map_page_stores_full_body_not_just_400_char_excerpt(tmp_path: Path):
+    """2026-10-01 backfill round: confluence_map used to store only the same
+    ~400-char excerpt as body_md, so content past that point was never even
+    captured (REVIEW.md §9's exact "Neutron 매뉴얼 뒤쪽 장애 절" complaint).
+    get_page_full() already fetches the whole body.storage HTML regardless —
+    this pins that body_md now keeps it all, while classify_map_tech still
+    sees only the short excerpt (D07's 2026-10-01 real-corpus validation was
+    measured against that exact short input and must not silently change)."""
+    long_tail = "기술 문서 뒷부분 트러블슈팅 섹션 " * 60  # well past 400 chars
+    html = f"<p>Network 장비 개요입니다.</p><p>{long_tail}</p>"
+    meta = {
+        "id": "999001",
+        "title": "네트워크 장비 운영 매뉴얼",
+        "version": {"when": "2026-09-07T15:59:11.000+09:00", "number": 12},
+        "ancestors": [],
+        "body": {"storage": {"value": html}},
+    }
+    written = _write_map_page(
+        meta=meta,
+        root_label="root",
+        space_key="LOOKIN",
+        space_name="LOOKIN",
+        base_url="https://c.example.com",
+        tz_name="Asia/Seoul",
+        raw_dir=tmp_path,
+    )
+    body = written.path.read_text(encoding="utf-8")
+    assert "트러블슈팅 섹션" in body  # content well past char 400 survives
+    assert "…" not in body  # not a truncated excerpt
+    assert "최종수정일시각 : 2026-09-07T15:59:11.000+09:00" in body
+    assert "버전번호 : 12" in body
+
+
 def test_empty_citec_tags_stay_unknown_not_irrelevant():
     label, domains = classify_map_tech(
         "Optimizing Network I/O Virtualization",

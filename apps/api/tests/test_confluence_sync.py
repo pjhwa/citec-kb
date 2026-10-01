@@ -371,6 +371,81 @@ def test_confluence_docs_without_source_version_has_no_key(tmp_path):
     assert "source_version" not in drafts[0].metadata
 
 
+def test_confluence_docs_carries_source_modified_at(tmp_path):
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id="2510261901",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=2510261901",
+        last_modified="2026-09-07",
+        source_modified_at="2026-09-07T15:59:11.000+09:00",
+    )
+    out_dir = tmp_path / "confluence_docs"
+    out_dir.mkdir()
+    (out_dir / "confluence_2510261901.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_confluence_docs(tmp_path))
+    assert drafts[0].metadata.get("source_modified_at") == "2026-09-07T15:59:11.000+09:00"
+    assert "최종수정일시각" not in drafts[0].metadata
+
+
+def test_tech_repo_carries_source_modified_at(tmp_path):
+    front = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="148554390",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=148554390",
+        last_modified="2020-04-13",
+        source_modified_at="2020-04-13T09:00:00.000+09:00",
+    )
+    out_dir = tmp_path / "tech_repo"
+    out_dir.mkdir()
+    (out_dir / "confluence_148554390.md").write_text(front + "\n본문\n", encoding="utf-8")
+
+    drafts = list(iter_tech_repo(tmp_path))
+    assert drafts[0].metadata.get("source_modified_at") == "2020-04-13T09:00:00.000+09:00"
+
+
+def test_source_modified_at_is_excluded_from_content_hash(tmp_path):
+    """Same P1-B trap as source_version — adding this field must not look
+    like a content change for already-indexed pages."""
+    from app.ingest.adapters import parse_tech_repo_file
+
+    front_v1 = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="1",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2020-04-13",
+        source_modified_at=None,
+    )
+    front_v2 = build_frontmatter_tech_repo(
+        space_key="테크리포",
+        directory="Home > OS",
+        page_id="1",
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=1",
+        last_modified="2020-04-13",
+        source_modified_at="2020-04-13T09:00:00.000+09:00",
+    )
+    dir_a, dir_b = tmp_path / "a", tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+    p1 = dir_a / "confluence_1.md"
+    p1.write_text(front_v1 + "\n동일한 본문\n", encoding="utf-8")
+    p2 = dir_b / "confluence_1.md"
+    p2.write_text(front_v2 + "\n동일한 본문\n", encoding="utf-8")
+
+    d1 = parse_tech_repo_file(p1)
+    d2 = parse_tech_repo_file(p2)
+    assert d1.metadata.get("source_modified_at") is None
+    assert d2.metadata.get("source_modified_at") == "2020-04-13T09:00:00.000+09:00"
+    assert d1.content_hash == d2.content_hash
+
+
 def test_source_version_is_excluded_from_content_hash(tmp_path):
     """The critical P1-B trap: adding source_version to metadata must NOT
     change content_hash for otherwise-unchanged content — see

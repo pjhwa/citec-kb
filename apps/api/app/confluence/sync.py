@@ -152,6 +152,7 @@ def build_frontmatter_confluence_docs(
     last_modified: str,
     ancestor_ids: Optional[list[str]] = None,
     source_version: Optional[str] = None,
+    source_modified_at: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -181,6 +182,15 @@ def build_frontmatter_confluence_docs(
         # now; see DocumentDraft.finalize()'s hash-exclusion comment for why
         # it does not yet drive content-change detection.
         lines.append(f"버전번호 : {source_version}")
+    if source_modified_at:
+        # 2026-10-01 backfill round: version.when's full ISO8601 timestamp
+        # (date+time+offset), alongside the date-only 최종수정일 already
+        # above. Captured now, while this page is being fetched anyway for
+        # the ancestor_ids/source_version backfill, specifically so a later
+        # decision to implement §9's "원문 갱신 후 허용 지연 Δ와 grace"
+        # (which needs time-of-day precision, not just a date) never has to
+        # pay for another full recrawl just to get this one field.
+        lines.append(f"최종수정일시각 : {source_modified_at}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -195,6 +205,7 @@ def build_frontmatter_tech_repo(
     last_modified: str,
     ancestor_ids: Optional[list[str]] = None,
     source_version: Optional[str] = None,
+    source_modified_at: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -210,6 +221,8 @@ def build_frontmatter_tech_repo(
         lines.append("조상ID목록 : " + ",".join(ancestor_ids))
     if source_version:  # see build_frontmatter_confluence_docs's comment above
         lines.append(f"버전번호 : {source_version}")
+    if source_modified_at:  # see build_frontmatter_confluence_docs's comment above
+        lines.append(f"최종수정일시각 : {source_modified_at}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -250,6 +263,7 @@ def _write_page(
     # exclude_subtree_ids / ancestor_ids membership checks are written).
     ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
     source_version = str(version["number"]) if version.get("number") is not None else None
+    source_modified_at = version.get("when") or None
 
     if source_type == "confluence_docs":
         front = build_frontmatter_confluence_docs(
@@ -261,6 +275,7 @@ def _write_page(
             last_modified=last_modified,
             ancestor_ids=ancestor_ids,
             source_version=source_version,
+            source_modified_at=source_modified_at,
         )
     else:
         directory = directory_breadcrumb(ancestors, title)
@@ -274,6 +289,7 @@ def _write_page(
             last_modified=last_modified,
             ancestor_ids=ancestor_ids,
             source_version=source_version,
+            source_modified_at=source_modified_at,
         )
 
     out_dir = raw_dir / source_type

@@ -175,6 +175,7 @@ def build_frontmatter_confluence_map(
     citec_domains: Optional[list[str]] = None,
     ancestor_ids: Optional[list[str]] = None,
     source_version: Optional[str] = None,
+    source_modified_at: Optional[str] = None,
 ) -> str:
     lines = [
         "---",
@@ -210,6 +211,12 @@ def build_frontmatter_confluence_map(
         # follow-up with its own backfill cost, deliberately not bundled
         # with this additive field).
         lines.append(f"버전번호 : {source_version}")
+    if source_modified_at:
+        # 2026-10-01 backfill round: see build_frontmatter_confluence_docs's
+        # matching comment in app.confluence.sync — captured now while the
+        # page is already being fetched, so §9's future freshness-grace
+        # calculation never needs its own recrawl just for this field.
+        lines.append(f"최종수정일시각 : {source_modified_at}")
     lines.append("---")
     front = "\n".join(lines) + "\n"
     return front
@@ -252,10 +259,36 @@ def _write_map_page(
     path_breadcrumb = directory_breadcrumb(ancestors, title)
     ancestor_ids = [str(a["id"]) for a in ancestors if a.get("id")] + [page_id]
     source_version = str(version["number"]) if version.get("number") is not None else None
+    source_modified_at = version.get("when") or None
 
     storage = ((meta.get("body") or {}).get("storage") or {}).get("value") or ""
+    # excerpt (short, whitespace-collapsed) is kept exactly as before and
+    # used ONLY for classify_map_tech() — the D07 fix (2026-10-01 real-corpus
+    # validation, REPORT.md §1-E) was measured against this exact short-
+    # excerpt input and must not silently start seeing full body text instead.
     excerpt = excerpt_from_storage(storage) if storage else ""
     tech_relevant, domains = classify_map_tech(title, excerpt)
+    # full_text (2026-10-01 backfill round): confluence_map used to store
+    # only this same 400-char excerpt as body_md, which is why REVIEW.md §9
+    # could not even check "does the Neutron manual's later troubleshooting
+    # section match a query" — content past char 400 was never captured at
+    # all, not just unindexed. get_page_full() already fetches the entire
+    # body.storage HTML for every page regardless (no extra network cost),
+    # so this stores what was already being discarded. Mirrors
+    # app.confluence.sync._write_page's cleaning exactly (clean_body +
+    # storage_html_to_text, no whitespace-collapse-to-one-line — chunk_markdown
+    # needs paragraph/heading structure to split sensibly).
+    #
+    # This does NOT change evidence_eligible/evidence_grade="C" for
+    # confluence_map (see app.retrieval.search) — a richer body only
+    # improves FTS/vector discovery of relevant pages; the trust/citation
+    # contract (P0-A, this session) still requires reading the live
+    # Confluence page before treating any map hit as verified fact. The
+    # existing chunk_markdown()/embed_pending_chunks() pipeline requires no
+    # changes — it already applies uniformly to every source_type.
+    from app.confluence.sync import clean_body, storage_html_to_text
+
+    full_text = clean_body(storage_html_to_text(storage)) if storage else ""
     front = build_frontmatter_confluence_map(
         space_key=space_key,
         space_name=space_name,
@@ -271,14 +304,15 @@ def _write_map_page(
         citec_domains=domains,
         ancestor_ids=ancestor_ids,
         source_version=source_version,
+        source_modified_at=source_modified_at,
     )
 
     out_dir = raw_dir / "confluence_map"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"confluence_map_{page_id}.md"
     body = path_breadcrumb
-    if excerpt:
-        body = f"{path_breadcrumb}\n\n{excerpt}"
+    if full_text:
+        body = f"{path_breadcrumb}\n\n{full_text}"
     out_path.write_text(front + "\n" + body + "\n", encoding="utf-8")
     return WrittenPage(page_id=page_id, path=out_path)
 
