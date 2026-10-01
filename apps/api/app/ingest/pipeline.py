@@ -120,12 +120,36 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             if not existing.work_type and draft.work_type:
                 existing.work_type = draft.work_type
                 dirty = True
-            # ancestor_ids is excluded from content_hash (see
-            # DocumentDraft.finalize), so a backfill lands here.
-            new_anc = (draft.metadata or {}).get("ancestor_ids")
-            if new_anc and (existing.metadata_ or {}).get("ancestor_ids") != new_anc:
-                existing.metadata_ = {**(existing.metadata_ or {}), "ancestor_ids": new_anc}
-                dirty = True
+            # 2026-10-02: every DocumentDraft._HASH_EXCLUDED_METADATA_KEYS
+            # field (ancestor_ids, source_version, source_modified_at — see
+            # finalize()'s comment) must be refreshed here, not just
+            # ancestor_ids. This used to hardcode ancestor_ids alone (the
+            # only such field when this branch was first written, for
+            # P0-B) — after source_version/source_modified_at were added
+            # as additional hash-excluded fields (P1-B, then the 2026-10-01
+            # full-body round), a --from-scratch backfill whose pages had
+            # an unchanged content_hash (the common case: most Confluence
+            # pages had not actually been edited) kept refreshing
+            # ancestor_ids but silently left source_version/
+            # source_modified_at untouched forever, because this branch
+            # never knew about them. Confirmed in production diagnostics
+            # (2026-10-02, after `backfill_p0b_p1b_metadata.sh --apply
+            # docs`): confluence_docs missing_ancestor_ids dropped from
+            # 100% to 0.3%, while missing_source_version barely moved
+            # (100% → 89.5%) — exactly this bug. Generalizing to loop over
+            # the whole exclusion set fixes it for all three fields and
+            # for any future field added to that set, instead of needing
+            # this branch edited again each time.
+            new_meta = draft.metadata or {}
+            existing_meta = existing.metadata_ or {}
+            updated_meta = dict(existing_meta)
+            for key in DocumentDraft._HASH_EXCLUDED_METADATA_KEYS:
+                new_val = new_meta.get(key)
+                if new_val and existing_meta.get(key) != new_val:
+                    updated_meta[key] = new_val
+                    dirty = True
+            if dirty:
+                existing.metadata_ = updated_meta
             return "updated" if dirty else "skipped"
         # same hash but no active chunks (e.g. bare promote) → fall through rechunk
 
