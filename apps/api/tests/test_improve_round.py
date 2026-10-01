@@ -128,3 +128,36 @@ def test_non_tech_marker_only_in_excerpt_does_not_demote():
     )
     assert label == "relevant"
     assert domains == ["Network"]
+
+
+# --- Real-corpus validation (2026-10-01): the fix's blast radius could not
+# be measured during the original implementation session — the locally
+# available data/raw/confluence_map/ snapshot has zero rows with excerpt/
+# tech_relevant populated (classification only ever runs against live
+# Confluence body_storage). After the PR deployed, 5,000 real production
+# confluence_map rows (title+excerpt+recorded tech_relevant) were pulled via
+# scripts/collect_prod_diagnostics.sh and replayed through classify_map_tech
+# old vs new. Result on the 4,934-row verified-reproducible subset: only 2
+# flips (0.04%), both relevant→irrelevant, zero false negatives — both real
+# titles were genuine org-process documents ("KPI 수립과정 ...", "... KPI
+# 항목별 정리"), confirming the title-only narrowing is both safe and
+# effective on the actual production distribution. See REPORT.md §1-E.
+# These two pin that real-world finding as a permanent regression test
+# (title only; the real excerpt content wasn't retained — a single generic
+# domain-word mention is enough to reproduce the shape that mattered).
+
+
+def test_real_prod_kpi_process_doc_is_irrelevant():
+    label, _ = classify_map_tech(
+        "【History】KPI 수립과정 (팀-사업부 혁신그룹-평가사무국)",
+        "회의록: 금년도 KPI 수립 일정 및 담당자 안내. 관련 시스템은 Network 공유 드라이브에 게시.",
+    )
+    assert label == "irrelevant"
+
+
+def test_real_prod_kpi_item_summary_is_irrelevant():
+    label, _ = classify_map_tech(
+        "3. 24년 KPI 항목별 정리",
+        "부서별 KPI 항목 정리본. 공유 자료는 Network 드라이브 참고.",
+    )
+    assert label == "irrelevant"

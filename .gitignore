@@ -43,3 +43,8 @@ data/backups/
 data/reports/load_sla_20*.json
 
 data/reports/pilot_signoff_20*.json
+
+# scripts/collect_prod_diagnostics.sh output — real production page
+# titles/excerpts, must never be committed (ends up in artifacts/*/analysis
+# summaries instead, with content aggregated/anonymized as needed)
+diagnostics_*.txt
