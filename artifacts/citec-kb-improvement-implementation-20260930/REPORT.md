@@ -582,6 +582,47 @@ storage/sysops/guid/emcloud/openstack101/devops001/dftrts/cldeng)은
 
 **이 라운드는 스크립트/쿼리만 보강했고, 파일럿 자체는 실행하지 않았다.**
 
+## 1-H. 여덟 번째 라운드 — 운영 `--apply docs` 실행 결과에서 실제 버그 발견 (2026-10-02)
+
+사용자가 운영에서 `backfill_p0b_p1b_metadata.sh --apply docs` 실행 후
+`collect_prod_diagnostics.sh`를 다시 돌려 가져온 결과를 분석한 과정에서
+**실제 코드 버그를 발견·수정**했다.
+
+**증상**: confluence_docs `missing_ancestor_ids`가 100%→0.3%(5,509→17)로
+거의 완전히 해소됐는데, **같은 백필에서 같이 채워야 했던**
+`missing_source_version`은 100%→89.5%(5,509→5,051)로 거의 그대로였다.
+tech_repo도 동일 패턴(ancestor_ids 2,800→1,829 결측, source_version
+2,800→1,833 결측 — 거의 같이 안 줄어듦, 다만 confluence_docs보다 훨씬 덜
+줄어든 것은 백필이 끝까지 안 돌았을 가능성도 있어 별도 확인 필요).
+
+**원인(코드로 확정)**: `app/ingest/pipeline.py::_upsert_document()`의
+"기존 문서, content_hash 불변, 활성 청크 있음" 빠른 경로가 **`ancestor_ids`만
+하드코딩으로 특별취급**해 되돌려 쓰고 있었다 — 이 분기는 P0-B 때
+(`ancestor_ids`가 `_HASH_EXCLUDED_METADATA_KEYS`의 유일한 항목이던 시절)
+작성된 것이고, 이후 P1-B에서 `source_version`을, 10/1 라운드에서
+`source_modified_at`을 같은 제외 목록에 추가했지만 **이 분기를 같이
+고치지 않았다.** 그 결과: 실제 Confluence 본문이 안 바뀐 페이지(재크롤의
+대부분)는 매번 `ancestor_ids`만 갱신되고 `source_version`/
+`source_modified_at`은 **몇 번을 다시 돌려도 영원히 안 채워지는** 구조였다.
+
+**수정**: 하드코딩된 `"ancestor_ids"` 대신 `DocumentDraft._HASH_EXCLUDED_METADATA_KEYS`
+전체를 순회하도록 일반화 — 현재 3개 필드 모두 해결되고, 앞으로 이 제외
+목록에 필드가 추가돼도 이 분기를 다시 고칠 필요가 없다.
+
+**검증**: `test_reingest_with_unchanged_body_backfills_all_hash_excluded_fields`
+— 운영에서 관찰된 정확한 모양(본문 불변 재인제스트, ancestor_ids는
+채워지고 source_version은 안 채워짐)을 재현. `git stash`로 수정 전
+코드에서 실제로 실패(`source_version` None)함을 확인 후 수정, 통과로
+전환. 전체 스위트: 374 unit + 430(scratch DB 포함) 통과, 기존 무관 실패
+1건 제외.
+
+**운영 조치 필요**: 이 수정은 **다음 재크롤부터만** 올바르게 동작한다 —
+이미 끝난 지난 `--apply docs` 실행으로는 못 채워진 source_version이
+저절로 채워지지 않는다. 이 커밋 배포 후 `backfill_p0b_p1b_metadata.sh
+--apply docs`를 **한 번 더** 실행해야 한다. tech_repo의 상대적으로 낮은
+완료율(ancestor_ids 기준 34.7%만 해소)은 이 버그와 별개로 백필 자체가
+끝까지 안 돌았을 가능성도 있어, 재실행 시 함께 확인 필요.
+
 ## 2. 테스트 로그 (실행/실패/SKIP/BLOCKED 네 가지로 구분)
 
 ### 실행 — unit + contract (DB 불필요, `pytest tests/ -k "not _db"`)
