@@ -345,6 +345,95 @@ def test_ingest_insert_skip_update_cycle_scoped_to_tmp_raw_dir(tmp_path):
         _cleanup_document(external_id, "confluence_docs")
 
 
+def test_reingest_with_unchanged_body_backfills_all_hash_excluded_fields(tmp_path):
+    """2026-10-02 production bug, found via scripts/collect_prod_diagnostics.sh
+    after a real `backfill_p0b_p1b_metadata.sh --apply docs` run:
+    confluence_docs missing_ancestor_ids dropped from 100% to 0.3%, but
+    missing_source_version barely moved (100% → 89.5%). Root cause:
+    app.ingest.pipeline._upsert_document's hash-unchanged fast path
+    special-cased only `ancestor_ids` for backfill (written back when
+    ancestor_ids was the only DocumentDraft._HASH_EXCLUDED_METADATA_KEYS
+    field, for P0-B) — source_version/source_modified_at, added later,
+    were never wired into that branch, so a --from-scratch recrawl whose
+    pages had an unchanged body (the common case) refreshed ancestor_ids
+    forever but never backfilled the other two. Fixed by generalizing the
+    branch to loop over the whole exclusion set."""
+    from app.confluence.sync import build_frontmatter_confluence_docs
+    from app.ingest.pipeline import run_ingest
+
+    external_id = "9100001"
+    _cleanup_document(external_id, "confluence_docs")
+
+    raw_dir = tmp_path / "raw"
+    docs_dir = raw_dir / "confluence_docs"
+    docs_dir.mkdir(parents=True)
+    body = "동일한 본문 — 재크롤해도 바뀌지 않음.\n"
+
+    # Pass 1: no ancestor_ids/source_version/source_modified_at at all —
+    # simulates a page ingested before those fields existed.
+    front_v1 = build_frontmatter_confluence_docs(
+        space_key="LOOKIN",
+        folder="CI-TEC 과제",
+        page_id=external_id,
+        title="test",
+        url="https://x/pages/viewpage.action?pageId=9100001",
+        last_modified="2026-09-07",
+    )
+    target = docs_dir / f"confluence_{external_id}.md"
+    target.write_text(front_v1 + "\n" + body, encoding="utf-8")
+
+    try:
+        stats1 = run_ingest(raw_dir, sources=["confluence_docs"])
+        assert stats1["inserted"] == 1
+
+        from app.db.models import Document
+        from app.db.session import session_scope
+
+        with session_scope() as session:
+            doc = session.query(Document).filter_by(
+                source_type="confluence_docs", external_id=external_id
+            ).one()
+            assert "ancestor_ids" not in (doc.metadata_ or {})
+            assert "source_version" not in (doc.metadata_ or {})
+
+        # Pass 2: SAME body (content_hash unchanged) but now carries all
+        # three hash-excluded fields — simulates a --from-scratch recrawl
+        # of an unedited Confluence page after this session's code shipped.
+        front_v2 = build_frontmatter_confluence_docs(
+            space_key="LOOKIN",
+            folder="CI-TEC 과제",
+            page_id=external_id,
+            title="test",
+            url="https://x/pages/viewpage.action?pageId=9100001",
+            last_modified="2026-09-07",
+            ancestor_ids=["1", external_id],
+            source_version="42",
+            source_modified_at="2026-09-07T15:59:11.000+09:00",
+        )
+        target.write_text(front_v2 + "\n" + body, encoding="utf-8")
+        stats2 = run_ingest(raw_dir, sources=["confluence_docs"])
+        # content_hash is unchanged (ancestor_ids/source_version/
+        # source_modified_at are all hash-excluded) → this must be
+        # "updated" (metadata backfilled in place), not "skipped", and
+        # definitely not "inserted" (no duplicate row).
+        assert stats2.get("updated", 0) == 1
+        assert stats2.get("inserted", 0) == 0
+        assert stats2.get("skipped", 0) == 0
+
+        with session_scope() as session:
+            doc = session.query(Document).filter_by(
+                source_type="confluence_docs", external_id=external_id
+            ).one()
+            meta = doc.metadata_ or {}
+            assert meta.get("ancestor_ids") == ["1", external_id]
+            assert meta.get("source_version") == 42
+            assert meta.get("source_modified_at") == "2026-09-07T15:59:11.000+09:00"
+            # body/content_hash genuinely unchanged — this was metadata-only
+            assert doc.body_md.strip().endswith("동일한 본문 — 재크롤해도 바뀌지 않음.")
+    finally:
+        _cleanup_document(external_id, "confluence_docs")
+
+
 def test_sync_ingest_failure_does_not_advance_cursor(tmp_path, monkeypatch):
     """P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
     §9, REVIEW.md item 8 "수집 cursor는 ingest/embed 전에 전진한다"): a crawl
