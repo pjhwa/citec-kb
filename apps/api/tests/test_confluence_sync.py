@@ -161,7 +161,18 @@ def test_techrepo_roots_match_confirmed_values():
         "449603893": "클라우드 CSP별 상품서비스 비교",
         "289434485": "클라우드 테스트 시나리오 및 도구",
         "133859927": "교육 및 세미나",
+        "133859923": "클라우드 운영 기술",
     }
+
+
+def test_techrepo_roots_includes_the_2026_10_02_found_gap():
+    """2026-10-02: production diagnostics found 1,829/2,800 tech_repo
+    documents whose live Confluence ancestor chain included page 133859923
+    ("클라우드 운영 기술", a sibling of the other 5 TECHREPO_ROOTS, directly
+    under TechRepo Home 31951116) but that id was never in this dict — so
+    every --from-scratch recrawl silently found 0 of them (CQL
+    ancestor=<root> only matches pages under a tracked root)."""
+    assert "133859923" in TECHREPO_ROOTS
 
 
 # --- frontmatter generation must round-trip through the existing adapters ---

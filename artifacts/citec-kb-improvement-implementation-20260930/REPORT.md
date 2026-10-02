@@ -623,6 +623,25 @@ tech_repo도 동일 패턴(ancestor_ids 2,800→1,829 결측, source_version
 완료율(ancestor_ids 기준 34.7%만 해소)은 이 버그와 별개로 백필 자체가
 끝까지 안 돌았을 가능성도 있어, 재실행 시 함께 확인 필요.
 
+## 1-I. 아홉 번째 라운드 — PR #6 수정 검증 + tech_repo 루트 결측 발견·수정 (2026-10-02)
+
+PR #6 배포 후 `--apply docs` 재실행 결과를 확인:
+
+**버그 수정 검증 완료**: confluence_docs `missing_ancestor_ids`=15, `missing_source_version`=**15** — 수정 전(17 vs 5,051, 완전 불일치)과 달리 **정확히 일치**. 수정이 운영에서 실제로 동작함을 확인.
+
+**tech_repo 잔여 결측(1,829/2,800, 65.3%)은 별개의 새 발견 — 코드 버그 아님**:
+재크롤 로그에서 `tech_repo: written=971`을 확인 — `TECHREPO_ROOTS`의 CQL이 매번 971건만 반환하고 있었다(`2,800 − 971 = 1,829`, 결측 수와 정확히 일치). 사용자가 직접 확인 요청 → 기존 `ConfluenceClient.get_page_meta()`를 그대로 재사용하는 1회성 진단 스크립트(파일로 남기지 않고 `docker compose exec` heredoc으로 바로 실행)를 제공해 20건 샘플을 운영에서 직접 조회:
+
+- **20/20 전부 `OK`** (404/403 없음 — 삭제·권한 문제 아님)
+- **20/20 전부 조상 목록에 `31951116`(TechRepo Home)과 `133859923`을 공통으로 포함**
+- 로컬 `data/raw/confluence_map/confluence_map_133859923.md` 확인: 제목 "클라우드 운영 기술", 경로 `... Home > 클라우드 운영 기술` — **기존 5개 TECHREPO_ROOTS와 같은 레벨의 형제 섹션인데, 애초에 이 목록에 없었다.** 공간 재구성/페이지 이동이 아니라 **처음부터 빠뜨린 섹션**.
+
+**수정**: `app/confluence/sync.py::TECHREPO_ROOTS`에 `"133859923": "클라우드 운영 기술"` 추가(형제 섹션이라 기존 5개와 중복 크롤 없음). `test_techrepo_roots_match_confirmed_values` 갱신 + `test_techrepo_roots_includes_the_2026_10_02_found_gap` 추가.
+
+**완료 기준**: 다음 `--apply docs` 재실행 시 tech_repo `missing_ancestor_ids`가 1,829에서 거의 0으로 떨어져야 한다(981건이 처음 발견될 신규 페이지로 예상 — 2026-10-01 로그의 `tech_repo written: 971` → 이 루트 추가 후 `~971+1829` 수준으로 증가 예상, 정확한 수는 실행해봐야 확인).
+
+**confluence_map 백필 범위 축소 (코드 변경 아님, 운영 권장안)**: `[2b]` 공간별 결측 쿼리로 확인 — confluence_map 28,859건 결측이 **정확히 5개 공간**(ICLOUDUT 15,724 + LOOKIN 8,278 + TechRepo 3,993 + ServiceExcellenceTeam 862 + SPC 2)에만 몰려 있고, 나머지 11개 공간(2026-09-28~30에 백필된 공간들)은 ancestor_ids/source_version 둘 다 0건 결측으로 완료 상태. `--apply map`(전체 77,446건, ~73시간) 대신 이 5개 공간만 `--source-ids`로 좁히면 범위 63% 축소 가능 — **정확한 source_id 철자는 운영 DB에서 직접 확인 필요(이 세션은 조회 권한 없음)**.
+
 ## 2. 테스트 로그 (실행/실패/SKIP/BLOCKED 네 가지로 구분)
 
 ### 실행 — unit + contract (DB 불필요, `pytest tests/ -k "not _db"`)
