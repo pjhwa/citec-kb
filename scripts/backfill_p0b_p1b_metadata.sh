@@ -26,8 +26,18 @@
 #   scripts/backfill_p0b_p1b_metadata.sh --apply frames    # frames만 적용 (가장 싸고 빠름 — 먼저 권장)
 #   scripts/backfill_p0b_p1b_metadata.sh --apply map-pilot # confluence_map 작은 공간 1개만 먼저(아래 "파일럿" 참고)
 #   scripts/backfill_p0b_p1b_metadata.sh --apply docs      # confluence_docs/tech_repo 전체 재크롤
-#   scripts/backfill_p0b_p1b_metadata.sh --apply map       # confluence_map 전체 재크롤(수 시간)
-#   scripts/backfill_p0b_p1b_metadata.sh --apply all       # 위 3개 전부(순서: frames → docs → map, map-pilot 제외)
+#   scripts/backfill_p0b_p1b_metadata.sh --apply map       # confluence_map 전체 16개 공간 재크롤(수십 시간)
+#   scripts/backfill_p0b_p1b_metadata.sh --apply map --source-ids confluence_map_a,confluence_map_b
+#                                                           # map을 지정한 공간만으로 좁힘(2b 쿼리로 범위 먼저 확인)
+#   scripts/backfill_p0b_p1b_metadata.sh --apply all       # frames/docs/map(전체 16개 공간) 전부, map-pilot 제외
+#
+# 주의: --source-ids는 "map"에만 적용된다(docs/frames/all은 이미 범위가
+# 고정돼 있어 무시됨). --apply map을 --source-ids 없이 그대로 쓰면 **항상
+# 16개 공간 전체**를 돈다 — 2026-10-02~05 실제로 5개 공간만 먼저 끝내고
+# 나머지 11개 공간이 전체본문 캡처(PR #4)를 아직 못 받은 상태로 남았던
+# 사례는 이 플래그 없이 scripts/map_backfill.sh를 직접 호출해서였다(이
+# 스크립트의 --apply map이 아니었음) — 지금은 이 스크립트 하나로 양쪽 다
+# 가능하도록 통일했다.
 #
 # 비용/주의 — 2026-09-28~30 실제 백필 로그(사용자 제공, /tmp/backfill.txt)로
 # 실측 검증됨: 크롤은 소스 크기와 무관하게 **정확히 3.40초/페이지**
@@ -71,12 +81,14 @@ SERVICE="${BACKFILL_SERVICE:-api}"
 APPLY=""
 YES=false
 TARGET="plan"
+MAP_SOURCE_IDS=""
 
 usage() { sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) APPLY="apply"; TARGET="${2:?--apply 뒤에 docs|map|frames|all 중 하나를 지정하세요}"; shift 2 ;;
+    --source-ids) MAP_SOURCE_IDS="${2:?--source-ids 뒤에 콤마로 구분된 source id 목록을 지정하세요}"; shift 2 ;;
     -y|--yes) YES=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "알 수 없는 인자: $1" >&2; usage >&2; exit 64 ;;
@@ -155,10 +167,16 @@ do_map_pilot() {
 }
 
 do_map() {
-  echo "[map] confluence_map 전체 재크롤 — 기존 scripts/map_backfill.sh --from-scratch 재사용 (수 시간~수십 시간, 백그라운드)"
-  echo "  권장: 먼저 --apply map-pilot으로 측정 후, 위 [2b] 공간별 결측 분포로 정말 남은 범위를 좁혀서 --source-ids로 실행하는 것을 고려."
-  confirm "confluence_map 전체(77,446페이지)를 --from-scratch로 재백필합니다. 현재 레이트리밋 기준 최대 ~73시간 걸릴 수 있습니다. 진행할까요?" || { echo "취소"; return 0; }
-  "${SCRIPT_DIR}/map_backfill.sh" --from-scratch
+  if [[ -n "$MAP_SOURCE_IDS" ]]; then
+    echo "[map] confluence_map 지정 공간만 재크롤 — scripts/map_backfill.sh --from-scratch --source-ids ${MAP_SOURCE_IDS} (백그라운드)"
+    confirm "confluence_map 중 지정한 공간(${MAP_SOURCE_IDS})만 --from-scratch로 재백필합니다. 진행할까요?" || { echo "취소"; return 0; }
+    "${SCRIPT_DIR}/map_backfill.sh" --from-scratch --source-ids "$MAP_SOURCE_IDS"
+  else
+    echo "[map] confluence_map 전체 재크롤 — 기존 scripts/map_backfill.sh --from-scratch 재사용 (수 시간~수십 시간, 백그라운드)"
+    echo "  권장: 먼저 --apply map-pilot으로 측정 후, 위 [2b] 공간별 결측 분포로 정말 남은 범위를 좁혀서 --source-ids로 실행하는 것을 고려."
+    confirm "confluence_map 전체(77,446페이지)를 --from-scratch로 재백필합니다. 현재 레이트리밋 기준 최대 ~73시간 걸릴 수 있습니다. 진행할까요?" || { echo "취소"; return 0; }
+    "${SCRIPT_DIR}/map_backfill.sh" --from-scratch
+  fi
   echo "[map] 백그라운드로 시작됨 — 진행: data/raw/confluence_map/.backfill_state.json, 로그: data/raw/confluence_map/.backfill.log, 화면: admin.html"
 }
 
