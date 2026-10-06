@@ -10,6 +10,14 @@
 #   scripts/map_backfill.sh --foreground       # 끝날 때까지 붙어서 실행 (종료 코드 유지)
 #   scripts/map_backfill.sh --from-scratch     # 완료된 소스도 다시 크롤
 #   scripts/map_backfill.sh --source-ids confluence_map_spc,confluence_map_guid
+#   CONFLUENCE_RATE_LIMIT_RPS=1.0 scripts/map_backfill.sh ...   # 레이트리밋 임시 상향
+#
+# 주의(2026-10-06 실제로 겪은 문제): CONFLUENCE_RATE_LIMIT_RPS=1.0을 앞에
+# 붙여도 `docker compose exec`는 기본적으로 호스트 쉘의 환경변수를
+# 컨테이너로 넘기지 않는다 — 컨테이너 안 프로세스는 .env 파일 값(없으면
+# 코드 기본값 0.3)을 그대로 쓴다. 이 스크립트는 이제 CONFLUENCE_RATE_LIMIT_RPS가
+# 호스트 쉘에 설정돼 있으면 `docker compose exec -e`로 명시적으로 전달한다
+# (아래 EXEC_ENV_ARGS). 설정 안 돼 있으면 평소처럼 .env/기본값(0.3)을 쓴다.
 #
 # 로그: data/raw/confluence_map/.backfill.log
 # 상태: data/raw/confluence_map/.backfill_state.json
@@ -44,6 +52,14 @@ done
 
 cd "$PROJECT_DIR"
 
+# docker compose exec는 -e로 명시하지 않으면 호스트 쉘의 환경변수를
+# 컨테이너로 넘기지 않는다 — 위 "주의" 참고. 실제로 python을 실행하는
+# exec 호출(foreground/dry-run, background 두 곳)에만 붙인다.
+EXEC_ENV_ARGS=()
+if [[ -n "${CONFLUENCE_RATE_LIMIT_RPS:-}" ]]; then
+  EXEC_ENV_ARGS+=(-e "CONFLUENCE_RATE_LIMIT_RPS=${CONFLUENCE_RATE_LIMIT_RPS}")
+fi
+
 if ! docker compose ps --status running --services 2>/dev/null | grep -qx "$SERVICE"; then
   echo "중단: ${SERVICE} 컨테이너가 실행 중이 아닙니다. (cd ${PROJECT_DIR})" >&2
   exit 1
@@ -74,7 +90,7 @@ done
 
 if $dry || $FOREGROUND; then
   echo "백필을 이 터미널에서 실행합니다. 컨테이너를 재시작하지 마세요."
-  docker compose exec -T "$SERVICE" python -m app.confluence.map_backfill_cli "${PY_ARGS[@]+"${PY_ARGS[@]}"}"
+  docker compose exec -T "${EXEC_ENV_ARGS[@]+"${EXEC_ENV_ARGS[@]}"}" "$SERVICE" python -m app.confluence.map_backfill_cli "${PY_ARGS[@]+"${PY_ARGS[@]}"}"
   exit $?
 fi
 
@@ -86,7 +102,7 @@ docker compose exec -T "$SERVICE" sh -c \
 # -T: no tty. Without it, detaching sends SIGHUP and the process dies
 # before it can write a log line. trap keeps that disposition across exec.
 echo "백필을 백그라운드로 시작합니다."
-docker compose exec -d -T "$SERVICE" \
+docker compose exec -d -T "${EXEC_ENV_ARGS[@]+"${EXEC_ENV_ARGS[@]}"}" "$SERVICE" \
   sh -c 'trap "" HUP; cd /app; exec python -u -m app.confluence.map_backfill_cli "$@" >> /data/raw/confluence_map/.backfill.log 2>&1' \
   sh "${PY_ARGS[@]+"${PY_ARGS[@]}"}"
 sleep 2
