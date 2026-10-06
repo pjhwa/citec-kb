@@ -46,6 +46,7 @@ Neo4j에 멱등하게 반영한다. 노드는 4종(`Document`/`Component`/`Busin
 |---|---|---|
 | 코퍼스 규모 | `documents` 테이블 | 70,322건. `confluence_map` 34,173 / `incident_reports` 15,349 / `checkitem` 8,989 / `confluence_docs` 5,509 / `tech_repo` 2,800 / `support_history` 2,365 / `dept_archive` 1,111 / `tuning_ai` 15 / `failure_bucket` 8 / `insight` 3 |
 | 본문 비대칭 | `documents.body_md` | `confluence_map`은 **전 건이 breadcrumb만** 보유(평균 147자) — 운영서버엔 실제 본문이 있으나 현재 개발 DB엔 없음. `confluence_docs` 450건, `tech_repo` 84건도 본문 비어있음 |
+| **confluence_map의 실질 역할** | `metadata->>'space_key'` 분포 + 제목 샘플 | **"참고용 포인터"가 아니라 장애/기술이슈의 1차 근거 자료.** space 분포: `ICLOUDUT` 15,701 / `LOOKIN` 8,228 / `TechRepo` 3,990 / `CLDENG` 3,949 / `DevOps001` 186 등. 제목 샘플: "4. SCP 아키텍처 Space", "[2023.05] Placement Group 설계서", "■ 운영계반영-작업계획, 2023년 05월", "[04/28] 상암 PP 스토리지 장애", "5/9 물산패션 HANA BW 장애 분석" — 아키텍처 설계서·운영 작업계획·장애 분석 기록이 실제로 들어있다. **더 결정적으로, confluence_map 34,173건 중 25,871건(76%)은 `tech_repo`/`confluence_docs`에 대응 문서가 전혀 없다**(`external_id` 기준 join 결과 8,306건만 중복) — 즉 이 76%에 대해서는 confluence_map이 **유일한 소스**이고, 운영에서 본문이 채워지면(§ 본문 비대칭) 다른 어떤 소스로도 대체되지 않는다. `evidence_grade="C"`(아래 §3.3)는 **답변 인용 우선순위**(A등급 중복 문서가 있을 때 그걸 우선)를 낮추는 용도일 뿐, **그래프 추출(컴포넌트/참조) 우선순위와는 별개 축**이다 — 혼동하면 1단계 설계에서 가장 내용이 풍부해질 소스를 "낮은 등급이니 나중에" 식으로 잘못 후순위화하게 된다 |
 | 구조화 필드(티켓) | `apps/api/app/db/models.py:320` (`IssueFrame`) | 17,632건이지만 **필드별 충전율이 다름**: `symptom` 99.9%(17,622), `root_cause` 59%(10,426), `resolution` 60%(10,627), `components[]` 50%(8,891), `citec_domains[]` 62%(10,928), `environment` **14%뿐**(2,477). `body_hash`/`extractor_version`는 `apps/api/app/frames/job.py`에 정확히 배선돼 있음(재추출 스킵 판단에 둘 다 사용) — 개발 DB는 전체 17,632건이 NULL(이 재추출 잡이 개발 DB에서 아직 안 돌았을 뿐, 코드 결함 아님) — §4의 `graph_sync_state.input_hash`는 이 두 컬럼이 아직 NULL인 상태에서도(= 현재 개발 DB 상태에서도) 동작해야 하므로, `body_hash IS NULL`을 "값 없음"이 아니라 "content_hash로 폴백"으로 처리한다 |
 | 구조화 필드(체크아이템) | `apps/api/app/db/models.py:222` (`Checkitem`) | 8,989건 전체 `area`/`category`/`category_1` 100% 충전, `subcategory` 99%(8,927). `area` distinct 65종(벤더/제품명 단위: `3PAR`,`Cisco_IOS`,`NetApp` 등), `category_1` distinct 10종 |
 | failure_bucket 플라이휠 | `apps/api/app/failure_buckets/service.py` | `create_bucket`→`_index_bucket`→`embed_pending_chunks`, `refine_bucket`의 `signals_changed`/`environment_changed` 가드로 재인덱싱 스킵. `match_buckets()`가 이미 유사도 스코어 계산(`match.py:48-68`, `score = 0.6*signal_ratio + 0.4*confidence`, 0~1 범위, `_DUPLICATE_SCORE_THRESHOLD=0.75`) — **단, 이 점수는 두 버킷의 순수 신호 유사도가 아니라 대상 버킷의 기존 confidence가 40% 섞여 있음**, SIMILAR_TO 가중치로 쓸 때 참고 |
@@ -109,11 +110,11 @@ graph_sync_state (NEW)
 |---|---|---|---|---|
 | `PARENT_OF` | Document→Document | EXTRACTED | `metadata_["ancestor_ids"]` | confluence_map+confluence_docs+tech_repo 42,482건 커버, 본문 불필요. 운영에는 이미 채워져 있음(§1) — 개발 DB는 공집합 반환, 정상 동작 |
 | `HAS_COMPONENT` | Document→Component | EXTRACTED | `issue_frames.components[]`(50% 충전, §1) / `checkitems.area*`(100%) | 구조화 필드, 즉시 가능하되 티켓 쪽은 절반만 커버 |
-| `HAS_COMPONENT` | Document→Component | INFERRED | 본문 + `lexicon_terms` 매칭 | tech_repo/confluence_docs/dept_archive 본문 있는 문서만. 사전이 10건뿐이라 1단계는 저조한 recall 예상(§4.2) |
+| `HAS_COMPONENT` | Document→Component | INFERRED | 본문 + `lexicon_terms` 매칭 | 본문 있는 문서만(현재 tech_repo/confluence_docs/dept_archive). **운영 동기화 후의 confluence_map(§1)이 이 추출기의 최우선 대상이 된다** — 34,173건 중 76%가 유일 소스인 아키텍처/운영/장애 기록이라, 다른 소스보다 낮은 등급 취급하면 안 됨. 사전이 10건뿐이라 1단계는 전체적으로 저조한 recall 예상(§4.2) |
 | `MENTIONS_ENTITY` | Document→BusinessEntity | EXTRACTED | 기존 `document_entities`(`entities.type` business_system/platform만, §3.2) | 그대로 미러링, 549건 |
 | `HAS_EVIDENCE` | FailureBucket→Document | EXTRACTED | `evidence_ref` 접두어 파싱(`citects-`/`confluence:`/`capture:`/`log:`/`legacy:`/…) | 8건 전수 파싱 시도하되, `documents.external_id`로 실제 해석 가능한 건 `confluence:`류뿐 — `capture:`/`log:`는 pcap/로그 파일이라 애초에 Document가 아님(§4.2), `legacy:pre-migration`은 대상 자체가 없음. **엣지 생성은 8건 중 소수(현재 샘플 기준 ~2건)만** — 나머지는 엣지 없이 `evidence_ref` 원문을 FailureBucket 속성으로만 보존 |
 | `SIMILAR_TO` | FailureBucket↔FailureBucket | INFERRED | 기존 `match_buckets()` 점수 ≥ 0.75 | 8건, 전수 계산 가능 |
-| `REFERENCES` | Document→Document | EXTRACTED | 본문 내 `CITECTS-\d+` 패턴 / 명시적 링크 | 본문 없는 문서(현재 개발 DB의 confluence_map 전부)는 자동으로 빈 결과 — 정상 동작 |
+| `REFERENCES` | Document→Document | EXTRACTED | 본문 내 `CITECTS-\d+` 패턴 / 명시적 링크 | 본문 없는 문서(현재 개발 DB의 confluence_map 전부)는 자동으로 빈 결과 — 동작 자체는 정상이지만, **운영 동기화 전까지는 이 엣지의 가장 큰 잠재 커버리지(confluence_map 34,173건)가 비어 있는 상태라는 걸 인지하고 있을 것** (§1 "confluence_map의 실질 역할") |
 
 ---
 
@@ -165,7 +166,14 @@ for source_type in [confluence_map, incident_reports, checkitem, confluence_docs
 `input_hash`도 바뀌어 → 같은 백필 스크립트를 재실행하면 1·5·6번 추출기가 자동 재실행된다.
 별도 마이그레이션 스크립트나 "운영 전용 처리"는 만들지 않는다 — **개발 DB에서 지금 이
 스크립트를 돌려도(1·5·6번이 당장은 빈 결과를 내더라도) 안전하고, 운영에 배포된 뒤 같은
-스크립트 재실행만으로 자동 보강된다**는 것이 이 설계의 핵심 전제다.
+스크립트 재실행만으로 자동 보강된다**는 것이 이 설계의 핵심 전제다. 단, 이게 "나중에
+채워지는 부가 정보"라는 뜻은 아니다 — confluence_map은 34,173건(전체 코퍼스의 49%)이고
+그중 76%가 다른 소스로 대체 불가능한 아키텍처/운영/장애 근거 자료이므로(§1), **운영
+동기화가 끝나는 순간 5·6번 추출기의 실행 결과가 이 그래프 전체 가치의 상당 부분을
+차지하게 된다.** 백필 스크립트의 실행 순서·우선순위를 정할 때 confluence_map을 "본문
+없는 저가치 소스"로 뒤로 미루지 않도록 §4.1의 `for source_type in [...]` 순서에
+confluence_map을 뒤쪽에 둔 건 코드 가독성을 위한 나열일 뿐, 실제 운영 백필 실행 시엔
+우선순위 재조정(예: incident_reports/failure_bucket과 함께 1순위)을 검토한다.
 
 ### 4.4 멱등성/에러 처리
 
@@ -189,8 +197,10 @@ for source_type in [confluence_map, incident_reports, checkitem, confluence_docs
 - 통합 테스트: CI용 경량 Neo4j 컨테이너 + source_type별 5~10건 샘플로 전체 파이프라인
   1회 실행, 노드/엣지 수 검증.
 - dev/prod 비대칭 회귀 테스트: breadcrumb만 있는 confluence_map 샘플에서
-  `extract_references`가 빈 결과로 정상 종료하는지, 본문이 채워진 fixture를 별도로
-  추가해 같은 함수가 정상 동작하는지.
+  `extract_references`가 빈 결과로 정상 종료하는지, **본문이 채워진 confluence_map
+  fixture(아키텍처 설계서/운영 작업계획/장애 분석 문서 형태 — §1 제목 샘플 참고)를 별도로
+  추가해 같은 함수가 정상 동작하는지**. 이 소스타입의 content-fixture를 빠뜨리면 1단계
+  구현이 "실제 가장 중요해질 케이스"를 테스트 없이 넘어가게 된다.
 
 ---
 
