@@ -1,7 +1,24 @@
 #!/usr/bin/env bash
-# sync_manifest.sh — 6개 테이블의 (table, id, md5hash) 매니페스트를 gzip TSV로 생성.
+# sync_manifest.sh — 9개 테이블의 (table, key, md5hash) 매니페스트를 gzip TSV로 생성.
 # 개발/운영 양쪽에서 동일하게 실행 (incremental sync의 diff 계산 전 단계).
+#
+# knowledge-graph 백필(docs/superpowers/specs/2026-10-07-knowledge-graph-design.md)에
+# 필요한 entities/document_entities/lexicon_terms 3개를 추가했다(2026-10-07).
+# document_entities/lexicon_terms는 PK가 autoincrement 정수라 운영/개발 간 값이
+# 안정적인 식별자가 아니다 — 환경 간 diff 키로는 자연키(natural key)를 쓴다
+# (아래 key_expr_for 참고). 그 외 테이블은 전부 uuid 문자열 PK라 id를 그대로 쓴다.
 set -euo pipefail
+
+# 테이블별 diff 키 표현식. documents.id 류(uuid 문자열 PK)는 그대로 id를 쓰고,
+# autoincrement 정수 PK 테이블만 자연키로 바꾼다 — id 값 자체는 환경마다 달라
+# diff 키로 못 쓰기 때문(같은 행이라도 매번 "신규"로 잡혀 diff가 무의미해짐).
+key_expr_for() {
+  case "$1" in
+    document_entities) echo "document_id || ':' || entity_id" ;;
+    lexicon_terms) echo "canonical" ;;
+    *) echo "id" ;;
+  esac
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -37,7 +54,8 @@ mkdir -p "$(dirname "$OUT_FILE")"
 PG_USER="${POSTGRES_USER:-citec}"
 PG_DB="${POSTGRES_DB:-citec_knowledge}"
 
-TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets)
+TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
+        entities document_entities lexicon_terms)
 
 echo "[sync_manifest] project=${PROJECT_DIR} out=${OUT_FILE}" >&2
 
@@ -46,9 +64,10 @@ trap 'rm -f "$TMP_RAW"' EXIT
 
 for tbl in "${TABLES[@]}"; do
   echo "[sync_manifest] ${tbl}" >&2
+  key_expr="$(key_expr_for "$tbl")"
   docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec -T postgres \
     psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" -At -F $'\t' \
-    -c "SELECT '${tbl}', id, md5(t::text) FROM ${tbl} t" >> "$TMP_RAW"
+    -c "SELECT '${tbl}', ${key_expr}, md5(t::text) FROM ${tbl} t" >> "$TMP_RAW"
 done
 
 RAW_DIR="${PROJECT_DIR}/data/raw"

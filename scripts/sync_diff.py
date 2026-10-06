@@ -19,6 +19,9 @@ TABLES = (
     "checkitems",
     "issue_frames",
     "failure_buckets",
+    "entities",
+    "document_entities",  # key=document_id:entity_id (자연키, id는 autoincrement라 미사용)
+    "lexicon_terms",  # key=canonical (자연키, id는 autoincrement라 미사용)
     "raw_files",  # data/raw 첨부파일: id=상대경로, hash=sha256
 )
 

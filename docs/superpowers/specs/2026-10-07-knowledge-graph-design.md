@@ -53,6 +53,18 @@ CI-TEC(우리 부서) 산출물이 최우선이고, 장애 정보가 그다음�
   `space_key IN ('LOOKIN','TechRepo')`와 그 외로 **먼저 분할**해 1순위 그룹을
   `tech_repo`/`confluence_docs`/`checkitems`와 같은 배치에 포함한다.
 
+**운영→개발 데이터 반입(선행 작업, 2026-10-07)**: 개발 서버는 Confluence/운영 네트워크와
+완전히 분리돼 있어 ancestor_ids/본문을 직접 당겨올 수 없다(§1). 대신 기존
+`scripts/sync_manifest.sh`/`sync_export.sh`/`sync_diff.py`/`sync_apply.sh`(운영→개발
+incremental DB sync, USB 등 승인된 경로로 파일만 운반)에 `entities`/`document_entities`/
+`lexicon_terms` 3테이블을 추가하고, `failure_buckets` INSERT가 `fb_domain`/`environment`/
+`evidence_ref`를 빠뜨리던 기존 버그(멀티플러그인 확장 이후 미반영분)를 고쳐 이 그래프
+설계가 쓰는 9개 테이블 전체를 실어 나를 수 있게 했다. 운영에서 먼저
+`scripts/graph_prereq_survey.sh`(읽기 전용)를 돌려 스키마 리비전·충전율·용량을 확인한
+뒤 반입 여부를 판단한다. 이 세 스크립트는 "그래프를 만드는" §4의 `graph_sync.py`와는
+별개 레이어다 — sync_*는 "Postgres에 운영과 같은 데이터가 있게 만드는" 선행 작업이고,
+`graph_sync.py`는 그렇게 채워진 Postgres를 읽어 Neo4j를 만드는 작업이다.
+
 ---
 
 ## 1. 현재 상태 관찰 (재확인 필수)
