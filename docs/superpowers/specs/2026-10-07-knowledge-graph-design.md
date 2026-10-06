@@ -32,6 +32,27 @@ Neo4j에 멱등하게 반영한다. 노드는 4종(`Document`/`Component`/`Busin
 구조화 필드 충전율이 50%대인 점은 환경 차이가 아니라 **실제 콘텐츠 현황**이라 1단계
 범위·기대치에 반영했다(§1, §3.3, §6).
 
+### 0.1 데이터 우선순위 (사용자 지정, 2026-10-07)
+
+CI-TEC(우리 부서) 산출물이 최우선이고, 장애 정보가 그다음이며, 나머지는 "근거 자료"로
+활용한다. `confluence_map`의 `space_key`를 확인해 3단계로 나눈다:
+
+| 우선순위 | 소스 | 근거 |
+|---|---|---|
+| **1순위 — 부서 산출물** | `tech_repo`(2,800) + `confluence_docs`(5,509) + `confluence_map WHERE space_key IN ('LOOKIN','TechRepo')`(미중복분만, 아래) + `checkitems`(8,989, PISA 체크리스트) | `LOOKIN` 공간 8,228건 중 5,504건은 이미 `confluence_docs`와 `external_id` 중복(= confluence_docs가 LOOKIN의 커스팅 부분집합), **나머지 2,724건은 LOOKIN에만 있는 미중복 CI-TEC 문서**. `TechRepo` 공간 3,990건 중 2,798건은 `tech_repo`와 중복, **나머지 1,192건이 TechRepo에만 있는 미중복 CI-TEC 문서**. 즉 confluence_map에서 **총 3,916건**이 "아직 tech_repo/confluence_docs로 승격되지 않은 우리 부서 콘텐츠"다 |
+| **2순위 — 장애 정보** | `incident_reports`(15,349, SWIM) | 장애 자체의 1차 기록. `issue_frames`의 `severity_tier`/`citec_domains` 충전이 이 소스에 집중(§1) |
+| **3순위 — 근거 자료(타 공간/부서)** | `confluence_map WHERE space_key NOT IN ('LOOKIN','TechRepo')`(`ICLOUDUT` 15,701 / `CLDENG` 3,949 / `DFTRTS` 950 / `ServiceExcellenceTeam` 872 / `DevOps001` 186 / `Openstack101` 174 / `EMCloud` 120 / `SPC` 2 / `GUID` 1, 합계 21,765건) + `support_history`/`dept_archive`/`tuning_ai`/`insight` | 아키텍처 설계·운영 작업계획·장애 분석 등 **근거로 참고하되 1차 산출물은 아님** |
+
+**이 우선순위가 그래프 설계에 미치는 영향**:
+- `space_key`를 `(:Document)` 노드 속성으로 반드시 보존해야 한다(§3.2 수정) — 지금까지의
+  설계엔 빠져 있었다. `source_type='confluence_map'`만으로는 1순위/3순위를 구분 못 한다.
+- `evidence_grade`(A/B/C, §3.3)는 **답변 인용 등급**일 뿐 이 부서 우선순위와 다른 축이다 —
+  confluence_map은 전부 C등급이지만 그중 LOOKIN/TechRepo 미중복분(3,916건)은 1순위다.
+  둘을 혼동하지 않는다(기존 §3.3 각주와 일관).
+- 백필 실행 순서(§4.1)는 `source_type` 단일 루프가 아니라, confluence_map을
+  `space_key IN ('LOOKIN','TechRepo')`와 그 외로 **먼저 분할**해 1순위 그룹을
+  `tech_repo`/`confluence_docs`/`checkitems`와 같은 배치에 포함한다.
+
 ---
 
 ## 1. 현재 상태 관찰 (재확인 필수)
@@ -97,7 +118,7 @@ graph_sync_state (NEW)
 
 | 레이블 | 소스 | 핵심 속성 |
 |---|---|---|
-| `(:Document)` | `documents` 전 건 | `id`(=Postgres id), `source_type`, `external_id`, `path`, `web_url`, **`environment`**(Document 컬럼, 70k 전체에 실존 — 충전율은 source_type별 상이, §1) |
+| `(:Document)` | `documents` 전 건 | `id`(=Postgres id), `source_type`, `external_id`, `path`, `web_url`, **`environment`**(Document 컬럼, 70k 전체에 실존 — 충전율은 source_type별 상이, §1), **`space_key`**(confluence_map만 `metadata->>'space_key'`에서 추출, 그 외 source_type은 NULL), **`priority_tier`**(1/2/3, §0.1 표 그대로 계산해 저장 — 매번 쿼리로 재계산하지 않고 동기화 시점에 고정) |
 | `(:Component)` | `issue_frames.components[]` + `checkitems.area/category*` + `entities`(`type IN ('component','tech_term')`) + `lexicon_terms` 매칭 | `canonical_name` (lexicon 통해 정규화). **`entities.type='component'`(Redis/Oracle)을 흡수** — 별도 BusinessEntity로 중복 생성하지 않는다 |
 | `(:BusinessEntity)` | `entities`(`type IN ('business_system','platform')`)/`document_entities` 미러 | `id`, `canonical_name`, `type`. **`type='component'|'tech_term'`인 행은 여기 포함하지 않고 Component로 라우팅**(위 행 참고) |
 | `(:FailureBucket)` | `failure_buckets` | `Document`와 별도 레이블 — 필드가 풍부해 전용 유지. `fb_domain`은 이 레이블의 속성(FailureBucket 전용 컬럼, Document엔 없음) |
@@ -110,11 +131,11 @@ graph_sync_state (NEW)
 |---|---|---|---|---|
 | `PARENT_OF` | Document→Document | EXTRACTED | `metadata_["ancestor_ids"]` | confluence_map+confluence_docs+tech_repo 42,482건 커버, 본문 불필요. 운영에는 이미 채워져 있음(§1) — 개발 DB는 공집합 반환, 정상 동작 |
 | `HAS_COMPONENT` | Document→Component | EXTRACTED | `issue_frames.components[]`(50% 충전, §1) / `checkitems.area*`(100%) | 구조화 필드, 즉시 가능하되 티켓 쪽은 절반만 커버 |
-| `HAS_COMPONENT` | Document→Component | INFERRED | 본문 + `lexicon_terms` 매칭 | 본문 있는 문서만(현재 tech_repo/confluence_docs/dept_archive). **운영 동기화 후의 confluence_map(§1)이 이 추출기의 최우선 대상이 된다** — 34,173건 중 76%가 유일 소스인 아키텍처/운영/장애 기록이라, 다른 소스보다 낮은 등급 취급하면 안 됨. 사전이 10건뿐이라 1단계는 전체적으로 저조한 recall 예상(§4.2) |
+| `HAS_COMPONENT` | Document→Component | INFERRED | 본문 + `lexicon_terms` 매칭 | 본문 있는 문서만(현재 tech_repo/confluence_docs/dept_archive). **운영 동기화 후의 confluence_map `LOOKIN`/`TechRepo`(1순위, §0.1)가 이 추출기의 최우선 대상** — 나머지 공간(3순위)도 유의미하지만 부서 산출물보다 후순위. 사전이 10건뿐이라 1단계는 전체적으로 저조한 recall 예상(§4.2) |
 | `MENTIONS_ENTITY` | Document→BusinessEntity | EXTRACTED | 기존 `document_entities`(`entities.type` business_system/platform만, §3.2) | 그대로 미러링, 549건 |
 | `HAS_EVIDENCE` | FailureBucket→Document | EXTRACTED | `evidence_ref` 접두어 파싱(`citects-`/`confluence:`/`capture:`/`log:`/`legacy:`/…) | 8건 전수 파싱 시도하되, `documents.external_id`로 실제 해석 가능한 건 `confluence:`류뿐 — `capture:`/`log:`는 pcap/로그 파일이라 애초에 Document가 아님(§4.2), `legacy:pre-migration`은 대상 자체가 없음. **엣지 생성은 8건 중 소수(현재 샘플 기준 ~2건)만** — 나머지는 엣지 없이 `evidence_ref` 원문을 FailureBucket 속성으로만 보존 |
 | `SIMILAR_TO` | FailureBucket↔FailureBucket | INFERRED | 기존 `match_buckets()` 점수 ≥ 0.75 | 8건, 전수 계산 가능 |
-| `REFERENCES` | Document→Document | EXTRACTED | 본문 내 `CITECTS-\d+` 패턴 / 명시적 링크 | 본문 없는 문서(현재 개발 DB의 confluence_map 전부)는 자동으로 빈 결과 — 동작 자체는 정상이지만, **운영 동기화 전까지는 이 엣지의 가장 큰 잠재 커버리지(confluence_map 34,173건)가 비어 있는 상태라는 걸 인지하고 있을 것** (§1 "confluence_map의 실질 역할") |
+| `REFERENCES` | Document→Document | EXTRACTED | 본문 내 `CITECTS-\d+` 패턴 / 명시적 링크 | 본문 없는 문서(현재 개발 DB의 confluence_map 전부)는 자동으로 빈 결과 — 동작 자체는 정상이지만, **운영 동기화 전까지는 이 엣지의 가장 큰 잠재 커버리지(confluence_map 34,173건, 그중 1순위 `LOOKIN`/`TechRepo` 3,916건 포함)가 비어 있는 상태라는 걸 인지하고 있을 것** (§0.1) |
 
 ---
 
@@ -125,21 +146,39 @@ graph_sync_state (NEW)
 기존 `map_backfill` 류 스크립트와 동일한 CLI 관례(`--source-ids`, `--dry-run`, 배치 크기
 옵션)를 따른다.
 
+실행 순서는 `source_type` 하나짜리 리스트가 아니라 §0.1의 우선순위 그룹을 그대로 따른다
+— confluence_map은 `space_key`로 먼저 쪼개 1순위/3순위 그룹에 각각 배분한다.
+
 ```
-for source_type in [confluence_map, incident_reports, checkitem, confluence_docs,
-                     tech_repo, support_history, dept_archive, tuning_ai,
-                     failure_bucket, insight]:
-    for batch in documents.where(source_type=...).batched(size=500):
-        for doc in batch:
-            input_hash = compute_graph_hash(doc)
-            state = graph_sync_state.get(doc.id)
-            if state and state.input_hash == input_hash:
-                continue                      # 변경 없음 — 스킵
-            edges = extract_edges(doc)        # §4.2 추출기 체인, 문서 단위 격리
-            neo4j.merge(doc, edges)            # MERGE — 멱등
-            graph_sync_state.upsert(doc.id, input_hash)
-    prune_orphans(source_type)                # Postgres에서 삭제된 id의 Neo4j 노드 정리
+PRIORITY_GROUPS = [
+    # 1순위 — 부서 산출물
+    [("tech_repo", None), ("confluence_docs", None), ("checkitem", None),
+     ("confluence_map", ["LOOKIN", "TechRepo"])],
+    # 2순위 — 장애 정보
+    [("incident_reports", None)],
+    # 3순위 — 근거 자료
+    [("confluence_map", "EXCLUDE:LOOKIN,TechRepo"), ("support_history", None),
+     ("dept_archive", None), ("tuning_ai", None), ("failure_bucket", None),
+     ("insight", None)],
+]
+
+for group in PRIORITY_GROUPS:
+    for source_type, space_filter in group:
+        for batch in documents.where(source_type=..., space_key_filter=space_filter).batched(size=500):
+            for doc in batch:
+                input_hash = compute_graph_hash(doc)
+                state = graph_sync_state.get(doc.id)
+                if state and state.input_hash == input_hash:
+                    continue                      # 변경 없음 — 스킵
+                edges = extract_edges(doc)        # §4.2 추출기 체인, 문서 단위 격리
+                neo4j.merge(doc, edges)            # MERGE — 멱등
+                graph_sync_state.upsert(doc.id, input_hash)
+        prune_orphans(source_type, space_filter)   # Postgres에서 삭제된 id의 Neo4j 노드 정리
 ```
+
+그룹 순서가 결과를 바꾸는 건 아니다(멱등 MERGE라 어느 순서로 돌아도 최종 그래프는 동일) —
+다만 **백필이 중간에 멈추거나 시간 제약으로 일부만 돌릴 때, 1순위부터 반영되도록** 순서를
+정했다.
 
 ### 4.2 추출기 체인 (독립 함수, 하나 실패해도 나머지 안 막힘)
 
@@ -166,14 +205,9 @@ for source_type in [confluence_map, incident_reports, checkitem, confluence_docs
 `input_hash`도 바뀌어 → 같은 백필 스크립트를 재실행하면 1·5·6번 추출기가 자동 재실행된다.
 별도 마이그레이션 스크립트나 "운영 전용 처리"는 만들지 않는다 — **개발 DB에서 지금 이
 스크립트를 돌려도(1·5·6번이 당장은 빈 결과를 내더라도) 안전하고, 운영에 배포된 뒤 같은
-스크립트 재실행만으로 자동 보강된다**는 것이 이 설계의 핵심 전제다. 단, 이게 "나중에
-채워지는 부가 정보"라는 뜻은 아니다 — confluence_map은 34,173건(전체 코퍼스의 49%)이고
-그중 76%가 다른 소스로 대체 불가능한 아키텍처/운영/장애 근거 자료이므로(§1), **운영
-동기화가 끝나는 순간 5·6번 추출기의 실행 결과가 이 그래프 전체 가치의 상당 부분을
-차지하게 된다.** 백필 스크립트의 실행 순서·우선순위를 정할 때 confluence_map을 "본문
-없는 저가치 소스"로 뒤로 미루지 않도록 §4.1의 `for source_type in [...]` 순서에
-confluence_map을 뒤쪽에 둔 건 코드 가독성을 위한 나열일 뿐, 실제 운영 백필 실행 시엔
-우선순위 재조정(예: incident_reports/failure_bucket과 함께 1순위)을 검토한다.
+스크립트 재실행만으로 자동 보강된다**는 것이 이 설계의 핵심 전제다. confluence_map 전체를
+"본문 없는 저가치 소스"로 취급하지 않는다는 건 이미 §0.1/§4.1에서 `space_key` 기준으로
+반영했다 — `LOOKIN`/`TechRepo`는 1순위 그룹에서 다른 부서 산출물과 같은 배치로 돈다.
 
 ### 4.4 멱등성/에러 처리
 
