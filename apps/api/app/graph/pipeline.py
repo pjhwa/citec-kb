@@ -91,6 +91,20 @@ def _simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[str, str]
     return out
 
 
+_reference_index_cache: dict[int, dict[str, str]] = {}
+
+
+def _cached_simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[str, str]:
+    """_simple_reference_index()를 매 sync_document() 호출마다 처음부터 다시 돌리면
+    115k 문서 규모에서 수 시간짜리 불필요한 오버헤드가 된다(리뷰에서 실측: 호출당
+    ~0.15초 × 115k건 ≈ 4.7시간) — 같은 external_id_index 객체가 한 번의 CLI 실행
+    내내 그대로 재사용된다는 걸 이용해 객체 identity로 캐시한다."""
+    key = id(rich_index)
+    if key not in _reference_index_cache:
+        _reference_index_cache[key] = _simple_reference_index(rich_index)
+    return _reference_index_cache[key]
+
+
 def sync_document(
     document_id: str, *, client: Neo4jClient, external_id_index: dict[str, list[dict]] | None = None
 ) -> Literal["synced", "skipped", "failed"]:
@@ -159,7 +173,15 @@ def sync_document(
             return "skipped"
 
         lexicon_map = load_lexicon_map()
-        reference_index = _simple_reference_index(external_id_index or {})
+        reference_index = _cached_simple_reference_index(external_id_index or {})
+        # 알려진 한계(의도적으로 이 태스크 범위 밖, 문서화만): 아래 엣지 목록에서
+        # extract_lexicon_components(INFERRED)가 extract_structured_components(EXTRACTED)
+        # 뒤에 온다 — 같은 (document, Component) 쌍에 둘 다 엣지를 내면
+        # Neo4jClient._merge_edges의 "SET r.tag = $tag"가 무조건 마지막 값으로 덮어써서
+        # EXTRACTED가 항상 INFERRED로 바뀐다(순서 바꿔도 반대로 바뀔 뿐, 근본 해결은
+        # 아님). EXTRACTED/INFERRED 구분을 신뢰도 가중치 등에 쓰려면 이 문제를 먼저
+        # 고쳐야 한다 — 예: Neo4jClient 쪽에서 "EXTRACTED가 있으면 유지" 같은 병합
+        # 우선순위 규칙 추가.
         edges = (
             extract_hierarchy(doc_dict)
             + extract_structured_components(doc_dict, issue_frame=issue_frame_dict, checkitem=checkitem_dict)
