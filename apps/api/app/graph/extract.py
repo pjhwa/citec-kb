@@ -7,6 +7,7 @@ arguments, so every function here stays independently unit-testable.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 
@@ -73,6 +74,7 @@ def extract_structured_components(
 
 
 _BUSINESS_ENTITY_TYPES = {"business_system", "platform"}
+_TOKEN_RE = re.compile(r"[A-Za-z가-힣0-9_/\-\.]+")
 
 
 def extract_business_entities(doc: dict, *, document_entities: list[dict]) -> list[Edge]:
@@ -92,3 +94,27 @@ def extract_business_entities(doc: dict, *, document_entities: list[dict]) -> li
             )
         )
     return edges
+
+
+def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) -> list[Edge]:
+    """app.lexicon.seed.load_lexicon_map()의 출력(토큰 소문자 -> [canonical,...])을
+    그대로 입력받아 본문에서 매칭된 canonical들을 HAS_COMPONENT(INFERRED)로 낸다."""
+    body = doc.get("body_md") or ""
+    if not body:
+        return []
+    tokens = {t.lower() for t in _TOKEN_RE.findall(body)}
+    canonicals: set[str] = set()
+    for tok in tokens:
+        variants = lexicon_map.get(tok)
+        if variants:
+            canonicals.add(variants[0])  # load_lexicon_map()의 variants[0] == canonical
+    return [
+        Edge(
+            rel_type="HAS_COMPONENT",
+            target_label="Component",
+            target_key="canonical_name",
+            target_value=c,
+            tag="INFERRED",
+        )
+        for c in sorted(canonicals)
+    ]

@@ -2,6 +2,7 @@ from app.graph.extract import (
     Edge,
     extract_business_entities,
     extract_hierarchy,
+    extract_lexicon_components,
     extract_structured_components,
 )
 
@@ -81,3 +82,26 @@ def test_extract_business_entities_includes_business_and_platform_only():
 
 def test_extract_business_entities_empty_when_no_rows():
     assert extract_business_entities({"id": "d1"}, document_entities=[]) == []
+
+
+def test_extract_lexicon_components_matches_canonical_and_variant():
+    doc = {"id": "d1", "body_md": "Redis timeout 발생, 레디스 재기동함"}
+    lexicon_map = {
+        "redis": ["Redis", "레디스", "redis"],
+        "레디스": ["Redis", "레디스", "redis"],
+        "timeout": ["timeout", "타임아웃", "time-out", "timed out"],
+    }
+    edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
+    canonicals = sorted({e.target_value for e in edges})
+    assert canonicals == ["Redis", "timeout"]
+    assert all(e.tag == "INFERRED" for e in edges)
+
+
+def test_extract_lexicon_components_empty_body_returns_empty():
+    doc = {"id": "d1", "body_md": ""}
+    assert extract_lexicon_components(doc, lexicon_map={"redis": ["Redis"]}) == []
+
+
+def test_extract_lexicon_components_no_match_returns_empty():
+    doc = {"id": "d1", "body_md": "전혀 관련 없는 본문"}
+    assert extract_lexicon_components(doc, lexicon_map={"redis": ["Redis"]}) == []
