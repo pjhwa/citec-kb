@@ -3,6 +3,7 @@ from app.graph.extract import (
     extract_business_entities,
     extract_hierarchy,
     extract_lexicon_components,
+    extract_references,
     extract_structured_components,
 )
 
@@ -105,3 +106,22 @@ def test_extract_lexicon_components_empty_body_returns_empty():
 def test_extract_lexicon_components_no_match_returns_empty():
     doc = {"id": "d1", "body_md": "전혀 관련 없는 본문"}
     assert extract_lexicon_components(doc, lexicon_map={"redis": ["Redis"]}) == []
+
+
+def test_extract_references_finds_ticket_id_and_resolves_via_index():
+    doc = {"id": "d1", "body_md": "CITECTS-1234 사례와 유사함. citects-5678도 참고"}
+    index = {"citects-1234": "doc-a", "citects-5678": "doc-b"}
+    edges = extract_references(doc, external_id_index=index)
+    assert sorted(e.target_value for e in edges) == ["doc-a", "doc-b"]
+    assert all(e.rel_type == "REFERENCES" and e.target_label == "Document" for e in edges)
+
+
+def test_extract_references_skips_unresolved_ids():
+    doc = {"id": "d1", "body_md": "CITECTS-9999 참고"}
+    edges = extract_references(doc, external_id_index={})
+    assert edges == []
+
+
+def test_extract_references_empty_body_returns_empty():
+    doc = {"id": "d1", "body_md": ""}
+    assert extract_references(doc, external_id_index={"citects-1": "x"}) == []
