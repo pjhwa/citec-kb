@@ -555,3 +555,24 @@ class Bundle(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class GraphSyncState(Base):
+    """app.graph 패키지가 쓰는 변경감지 테이블 — Neo4j 동기화 여부를 추적한다.
+
+    document_id 1건당 1행. input_hash는 Document.content_hash와 다른 값이다
+    (app.graph.hashing.compute_graph_hash 참고) — ancestor_ids 등 content_hash가
+    일부러 빼는 필드를 포함해야 PARENT_OF 갱신을 감지할 수 있기 때문이다.
+    """
+
+    __tablename__ = "graph_sync_state"
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    graph_extractor_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    synced_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
