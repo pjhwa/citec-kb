@@ -126,6 +126,12 @@ User question
 │
 ├─ Capacity / 공수 estimate ───────────► kb_capacity_estimate
 │
+├─ CI-TEC 도메인별 반복 장애 / 커버리지 갭
+│     "어느 도메인에서 반복 장애가 많은가", "failure_bucket 정리 안 된 도메인"
+│     ──────────────────────────────────► kb_citec_domain_catalog (먼저)
+│                                         kb_citec_recurring_patterns
+│                                         kb_citec_failure_bucket_coverage
+│
 └─ Unsure which tool ──────────────────► kb_tools_help
 ```
 
@@ -284,6 +290,14 @@ Still verify important claims with `kb_get_document` if the model output looks t
 - `kb_stats` — document counts by source  
 - `kb_tools_help` — short tool menu (also useful mid-conversation)
 
+### 4.14b CI-TEC domain / recurring-pattern tools
+
+See §6.3 for the full taxonomy and when to use each:
+
+- `kb_citec_domain_catalog()` — no args; call first to get exact domain names / severity tiers.
+- `kb_citec_recurring_patterns(group_by=, domains=, severity_tiers=, dept_contains=, customer_contains=, since_days=, min_count=)` → `GET /v1/citec-dashboard/recurring-patterns`
+- `kb_citec_failure_bucket_coverage(since_days=, min_count=)` → `GET /v1/citec-dashboard/failure-bucket-coverage`
+
 ---
 
 ### 4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)
@@ -330,18 +344,86 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 
 ## 6. Source types & path conventions
 
-| source_type / section | Content | path pattern |
-|----------------------|---------|--------------|
-| `support_history` | Jira-like tickets | `support_history/CITECTS-2386.md` |
-| `tech_repo` | Confluence tech pages | `tech_repo/{pageId}.md` |
-| `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` |
-| `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form |
-| `confluence_docs` | Other confluence | `confluence_docs/...` |
-| `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` |
-| `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools |
-| insights / synthesis | Approved insights | via insight tools |
+| source_type / section | Content | path pattern | typical `evidence_grade` |
+|----------------------|---------|--------------|---------------------------|
+| `support_history` | Jira-like tickets | `support_history/CITECTS-2386.md` | A (closed/resolved) / B (open) |
+| `incident_reports` | SWIM 장애보고(회사 전체, CI-TEC 11개 도메인은 그 부분집합) | `incident_reports/{fail_seq}.md` | A (조치완료/종료확정) / B (그 외) |
+| `tech_repo` | Confluence tech pages, **full body** | `tech_repo/{pageId}.md` | A |
+| `confluence_docs` | Other full-body Confluence space (LOOKIN) | `confluence_docs/{pageId}.md` | A |
+| `confluence_map` | **구조 전용 색인** — 제목/URL/경로만, 본문 아님(§6.1 참고) | `confluence_map/{pageId}.md` | **C — 포인터, 근거 아님** |
+| `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` | A- |
+| `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form | A |
+| `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` | B |
+| `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools | `machine`(자동계산 confidence와 별개 필드) |
+| insights / synthesis | Approved insights | via insight tools | n/a (status: draft/review/approved/rejected) |
 
 **Ticket keys:** always `CITECTS-<number>` (case-insensitive in search; normalize to `CITECTS-####` when calling `kb_ticket`).
+
+### 6.1 `evidence_grade` — how much to trust a hit, before you even open it
+
+Every `documents` row carries `evidence_grade` (`A` / `A-` / `B` / `C` / `draft`).
+It is **not a relevance score** — it is a statement about how directly this row
+*is* the fact, vs. merely *points at* where the fact might live:
+
+- **A / A-**: the row's `body_md` is the actual source content (closed ticket,
+  resolved incident report, full Confluence page, PISA checkitem, tuning note).
+  Safe to quote and cite directly.
+- **B**: same as above but the underlying record is still open/unresolved
+  (e.g. a support ticket not yet closed) — content is real but the conclusion
+  may change later. Say so if the answer hinges on an outcome.
+- **C — `confluence_map` only, by design**: `body_md` is **only the page's
+  title/breadcrumb path**, never its real content (`app.ingest.adapters.
+  iter_confluence_map`'s docstring: *"never the real page body"*). This
+  exists to make ~78k Confluence pages CI-TEC references (but does not fully
+  ingest) at least *findable* by keyword/path, without claiming to have read
+  them. **A `confluence_map` hit tells you a page with this title exists at
+  this URL — it is not evidence of what the page says.** Never answer a
+  factual question from a `confluence_map` snippet alone; either open the
+  live Confluence URL yourself, tell the user to, or fall back to
+  `confluence_docs`/`tech_repo` if the same topic is also fully ingested
+  there (same `page_id`, different `source_type` — see §6.2).
+- **`draft`**: not yet reviewed (e.g. an unapproved insight) — do not present
+  as settled fact.
+
+**Rule of thumb:** before citing a hit as fact, check `source_type`. If it is
+`confluence_map`, either fetch the live page or qualify the claim as
+unverified ("CI-TEC 문서 인덱스에 이런 제목의 페이지가 있습니다만 본문은
+확인하지 못했습니다").
+
+### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages)
+
+A handful of pages exist under **both** `tech_repo` (or `confluence_docs`)
+*and* `confluence_map` with the same Confluence `external_id` — the full-body
+copy and the structure-only pointer were crawled from the same live page
+under two different root configs. When search returns the same `page_id`
+under two source_types, **prefer the A-grade one** (`tech_repo`/
+`confluence_docs`) for content; the `confluence_map` copy is redundant there
+and exists only so the page is still indexed if its tech_repo/docs crawl ever
+lags.
+
+### 6.3 CI-TEC domain taxonomy & recurring-pattern tools
+
+Separate from the generic `area`/`domain` search filter (§4.2), CI-TEC owns an
+**11-domain lens** over `incident_reports` (SWIM) specifically — because SWIM
+is a company-wide log and most of it (~59%, mostly generic Network noise) is
+outside CI-TEC's actual 10 component domains + 1 cross-cutting one:
+
+```
+Linux · Windows · VMware · OpenStack · Kubernetes · Middleware ·
+Network · Storage · Ceph · Database · 성능(cross-cutting)
+```
+
+An incident can carry more than one domain tag (e.g. "DB Hang" → Database +
+성능). Always call `kb_citec_domain_catalog()` first if you need the exact
+domain spelling or the SWIM severity-tier vocabulary (`major` / `minor` /
+`failover_no_impact` / `customer_fault` / `vendor_fault` / `unknown`) — don't
+guess the Korean/English spelling.
+
+| Tool | When |
+|------|------|
+| `kb_citec_domain_catalog()` | Confirm exact domain names / severity tiers / valid `group_by` dimensions before calling either tool below |
+| `kb_citec_recurring_patterns(group_by=, domains=, severity_tiers=, since_days=, min_count=)` | "어떤 도메인에서 반복 장애가 많은가", "최근 2년 Database major 몇 건" — real aggregation over `incident_reports`, never count with the LLM |
+| `kb_citec_failure_bucket_coverage(since_days=, min_count=)` | "반복 확인된 장애인데 아직 failure_bucket(진단 패턴)에 등록 안 된 도메인이 뭔가" — a cleanup-gap report, not a search tool. Note: CI-TEC's 11 domains and failure_bucket's `fb_domain` vocabulary (network/cluster/windows/dbms/linux/virtualization/middleware/storage) are **different, overlapping** taxonomies owned by different systems — `Kubernetes`/`성능` have no `fb_domain` equivalent yet (`no_fb_domain_defined` ≠ 0% coverage, it means the bucket vocabulary doesn't cover that domain at all) |
 
 ---
 
@@ -465,6 +547,18 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 2. `kb_ask(query="…", mode="fast")`  
 3. If answer abstains or looks weak: fall back to search + document read and answer yourself with citations.
 
+### Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)
+
+1. `kb_search(query="…", section="confluence_map")` → hit returns title + breadcrumb only (`evidence_grade="C"`, §6.1) — **do not answer from this snippet**.
+2. Check if the same `external_id`/page_id also appears under `tech_repo` or `confluence_docs` in the same search (or re-search without `section` filter) — if so, use that copy's full body instead (§6.2).
+3. If not fully ingested anywhere, open the page's `URL`/`source_uri` live (or tell the user to) before answering, or say explicitly the index only confirms the page exists and you have not read it.
+
+### Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"
+
+1. `kb_citec_domain_catalog()` — confirm the 11 domain names.
+2. `kb_citec_recurring_patterns(group_by="domain", since_days=730, min_count=3)` — report counts straight from the response, don't re-tally.
+3. `kb_citec_failure_bucket_coverage(since_days=730, min_count=3)` — cite only domains with `status="gap"` as "정리 필요"; `no_fb_domain_defined` means the vocabulary doesn't cover that domain yet, not 0% coverage — say so if asked.
+
 ---
 
 ## 9. Anti-patterns (avoid)
@@ -478,6 +572,9 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 | Ignore `intent=` from `kb_query` | Wrong follow-up | Branch on intent |
 | Use `kb_ask` for pure “list last week” | Overkill / weaker lists | `kb_list_tickets` |
 | Assume English-only | Corpus is KO+EN | Keep Korean query text |
+| Cite a `confluence_map` hit's content as fact | It is a title/path pointer only — `body_md` is never the real page (§6.1) | Open the live Confluence URL, or check if the same page is also in `tech_repo`/`confluence_docs` (§6.2), or qualify as unverified |
+| Count/rank CI-TEC domain incidents by scanning search results yourself | Error-prone, and ignores multi-domain tagging | `kb_citec_recurring_patterns` |
+| Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스") | `kb_citec_recurring_patterns` filters do exact match | `kb_citec_domain_catalog()` first |
 
 ---
 
@@ -555,5 +652,5 @@ After code deploy: `docker compose restart mcp` (server.py is bind-mounted).
 
 ## 14. Versioning
 
-This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_tools_help** and `kb_search` → `/v1/search`.  
+This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help** and `kb_search` → `/v1/search` (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools).
 If a tool name is missing in the live server, call `kb_tools_help` or fall back to `kb_query` + REST in [EXTERNAL_API.md](./EXTERNAL_API.md).

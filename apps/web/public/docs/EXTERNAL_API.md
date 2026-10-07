@@ -84,10 +84,21 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
     }
   ],
   "total": 1,
+  "returned_count": 1,
+  "total_candidates": 1,
   "fts_ready": true,
   "backend": "citec-kb"
 }
 ```
+
+`total` 은 이번 페이지에 반환된 건수(deprecated 별칭), `total_candidates` 는 중복 제거 후 `top_k`
+로 자르기 전 후보 수이며 코퍼스 전체 매칭 수가 아니다. 각 결과의 `duplicate_count` 는 사본
+접기(`diversify_copies`)로 그 결과에 합쳐진 `confluence_map` 사본 수다.
+
+검색 요청 필터(`filters` 또는 `/api/query` 본문): `exclude_page_ids`(그 페이지만),
+`exclude_subtree_ids`(그 페이지+모든 하위 — 정답 누출 방지는 이쪽), `exclude_source_types`,
+`include_irrelevant_maps`(미지정: `source_type=confluence_map` 일 때만 true, 명시 값 우선),
+`diversify_copies`(기본 true). 자세한 의미는 `docs/MCP.md` 「검색 필터 파라미터」.
 
 적용 엔드포인트: `POST /v1/search` · `POST /v1/query` items · `POST /v1/chat` citations ·
 `GET /api/wiki/search` · analytics samples · `GET /v1/tickets` 목록/상세.

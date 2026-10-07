@@ -53,6 +53,7 @@
 | packet-capture-rca | `network` |
 | pacemaker-tools | `cluster` |
 | windows-tools | `windows` |
+| pro-infra-rca | `dbms`/`linux`/`virtualization`/`middleware`/`storage`(신설) + `network`/`windows`/`cluster`(공용, 아래 2-1) |
 | (새 플러그인) | 목록에 없으면 신설 — 아래 절차 |
 
 **새 `fb_domain`이 필요한 경우:**
@@ -63,6 +64,30 @@
    플러그인 개발자가 PR로 제안할 수 있다).
 3. 등록 없이 새 값을 그냥 써버리면 citec-kb가 경고를 반환하도록 설계돼 있다(구버전이면 무시될 수
    있음) — 경고를 보면 오타인지 신설인지 먼저 확인한다.
+
+### 2-1. 여러 도메인을 다루는 플러그인 — 인시던트마다 `fb_domain`을 고르는 규칙
+
+`packet-capture-rca`/`pacemaker-tools`/`windows-tools`는 플러그인당 `fb_domain` 값이 하나로
+고정이었다. `pro-infra-rca`처럼 한 스킬이 여러 진단 영역(DBMS·OS·가상화·미들웨어·스토리지 등)을
+다룬다면, `fb_domain`은 스킬이 아니라 **인시던트의 근본원인이 실제로 놓인 계층**을 기준으로
+매번 선택한다 — 인시던트를 처음 트리거한 증상이 아니다.
+
+- **예:** SQL Server AlwaysOn 페일오버라도, 근본원인이 엔진 내부 메모리 grant 경합(Error 8645)이면
+  `dbms`다. 근본원인이 WSFC 하트비트·쿼럼 손실이면 `windows`다. 같은 "AlwaysOn 페일오버"라는
+  트리거가 서로 다른 `fb_domain`으로 갈리는 것이 정상이다.
+- **기존 공용 값 재사용을 우선한다.** 새 진단 영역이라고 곧바로 새 `fb_domain`을 만들지 않는다 —
+  이미 있는 값(`network`/`cluster`/`windows`)과 겹치는 계층이면 그 값을 그대로 쓴다. 예를 들어
+  Pacemaker/Corosync 펜싱·쿼럼·DRBD는 `cluster`를 쓰고, 근본원인이 스토리지 어레이·경로 자체로
+  좁혀지면 그때 `storage`로 넘어간다.
+- **경계가 애매한 조합은 스킬의 `references/citec-kb-integration.md`에 판단 기준을 명문화한다**
+  (아래 §7 스켈레톤 참고) — "SQL AlwaysOn → dbms vs windows" 같은 반복되는 경계 판단을 매번
+  즉흥적으로 하지 않도록, 이 규칙을 스킬 쪽 문서에도 고정해 둔다. `pro-infra-rca`용으로 채운
+  초안은 `docs/PRO_INFRA_RCA_HANDOFF.md`§1~§6에 있다(민연홍에게 전달한 핸드오프 문서, §0 커버
+  표는 빼고 복사) — 그대로 스킬 패키지의
+  `references/citec-kb-integration.md`로 복사해 쓴다.
+- 이 규칙을 따랐을 때 여러 CI-TEC 대시보드 도메인(예: VMware/OpenStack)이 fb_domain 하나
+  (`virtualization`)를 공유하게 되는 것은 의도된 설계다 — `references/failure-bucket-domains.md`의
+  어휘가 CI-TEC 11개 도메인보다 성긴 것이지, 매핑 오류가 아니다.
 
 ---
 

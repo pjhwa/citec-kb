@@ -1057,6 +1057,18 @@ async def kb_tools_help() -> str:
   kb_list_insights / kb_get_insight
   kb_ask / wiki_ask   RAG 답변
   kb_health / kb_stats
+
+[CI-TEC 11개 도메인 · 반복장애 · failure_bucket 정리 갭]
+  kb_citec_domain_catalog()   도메인/심각도 티어 정확한 값 확인 (다른 둘 쓰기 전 먼저)
+  kb_citec_recurring_patterns(group_by=, domains=, severity_tiers=, since_days=, min_count=)
+  kb_citec_failure_bucket_coverage(since_days=, min_count=)   반복 확인됐는데 failure_bucket 미등록인 도메인
+
+[신뢰도 — 답하기 전에 반드시 확인]
+  evidence_grade: A/A- 본문 그대로 인용 가능 · B 아직 미종결(열린 티켓 등, 결론 바뀔 수 있음)
+  · C(=confluence_map 전용) 제목/경로만 있는 포인터, 본문 아님 — 이 결과 하나로 사실을
+  답하지 말 것. 같은 page_id가 tech_repo/confluence_docs에도 있으면 그걸 쓰고,
+  없으면 실제 Confluence 페이지를 열어 확인하거나 "색인엔 있으나 본문 미확인"이라고
+  밝힐 것. 자세한 소스타입별 등급표/근거 모델은 docs/AI_AGENT_GUIDE.md §6 참고.
 """
 
 

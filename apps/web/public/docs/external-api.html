@@ -39,7 +39,7 @@
       <p class="lead">citec-wiki-qa 호환 /api/* 레이어</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/EXTERNAL_API.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-08</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-28</div></div>
       </div>
     </header>
     <section>
@@ -238,10 +238,19 @@
     }
   ],
   &quot;total&quot;: 1,
+  &quot;returned_count&quot;: 1,
+  &quot;total_candidates&quot;: 1,
   &quot;fts_ready&quot;: true,
   &quot;backend&quot;: &quot;citec-kb&quot;
 }
 </code></pre>
+<p><code>total</code> 은 이번 페이지에 반환된 건수(deprecated 별칭), <code>total_candidates</code> 는 중복 제거 후 <code>top_k</code><br>
+로 자르기 전 후보 수이며 코퍼스 전체 매칭 수가 아니다. 각 결과의 <code>duplicate_count</code> 는 사본<br>
+접기(<code>diversify_copies</code>)로 그 결과에 합쳐진 <code>confluence_map</code> 사본 수다.</p>
+<p>검색 요청 필터(<code>filters</code> 또는 <code>/api/query</code> 본문): <code>exclude_page_ids</code>(그 페이지만),<br>
+<code>exclude_subtree_ids</code>(그 페이지+모든 하위 — 정답 누출 방지는 이쪽), <code>exclude_source_types</code>,<br>
+<code>include_irrelevant_maps</code>(미지정: <code>source_type=confluence_map</code> 일 때만 true, 명시 값 우선),<br>
+<code>diversify_copies</code>(기본 true). 자세한 의미는 <code>docs/MCP.md</code> 「검색 필터 파라미터」.</p>
 <p>적용 엔드포인트: <code>POST /v1/search</code> · <code>POST /v1/query</code> items · <code>POST /v1/chat</code> citations ·<br>
 <code>GET /api/wiki/search</code> · analytics samples · <code>GET /v1/tickets</code> 목록/상세.</p>
 <h3 id="wiki-qa-post-apiupload">업로드 — wiki-qa <code>POST /api/upload</code> 호환</h3>
