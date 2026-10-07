@@ -63,19 +63,28 @@ SQL
     echo '\copy stg_documents FROM STDIN WITH (FORMAT csv, HEADER)'
     cat "${BUNDLE_DIR}/documents.csv"
     echo '\.'
-    cat <<'SQL'
--- 이 정리(cleanup)는 documents.csv가 있을 때만 실행된다. 안전한 이유: 이 레포의 유일한
--- chunks/document_sections 쓰기 경로는 apps/api/app/ingest/pipeline.py의
--- _upsert_document 뿐이고, 거기서는 documents.content_hash가 바뀔 때만 섹션/청크를
--- 재생성한다 — 즉 documents 행이 안 바뀌었는데 sections/chunks만 바뀌는 경우는 현재
--- 코드베이스에 존재하지 않는다. 이 가정이 깨지면(예: 문서 내용과 무관하게 재청킹하는 새
--- 경로가 생기면) 아래 정리도 document_sections.csv/chunks.csv 단독 존재 시로 넓혀야 한다.
+    if [[ -f "${BUNDLE_DIR}/chunks.csv" ]]; then
+      cat <<'SQL'
+-- 이 정리(cleanup)는 documents.csv와 chunks.csv가 둘 다 있을 때만 실행한다 — 즉
+-- profile=full일 때만. 안전한 이유: 이 레포의 유일한 chunks/document_sections 쓰기
+-- 경로는 apps/api/app/ingest/pipeline.py의 _upsert_document 뿐이고, 거기서는
+-- documents.content_hash가 바뀔 때만 섹션/청크를 재생성한다. app.embed.cli(재임베딩
+-- 트리거)는 "active 상태인데 임베딩 없는 chunk"만 임베딩할 뿐, 없어진 chunk를 다시
+-- 만들어주지 않는다 — 그래서 이 블록으로 비활성화한 chunk는 같은 번들의 chunks.csv로
+-- 바로 대체되는 게 전제다. profile=graph는 chunks.csv를 안 담으므로 여기서 건드리면
+-- 대체될 데이터 없이 영구히 chunks가 사라진다(2026-10-07 운영 반입 1차 테스트에서
+-- 실제로 겪은 사고 — dev의 active chunk가 178,310→0이 됐었다. embeddings 테이블의
+-- chunk_id로 복구함). profile=graph일 때는 이 cleanup을 건너뛰고 기존 chunks/sections를
+-- (body_md가 갱신돼도) 그대로 둔다 — 최신화는 못 되지만 최소한 검색은 계속 된다.
 UPDATE chunks SET is_active = false
   WHERE document_id IN (SELECT id FROM stg_documents)
     AND document_id IN (SELECT id FROM documents);
 DELETE FROM document_sections
   WHERE document_id IN (SELECT id FROM stg_documents)
     AND document_id IN (SELECT id FROM documents);
+SQL
+    fi
+    cat <<'SQL'
 INSERT INTO documents (
   id, source_id, source_type, external_id, title, body_md, metadata,
   content_hash, version, status, source_uri, lang, evidence_grade,
