@@ -91,18 +91,26 @@ def _simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[str, str]
     return out
 
 
-_reference_index_cache: dict[int, dict[str, str]] = {}
+_reference_index_cache: dict[int, tuple[dict, dict[str, str]]] = {}
 
 
 def _cached_simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[str, str]:
     """_simple_reference_index()를 매 sync_document() 호출마다 처음부터 다시 돌리면
     115k 문서 규모에서 수 시간짜리 불필요한 오버헤드가 된다(리뷰에서 실측: 호출당
     ~0.15초 × 115k건 ≈ 4.7시간) — 같은 external_id_index 객체가 한 번의 CLI 실행
-    내내 그대로 재사용된다는 걸 이용해 객체 identity로 캐시한다."""
+    내내 그대로 재사용된다는 걸 이용해 객체 identity로 캐시한다.
+
+    id()만으로 캐시하면 원본 객체가 GC된 뒤 전혀 다른 객체가 같은 id()를 재사용할 때
+    틀린 캐시 적중이 날 수 있다(리뷰에서 실제로 재현됨) — 그래서 원본 객체 자체도
+    같이 저장해 `is`로 진짜 동일 객체인지 확인한 뒤에만 캐시를 신뢰한다. 다른
+    객체라면(같은 id라도) 다시 계산하고 캐시를 갈아 끼운다."""
     key = id(rich_index)
-    if key not in _reference_index_cache:
-        _reference_index_cache[key] = _simple_reference_index(rich_index)
-    return _reference_index_cache[key]
+    cached = _reference_index_cache.get(key)
+    if cached is not None and cached[0] is rich_index:
+        return cached[1]
+    result = _simple_reference_index(rich_index)
+    _reference_index_cache[key] = (rich_index, result)
+    return result
 
 
 def sync_document(
