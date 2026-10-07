@@ -8,7 +8,7 @@ import re
 from app.graph.extract import Edge
 
 _GRADE_RANK = {"A": 0, "A-": 1, "B": 2, "C": 3, "machine": 4, "draft": 5}
-_CONFLUENCE_RE = re.compile(r"confluence:[A-Za-z0-9_]+/(\d+)", re.IGNORECASE)
+_CONFLUENCE_RE = re.compile(r"confluence:(?:[A-Za-z0-9_]+/)?(\d+)", re.IGNORECASE)
 _CITECTS_RE = re.compile(r"citects-\d+", re.IGNORECASE)
 
 
@@ -26,8 +26,7 @@ def extract_evidence(bucket: dict, *, external_id_index: dict[str, list[dict]]) 
     ref = bucket.get("evidence_ref") or ""
     targets: list[str] = []
 
-    m = _CONFLUENCE_RE.search(ref)
-    if m:
+    for m in _CONFLUENCE_RE.finditer(ref):
         page_id = m.group(1)
         best = best_candidate(external_id_index.get(page_id, []))
         if best:

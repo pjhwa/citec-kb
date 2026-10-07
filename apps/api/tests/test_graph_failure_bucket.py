@@ -39,6 +39,23 @@ def test_extract_evidence_resolves_citects_prefix():
     assert [e.target_value for e in edges] == ["doc-b"]
 
 
+def test_extract_evidence_resolves_bare_confluence_id_without_space_key():
+    bucket = {"id": "fb1", "evidence_ref": "confluence:2412784426"}
+    index = _candidates(("2412784426", "doc-bare", "A"))
+    edges = extract_evidence(bucket, external_id_index=index)
+    assert [e.target_value for e in edges] == ["doc-bare"]
+
+
+def test_extract_evidence_resolves_multiple_confluence_refs_in_one_evidence_ref():
+    bucket = {
+        "id": "fb1",
+        "evidence_ref": "confluence:LOOKIN/1111111111 (관측1), confluence:LOOKIN/2222222222 (관측2)",
+    }
+    index = _candidates(("1111111111", "doc-x", "A"), ("2222222222", "doc-y", "A"))
+    edges = extract_evidence(bucket, external_id_index=index)
+    assert sorted(e.target_value for e in edges) == ["doc-x", "doc-y"]
+
+
 def test_extract_evidence_skips_non_document_prefixes():
     bucket = {"id": "fb1", "evidence_ref": "capture:CLOUD.pcap#frame=9985"}
     assert extract_evidence(bucket, external_id_index={}) == []
