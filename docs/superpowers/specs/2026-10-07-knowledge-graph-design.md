@@ -119,8 +119,10 @@ failure_buckets/entities/document_entities/lexicon_terms는 반입 전부터 이
 - `lexicon_terms`(10건) 실제 매칭 커버리지를 본문 전체에 대해 직접 측정: confluence_map
   +confluence_docs+tech_repo+dept_archive(88,170건, 본문 있는 문서) 중 10개 용어
   중 하나라도 포함된 문서는 **3,147건(3.6%)뿐**. §6의 "저조한 recall 예상"이
-  구체적 수치로 확인됐다 — `HAS_COMPONENT`(INFERRED) 1단계는 이 정도 커버리지로
-  시작한다는 뜻이고, 사전 확충이 선행돼야 체감 가능한 수준이 된다.
+  구체적 수치로 확인돼 **그 자리에서 사전을 10→75건으로 확충**했다(§1 "동의어 사전"
+  행 참고) — recall 93.2%로 개선됐으나, 개선분 상당수가 `Network`/`Storage`/`Cluster`
+  같은 고빈도 범용어라 `Component` 노드 설계에 "허브 취급" 플래그가 새 과제로 추가됨
+  (§6).
 
 ---
 
@@ -140,7 +142,7 @@ failure_buckets/entities/document_entities/lexicon_terms는 반입 전부터 이
 | 구조화 필드(티켓) | `apps/api/app/db/models.py:320` (`IssueFrame`) | 17,729건(반입 후), **필드별 충전율**: `symptom` 100%(17,729), `root_cause` 62.3%(11,043), `resolution` 65.1%(11,539), `components[]` 53.7%(9,516), `citec_domains[]` 61.6%(10,928), `environment` **15.5%뿐**(2,752). `body_hash`/`extractor_version`는 반입 후 **99.99%(17,727) 충전 확인**(운영 재추출 잡이 이미 돌아 있었음) — §4의 `graph_sync_state.input_hash`는 이제 실제로 채워진 값을 보게 된다 |
 | 구조화 필드(체크아이템) | `apps/api/app/db/models.py:222` (`Checkitem`) | 8,989건 전체 `area`/`category`/`category_1` 100% 충전, `subcategory` 99%(8,927). `area` distinct 65종(벤더/제품명 단위: `3PAR`,`Cisco_IOS`,`NetApp` 등), `category_1` distinct 10종 |
 | failure_bucket 플라이휠 | `apps/api/app/failure_buckets/service.py` | `create_bucket`→`_index_bucket`→`embed_pending_chunks`, `refine_bucket`의 `signals_changed`/`environment_changed` 가드로 재인덱싱 스킵. `match_buckets()`가 이미 유사도 스코어 계산(`match.py:48-68`, `score = 0.6*signal_ratio + 0.4*confidence`, 0~1 범위, `_DUPLICATE_SCORE_THRESHOLD=0.75`) — **단, 이 점수는 두 버킷의 순수 신호 유사도가 아니라 대상 버킷의 기존 confidence가 40% 섞여 있음**, SIMILAR_TO 가중치로 쓸 때 참고. 8건, 운영과 반입 전부터 동일 |
-| 동의어 사전 | `apps/api/app/db/models.py:303` (`LexiconTerm`) | **10건뿐, 운영도 동일.** 본문 전체(confluence_map+confluence_docs+tech_repo+dept_archive, 88,170건)에 대해 직접 측정한 매칭률은 **3,147건(3.6%)** — "저조한 recall"이 추정이 아니라 실측으로 확정됨(§0.2). 1차 사전으로 쓰기엔 극히 낮아 "재사용"이 아니라 사실상 신규 구축에 가까움(§4.2 보강 필요) |
+| 동의어 사전 (확충 완료, 2026-10-07) | `data/seeds/lexicon/core.json` + `apps/api/app/lexicon/seed.py` | **10건 → 75건으로 확충.** 소스: `issue_frames.components`의 미등록 10종(Network/Storage/Cluster/VMware/Oracle/ESXi/Kubernetes/PostgreSQL/MySQL/NFS) + `checkitems.area`의 65종 중 관리용 분류값(F_OTHERS/S_OTHERS/ST_General/Gx00_Fx00) 4개를 뺀 나머지. **갱신 방법은 DB 직접 INSERT가 아니라 이 JSON 파일을 고치고 `python -m app.lexicon.seed` 재실행** — `seed_lexicon(replace=True)`가 매번 테이블을 비우고 이 파일 내용으로 다시 채우므로, DB에 직접 넣으면 다음 seed 실행 때 사라진다. 재측정 recall: **93.2%(82,199/88,170)** — 3.6%에서 크게 개선됐지만, 이 중 다수는 `Network`(17,789건)/`Storage`(20,189건)/`Cluster`(13,046건)/`Windows`(6,781건)처럼 **개별 용어 자체가 허브**(degree 수천~2만)인 범용어 기여분이다. 범용어 13종을 빼고 벤더/제품 특정 용어(3PAR/Cisco_IOS/NetApp 등 61종)만으로도 recall은 **85.8%(75,636건)** — CI-TEC 인프라가 다루는 벤더 폭이 넓어서 벌어지는 정상적 현상. **그래프 설계 함의**: `Network`/`Storage`/`Cluster`/`Windows`/`Apache`/`Firewall`/`HANA`/`Nginx`/`NetApp`/`OpenStack`/`SQL Server`/`ESXi`/`VMware` 13종은 `Component` 노드로는 두되, Graphify의 "god node"와 같은 성격 — 최단경로/순회에서 의미 있는 연결로 취급하면 안 되고(§0 환경값과 같은 이유), 구현 단계에서 이 13종을 별도 플래그(`is_hub` 등)로 표시해 순회 질의가 걸러낼 수 있게 할 것(§6 과제로 추가) |
 | 비즈니스 엔티티 | `apps/api/app/db/models.py:258,286` (`Entity`/`DocumentEntity`) | `entities` 5건(운영 동일): `sys:monimo`(business_system), `sys:scp`(platform), `sys:redis`/`sys:oracle`(**type=component**), `sys:gro`(tech_term). **`type=component`인 행이 이미 있어 §3.2의 `Component`/`BusinessEntity` 분리와 개념이 겹침** — "Redis"가 `entities`(BusinessEntity 경로)와 `issue_frames.components`(Component 경로) 양쪽에서 들어올 수 있어, 그대로 두면 같은 실체가 노드 2개로 쪼개짐. `document_entities` 549건(운영 동일) |
 | Confluence 계층 (해소됨) | `apps/api/app/confluence/sync.py:137,163,216` / `map_sync.py:258-260,327-331` / `apps/api/app/ingest/adapters.py:43,232-237,294-298,351-355` | **반입 후 실측 확인**: confluence_map 78,136/78,272(99.8%), confluence_docs 5,660/5,675(99.7%), tech_repo 3,108/3,112(99.9%)가 `ancestor_ids`를 가짐 — PARENT_OF 추출기가 이제 이 dev DB에서도 바로 동작한다(더 이상 공집합이 아님). `content_hash` 계산에서 `ancestor_ids`는 의도적으로 제외됨(`adapters.py:43-47`) — §3.1의 `graph_sync_state.input_hash`가 `content_hash`와 별도로 `ancestor_ids`를 포함해야 한다는 설계는 그대로 유효(페이지 이동 시 재감지용) |
 | 인프라 포트 | `docker-compose.yml` | 조직 할당 `8572–8580` 중 `8572`(web)/`8573`(api)/`8574`(postgres)/`8575`(redis)/`8576`(keycloak)/`8577`(mcp) 사용 중. `8578`/`8579`/`8580` 미사용 |
@@ -316,8 +318,12 @@ confluence_map 전체를 "본문 없는 저가치 소스"로 취급하지 않는
 - `citec_domains`/`severity_tier`의 노드(또는 `HAS_FRAME` 보조 노드) 승격 여부 재검토(실사용 패턴 확인 후)
 - 티켓-티켓 임베딩 기반 `SIMILAR_TO` 확장(현재는 failure_bucket 간만)
 - LLM 기반 의미 추출 보강(로컬 lexicon 매칭 커버리지 부족 시)
-- **`lexicon_terms` 사전 확충**(현재 10건) — 1단계 `HAS_COMPONENT`(INFERRED) recall이 낮게
-  나오는 주원인이므로, 실제 recall을 측정한 뒤 확충 범위를 정한다
+- ~~`lexicon_terms` 사전 확충~~ **완료**(2026-10-07, 10→75건, §1 "동의어 사전" 참고)
+- **범용어 Component "허브" 플래그**: `Network`/`Storage`/`Cluster`/`Windows`/`Apache`/
+  `Firewall`/`HANA`/`Nginx`/`NetApp`/`OpenStack`/`SQL Server`/`ESXi`/`VMware` 13종은
+  degree가 수천~2만에 달해(§1) 최단경로/순회 질의에서 의미 없는 결과를 낸다. `(:Component)`
+  노드에 `is_hub` 속성(또는 하드코딩 목록)을 추가해 경로 탐색 시 제외하는 옵션을 2단계
+  조회 설계에서 반영한다
 - `issue_frames.components`(광범주: Network/Storage/Cluster)와 `checkitems.area`(벤더/제품:
   3PAR/Cisco_IOS/NetApp)를 잇는 상하위 매핑 테이블 — 1단계는 **정확히 같은 문자열일 때만**
   연결(Linux/Redis/Oracle/VMware/Network/Storage/SCP 7종 한정)하고, 상하위 추론은 하지 않는다
