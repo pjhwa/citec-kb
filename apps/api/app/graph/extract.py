@@ -125,11 +125,16 @@ _TICKET_ID_RE = re.compile(r"CITECTS-\d+", re.IGNORECASE)
 
 def extract_references(doc: dict, *, external_id_index: dict[str, str]) -> list[Edge]:
     """본문 내 CITECTS-#### 언급을 external_id_index로 해석해 REFERENCES로.
-    해석 안 되는 ID(코퍼스 밖이거나 아직 동기화 안 됨)는 조용히 건너뛴다."""
+    해석 안 되는 ID(코퍼스 밖이거나 아직 동기화 안 됨)는 조용히 건너뛴다.
+    문서 자신의 external_id(예: support_history 티켓이 본문에 자기 Issue Key를
+    메타데이터로 포함하는 경우)는 EXCLUDE — extract_hierarchy가 ancestor_ids에서
+    자기 id를 빼는 것과 같은 이유(apps/api/app/graph/extract.py:extract_hierarchy)."""
     body = doc.get("body_md") or ""
     if not body:
         return []
+    self_key = (doc.get("external_id") or "").strip().lower()
     found = {m.group(0).lower() for m in _TICKET_ID_RE.finditer(body)}
+    found.discard(self_key)
     target_ids = sorted({external_id_index[f] for f in found if f in external_id_index})
     return [
         Edge(

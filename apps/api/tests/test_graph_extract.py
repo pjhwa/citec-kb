@@ -125,3 +125,16 @@ def test_extract_references_skips_unresolved_ids():
 def test_extract_references_empty_body_returns_empty():
     doc = {"id": "d1", "body_md": ""}
     assert extract_references(doc, external_id_index={"citects-1": "x"}) == []
+
+
+def test_extract_references_excludes_self_reference():
+    doc = {"id": "d1", "external_id": "CITECTS-9999", "body_md": "- **Issue Key**: CITECTS-9999 처리중"}
+    index = {"citects-9999": "d1"}
+    assert extract_references(doc, external_id_index=index) == []
+
+
+def test_extract_references_still_includes_other_mentions_alongside_self_mention():
+    doc = {"id": "d1", "external_id": "CITECTS-9999", "body_md": "CITECTS-9999 본인 건, CITECTS-1234 유사 사례 참고"}
+    index = {"citects-9999": "d1", "citects-1234": "doc-other"}
+    edges = extract_references(doc, external_id_index=index)
+    assert [e.target_value for e in edges] == ["doc-other"]
