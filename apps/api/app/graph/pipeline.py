@@ -100,6 +100,7 @@ def sync_document(
         with session_scope() as session:
             doc = session.get(Document, document_id)
             if doc is None:
+                logger.warning("graph sync: document_id=%s not found, skipping", document_id)
                 return "failed"
             issue_frame = session.scalar(
                 select(IssueFrame).where(IssueFrame.document_id == document_id)
@@ -140,11 +141,21 @@ def sync_document(
                 "ancestor_ids": metadata.get("ancestor_ids"),
                 "components": issue_frame_dict.get("components") if issue_frame_dict else None,
                 "area": checkitem_dict.get("area") if checkitem_dict else None,
+                "document_entities": document_entities,
             }
+            # 알려진 한계(의도적으로 범위 밖): lexicon_map/external_id_index 내용이
+            # 바뀌어도 이 해시에는 안 들어간다 — 문서 로컬 상태가 아니라 실행 전체가
+            # 공유하는 상태라, 넣으면 사전/코퍼스가 바뀔 때마다 전체 문서가 재동기화돼
+            # 캐시의 의미가 없어진다. 이 두 extractor(lexicon_components, references)의
+            # 재추출이 필요하면 별도의 전체 재실행(--from-scratch류)으로 처리한다.
             input_hash = compute_graph_hash(doc.content_hash, extra_hash_input)
 
         state = sync_state.get_state(document_id)
-        if state and state["input_hash"] == input_hash:
+        if (
+            state
+            and state["input_hash"] == input_hash
+            and state["graph_extractor_version"] == EXTRACTOR_VERSION
+        ):
             return "skipped"
 
         lexicon_map = load_lexicon_map()
@@ -163,11 +174,20 @@ def sync_document(
         # Neo4jClient._merge_document_tx가 재병합 전에 해당 문서의 기존
         # EXTRACTED/INFERRED 엣지를 지우도록 고쳐야 한다.
         client.merge_document(doc_dict, edges)
-        sync_state.mark_synced(document_id, input_hash=input_hash, extractor_version=EXTRACTOR_VERSION)
+        try:
+            sync_state.mark_synced(document_id, input_hash=input_hash, extractor_version=EXTRACTOR_VERSION)
+        except Exception:  # noqa: BLE001 — 그래프엔 이미 반영됐는데 상태 기록만 실패한 경우도
+            # 배치를 죽이면 안 된다(§4.4와 같은 이유). 다음 실행에서 해시 불일치로 재시도된다.
+            logger.exception("failed to record graph_sync_state for document_id=%s (merge itself succeeded)", document_id)
         return "synced"
     except Exception as exc:  # noqa: BLE001 — §4.4: 문서 단위 격리, 배치 안 죽인다
         logger.exception("graph sync failed for document_id=%s", document_id)
-        sync_state.mark_failed(document_id, error=str(exc))
+        try:
+            sync_state.mark_failed(document_id, error=str(exc))
+        except Exception:  # noqa: BLE001 — 실패 기록 자체가 실패해도(예: 문서가 동시에
+            # 삭제됨) sync_document는 여전히 "failed"를 반환해야 한다 — 상태 기록 실패가
+            # 배치 전체를 죽이게 하지 않는다.
+            logger.exception("failed to record mark_failed for document_id=%s", document_id)
         return "failed"
 
 

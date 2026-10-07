@@ -75,3 +75,32 @@ def test_sync_one_document_creates_node_and_is_idempotent():
         assert second == "skipped"  # input_hash 안 바뀜 — 재추출 안 함
     finally:
         client.close()
+
+
+def test_sync_document_handles_deleted_document_without_raising():
+    import app.graph.pipeline as pipeline
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    doc_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(
+            Document(
+                id=doc_id, source_type="tech_repo", external_id=str(uuid.uuid4()),
+                title="will be deleted", body_md="x", content_hash="h1",
+            )
+        )
+    # 문서가 아예 없는 경우를 시뮬레이션 — sync_document가 예외 없이 "failed"를 반환해야 함
+    with session_scope() as session:
+        session.query(Document).filter(Document.id == doc_id).delete()
+
+    client = pipeline.build_neo4j_client(
+        uri=_NEO4J_URI,
+        user=os.environ.get("GRAPH_NEO4J_TEST_USER", "neo4j"),
+        password=os.environ.get("GRAPH_NEO4J_TEST_PASSWORD", "citecgraph"),
+    )
+    try:
+        result = pipeline.sync_document(doc_id, client=client)
+        assert result == "failed"
+    finally:
+        client.close()
