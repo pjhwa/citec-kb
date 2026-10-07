@@ -212,13 +212,13 @@ SQL
     cat <<'SQL'
 INSERT INTO issue_frames (
   id, document_id, symptom, root_cause, resolution, workaround,
-  components, environment, commands, quality, raw_extract,
-  created_at, updated_at
+  components, environment, commands, quality, citec_domains, severity_tier,
+  raw_extract, body_hash, extractor_version, created_at, updated_at
 )
 SELECT
   id, document_id, symptom, root_cause, resolution, workaround,
-  components, environment, commands, quality, raw_extract,
-  created_at, updated_at
+  components, environment, commands, quality, citec_domains, severity_tier,
+  raw_extract, body_hash, extractor_version, created_at, updated_at
 FROM stg_issue_frames
 ON CONFLICT (id) DO UPDATE SET
   document_id = EXCLUDED.document_id,
@@ -230,7 +230,11 @@ ON CONFLICT (id) DO UPDATE SET
   environment = EXCLUDED.environment,
   commands = EXCLUDED.commands,
   quality = EXCLUDED.quality,
+  citec_domains = EXCLUDED.citec_domains,
+  severity_tier = EXCLUDED.severity_tier,
   raw_extract = EXCLUDED.raw_extract,
+  body_hash = EXCLUDED.body_hash,
+  extractor_version = EXCLUDED.extractor_version,
   updated_at = EXCLUDED.updated_at;
 SQL
   fi
