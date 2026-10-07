@@ -1,5 +1,5 @@
 from app.graph.extract import Edge
-from app.graph.failure_bucket import extract_evidence
+from app.graph.failure_bucket import extract_evidence, extract_similar_to
 
 
 def _candidates(*rows):
@@ -64,3 +64,35 @@ def test_extract_evidence_skips_non_document_prefixes():
 def test_extract_evidence_skips_legacy_placeholder():
     bucket = {"id": "fb1", "evidence_ref": "legacy:pre-migration"}
     assert extract_evidence(bucket, external_id_index={}) == []
+
+
+def test_extract_similar_to_links_above_threshold():
+    bucket = {
+        "id": "fb1", "bucket_name": "b1", "symptom": "",
+        "discriminating_signals": ["RST 직전 idle 60초 이상"],
+    }
+    others = [
+        {"id": "fb2", "bucket_name": "b2", "confidence": 0.9,
+         "discriminating_signals": ["RST 직전 idle 60초 이상"], "counter_signals": []},
+    ]
+    edges = extract_similar_to(bucket, other_buckets=others)
+    assert len(edges) == 1
+    assert edges[0].rel_type == "SIMILAR_TO"
+    assert edges[0].target_label == "FailureBucket"
+    assert edges[0].target_value == "fb2"
+    assert edges[0].tag == "INFERRED"
+
+
+def test_extract_similar_to_excludes_self():
+    bucket = {"id": "fb1", "bucket_name": "b1", "symptom": "", "discriminating_signals": ["x"]}
+    edges = extract_similar_to(bucket, other_buckets=[bucket])
+    assert edges == []
+
+
+def test_extract_similar_to_below_threshold_returns_empty():
+    bucket = {"id": "fb1", "bucket_name": "b1", "symptom": "", "discriminating_signals": ["x"]}
+    others = [
+        {"id": "fb2", "bucket_name": "b2", "confidence": 0.1,
+         "discriminating_signals": ["완전히 무관"], "counter_signals": []},
+    ]
+    assert extract_similar_to(bucket, other_buckets=others) == []

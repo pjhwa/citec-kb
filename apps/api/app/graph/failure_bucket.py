@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import re
 
+from app.failure_buckets.match import rank_buckets
 from app.graph.extract import Edge
 
 _GRADE_RANK = {"A": 0, "A-": 1, "B": 2, "C": 3, "machine": 4, "draft": 5}
 _CONFLUENCE_RE = re.compile(r"confluence:(?:[A-Za-z0-9_]+/)?(\d+)", re.IGNORECASE)
 _CITECTS_RE = re.compile(r"citects-\d+", re.IGNORECASE)
+_SIMILAR_TO_THRESHOLD = 0.75  # apps/api/app/failure_buckets/service.py:99 와 동일하게 유지
 
 
 def best_candidate(candidates: list[dict]) -> str | None:
@@ -54,3 +56,28 @@ def extract_evidence(bucket: dict, *, external_id_index: dict[str, list[dict]]) 
             )
         )
     return edges
+
+
+def extract_similar_to(bucket: dict, *, other_buckets: list[dict]) -> list[Edge]:
+    """app.failure_buckets.match.rank_buckets()를 그대로 재사용 — 새 스코어러를
+    만들지 않는다. others에서 자기 자신(id 동일)은 제외."""
+    candidates = [b for b in other_buckets if b.get("id") != bucket.get("id")]
+    if not candidates:
+        return []
+    ranked = rank_buckets(
+        observed_signals=bucket.get("discriminating_signals") or [],
+        symptom=bucket.get("symptom") or "",
+        buckets=candidates,
+        top_k=len(candidates),
+    )
+    return [
+        Edge(
+            rel_type="SIMILAR_TO",
+            target_label="FailureBucket",
+            target_key="id",
+            target_value=r["bucket_id"],
+            tag="INFERRED",
+        )
+        for r in ranked
+        if r["confidence"] >= _SIMILAR_TO_THRESHOLD
+    ]
