@@ -65,6 +65,30 @@ incremental DB sync, USB 등 승인된 경로로 파일만 운반)에 `entities`
 별개 레이어다 — sync_*는 "Postgres에 운영과 같은 데이터가 있게 만드는" 선행 작업이고,
 `graph_sync.py`는 그렇게 채워진 Postgres를 읽어 Neo4j를 만드는 작업이다.
 
+**운영 조사 결과(2026-10-07, `graph_prereq_survey.sh` 실행 결과 확인)**:
+- 스키마 리비전 `20260930_0009` — dev와 동일, 마이그레이션 문제 없음.
+- `ancestor_ids`가 실제로 채워져 있음을 확인: confluence_map 78,136/78,272(99.8%),
+  confluence_docs 5,660/5,675(99.7%), tech_repo 3,108/3,112(99.9%) — §1에서 "코드가
+  구현돼 있으면 운영엔 있다"고 가정했던 것이 실측으로 확인됐다.
+- `issue_frames.body_hash`/`extractor_version`도 17,727/17,729(99.99%) 충전 — dev는
+  0%였지만 운영은 재추출 잡이 이미 돌아 있었다. 반대로 `components`(53.7%)/
+  `environment`(15.5%)/`root_cause`(62.3%) 충전율은 dev와 거의 동일 — 이건 환경차가
+  아니라 실제 콘텐츠 현황이라는 §1의 판단이 맞았다.
+- **confluence_map이 dev보다 훨씬 크다**: 78,272건(dev 34,173의 2.3배). space_key도
+  dev에 없던 공간(`CATT` 5,058 / `STORAGE` 2,806 / `SCPTechTree` 2,321 / `sysops` 1,068 /
+  `SI` 670 등)이 다수 추가됐고 `DevOps001`은 186→10,661로 급증. **사용자 확인: 이
+  신규 공간들도 전부 3순위(타부서/일반 인프라) — 1순위는 여전히 `LOOKIN`/`TechRepo`만**
+  (§0.1 우선순위 표는 변경 없음, 다만 LOOKIN 8,228→8,497, TechRepo 3,990→4,019로 소폭
+  증가 — 실제 반입 후 tech_repo/confluence_docs와의 중복 건수는 재계산 필요).
+- `lexicon_terms`(10건)/`entities`(5건)는 운영도 dev와 완전히 동일 — 환경차가 아니라
+  정말 이만큼만 등록돼 있다(§6의 사전 확충 과제는 그대로 유효).
+- `failure_buckets`(8건)도 운영과 dev가 동일 — 이미 양쪽이 같은 데이터.
+- **전송 용량**: 9테이블+raw_files 전체 약 2.8GB(`chunks` 2GB가 대부분). 그래프 백필엔
+  chunks/document_sections/raw_files가 불필요해, `sync_manifest.sh`/`sync_export.sh`에
+  `--profile graph`를 추가했다(약 700MB로 축소) — documents(623MB)가 대부분이고
+  나머지(issue_frames/checkitems/failure_buckets/entities/document_entities/
+  lexicon_terms)는 수십 MB 이하. 사용자 선택: **graph 프로파일로 반입**.
+
 ---
 
 ## 1. 현재 상태 관찰 (재확인 필수)
