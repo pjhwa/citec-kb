@@ -39,3 +39,34 @@ def extract_hierarchy(doc: dict) -> list[Edge]:
         )
         for ancestor_id in chain
     ]
+
+
+def extract_structured_components(
+    doc: dict, *, issue_frame: dict | None, checkitem: dict | None
+) -> list[Edge]:
+    """issue_frames.components[] 또는 checkitems.area 중 해당하는 쪽만 본다.
+    checkitems.category/category_1/subcategory는 PISA 평가축(구성/운영/가용성/
+    결함 및 오류/성능 및 용량)이라 컴포넌트가 아니다 — area만 쓴다."""
+    values: list[str] = []
+    if issue_frame:
+        values.extend(issue_frame.get("components") or [])
+    if checkitem and checkitem.get("area"):
+        values.append(checkitem["area"])
+
+    seen: set[str] = set()
+    edges: list[Edge] = []
+    for v in values:
+        v = (v or "").strip()
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        edges.append(
+            Edge(
+                rel_type="HAS_COMPONENT",
+                target_label="Component",
+                target_key="canonical_name",
+                target_value=v,
+                tag="EXTRACTED",
+            )
+        )
+    return edges
