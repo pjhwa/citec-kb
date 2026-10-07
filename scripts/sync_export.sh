@@ -2,13 +2,15 @@
 # sync_export.sh — 운영에서 실행. 개발 매니페스트 대비 신규/변경 행만 export.
 set -euo pipefail
 
-# sync_manifest.sh의 key_expr_for와 반드시 동일하게 유지 — diff .ids 파일의 값이
-# 이 식으로 만든 키와 일치해야 join이 된다 (2026-10-07, knowledge-graph 백필용 추가).
+# sync_manifest.sh의 key_expr_for와 값은 동일해야 하지만(diff .ids의 값이 이 식과
+# 일치해야 join됨), 여기는 _sync_ids와 JOIN하므로 tbl.* 과 겹치는 컬럼명이 모호해지지
+# 않도록 반드시 tbl. 로 명시 한정한다 — 한정 없이 "id"만 쓰면 _sync_ids.id와 겹쳐
+# "column reference is ambiguous" 에러가 난다(2026-10-07 운영 실행에서 실제 발생).
 key_expr_for() {
   case "$1" in
-    document_entities) echo "document_id || ':' || entity_id" ;;
-    lexicon_terms) echo "canonical" ;;
-    *) echo "id" ;;
+    document_entities) echo "tbl.document_id || ':' || tbl.entity_id" ;;
+    lexicon_terms) echo "tbl.canonical" ;;
+    *) echo "tbl.id" ;;
   esac
 }
 
