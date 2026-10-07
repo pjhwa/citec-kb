@@ -39,9 +39,13 @@
       <a href="#412-insights" style="padding-left:20px;font-size:12px">4.12 Insights</a>
       <a href="#413-kb_ask-wiki_ask" style="padding-left:20px;font-size:12px">4.13 kb_ask / wiki_ask</a>
       <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
+      <a href="#414b-ci-tec-domain-recurring-pattern-tools" style="padding-left:20px;font-size:12px">4.14b CI-TEC domain / recurring-pattern tools</a>
       <a href="#415-failure-buckets-networkclusterwindows" style="padding-left:20px;font-size:12px">4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)</a>
       <a href="#5-time-expressions-relative">5. Time expressions (relative)</a>
       <a href="#6-source-types-path-conventions">6. Source types &amp; path conventions</a>
+      <a href="#61-evidence_grade-how-much-to-trust-a-hit-before-you-even-open-it" style="padding-left:20px;font-size:12px">6.1 evidence_grade — how much to trust a hit, before you even open it</a>
+      <a href="#62-structured-copy-overlap-tech_repo-some-confluence_map-pages" style="padding-left:20px;font-size:12px">6.2 Structured-copy overlap (tech_repo ⊇ some confluence_map pages)</a>
+      <a href="#63-ci-tec-domain-taxonomy-recurring-pattern-tools" style="padding-left:20px;font-size:12px">6.3 CI-TEC domain taxonomy &amp; recurring-pattern tools</a>
       <a href="#7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</a>
       <a href="#71-search-rag" style="padding-left:20px;font-size:12px">7.1 Search &amp; RAG</a>
       <a href="#72-tickets-time" style="padding-left:20px;font-size:12px">7.2 Tickets &amp; time</a>
@@ -55,6 +59,8 @@
       <a href="#scenario-d-redis-timeout" style="padding-left:20px;font-size:12px">Scenario D — “Redis timeout 과거 유사 장애와 조치”</a>
       <a href="#scenario-e-linux-oom" style="padding-left:20px;font-size:12px">Scenario E — “Linux OOM 관련 점검 항목”</a>
       <a href="#scenario-f-rag-narrative" style="padding-left:20px;font-size:12px">Scenario F — RAG narrative</a>
+      <a href="#scenario-g-confluence-confluence_map-pointer-hit" style="padding-left:20px;font-size:12px">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)</a>
+      <a href="#scenario-h-ci-tec-failure_bucket" style="padding-left:20px;font-size:12px">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</a>
       <a href="#9-anti-patterns-avoid">9. Anti-patterns (avoid)</a>
       <a href="#10-output-format-suggested-for-user-facing-answers">10. Output format suggested for user-facing answers</a>
       <a href="#11-reliability-notes-retrieval">11. Reliability notes (retrieval)</a>
@@ -72,7 +78,7 @@
       <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-08</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-28</div></div>
       </div>
     </header>
     <section>
@@ -263,6 +269,12 @@
 ├─ Known ticket id CITECTS-#### ───────► kb_ticket
 │
 ├─ Capacity / 공수 estimate ───────────► kb_capacity_estimate
+│
+├─ CI-TEC 도메인별 반복 장애 / 커버리지 갭
+│     &quot;어느 도메인에서 반복 장애가 많은가&quot;, &quot;failure_bucket 정리 안 된 도메인&quot;
+│     ──────────────────────────────────► kb_citec_domain_catalog (먼저)
+│                                         kb_citec_recurring_patterns
+│                                         kb_citec_failure_bucket_coverage
 │
 └─ Unsure which tool ──────────────────► kb_tools_help
 </code></pre>
@@ -540,16 +552,20 @@
 </tr>
 <tr>
 <td><code>environment</code> / <code>product</code> / <code>service</code></td>
-<td>optional context</td>
+<td>optional context. <code>environment</code> is a ranking weight, not a filter: a matching case is moved up, a differing one down, and a case with no recorded environment (most SWIM records) is kept as is</td>
 </tr>
 <tr>
 <td><code>top_k</code></td>
 <td>1–10</td>
 </tr>
+<tr>
+<td><code>source_types</code></td>
+<td>optional subset of <code>support_history</code>, <code>incident_reports</code> (SWIM). Default searches both</td>
+</tr>
 </tbody>
 </table></div>
 <p><strong>API:</strong> <code>POST /v1/similar-incident</code><br>
-Report applicability labels; load ticket body for resolution details.</p>
+Each case reports its <code>source_type</code>. Report applicability labels; load ticket body for resolution details.</p>
 <h3 id="49-checklist">4.9 Checklist</h3>
 <ul>
 <li><code>kb_list_checkitems(q=, area=, category_1=, limit=)</code> → <code>GET /v1/checkitems</code>  </li>
@@ -579,6 +595,13 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <li><code>kb_health</code> — API health  </li>
 <li><code>kb_stats</code> — document counts by source  </li>
 <li><code>kb_tools_help</code> — short tool menu (also useful mid-conversation)</li>
+</ul>
+<h3 id="414b-ci-tec-domain-recurring-pattern-tools">4.14b CI-TEC domain / recurring-pattern tools</h3>
+<p>See §6.3 for the full taxonomy and when to use each:</p>
+<ul>
+<li><code>kb_citec_domain_catalog()</code> — no args; call first to get exact domain names / severity tiers.</li>
+<li><code>kb_citec_recurring_patterns(group_by=, domains=, severity_tiers=, dept_contains=, customer_contains=, since_days=, min_count=)</code> → <code>GET /v1/citec-dashboard/recurring-patterns</code></li>
+<li><code>kb_citec_failure_bucket_coverage(since_days=, min_count=)</code> → <code>GET /v1/citec-dashboard/failure-bucket-coverage</code></li>
 </ul>
 <hr>
 <h3 id="415-failure-buckets-networkclusterwindows">4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)</h3>
@@ -639,6 +662,7 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <th>source_type / section</th>
 <th>Content</th>
 <th>path pattern</th>
+<th>typical <code>evidence_grade</code></th>
 </tr>
 </thead>
 <tbody>
@@ -646,45 +670,138 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <td><code>support_history</code></td>
 <td>Jira-like tickets</td>
 <td><code>support_history/CITECTS-2386.md</code></td>
+<td>A (closed/resolved) / B (open)</td>
+</tr>
+<tr>
+<td><code>incident_reports</code></td>
+<td>SWIM 장애보고(회사 전체, CI-TEC 11개 도메인은 그 부분집합)</td>
+<td><code>incident_reports/{fail_seq}.md</code></td>
+<td>A (조치완료/종료확정) / B (그 외)</td>
 </tr>
 <tr>
 <td><code>tech_repo</code></td>
-<td>Confluence tech pages</td>
+<td>Confluence tech pages, <strong>full body</strong></td>
 <td><code>tech_repo/{pageId}.md</code></td>
+<td>A</td>
+</tr>
+<tr>
+<td><code>confluence_docs</code></td>
+<td>Other full-body Confluence space (LOOKIN)</td>
+<td><code>confluence_docs/{pageId}.md</code></td>
+<td>A</td>
+</tr>
+<tr>
+<td><code>confluence_map</code></td>
+<td><strong>구조 전용 색인</strong> — 제목/URL/경로만, 본문 아님(§6.1 참고)</td>
+<td><code>confluence_map/{pageId}.md</code></td>
+<td><strong>C — 포인터, 근거 아님</strong></td>
 </tr>
 <tr>
 <td><code>tuning_ai</code></td>
 <td>Tuning / SQL notes</td>
 <td><code>tuning_ai/...</code></td>
+<td>A-</td>
 </tr>
 <tr>
 <td><code>checkitem</code> / section <code>checkitems</code></td>
 <td>PISA items</td>
 <td>use <code>kb_get_checkitem</code> or path form</td>
-</tr>
-<tr>
-<td><code>confluence_docs</code></td>
-<td>Other confluence</td>
-<td><code>confluence_docs/...</code></td>
+<td>A</td>
 </tr>
 <tr>
 <td><code>dept_archive</code></td>
 <td>CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브</td>
 <td><code>dept_archive/file_&lt;id&gt;.md</code></td>
+<td>B</td>
 </tr>
 <tr>
 <td><code>failure_bucket</code></td>
 <td>실패 버킷(장애 패턴) — API/MCP로 실시간 등재, <code>data/raw/</code> 스캔 대상 아님</td>
 <td>via failure bucket tools</td>
+<td><code>machine</code>(자동계산 confidence와 별개 필드)</td>
 </tr>
 <tr>
 <td>insights / synthesis</td>
 <td>Approved insights</td>
 <td>via insight tools</td>
+<td>n/a (status: draft/review/approved/rejected)</td>
 </tr>
 </tbody>
 </table></div>
 <p><strong>Ticket keys:</strong> always <code>CITECTS-&lt;number&gt;</code> (case-insensitive in search; normalize to <code>CITECTS-####</code> when calling <code>kb_ticket</code>).</p>
+<h3 id="61-evidence_grade-how-much-to-trust-a-hit-before-you-even-open-it">6.1 <code>evidence_grade</code> — how much to trust a hit, before you even open it</h3>
+<p>Every <code>documents</code> row carries <code>evidence_grade</code> (<code>A</code> / <code>A-</code> / <code>B</code> / <code>C</code> / <code>draft</code>).<br>
+It is <strong>not a relevance score</strong> — it is a statement about how directly this row<br>
+<em>is</em> the fact, vs. merely <em>points at</em> where the fact might live:</p>
+<ul>
+<li><strong>A / A-</strong>: the row's <code>body_md</code> is the actual source content (closed ticket,<br>
+  resolved incident report, full Confluence page, PISA checkitem, tuning note).<br>
+  Safe to quote and cite directly.</li>
+<li><strong>B</strong>: same as above but the underlying record is still open/unresolved<br>
+  (e.g. a support ticket not yet closed) — content is real but the conclusion<br>
+  may change later. Say so if the answer hinges on an outcome.</li>
+<li><strong>C — <code>confluence_map</code> only, by design</strong>: <code>body_md</code> is <strong>only the page's<br>
+  title/breadcrumb path</strong>, never its real content (<code>app.ingest.adapters.
+  iter_confluence_map</code>'s docstring: <em>"never the real page body"</em>). This<br>
+  exists to make ~78k Confluence pages CI-TEC references (but does not fully<br>
+  ingest) at least <em>findable</em> by keyword/path, without claiming to have read<br>
+  them. <strong>A <code>confluence_map</code> hit tells you a page with this title exists at<br>
+  this URL — it is not evidence of what the page says.</strong> Never answer a<br>
+  factual question from a <code>confluence_map</code> snippet alone; either open the<br>
+  live Confluence URL yourself, tell the user to, or fall back to<br>
+<code>confluence_docs</code>/<code>tech_repo</code> if the same topic is also fully ingested<br>
+  there (same <code>page_id</code>, different <code>source_type</code> — see §6.2).</li>
+<li><strong><code>draft</code></strong>: not yet reviewed (e.g. an unapproved insight) — do not present<br>
+  as settled fact.</li>
+</ul>
+<p><strong>Rule of thumb:</strong> before citing a hit as fact, check <code>source_type</code>. If it is<br>
+<code>confluence_map</code>, either fetch the live page or qualify the claim as<br>
+unverified ("CI-TEC 문서 인덱스에 이런 제목의 페이지가 있습니다만 본문은<br>
+확인하지 못했습니다").</p>
+<h3 id="62-structured-copy-overlap-tech_repo-some-confluence_map-pages">6.2 Structured-copy overlap (<code>tech_repo</code> ⊇ some <code>confluence_map</code> pages)</h3>
+<p>A handful of pages exist under <strong>both</strong> <code>tech_repo</code> (or <code>confluence_docs</code>)<br>
+<em>and</em> <code>confluence_map</code> with the same Confluence <code>external_id</code> — the full-body<br>
+copy and the structure-only pointer were crawled from the same live page<br>
+under two different root configs. When search returns the same <code>page_id</code><br>
+under two source_types, <strong>prefer the A-grade one</strong> (<code>tech_repo</code>/<br>
+<code>confluence_docs</code>) for content; the <code>confluence_map</code> copy is redundant there<br>
+and exists only so the page is still indexed if its tech_repo/docs crawl ever<br>
+lags.</p>
+<h3 id="63-ci-tec-domain-taxonomy-recurring-pattern-tools">6.3 CI-TEC domain taxonomy &amp; recurring-pattern tools</h3>
+<p>Separate from the generic <code>area</code>/<code>domain</code> search filter (§4.2), CI-TEC owns an<br>
+<strong>11-domain lens</strong> over <code>incident_reports</code> (SWIM) specifically — because SWIM<br>
+is a company-wide log and most of it (~59%, mostly generic Network noise) is<br>
+outside CI-TEC's actual 10 component domains + 1 cross-cutting one:</p>
+<pre><code>Linux · Windows · VMware · OpenStack · Kubernetes · Middleware ·
+Network · Storage · Ceph · Database · 성능(cross-cutting)
+</code></pre>
+<p>An incident can carry more than one domain tag (e.g. "DB Hang" → Database +<br>
+성능). Always call <code>kb_citec_domain_catalog()</code> first if you need the exact<br>
+domain spelling or the SWIM severity-tier vocabulary (<code>major</code> / <code>minor</code> /<br>
+<code>failover_no_impact</code> / <code>customer_fault</code> / <code>vendor_fault</code> / <code>unknown</code>) — don't<br>
+guess the Korean/English spelling.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_citec_domain_catalog()</code></td>
+<td>Confirm exact domain names / severity tiers / valid <code>group_by</code> dimensions before calling either tool below</td>
+</tr>
+<tr>
+<td><code>kb_citec_recurring_patterns(group_by=, domains=, severity_tiers=, since_days=, min_count=)</code></td>
+<td>"어떤 도메인에서 반복 장애가 많은가", "최근 2년 Database major 몇 건" — real aggregation over <code>incident_reports</code>, never count with the LLM</td>
+</tr>
+<tr>
+<td><code>kb_citec_failure_bucket_coverage(since_days=, min_count=)</code></td>
+<td>"반복 확인된 장애인데 아직 failure_bucket(진단 패턴)에 등록 안 된 도메인이 뭔가" — a cleanup-gap report, not a search tool. Note: CI-TEC's 11 domains and failure_bucket's <code>fb_domain</code> vocabulary (network/cluster/windows/dbms/linux/virtualization/middleware/storage) are <strong>different, overlapping</strong> taxonomies owned by different systems — <code>Kubernetes</code>/<code>성능</code> have no <code>fb_domain</code> equivalent yet (<code>no_fb_domain_defined</code> ≠ 0% coverage, it means the bucket vocabulary doesn't cover that domain at all)</td>
+</tr>
+</tbody>
+</table></div>
 <hr>
 <h2 id="7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</h2>
 <p>Base: <code>http://localhost:8573</code><br>
@@ -780,6 +897,18 @@ POST /api/query
 <li><code>kb_ask(query="…", mode="fast")</code>  </li>
 <li>If answer abstains or looks weak: fall back to search + document read and answer yourself with citations.</li>
 </ol>
+<h3 id="scenario-g-confluence-confluence_map-pointer-hit">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)</h3>
+<ol>
+<li><code>kb_search(query="…", section="confluence_map")</code> → hit returns title + breadcrumb only (<code>evidence_grade="C"</code>, §6.1) — <strong>do not answer from this snippet</strong>.</li>
+<li>Check if the same <code>external_id</code>/page_id also appears under <code>tech_repo</code> or <code>confluence_docs</code> in the same search (or re-search without <code>section</code> filter) — if so, use that copy's full body instead (§6.2).</li>
+<li>If not fully ingested anywhere, open the page's <code>URL</code>/<code>source_uri</code> live (or tell the user to) before answering, or say explicitly the index only confirms the page exists and you have not read it.</li>
+</ol>
+<h3 id="scenario-h-ci-tec-failure_bucket">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</h3>
+<ol>
+<li><code>kb_citec_domain_catalog()</code> — confirm the 11 domain names.</li>
+<li><code>kb_citec_recurring_patterns(group_by="domain", since_days=730, min_count=3)</code> — report counts straight from the response, don't re-tally.</li>
+<li><code>kb_citec_failure_bucket_coverage(since_days=730, min_count=3)</code> — cite only domains with <code>status="gap"</code> as "정리 필요"; <code>no_fb_domain_defined</code> means the vocabulary doesn't cover that domain yet, not 0% coverage — say so if asked.</li>
+</ol>
 <hr>
 <h2 id="9-anti-patterns-avoid">9. Anti-patterns (avoid)</h2>
 <div class="table-wrap"><table>
@@ -825,6 +954,21 @@ POST /api/query
 <td>Assume English-only</td>
 <td>Corpus is KO+EN</td>
 <td>Keep Korean query text</td>
+</tr>
+<tr>
+<td>Cite a <code>confluence_map</code> hit's content as fact</td>
+<td>It is a title/path pointer only — <code>body_md</code> is never the real page (§6.1)</td>
+<td>Open the live Confluence URL, or check if the same page is also in <code>tech_repo</code>/<code>confluence_docs</code> (§6.2), or qualify as unverified</td>
+</tr>
+<tr>
+<td>Count/rank CI-TEC domain incidents by scanning search results yourself</td>
+<td>Error-prone, and ignores multi-domain tagging</td>
+<td><code>kb_citec_recurring_patterns</code></td>
+</tr>
+<tr>
+<td>Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스")</td>
+<td><code>kb_citec_recurring_patterns</code> filters do exact match</td>
+<td><code>kb_citec_domain_catalog()</code> first</td>
 </tr>
 </tbody>
 </table></div>
@@ -886,7 +1030,7 @@ POST /api/query
 </ul>
 <hr>
 <h2 id="14-versioning">14. Versioning</h2>
-<p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code>.<br>
+<p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code> (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools).<br>
 If a tool name is missing in the live server, call <code>kb_tools_help</code> or fall back to <code>kb_query</code> + REST in <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a>.</p>
       </div>
     </section>
