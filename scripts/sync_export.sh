@@ -16,6 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEV_MANIFEST=""
 OUT_DIR="${HOME}/tmp"
+PROFILE="full"
 TS="$(date '+%Y-%m-%d_%H%M%S')"
 
 usage() {
@@ -23,14 +24,16 @@ usage() {
 sync_export.sh — 운영: 개발 매니페스트 대비 신규/변경 행만 export
 
 USAGE
-  scripts/sync_export.sh --dev-manifest FILE [--project DIR] [--out DIR]
+  scripts/sync_export.sh --dev-manifest FILE [--project DIR] [--out DIR] [--profile full|graph]
 
 옵션:
   --dev-manifest FILE   scripts/sync_manifest.sh 로 개발에서 생성해 반입한 파일 (필수)
   --project DIR         레포 루트 (기본: 이 스크립트 상위)
   --out DIR             출력 디렉터리 (기본: ~/tmp)
+  --profile             --dev-manifest를 만들 때 쓴 것과 반드시 같아야 한다
+                         (sync_manifest.sh --profile 참고). full(기본) 또는 graph.
 
-DB 6테이블은 CSV로, data/raw 변경 파일은 raw_files.tar.gz로 묶는다.
+DB 테이블은 CSV로, data/raw 변경 파일(profile=full일 때만)은 raw_files.tar.gz로 묶는다.
 출력: citec-kb-incr-<TS>.tar.gz (변경분이 있을 때만 생성)
 EOF
 }
@@ -40,23 +43,33 @@ while [[ $# -gt 0 ]]; do
     --dev-manifest) DEV_MANIFEST="${2:-}"; shift 2 ;;
     --project) PROJECT_DIR="${2:-}"; shift 2 ;;
     --out) OUT_DIR="${2:-}"; shift 2 ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; usage; exit 1 ;;
   esac
 done
 
 [[ -n "$DEV_MANIFEST" && -f "$DEV_MANIFEST" ]] || { echo "ERROR: --dev-manifest 파일 필요" >&2; exit 1; }
+case "$PROFILE" in
+  full|graph) ;;
+  *) echo "ERROR: --profile 은 full 또는 graph" >&2; exit 1 ;;
+esac
 
 PG_USER="${POSTGRES_USER:-citec}"
 PG_DB="${POSTGRES_DB:-citec_knowledge}"
-TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
-        entities document_entities lexicon_terms)
+if [[ "$PROFILE" == "graph" ]]; then
+  TABLES=(documents checkitems issue_frames failure_buckets
+          entities document_entities lexicon_terms)
+else
+  TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
+          entities document_entities lexicon_terms)
+fi
 
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
 
-echo "[sync_export] 운영 매니페스트 생성" >&2
-"${SCRIPT_DIR}/sync_manifest.sh" --project "$PROJECT_DIR" --out "${STAGING}/ops-manifest.tsv.gz"
+echo "[sync_export] 운영 매니페스트 생성 (profile=${PROFILE})" >&2
+"${SCRIPT_DIR}/sync_manifest.sh" --project "$PROJECT_DIR" --profile "$PROFILE" --out "${STAGING}/ops-manifest.tsv.gz"
 
 echo "[sync_export] diff 계산" >&2
 python3 "${SCRIPT_DIR}/sync_diff.py" \
@@ -86,7 +99,9 @@ for tbl in "${TABLES[@]}"; do
 done
 
 RAW_IDS_FILE="${STAGING}/diff/raw_files.ids"
-if [[ -f "$RAW_IDS_FILE" ]]; then
+if [[ "$PROFILE" == "graph" ]]; then
+  echo "[sync_export] --profile graph — raw_files 건너뜀" >&2
+elif [[ -f "$RAW_IDS_FILE" ]]; then
   HAS_ANY=true
   n=$(wc -l < "$RAW_IDS_FILE")
   echo "[sync_export] raw_files: ${n}건 tar" >&2

@@ -23,19 +23,26 @@ key_expr_for() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUT_FILE=""
+PROFILE="full"
 TS="$(date '+%Y-%m-%d_%H%M%S')"
 
 usage() {
   cat <<'EOF'
-sync_manifest.sh — documents/document_sections/chunks/checkitems/issue_frames/failure_buckets
-6개 테이블 + data/raw 첨부파일(raw_files)의 (table, id, hash) 매니페스트를 gzip TSV로 생성한다.
+sync_manifest.sh — 9개 테이블 + data/raw 첨부파일(raw_files)의 (table, id, hash)
+매니페스트를 gzip TSV로 생성한다.
 
 USAGE
-  scripts/sync_manifest.sh [--out FILE] [--project DIR]
+  scripts/sync_manifest.sh [--out FILE] [--project DIR] [--profile full|graph]
 
 옵션:
   --out FILE       출력 경로 (기본: ~/tmp/citec-kb-manifest-<TS>.tsv.gz)
   --project DIR    레포 루트 (기본: 이 스크립트 상위)
+  --profile        full(기본): 9테이블+raw_files 전체 — dev 검색/벡터도 운영과 맞춤.
+                    graph: chunks/document_sections/raw_files 제외, knowledge-graph
+                    백필에 필요한 7테이블만 — 전송량이 약 1/4로 줄어든다
+                    (2026-10-07 운영 조사 기준 전체 ~2.8GB → graph ~700MB).
+                    sync_export.sh에도 --profile 로 동일하게 넘겨야 한다
+                    (dev 매니페스트와 운영 export의 테이블 집합이 일치해야 diff가 맞음).
 EOF
 }
 
@@ -43,10 +50,16 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --out) OUT_FILE="${2:-}"; shift 2 ;;
     --project) PROJECT_DIR="${2:-}"; shift 2 ;;
+    --profile) PROFILE="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "알 수 없는 옵션: $1" >&2; usage; exit 1 ;;
   esac
 done
+
+case "$PROFILE" in
+  full|graph) ;;
+  *) echo "ERROR: --profile 은 full 또는 graph" >&2; exit 1 ;;
+esac
 
 OUT_FILE="${OUT_FILE:-${HOME}/tmp/citec-kb-manifest-${TS}.tsv.gz}"
 mkdir -p "$(dirname "$OUT_FILE")"
@@ -54,8 +67,13 @@ mkdir -p "$(dirname "$OUT_FILE")"
 PG_USER="${POSTGRES_USER:-citec}"
 PG_DB="${POSTGRES_DB:-citec_knowledge}"
 
-TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
-        entities document_entities lexicon_terms)
+if [[ "$PROFILE" == "graph" ]]; then
+  TABLES=(documents checkitems issue_frames failure_buckets
+          entities document_entities lexicon_terms)
+else
+  TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
+          entities document_entities lexicon_terms)
+fi
 
 echo "[sync_manifest] project=${PROJECT_DIR} out=${OUT_FILE}" >&2
 
@@ -71,7 +89,9 @@ for tbl in "${TABLES[@]}"; do
 done
 
 RAW_DIR="${PROJECT_DIR}/data/raw"
-if [[ -d "$RAW_DIR" ]]; then
+if [[ "$PROFILE" == "graph" ]]; then
+  echo "[sync_manifest] --profile graph — raw_files 건너뜀" >&2
+elif [[ -d "$RAW_DIR" ]]; then
   echo "[sync_manifest] raw_files" >&2
   # 파일명에 공백이 있어도 안전하도록 NUL 구분 + 파일당 sha256sum 개별 호출
   # (sha256sum 배치 출력 "<hash>  <path>"를 공백 기준으로 재파싱하면 공백 포함 경로에서 깨짐)
