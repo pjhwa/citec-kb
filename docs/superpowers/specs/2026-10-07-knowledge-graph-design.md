@@ -315,15 +315,51 @@ confluence_map 전체를 "본문 없는 저가치 소스"로 취급하지 않는
 
 - 실시간 조회 API/MCP 도구(`kb_graph_path` 등) 노출
 - failure_bucket 플라이휠(`create_bucket`/`refine_bucket`) 훅에 그래프 갱신 연동
-- `citec_domains`/`severity_tier`의 노드(또는 `HAS_FRAME` 보조 노드) 승격 여부 재검토(실사용 패턴 확인 후)
-- 티켓-티켓 임베딩 기반 `SIMILAR_TO` 확장(현재는 failure_bucket 간만)
-- LLM 기반 의미 추출 보강(로컬 lexicon 매칭 커버리지 부족 시)
+- LLM 기반 의미 추출 보강(로컬 lexicon 매칭 커버리지 부족 시) — §1 재측정(93.2%/85.8%,
+  2026-10-07)으로 당장 필요성은 낮아졌다. lexicon 매칭이 안 되는 나머지 ~6~15%를 LLM으로
+  건질지는 2단계에서 실사용 빈도로 재판단
 - ~~`lexicon_terms` 사전 확충~~ **완료**(2026-10-07, 10→75건, §1 "동의어 사전" 참고)
 - **범용어 Component "허브" 플래그**: `Network`/`Storage`/`Cluster`/`Windows`/`Apache`/
   `Firewall`/`HANA`/`Nginx`/`NetApp`/`OpenStack`/`SQL Server`/`ESXi`/`VMware` 13종은
   degree가 수천~2만에 달해(§1) 최단경로/순회 질의에서 의미 없는 결과를 낸다. `(:Component)`
   노드에 `is_hub` 속성(또는 하드코딩 목록)을 추가해 경로 탐색 시 제외하는 옵션을 2단계
   조회 설계에서 반영한다
-- `issue_frames.components`(광범주: Network/Storage/Cluster)와 `checkitems.area`(벤더/제품:
-  3PAR/Cisco_IOS/NetApp)를 잇는 상하위 매핑 테이블 — 1단계는 **정확히 같은 문자열일 때만**
-  연결(Linux/Redis/Oracle/VMware/Network/Storage/SCP 7종 한정)하고, 상하위 추론은 하지 않는다
+
+- **`citec_domains`/`severity_tier` 노드 승격 — 검토 완료, 승격 안 함(2026-10-07)**:
+  실측 분포 확인. `citec_domains`(11종, 10,928건에 태깅): `Network` 9,025 / `성능` 1,045 /
+  `Database` 583 / `Middleware` 555 / `Storage` 393 / `VMware` 238 / `Windows` 154 /
+  `Kubernetes` 135 / `Linux` 75 / `OpenStack` 57 / `Ceph` 12. `severity_tier`(7종,
+  17,729건): `failover_no_impact` 7,024 / `minor` 4,258 / (빈값) 2,385 / `customer_fault`
+  2,183 / `unknown` 1,088 / `major` 420 / `vendor_fault` 371. **둘 다 `environment`와
+  똑같은 허브 문제**(`citec_domains=Network` 하나가 9,025건 연결, `severity_tier=
+  failover_no_impact`가 7,024건 연결) — §0의 "카디널리티 낮은 분류값은 노드로 안 만든다"
+  원칙 그대로 적용해 **노드로도, `HAS_FRAME` 보조 노드로도 승격하지 않는다**. Document
+  속성으로 유지(이미 §3.2 결정과 일치, 재론 불필요)
+
+- **티켓-티켓 `SIMILAR_TO` 확장 — 새 인프라 불필요, 기존 코드 재사용으로 가능**:
+  `apps/api/app/si/retrieve.py:140`의 `similar_incidents(symptom, top_k, ...)`가 이미
+  `embed_query()`(`apps/api/app/embed/model.py:106`) + 하이브리드 검색으로 구현돼 있다.
+  각 티켓의 `symptom`을 쿼리로 넣어 top-k를 뽑고 자기 자신을 걸러내면 그대로 티켓-티켓
+  유사도가 나온다 — **새 임베딩 파이프라인이나 벡터 인덱스를 새로 만들 필요가 없다**.
+  비용은 이슈프레임 17,729건 × 1회 호출(이미 존재하는 임베딩 모델 추론) — 배치로
+  돌리면 대략 기존 `app.embed.cli` 한 번 돌리는 것과 비슷한 자릿수. 2단계에서
+  `extract_evidence`처럼 독립 함수(`extract_ticket_similarity(doc)`)로 추가하면 된다.
+
+- **`issue_frames.components`(광범주) ↔ `checkitems.area`(벤더/제품) 상하위 매핑 —
+  초안(2026-10-07)**: 실제 두 어휘를 대조해 다음 매핑을 제안한다(구현은 2단계).
+  하나의 벤더/제품 값이 여러 광범주에 속할 수 있다(예: `NSX_T`는 Network이자 VMware).
+
+  | 광범주(issue_frames.components) | 벤더/제품(checkitems.area) |
+  |---|---|
+  | Network | Cisco_IOS, Cisco_NXOS, Arista, Brocade, Extreme, A10, Alteon, F5, HAProxy, Firewall, Fortinet, Secui, NSX_T, NSX_V, L2/L3, L4/L7, HPE_AOS-CX, HPE_Comware, MDS |
+  | Storage | 3PAR, NetApp, NetApp_Cluster, NetApp_E_EF, Isilon, HNAS, VNX_Unity, Symmetrix, VSP, Ceph, MSA |
+  | Cluster | NetApp_Cluster, SKE_K8S |
+  | VMware | ESXi, NSX_T, NSX_V |
+  | Kubernetes | SKE_K8S |
+  | Oracle(→Database로 일반화 검토) | Oracle, MySQL, PostgreSQL, DB2, SQL Server, Tibero, HANA |
+  | (Middleware, citec_domains에만 있음) | JBoss, JEUS, Tomcat, Weblogic, WebtoB, Wildfly, IIS, Nginx, Apache, HAProxy, Kafka |
+  | Linux | AIX, HP-UX, Solaris (Unix 계열 포함) |
+  | OpenStack | SDS_PaaS |
+
+  **주의**: 이 표는 사람이 검증 안 한 1차 초안이다 — 틀린 매핑이 있으면 `HAS_COMPONENT`
+  엣지가 의미상 잘못 연결된다. 2단계 구현 전 CI-TEC 담당자 리뷰를 받아야 한다.
