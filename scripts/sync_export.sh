@@ -2,6 +2,16 @@
 # sync_export.sh — 운영에서 실행. 개발 매니페스트 대비 신규/변경 행만 export.
 set -euo pipefail
 
+# sync_manifest.sh의 key_expr_for와 반드시 동일하게 유지 — diff .ids 파일의 값이
+# 이 식으로 만든 키와 일치해야 join이 된다 (2026-10-07, knowledge-graph 백필용 추가).
+key_expr_for() {
+  case "$1" in
+    document_entities) echo "document_id || ':' || entity_id" ;;
+    lexicon_terms) echo "canonical" ;;
+    *) echo "id" ;;
+  esac
+}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEV_MANIFEST=""
@@ -39,7 +49,8 @@ done
 
 PG_USER="${POSTGRES_USER:-citec}"
 PG_DB="${POSTGRES_DB:-citec_knowledge}"
-TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets)
+TABLES=(documents document_sections chunks checkitems issue_frames failure_buckets
+        entities document_entities lexicon_terms)
 
 STAGING="$(mktemp -d)"
 trap 'rm -rf "$STAGING"' EXIT
@@ -62,12 +73,13 @@ for tbl in "${TABLES[@]}"; do
   HAS_ANY=true
   n=$(wc -l < "$ids_file")
   echo "[sync_export] ${tbl}: ${n}건 export" >&2
+  key_expr="$(key_expr_for "$tbl")"
   {
     echo "CREATE TEMP TABLE _sync_ids (id text);"
     echo '\copy _sync_ids FROM STDIN WITH (FORMAT csv)'
     cat "$ids_file"
     echo '\.'
-    echo "\\copy (SELECT tbl.* FROM ${tbl} tbl JOIN _sync_ids s ON tbl.id = s.id) TO STDOUT WITH (FORMAT csv, HEADER)"
+    echo "\\copy (SELECT tbl.* FROM ${tbl} tbl JOIN _sync_ids s ON (${key_expr}) = s.id) TO STDOUT WITH (FORMAT csv, HEADER)"
   } | docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec -T postgres \
         psql -q -v ON_ERROR_STOP=1 -U "$PG_USER" -d "$PG_DB" \
         > "${STAGING}/bundle/${tbl}.csv"

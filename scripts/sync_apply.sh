@@ -235,13 +235,13 @@ SQL
     echo '\.'
     cat <<'SQL'
 INSERT INTO failure_buckets (
-  id, document_id, bucket_name, protocol, symptom,
+  id, document_id, bucket_name, fb_domain, protocol, environment, evidence_ref, symptom,
   discriminating_signals, counter_signals, root_cause, recommended_action,
   confidence, support_count, counter_count, evidence_grade, created_by,
   created_at, updated_at
 )
 SELECT
-  id, document_id, bucket_name, protocol, symptom,
+  id, document_id, bucket_name, fb_domain, protocol, environment, evidence_ref, symptom,
   discriminating_signals, counter_signals, root_cause, recommended_action,
   confidence, support_count, counter_count, evidence_grade, created_by,
   created_at, updated_at
@@ -249,7 +249,10 @@ FROM stg_failure_buckets
 ON CONFLICT (id) DO UPDATE SET
   document_id = EXCLUDED.document_id,
   bucket_name = EXCLUDED.bucket_name,
+  fb_domain = EXCLUDED.fb_domain,
   protocol = EXCLUDED.protocol,
+  environment = EXCLUDED.environment,
+  evidence_ref = EXCLUDED.evidence_ref,
   symptom = EXCLUDED.symptom,
   discriminating_signals = EXCLUDED.discriminating_signals,
   counter_signals = EXCLUDED.counter_signals,
@@ -261,6 +264,66 @@ ON CONFLICT (id) DO UPDATE SET
   evidence_grade = EXCLUDED.evidence_grade,
   created_by = EXCLUDED.created_by,
   updated_at = EXCLUDED.updated_at;
+SQL
+  fi
+
+  # 2026-10-07 knowledge-graph 백필용 추가 3테이블. document_entities/lexicon_terms는
+  # autoincrement 정수 PK라(§sync_manifest.sh 상단 주석) id를 그대로 들여오면 dev 자체
+  # 시퀀스와 충돌할 수 있어, id는 들여오지 않고 자연키로 upsert한다 — dev가 새 id를
+  # 스스로 채번한다.
+  if [[ -f "${BUNDLE_DIR}/entities.csv" ]]; then
+    cat <<'SQL'
+CREATE TEMP TABLE stg_entities (LIKE entities INCLUDING DEFAULTS);
+SQL
+    echo '\copy stg_entities FROM STDIN WITH (FORMAT csv, HEADER)'
+    cat "${BUNDLE_DIR}/entities.csv"
+    echo '\.'
+    cat <<'SQL'
+INSERT INTO entities (id, canonical_name, type, customer, aliases, host_patterns, env_hints, metadata, created_at)
+SELECT id, canonical_name, type, customer, aliases, host_patterns, env_hints, metadata, created_at
+FROM stg_entities
+ON CONFLICT (id) DO UPDATE SET
+  canonical_name = EXCLUDED.canonical_name,
+  type = EXCLUDED.type,
+  customer = EXCLUDED.customer,
+  aliases = EXCLUDED.aliases,
+  host_patterns = EXCLUDED.host_patterns,
+  env_hints = EXCLUDED.env_hints,
+  metadata = EXCLUDED.metadata;
+SQL
+  fi
+
+  if [[ -f "${BUNDLE_DIR}/document_entities.csv" ]]; then
+    cat <<'SQL'
+CREATE TEMP TABLE stg_document_entities (LIKE document_entities INCLUDING DEFAULTS);
+SQL
+    echo '\copy stg_document_entities FROM STDIN WITH (FORMAT csv, HEADER)'
+    cat "${BUNDLE_DIR}/document_entities.csv"
+    echo '\.'
+    cat <<'SQL'
+INSERT INTO document_entities (document_id, entity_id, confidence)
+SELECT document_id, entity_id, confidence
+FROM stg_document_entities
+ON CONFLICT (document_id, entity_id) DO UPDATE SET
+  confidence = EXCLUDED.confidence;
+SQL
+  fi
+
+  if [[ -f "${BUNDLE_DIR}/lexicon_terms.csv" ]]; then
+    cat <<'SQL'
+CREATE TEMP TABLE stg_lexicon_terms (LIKE lexicon_terms INCLUDING DEFAULTS);
+SQL
+    echo '\copy stg_lexicon_terms FROM STDIN WITH (FORMAT csv, HEADER)'
+    cat "${BUNDLE_DIR}/lexicon_terms.csv"
+    echo '\.'
+    cat <<'SQL'
+INSERT INTO lexicon_terms (canonical, variants, priority, metadata)
+SELECT canonical, variants, priority, metadata
+FROM stg_lexicon_terms
+ON CONFLICT (canonical) DO UPDATE SET
+  variants = EXCLUDED.variants,
+  priority = EXCLUDED.priority,
+  metadata = EXCLUDED.metadata;
 SQL
   fi
 } > "$SQL_SCRIPT"
