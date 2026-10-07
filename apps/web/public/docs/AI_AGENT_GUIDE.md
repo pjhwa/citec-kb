@@ -350,7 +350,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `incident_reports` | SWIM 장애보고(회사 전체, CI-TEC 11개 도메인은 그 부분집합) | `incident_reports/{fail_seq}.md` | A (조치완료/종료확정) / B (그 외) |
 | `tech_repo` | Confluence tech pages, **full body** | `tech_repo/{pageId}.md` | A |
 | `confluence_docs` | Other full-body Confluence space (LOOKIN) | `confluence_docs/{pageId}.md` | A |
-| `confluence_map` | **구조 전용 색인** — 제목/URL/경로만, 본문 아님(§6.1 참고) | `confluence_map/{pageId}.md` | **C — 포인터, 근거 아님** |
+| `confluence_map` | 2026-10 이후 **전체 본문 포함**(크롤/백필된 공간은), 그 전 데이터는 제목/경로만 — §6.1 참고 | `confluence_map/{pageId}.md` | **C — 본문 있어도 "근거"로 안 씀(정책)** |
 | `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` | A- |
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form | A |
 | `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` | B |
@@ -371,35 +371,54 @@ It is **not a relevance score** — it is a statement about how directly this ro
 - **B**: same as above but the underlying record is still open/unresolved
   (e.g. a support ticket not yet closed) — content is real but the conclusion
   may change later. Say so if the answer hinges on an outcome.
-- **C — `confluence_map` only, by design**: `body_md` is **only the page's
-  title/breadcrumb path**, never its real content (`app.ingest.adapters.
-  iter_confluence_map`'s docstring: *"never the real page body"*). This
-  exists to make ~78k Confluence pages CI-TEC references (but does not fully
-  ingest) at least *findable* by keyword/path, without claiming to have read
-  them. **A `confluence_map` hit tells you a page with this title exists at
-  this URL — it is not evidence of what the page says.** Never answer a
-  factual question from a `confluence_map` snippet alone; either open the
-  live Confluence URL yourself, tell the user to, or fall back to
-  `confluence_docs`/`tech_repo` if the same topic is also fully ingested
-  there (same `page_id`, different `source_type` — see §6.2).
+- **C — `confluence_map` only, by design, regardless of body richness**:
+  **Corrected 2026-10-08** — an earlier version of this doc said
+  `confluence_map`'s `body_md` is only a title/breadcrumb pointer with no
+  real content. That was true before 2026-10-01 but is **no longer
+  accurate**: `app.confluence.map_sync._write_map_page` now also writes the
+  page's full cleaned text (same cleaning as `confluence_docs`/`tech_repo`)
+  for any space that has been crawled/backfilled since — which is most of
+  them in production as of 2026-10-07. So a `confluence_map` hit usually
+  *does* carry real page content you can read and quote.
+
+  **`evidence_grade="C"` stays regardless** — not because there's nothing
+  to read, but as a deliberate P0-A trust-contract decision
+  (`_write_map_page`'s own comment): this is an automated structural crawl
+  without `confluence_docs`/`tech_repo`'s dedicated sync/verification
+  pipeline, so it must never silently outrank an actual A-grade document on
+  the same topic. Practically: you *can* answer from a `confluence_map`
+  hit's body now, but treat it as **unverified** the same way you would an
+  open ticket — if the question is high-stakes, prefer a `tech_repo`/
+  `confluence_docs` copy of the same page when one exists (§6.2), or open
+  the live URL to confirm currency.
+
+  **Telling old (pointer-only) rows from current (full-body) ones**: check
+  whether `metadata["source_version"]`/`["source_modified_at"]` are present
+  — both were added in the same 2026-10-01 round, so their absence means
+  this row predates full-body capture and really is breadcrumb-only. A dev/
+  staging environment's local snapshot can lag behind what's live in
+  production here — if in doubt, treat a short/breadcrumb-shaped
+  `confluence_map` body as unverified structure-only, not as evidence the
+  page itself is short.
 - **`draft`**: not yet reviewed (e.g. an unapproved insight) — do not present
   as settled fact.
 
 **Rule of thumb:** before citing a hit as fact, check `source_type`. If it is
-`confluence_map`, either fetch the live page or qualify the claim as
-unverified ("CI-TEC 문서 인덱스에 이런 제목의 페이지가 있습니다만 본문은
-확인하지 못했습니다").
+`confluence_map`, you may quote its body, but flag it as unverified/C-grade
+unless you've also opened the live page or found an A-grade copy of the
+same `page_id` elsewhere.
 
-### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages)
+### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages) — `confluence_map` ranks last
 
 A handful of pages exist under **both** `tech_repo` (or `confluence_docs`)
-*and* `confluence_map` with the same Confluence `external_id` — the full-body
-copy and the structure-only pointer were crawled from the same live page
-under two different root configs. When search returns the same `page_id`
-under two source_types, **prefer the A-grade one** (`tech_repo`/
-`confluence_docs`) for content; the `confluence_map` copy is redundant there
-and exists only so the page is still indexed if its tech_repo/docs crawl ever
-lags.
+*and* `confluence_map` with the same Confluence `external_id` — both were
+crawled from the same live page under two different root configs. When
+search returns the same `page_id` under two source_types, **always prefer
+the A-grade copy** (`tech_repo`/`confluence_docs`) and treat the
+`confluence_map` copy as the lower-priority duplicate — even though both
+may now contain the same full body text, `confluence_map` keeps
+`evidence_grade="C"` by the policy in §6.1, so it never outranks the other
+copy for citation purposes.
 
 ### 6.3 CI-TEC domain taxonomy & recurring-pattern tools
 
@@ -547,11 +566,11 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 2. `kb_ask(query="…", mode="fast")`  
 3. If answer abstains or looks weak: fall back to search + document read and answer yourself with citations.
 
-### Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)
+### Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (`confluence_map` hit, C-grade)
 
-1. `kb_search(query="…", section="confluence_map")` → hit returns title + breadcrumb only (`evidence_grade="C"`, §6.1) — **do not answer from this snippet**.
-2. Check if the same `external_id`/page_id also appears under `tech_repo` or `confluence_docs` in the same search (or re-search without `section` filter) — if so, use that copy's full body instead (§6.2).
-3. If not fully ingested anywhere, open the page's `URL`/`source_uri` live (or tell the user to) before answering, or say explicitly the index only confirms the page exists and you have not read it.
+1. `kb_search(query="…", section="confluence_map")` → hit's body is usually the real page text now (§6.1), but carries `evidence_grade="C"`.
+2. Check if the same `external_id`/page_id also appears under `tech_repo` or `confluence_docs` in the same search (or re-search without `section` filter) — if so, **prefer that A-grade copy** for the answer (§6.2); `confluence_map` ranks last when both exist.
+3. If `confluence_map` is the only copy: you can answer from its body, but say the source is an unverified C-grade index entry rather than presenting it with the same confidence as an A-grade document. If the body looks like just a breadcrumb (no real paragraphs), it predates full-body capture — open the live `URL`/`source_uri` instead of guessing from the title.
 
 ### Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"
 
@@ -572,7 +591,8 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 | Ignore `intent=` from `kb_query` | Wrong follow-up | Branch on intent |
 | Use `kb_ask` for pure “list last week” | Overkill / weaker lists | `kb_list_tickets` |
 | Assume English-only | Corpus is KO+EN | Keep Korean query text |
-| Cite a `confluence_map` hit's content as fact | It is a title/path pointer only — `body_md` is never the real page (§6.1) | Open the live Confluence URL, or check if the same page is also in `tech_repo`/`confluence_docs` (§6.2), or qualify as unverified |
+| Cite a `confluence_map` hit as settled fact with no caveat | `evidence_grade="C"` by policy regardless of body richness (§6.1) — automated crawl, no dedicated verification pipeline | Prefer a `tech_repo`/`confluence_docs` copy of the same page if one exists (§6.2); otherwise answer but flag as unverified |
+| Assume a short/breadcrumb-only `confluence_map` body means the page itself is short | It may just predate 2026-10-01 full-body capture (§6.1) | Check `metadata["source_version"]` presence, or open the live URL |
 | Count/rank CI-TEC domain incidents by scanning search results yourself | Error-prone, and ignores multi-domain tagging | `kb_citec_recurring_patterns` |
 | Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스") | `kb_citec_recurring_patterns` filters do exact match | `kb_citec_domain_catalog()` first |
 
@@ -652,5 +672,5 @@ After code deploy: `docker compose restart mcp` (server.py is bind-mounted).
 
 ## 14. Versioning
 
-This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help** and `kb_search` → `/v1/search` (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools).
+This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help** and `kb_search` → `/v1/search` (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools. **2026-10-08 correction**: §6.1/§6.2 originally said `confluence_map` body_md is pointer-only with no real content — that was only true before the 2026-10-01 full-body capture round; most production `confluence_map` rows now carry the real page text, but `evidence_grade="C"` and the "rank below tech_repo/confluence_docs on the same page_id" rule are unchanged by policy, not by content availability).
 If a tool name is missing in the live server, call `kb_tools_help` or fall back to `kb_query` + REST in [EXTERNAL_API.md](./EXTERNAL_API.md).

@@ -44,7 +44,7 @@
       <a href="#5-time-expressions-relative">5. Time expressions (relative)</a>
       <a href="#6-source-types-path-conventions">6. Source types &amp; path conventions</a>
       <a href="#61-evidence_grade-how-much-to-trust-a-hit-before-you-even-open-it" style="padding-left:20px;font-size:12px">6.1 evidence_grade — how much to trust a hit, before you even open it</a>
-      <a href="#62-structured-copy-overlap-tech_repo-some-confluence_map-pages" style="padding-left:20px;font-size:12px">6.2 Structured-copy overlap (tech_repo ⊇ some confluence_map pages)</a>
+      <a href="#62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-ranks-last" style="padding-left:20px;font-size:12px">6.2 Structured-copy overlap (tech_repo ⊇ some confluence_map pages) — confluence_map ranks last</a>
       <a href="#63-ci-tec-domain-taxonomy-recurring-pattern-tools" style="padding-left:20px;font-size:12px">6.3 CI-TEC domain taxonomy &amp; recurring-pattern tools</a>
       <a href="#7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</a>
       <a href="#71-search-rag" style="padding-left:20px;font-size:12px">7.1 Search &amp; RAG</a>
@@ -59,7 +59,7 @@
       <a href="#scenario-d-redis-timeout" style="padding-left:20px;font-size:12px">Scenario D — “Redis timeout 과거 유사 장애와 조치”</a>
       <a href="#scenario-e-linux-oom" style="padding-left:20px;font-size:12px">Scenario E — “Linux OOM 관련 점검 항목”</a>
       <a href="#scenario-f-rag-narrative" style="padding-left:20px;font-size:12px">Scenario F — RAG narrative</a>
-      <a href="#scenario-g-confluence-confluence_map-pointer-hit" style="padding-left:20px;font-size:12px">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)</a>
+      <a href="#scenario-g-confluence-confluence_map-hit-c-grade" style="padding-left:20px;font-size:12px">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map hit, C-grade)</a>
       <a href="#scenario-h-ci-tec-failure_bucket" style="padding-left:20px;font-size:12px">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</a>
       <a href="#9-anti-patterns-avoid">9. Anti-patterns (avoid)</a>
       <a href="#10-output-format-suggested-for-user-facing-answers">10. Output format suggested for user-facing answers</a>
@@ -78,7 +78,7 @@
       <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-28</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-07</div></div>
       </div>
     </header>
     <section>
@@ -692,9 +692,9 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 </tr>
 <tr>
 <td><code>confluence_map</code></td>
-<td><strong>구조 전용 색인</strong> — 제목/URL/경로만, 본문 아님(§6.1 참고)</td>
+<td>2026-10 이후 <strong>전체 본문 포함</strong>(크롤/백필된 공간은), 그 전 데이터는 제목/경로만 — §6.1 참고</td>
 <td><code>confluence_map/{pageId}.md</code></td>
-<td><strong>C — 포인터, 근거 아님</strong></td>
+<td><strong>C — 본문 있어도 "근거"로 안 씀(정책)</strong></td>
 </tr>
 <tr>
 <td><code>tuning_ai</code></td>
@@ -740,33 +740,50 @@ It is <strong>not a relevance score</strong> — it is a statement about how dir
 <li><strong>B</strong>: same as above but the underlying record is still open/unresolved<br>
   (e.g. a support ticket not yet closed) — content is real but the conclusion<br>
   may change later. Say so if the answer hinges on an outcome.</li>
-<li><strong>C — <code>confluence_map</code> only, by design</strong>: <code>body_md</code> is <strong>only the page's<br>
-  title/breadcrumb path</strong>, never its real content (<code>app.ingest.adapters.
-  iter_confluence_map</code>'s docstring: <em>"never the real page body"</em>). This<br>
-  exists to make ~78k Confluence pages CI-TEC references (but does not fully<br>
-  ingest) at least <em>findable</em> by keyword/path, without claiming to have read<br>
-  them. <strong>A <code>confluence_map</code> hit tells you a page with this title exists at<br>
-  this URL — it is not evidence of what the page says.</strong> Never answer a<br>
-  factual question from a <code>confluence_map</code> snippet alone; either open the<br>
-  live Confluence URL yourself, tell the user to, or fall back to<br>
-<code>confluence_docs</code>/<code>tech_repo</code> if the same topic is also fully ingested<br>
-  there (same <code>page_id</code>, different <code>source_type</code> — see §6.2).</li>
-<li><strong><code>draft</code></strong>: not yet reviewed (e.g. an unapproved insight) — do not present<br>
-  as settled fact.</li>
+<li><strong>C — <code>confluence_map</code> only, by design, regardless of body richness</strong>:<br>
+<strong>Corrected 2026-10-08</strong> — an earlier version of this doc said<br>
+<code>confluence_map</code>'s <code>body_md</code> is only a title/breadcrumb pointer with no<br>
+  real content. That was true before 2026-10-01 but is <strong>no longer<br>
+  accurate</strong>: <code>app.confluence.map_sync._write_map_page</code> now also writes the<br>
+  page's full cleaned text (same cleaning as <code>confluence_docs</code>/<code>tech_repo</code>)<br>
+  for any space that has been crawled/backfilled since — which is most of<br>
+  them in production as of 2026-10-07. So a <code>confluence_map</code> hit usually<br>
+<em>does</em> carry real page content you can read and quote.</li>
 </ul>
+<p><strong><code>evidence_grade="C"</code> stays regardless</strong> — not because there's nothing<br>
+  to read, but as a deliberate P0-A trust-contract decision<br>
+  (<code>_write_map_page</code>'s own comment): this is an automated structural crawl<br>
+  without <code>confluence_docs</code>/<code>tech_repo</code>'s dedicated sync/verification<br>
+  pipeline, so it must never silently outrank an actual A-grade document on<br>
+  the same topic. Practically: you <em>can</em> answer from a <code>confluence_map</code><br>
+  hit's body now, but treat it as <strong>unverified</strong> the same way you would an<br>
+  open ticket — if the question is high-stakes, prefer a <code>tech_repo</code>/<br>
+<code>confluence_docs</code> copy of the same page when one exists (§6.2), or open<br>
+  the live URL to confirm currency.</p>
+<p><strong>Telling old (pointer-only) rows from current (full-body) ones</strong>: check<br>
+  whether <code>metadata["source_version"]</code>/<code>["source_modified_at"]</code> are present<br>
+  — both were added in the same 2026-10-01 round, so their absence means<br>
+  this row predates full-body capture and really is breadcrumb-only. A dev/<br>
+  staging environment's local snapshot can lag behind what's live in<br>
+  production here — if in doubt, treat a short/breadcrumb-shaped<br>
+<code>confluence_map</code> body as unverified structure-only, not as evidence the<br>
+  page itself is short.<br>
+- <strong><code>draft</code></strong>: not yet reviewed (e.g. an unapproved insight) — do not present<br>
+  as settled fact.</p>
 <p><strong>Rule of thumb:</strong> before citing a hit as fact, check <code>source_type</code>. If it is<br>
-<code>confluence_map</code>, either fetch the live page or qualify the claim as<br>
-unverified ("CI-TEC 문서 인덱스에 이런 제목의 페이지가 있습니다만 본문은<br>
-확인하지 못했습니다").</p>
-<h3 id="62-structured-copy-overlap-tech_repo-some-confluence_map-pages">6.2 Structured-copy overlap (<code>tech_repo</code> ⊇ some <code>confluence_map</code> pages)</h3>
+<code>confluence_map</code>, you may quote its body, but flag it as unverified/C-grade<br>
+unless you've also opened the live page or found an A-grade copy of the<br>
+same <code>page_id</code> elsewhere.</p>
+<h3 id="62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-ranks-last">6.2 Structured-copy overlap (<code>tech_repo</code> ⊇ some <code>confluence_map</code> pages) — <code>confluence_map</code> ranks last</h3>
 <p>A handful of pages exist under <strong>both</strong> <code>tech_repo</code> (or <code>confluence_docs</code>)<br>
-<em>and</em> <code>confluence_map</code> with the same Confluence <code>external_id</code> — the full-body<br>
-copy and the structure-only pointer were crawled from the same live page<br>
-under two different root configs. When search returns the same <code>page_id</code><br>
-under two source_types, <strong>prefer the A-grade one</strong> (<code>tech_repo</code>/<br>
-<code>confluence_docs</code>) for content; the <code>confluence_map</code> copy is redundant there<br>
-and exists only so the page is still indexed if its tech_repo/docs crawl ever<br>
-lags.</p>
+<em>and</em> <code>confluence_map</code> with the same Confluence <code>external_id</code> — both were<br>
+crawled from the same live page under two different root configs. When<br>
+search returns the same <code>page_id</code> under two source_types, <strong>always prefer<br>
+the A-grade copy</strong> (<code>tech_repo</code>/<code>confluence_docs</code>) and treat the<br>
+<code>confluence_map</code> copy as the lower-priority duplicate — even though both<br>
+may now contain the same full body text, <code>confluence_map</code> keeps<br>
+<code>evidence_grade="C"</code> by the policy in §6.1, so it never outranks the other<br>
+copy for citation purposes.</p>
 <h3 id="63-ci-tec-domain-taxonomy-recurring-pattern-tools">6.3 CI-TEC domain taxonomy &amp; recurring-pattern tools</h3>
 <p>Separate from the generic <code>area</code>/<code>domain</code> search filter (§4.2), CI-TEC owns an<br>
 <strong>11-domain lens</strong> over <code>incident_reports</code> (SWIM) specifically — because SWIM<br>
@@ -897,11 +914,11 @@ POST /api/query
 <li><code>kb_ask(query="…", mode="fast")</code>  </li>
 <li>If answer abstains or looks weak: fall back to search + document read and answer yourself with citations.</li>
 </ol>
-<h3 id="scenario-g-confluence-confluence_map-pointer-hit">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map pointer hit)</h3>
+<h3 id="scenario-g-confluence-confluence_map-hit-c-grade">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (<code>confluence_map</code> hit, C-grade)</h3>
 <ol>
-<li><code>kb_search(query="…", section="confluence_map")</code> → hit returns title + breadcrumb only (<code>evidence_grade="C"</code>, §6.1) — <strong>do not answer from this snippet</strong>.</li>
-<li>Check if the same <code>external_id</code>/page_id also appears under <code>tech_repo</code> or <code>confluence_docs</code> in the same search (or re-search without <code>section</code> filter) — if so, use that copy's full body instead (§6.2).</li>
-<li>If not fully ingested anywhere, open the page's <code>URL</code>/<code>source_uri</code> live (or tell the user to) before answering, or say explicitly the index only confirms the page exists and you have not read it.</li>
+<li><code>kb_search(query="…", section="confluence_map")</code> → hit's body is usually the real page text now (§6.1), but carries <code>evidence_grade="C"</code>.</li>
+<li>Check if the same <code>external_id</code>/page_id also appears under <code>tech_repo</code> or <code>confluence_docs</code> in the same search (or re-search without <code>section</code> filter) — if so, <strong>prefer that A-grade copy</strong> for the answer (§6.2); <code>confluence_map</code> ranks last when both exist.</li>
+<li>If <code>confluence_map</code> is the only copy: you can answer from its body, but say the source is an unverified C-grade index entry rather than presenting it with the same confidence as an A-grade document. If the body looks like just a breadcrumb (no real paragraphs), it predates full-body capture — open the live <code>URL</code>/<code>source_uri</code> instead of guessing from the title.</li>
 </ol>
 <h3 id="scenario-h-ci-tec-failure_bucket">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</h3>
 <ol>
@@ -956,9 +973,14 @@ POST /api/query
 <td>Keep Korean query text</td>
 </tr>
 <tr>
-<td>Cite a <code>confluence_map</code> hit's content as fact</td>
-<td>It is a title/path pointer only — <code>body_md</code> is never the real page (§6.1)</td>
-<td>Open the live Confluence URL, or check if the same page is also in <code>tech_repo</code>/<code>confluence_docs</code> (§6.2), or qualify as unverified</td>
+<td>Cite a <code>confluence_map</code> hit as settled fact with no caveat</td>
+<td><code>evidence_grade="C"</code> by policy regardless of body richness (§6.1) — automated crawl, no dedicated verification pipeline</td>
+<td>Prefer a <code>tech_repo</code>/<code>confluence_docs</code> copy of the same page if one exists (§6.2); otherwise answer but flag as unverified</td>
+</tr>
+<tr>
+<td>Assume a short/breadcrumb-only <code>confluence_map</code> body means the page itself is short</td>
+<td>It may just predate 2026-10-01 full-body capture (§6.1)</td>
+<td>Check <code>metadata["source_version"]</code> presence, or open the live URL</td>
 </tr>
 <tr>
 <td>Count/rank CI-TEC domain incidents by scanning search results yourself</td>
@@ -1030,7 +1052,7 @@ POST /api/query
 </ul>
 <hr>
 <h2 id="14-versioning">14. Versioning</h2>
-<p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code> (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools).<br>
+<p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code> (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools. <strong>2026-10-08 correction</strong>: §6.1/§6.2 originally said <code>confluence_map</code> body_md is pointer-only with no real content — that was only true before the 2026-10-01 full-body capture round; most production <code>confluence_map</code> rows now carry the real page text, but <code>evidence_grade="C"</code> and the "rank below tech_repo/confluence_docs on the same page_id" rule are unchanged by policy, not by content availability).<br>
 If a tool name is missing in the live server, call <code>kb_tools_help</code> or fall back to <code>kb_query</code> + REST in <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a>.</p>
       </div>
     </section>
