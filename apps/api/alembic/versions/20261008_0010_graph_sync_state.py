@@ -24,8 +24,8 @@ def upgrade() -> None:
     op.create_table(
         "graph_sync_state",
         sa.Column("document_id", sa.String(length=64), primary_key=True),
-        sa.Column("input_hash", sa.String(length=64), nullable=False),
-        sa.Column("graph_extractor_version", sa.String(length=32), nullable=False),
+        sa.Column("input_hash", sa.String(length=64), nullable=True),
+        sa.Column("graph_extractor_version", sa.String(length=32), nullable=True),
         sa.Column(
             "synced_at",
             sa.DateTime(timezone=True),

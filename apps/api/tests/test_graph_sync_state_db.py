@@ -85,3 +85,17 @@ def test_get_state_returns_none_for_unknown_document():
     from app.graph.sync_state import get_state
 
     assert get_state("does-not-exist") is None
+
+
+def test_mark_failed_on_never_synced_document_does_not_raise():
+    from app.db.session import session_scope
+    from app.graph.sync_state import get_state, mark_failed
+
+    with session_scope() as session:
+        doc_id = _make_document_row(session)
+
+    mark_failed(doc_id, error="neo4j connection refused")
+    state = get_state(doc_id)
+    assert state["last_error"] == "neo4j connection refused"
+    assert state["input_hash"] is None
+    assert state["graph_extractor_version"] is None

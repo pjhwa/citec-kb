@@ -570,8 +570,8 @@ class GraphSyncState(Base):
     document_id: Mapped[str] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
     )
-    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    graph_extractor_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    input_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    graph_extractor_version: Mapped[Optional[str]] = mapped_column(String(32))
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
