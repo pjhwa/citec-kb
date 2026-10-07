@@ -32,6 +32,7 @@ DOCS_OUT = ROOT / "apps" / "web" / "public" / "docs"
 # (source md filename, output html filename, nav title, subtitle)
 DOCS = [
     ("AI_AGENT_GUIDE.md", "ai-agent-guide.html", "AI Agent Guide", "Claude / MCP / REST 도구 선택 가이드"),
+    ("CITEC_KB_MCP_SKILL.md", "citec-kb-mcp-skill.html", "citec-kb MCP 검색 스킬", "AI가 citec-kb를 MCP로 검색할 때 따를 압축 지시문 — evidence_grade 신뢰도 규칙 포함"),
     ("CONFLUENCE_DRAWIO_MCP_GUIDE.md", "confluence-drawio-mcp-guide.html", "Confluence draw.io MCP 가이드", "다이어그램 읽기/쓰기 워크플로 (Claude 전용)"),
     ("DEPLOY.md", "deploy.html", "폐쇄망 배포 가이드", "분리 번들 · 버전 추적 · 변경분만 배포"),
     ("EXTERNAL_API.md", "external-api.html", "외부 연동 API", "citec-wiki-qa 호환 /api/* 레이어"),

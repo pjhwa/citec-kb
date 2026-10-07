@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>citec-kb MCP 검색 스킬 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css" />
+<link rel="stylesheet" href="/css/docs.css" />
+<script src="/js/nav.js"></script>
+</head>
+<body>
+<div class="top" id="topNav" data-page="doc"></div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>citec-kb MCP 검색 스킬</h1>
+    <nav class="nav">
+      <a href="#citec-kb-mcp">citec-kb MCP 검색 스킬</a>
+      <a href="#0-1">0. 연결 확인 (대화 시작 시 1회)</a>
+      <a href="#1">1. 절대 규칙 (매번 지킬 것)</a>
+      <a href="#2-evidence_grade">2. 신뢰도 규칙 — evidence_grade (반드시 확인)</a>
+      <a href="#3-1">3. 도구 선택 — 1초 결정표</a>
+      <a href="#4">4. 금지 패턴</a>
+      <a href="#5">5. 답변 형식 (권장)</a>
+      <a href="#6">6. 더 깊이 볼 때</a>
+      <a href="#7">7. 버전</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>citec-kb MCP 검색 스킬</h1>
+      <p class="lead">AI가 citec-kb를 MCP로 검색할 때 따를 압축 지시문 — evidence_grade 신뢰도 규칙 포함</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/CITEC_KB_MCP_SKILL.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">-</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="citec-kb-mcp">citec-kb MCP 검색 스킬</h1>
+<pre><code class="language-yaml">name: citec-kb-search
+description: &gt;
+  citec-kb를 MCP(kb_* 도구)로 검색/조회/분석할 때 반드시 적용한다.
+  트리거: 사용자가 CI-TEC 지원이력/장애/체크리스트/Confluence/튜닝노트/
+  반복장애 도메인 등 citec-kb가 다루는 주제에 대해 묻거나, citec-kb MCP
+  서버가 연결돼 있는 모든 대화.
+</code></pre>
+<p><strong>이 문서의 역할</strong>: <code>AI_AGENT_GUIDE.md</code>(도구별 상세 레퍼런스)를 전부 읽을<br>
+여유가 없을 때도 최소한 이 문서의 지시만 따르면 사고를 피할 수 있도록<br>
+압축한 <strong>행동 지시문</strong>이다. 상세 근거/표/시나리오는 항상<br>
+<a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a>를 참고하라 — 이 문서와 내용이<br>
+어긋나면 AI_AGENT_GUIDE.md가 더 최신/정본이다.</p>
+<hr>
+<h2 id="0-1">0. 연결 확인 (대화 시작 시 1회)</h2>
+<p>citec-kb MCP가 연결돼 있는지 불확실하면 <code>kb_health()</code>로 먼저 확인하고,<br>
+어떤 도구가 있는지 모르면 <code>kb_tools_help()</code>를 호출하라. 추측하지 말 것.</p>
+<hr>
+<h2 id="1">1. 절대 규칙 (매번 지킬 것)</h2>
+<ol>
+<li><strong>먼저 조회하고 나중에 답하라.</strong> 기억이나 추측으로 CITECTS 티켓 번호,<br>
+   장애 건수, 체크리스트 코드를 만들어내지 않는다. 검색/조회 결과가<br>
+   없으면 "코퍼스에서 확인하지 못했습니다"라고 말한다.</li>
+<li><strong>인용 전엔 전체 본문을 읽어라.</strong> 검색 snippet만 보고 결론 내리지<br>
+   말고, 중요한 인용은 <code>kb_get_document</code>/<code>kb_ticket</code>/<code>kb_get_checkitem</code>으로<br>
+   전체 텍스트를 가져온 뒤 말한다.</li>
+<li><strong>숫자는 직접 세지 말고 집계 도구를 써라.</strong> 건수/기간/비중 질문은<br>
+<code>kb_analytics</code>/<code>kb_entity_share</code>/<code>kb_list_tickets</code>/<br>
+<code>kb_citec_recurring_patterns</code>로만 답한다 — 검색 결과를 눈으로 세서<br>
+   답하지 않는다.</li>
+<li><strong>모호한 한국어 자연어 질문은 <code>kb_query(q=...)</code>부터</strong> 시도한다 (기간·<br>
+   집계·유사장애·체크리스트·검색을 자동 분기). 구조화된 파라미터(날짜,<br>
+   group_by 등)를 이미 알 때만 전용 도구로 바로 간다.</li>
+<li><strong><code>evidence_grade</code>를 확인하고 신뢰도를 명시하라</strong> (§2).</li>
+<li><strong>답변엔 항상 근거를 남긴다</strong>: 제목 + <code>external_id</code>(또는 page_id) +<br>
+<code>path</code>/<code>web_url</code>. 근거 없는 결론은 금지.</li>
+</ol>
+<hr>
+<h2 id="2-evidence_grade">2. 신뢰도 규칙 — <code>evidence_grade</code> (반드시 확인)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>grade</th>
+<th>의미</th>
+<th>행동</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A / A-</strong></td>
+<td>본문 그대로 사실</td>
+<td>그대로 인용 가능</td>
+</tr>
+<tr>
+<td><strong>B</strong></td>
+<td>아직 미종결(열린 티켓 등)</td>
+<td>"아직 진행 중"임을 밝히고 인용</td>
+</tr>
+<tr>
+<td><strong>C</strong> (<code>confluence_map</code> 전용)</td>
+<td>자동 크롤, 검증/최신성 보장 없음 — <strong>본문이 있어도</strong> 정책상 C 유지</td>
+<td>같은 page_id가 <code>tech_repo</code>/<code>confluence_docs</code>에도 있으면 그걸 우선 사용; 없으면 답은 하되 "미검증 색인" 임을 밝힘; 본문이 제목/경로뿐이면 2026-10 이전 데이터라 실제 페이지를 열어 확인</td>
+</tr>
+<tr>
+<td><strong>draft</strong></td>
+<td>검토 전 Insight 등</td>
+<td>확정 사실로 제시하지 말 것</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>가장 자주 하는 실수</strong>: <code>confluence_map</code> 결과를 <code>tech_repo</code>/<br>
+<code>confluence_docs</code>보다 우선시키는 것. <strong>항상 후자를 우선한다.</strong></p>
+<hr>
+<h2 id="3-1">3. 도구 선택 — 1초 결정표</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>질문 유형</th>
+<th>도구</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>모호한 한국어 질문 (기간/건수/있나?/유사/체크리스트 섞임)</td>
+<td><code>kb_query</code></td>
+</tr>
+<tr>
+<td>기간 목록 ("지난 주 지원건")</td>
+<td><code>kb_list_tickets</code></td>
+</tr>
+<tr>
+<td>집계/비중 ("연도별", "SCP 비중")</td>
+<td><code>kb_analytics</code> / <code>kb_entity_share</code> / <code>kb_title_tokens</code></td>
+</tr>
+<tr>
+<td>주제/키워드 문서 검색</td>
+<td><code>kb_search</code> → <code>kb_get_document</code></td>
+</tr>
+<tr>
+<td>서술형 답변(인용 포함)</td>
+<td><code>kb_ask</code></td>
+</tr>
+<tr>
+<td>과거 유사 장애</td>
+<td><code>kb_similar_incident</code></td>
+</tr>
+<tr>
+<td>PISA 체크리스트</td>
+<td><code>kb_list_checkitems</code> / <code>kb_get_checkitem</code></td>
+</tr>
+<tr>
+<td>특정 티켓 CITECTS-####</td>
+<td><code>kb_ticket</code></td>
+</tr>
+<tr>
+<td>공수/비용 추정</td>
+<td><code>kb_capacity_estimate</code></td>
+</tr>
+<tr>
+<td>CI-TEC 11개 도메인 반복장애/커버리지 갭</td>
+<td><code>kb_citec_domain_catalog</code>(먼저) → <code>kb_citec_recurring_patterns</code> / <code>kb_citec_failure_bucket_coverage</code></td>
+</tr>
+<tr>
+<td>진단 패턴(네트워크/클러스터 등) 매칭·등록</td>
+<td><code>kb_match_failure_bucket</code> → 없으면 <code>kb_register_failure_bucket</code>, 맞았으면 <code>kb_refine_failure_bucket(confirm=True)</code></td>
+</tr>
+<tr>
+<td>뭘 써야 할지 모름</td>
+<td><code>kb_tools_help</code></td>
+</tr>
+</tbody>
+</table></div>
+<hr>
+<h2 id="4">4. 금지 패턴</h2>
+<ul>
+<li>모델 기억만으로 CITECTS 번호/날짜/건수 답하기</li>
+<li><code>SCP</code>, <code>2026</code>처럼 단일 고빈도 토큰으로만 검색하기 (잡음 多) — 전체 구문 또는 <code>kb_query</code> 사용</li>
+<li><code>confluence_map</code> 결과를 검증 없이 확정 사실로 제시하기</li>
+<li>검색 결과 목록을 눈으로 세어 통계처럼 말하기</li>
+<li><code>kb_query</code>의 <code>intent</code> 필드를 무시하고 엉뚱한 후속 도구로 가기</li>
+<li>CI-TEC 도메인명을 추측해서 쓰기(<code>kb_citec_domain_catalog()</code>로 정확한 철자 확인 먼저)</li>
+</ul>
+<hr>
+<h2 id="5">5. 답변 형식 (권장)</h2>
+<pre><code class="language-markdown">## 결론
+- …
+
+## 근거
+1. **CITECTS-#### / page_id** — 제목
+   - 1~3문장 요약 (본문 기준)
+   - path 또는 web_url
+   - (confluence_map 근거면) &quot;C등급, 미검증&quot; 명시
+
+## 추가 확인
+- 더 볼 티켓/기간/도메인 제안
+</code></pre>
+<hr>
+<h2 id="6">6. 더 깊이 볼 때</h2>
+<ul>
+<li>도구별 전체 파라미터/REST 매핑/워크드 시나리오: <a href="./AI_AGENT_GUIDE.md">AI_AGENT_GUIDE.md</a></li>
+<li>failure_bucket 플러그인 개발: <a href="./FAILURE_BUCKET_PLUGIN_GUIDE.md">FAILURE_BUCKET_PLUGIN_GUIDE.md</a></li>
+<li>Confluence draw.io 다이어그램: <a href="./CONFLUENCE_DRAWIO_MCP_GUIDE.md">CONFLUENCE_DRAWIO_MCP_GUIDE.md</a></li>
+<li>패킷분석 self-improvement 루프 예시: <a href="./PACKET_ANALYSIS_MCP_GUIDE.md">PACKET_ANALYSIS_MCP_GUIDE.md</a></li>
+<li>서버에서 바로 보는 축약판: MCP 도구 <code>kb_tools_help()</code></li>
+</ul>
+<hr>
+<h2 id="7">7. 버전</h2>
+<p>2026-10-08 최초 작성. <code>AI_AGENT_GUIDE.md</code>의 2026-10-07/08 신뢰도 모델<br>
+개정(§6.1~6.3)과 동기화된 상태. <code>AI_AGENT_GUIDE.md</code>가 바뀌면 이 문서의<br>
+§2~4도 같이 확인할 것 — 둘이 어긋나면 혼란의 원인이 된다.</p>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
