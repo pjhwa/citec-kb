@@ -9,6 +9,21 @@ from neo4j import GraphDatabase
 from app.graph.extract import Edge
 from app.settings import get_settings
 
+_CONSTRAINTS = [
+    ("Document", "id"),
+    ("FailureBucket", "id"),
+    ("Component", "canonical_name"),
+    ("BusinessEntity", "id"),
+]
+
+
+def _ensure_constraints_tx(tx) -> None:
+    for label, key in _CONSTRAINTS:
+        tx.run(
+            f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.{key} IS UNIQUE"
+        )
+
+
 _DOCUMENT_SET_CLAUSE = """
     SET d.source_type = $source_type,
         d.external_id = $external_id,
@@ -32,6 +47,14 @@ class Neo4jClient:
 
     def close(self) -> None:
         self._driver.close()
+
+    def ensure_constraints(self) -> None:
+        """Idempotent — safe to call on every pipeline run, not just once.
+        Without these, every MERGE in _merge_edges/_merge_document_tx/
+        _merge_failure_bucket_tx is an unindexed full-label scan (review
+        finding, Task 12) and MERGE isn't race-safe under concurrent writers."""
+        with self._driver.session() as session:
+            session.execute_write(_ensure_constraints_tx)
 
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:

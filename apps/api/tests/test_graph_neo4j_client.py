@@ -52,6 +52,19 @@ def test_merge_document_creates_node_and_component_edge():
     client.close()
 
 
+def test_ensure_constraints_is_idempotent():
+    client = _client()
+    client.ensure_constraints()
+    client.ensure_constraints()  # second call must not raise
+    with client._driver.session() as session:
+        names = {
+            r["name"]
+            for r in session.run("SHOW CONSTRAINTS YIELD name RETURN name")
+        }
+    assert len(names) >= 4  # at least the 4 constraints we create
+    client.close()
+
+
 def test_merge_document_is_idempotent():
     from app.graph.extract import Edge
 
