@@ -642,6 +642,122 @@ PR #6 배포 후 `--apply docs` 재실행 결과를 확인:
 
 **confluence_map 백필 범위 축소 (코드 변경 아님, 운영 권장안)**: `[2b]` 공간별 결측 쿼리로 확인 — confluence_map 28,859건 결측이 **정확히 5개 공간**(ICLOUDUT 15,724 + LOOKIN 8,278 + TechRepo 3,993 + ServiceExcellenceTeam 862 + SPC 2)에만 몰려 있고, 나머지 11개 공간(2026-09-28~30에 백필된 공간들)은 ancestor_ids/source_version 둘 다 0건 결측으로 완료 상태. `--apply map`(전체 77,446건, ~73시간) 대신 이 5개 공간만 `--source-ids`로 좁히면 범위 63% 축소 가능 — **정확한 source_id 철자는 운영 DB에서 직접 확인 필요(이 세션은 조회 권한 없음)**.
 
+## 1-J. 열 번째 라운드 — confluence_map 전체 백필 완료 + 운영 정기 동기화 공백 발견·수정 (2026-10-05~07)
+
+§1-I 끝에서 "운영 권장안"으로만 남겼던 confluence_map 5개 공간 축소 백필을
+실제로 운영에서 수행하는 과정에서, 범위 산정 실수 1건과 운영 스크립트/크론
+설계의 실제 공백 2건을 발견·수정했다. 모두 코드로 확정하고 회귀시험으로
+증명한 뒤에만 운영에 반영했다.
+
+**발견 1 — 백필 범위 산정 실수(내 잘못, 사용자가 직접 발견)**: §1-I에서
+confluence_map 결측을 `ancestor_ids`만 기준으로 "5개 공간에만 몰려 있다"고
+판단했는데, 이는 `source_version`/전체본문 캡처(§1-F, 2026-10-01 PR #4) 관점에서는
+틀렸다. 11개 공간(2026-09-28~30에 이미 크롤됨)은 `ancestor_ids`는 채워져
+있었지만, 전체본문 캡처 코드가 배포되기 **전**에 마지막으로 크롤된 것이라
+`source_version`/전체본문이 통째로 빠져 있었다. 사용자가 "confluence_map에
+포함된 공간은 모두 전체 본문 수집하려고 했던거 같은데 왜 빠진게 있는거야?
+48494?"로 직접 발견 — 11개 공간의 미수집 페이지 수(≈48,613)와 실측 결측
+48,494가 거의 일치함을 확인하고 범위를 11개 공간 전체로 정정했다.
+
+**발견 2 — 백필 래퍼의 `--source-ids` 미지원 (PR #8)**: `backfill_p0b_p1b_metadata.sh
+--apply map`을 쓰라고 자체 주석에 적어놓았으면서도, `do_map()`은
+`--source-ids`를 전달할 방법이 전혀 없이 항상 `map_backfill.sh --from-scratch`를
+16개 공간 전체에 대해 돌렸다. 사용자가 "이전엔 `--apply map`을 썼는데
+왜 이제는 `map_backfill.sh`인가"로 질문 → 코드 확인 결과 그 5개 공간 백필은
+실제로는 `--apply map`이 아니라 채팅으로 즉석에 드린 직접 명령이었음을
+확인. `do_map()`에 `--source-ids` 패스스루를 추가해 `map-pilot`과 일관되게
+맞췄다(`scripts/backfill_p0b_p1b_metadata.sh`).
+
+**발견 3 — 레이트리밋 환경변수가 컨테이너에 전달되지 않음 (PR #9)**: 11개
+공간 백필을 `CONFLUENCE_RATE_LIMIT_RPS=1.0`으로 시작했는데, 완료된 9개
+공간의 완료시각 간격으로 역산한 실측 속도가 **~3.40s/페이지** —
+1.0rps(≈1s/페이지)가 아니라 **옛 0.3rps의 이론치(3.33s/페이지)와 거의
+정확히 일치**했다. 원인: `docker compose exec`는 `-e`로 명시하지 않으면
+호스트 쉘의 환경변수를 컨테이너로 넘기지 않는데, `map_backfill.sh`가 그냥
+`docker compose exec`로 파이썬 프로세스를 띄우고 있었다. 호스트에서 설정한
+값은 조용히 무시되고 컨테이너 안 `.env`/코드 기본값(0.3)이 쓰이고 있었다.
+`EXEC_ENV_ARGS=(-e "CONFLUENCE_RATE_LIMIT_RPS=...")`를 만들어 실제로 파이썬을
+실행하는 두 `docker compose exec` 호출 모두에 전달하도록 수정. `bash -x`로
+`--apply map --source-ids a,b -y` → `docker compose exec -T -e
+CONFLUENCE_RATE_LIMIT_RPS=... api python -m ...`가 정확히 구성됨을 확인(실제
+백필은 운영 전용 디렉토리 구조에 의존해 이 개발 샌드박스에서는 재현 불가 —
+인자 전달 로직만 검증, 경로 해석 단계는 당연히 실패). `confluence_sync.sh`에도
+같은 구조적 결함이 있음을 확인했으나 docs/tech_repo는 이미 끝난 상태라
+이번엔 손대지 않음(기록만 남김).
+
+**운영 백필 결과(배포 SHA `994d848` 전, PR #8/#9 적용 후 실제 실행)**:
+11개 공간 + DevOps001 + Openstack101(이전 라운드에 결측으로 남아있던 2개
+공간 포함) 백필 완료. `.backfill_state.json`: `phase: done, ok: true,
+ingest: {errors: 0}, embed: {pending: 0, embedded: 79559}`.
+`confluence_map` 전체 `missing_source_version`: **48,493 → 312**
+(99.4% 해소). DFTRTS/EMCloud/SCPTechTree/SI/sysops/CLDENG/Openstack101은
+결측 0. GUID(2)/CATT(3)/STORAGE(3)는 각 공간의 401 에러 건수와 거의
+일치하는 잔여물(권한 문제로 추정, 코드 버그 아님).
+
+**발견 4 — DevOps001 184건, "갱신도 archive도 안 된" 상태로 방치**:
+DevOps001만 결측 184건으로 유독 컸던 원인을 추적 — 이번 크롤이 실제로
+쓴 페이지는 10,478건인데 DB의 `total_active`는 10,661건(차이 183 ≈ 결측
+184와 거의 일치). `app.confluence.map_sync.run_map_inventory()`/
+`_run_map_inventory_locked()`의 설계: 이번 크롤 목록에 없는(=사라진 것으로
+보이는) 기존 문서를 archive하려는데, **같은 실행에 무관한 에러(401 4건)가
+있으면 그 판단 자체를 못 믿겠다며 archive를 통째로 건너뛴다**
+(`archive_skipped_due_to_errors`). 결과적으로 이 ~183건은 새 메타데이터도
+못 받고 archive도 안 된 채 영구히 남아있는 상태 — **버그가 아니라 설계된
+안전장치가 의도대로 작동한 결과**지만, 이걸 해소할 수단이 운영에
+전혀 없었다는 게 아래 발견 5로 이어진다.
+
+**발견 5 — `run_map_inventory()`(주간 전체 메타데이터 대조)가 크론/
+admin.html/job 타입 어디에도 연결돼 있지 않음 (PR #10)**: 매일 도는
+증분 동기화(`map_sync`, CQL `lastmodified > cursor`)는 "무엇이 바뀌었나"만
+보기 때문에 "무엇이 없어졌나"(삭제·루트 밖 이동)를 구조적으로 절대
+감지하지 못한다. 그걸 유일하게 할 수 있는 `run_map_inventory()`는 이번
+백필의 부수 효과로만 실행됐고(그마저도 위 발견 4의 안전장치에 걸려 일부
+공간은 완전히는 못 끝남), 운영 크론 어디에도 주기적으로 호출되는 곳이
+없었다 — 사용자가 운영 crontab을 보여주며 "정기적인 증분 업데이트가
+되는 게 맞는가, 빠진 건 없는가"로 질문해서 드러남.
+
+`run_map_inventory()`는 공간 하나당 최초 부트스트랩 크롤과 같은 비용(전체
+재크롤)이 들어, 16개(+신규 CAC로 17개) 활성 공간 전체를 매주 돌리면 이번
+백필 전체(~78,251페이지) 분량을 매주 반복하게 된다. 그래서 전체를 한 번에
+돌리는 대신 **로테이션 방식**을 사용자와 상의해 선택(16개를 몇 주에 걸쳐
+한 바퀴) — `app.confluence.map_inventory_cli`(정렬된 활성 소스 목록에서
+`--count`개씩, `data/raw/confluence_map/.inventory_rotation_state.json`에
+다음 시작 인덱스 저장) + `scripts/map_inventory.sh`(cron 래퍼, PR #9의
+`-e CONFLUENCE_RATE_LIMIT_RPS` 전달 방식을 처음부터 반영) 추가. 신규 테스트
+8건(`apps/api/tests/test_map_inventory_cli.py`) 전부 통과 — 로테이션
+wrap-around, 상태 저장/재사용, `--source-ids`/`--dry-run`이 상태를 안
+건드림, 알 수 없는 source_id는 exit 64, 에러 있으면 exit 1.
+
+**발견 6 — 신규 공간(CAC) 추가 메커니즘 확인, 운영 실행으로 실측**:
+`POST /v1/confluence-map/sources`("새 공간 추가" 버튼)는 DB에 설정만
+추가하고 크롤은 전혀 하지 않는다 — 다음 동기화 실행(수동 "지금 실행" 또는
+정기 cron) 때 `since=None`(커서 없음)이라 자동으로 전체 크롤 + 전체본문
++ source_version + 임베딩까지 수행됨을 코드로 확인(기존 11개 공간처럼
+수동 백필이 또 필요하지 않다는 뜻). 실제로 CAC를 추가 후 로테이션
+1회차(정렬 순서상 "confluence_map_cac"가 알파벳상 가장 앞이라 1번째로
+선택됨, 설계대로 정상)를 운영에서 실행 — CQL이 0건 반환(`written: 0,
+errors: 0`). 사용자가 브라우저로 직접 확인해 하위 페이지가 있다고
+했지만, 이후 "너무 과거 데이터만 존재한다"고 판단해 **크롤 보류를 명시적으로
+결정**(나중에 필요시 `--source-ids confluence_map_cac`로 재개 가능, 코드
+조치 불필요).
+
+**운영 후속 조치(전부 사용자가 운영에서 직접 실행, 완료 확인)**:
+- `last_sync_at`/`checkpoint`를 각 소스의 백필 실제 완료 시각으로 seed —
+  기존 `app.confluence.map_sync.seed_cursor()`(마이그레이션 스크립트가
+  쓰던 것과 동일 함수, 새로 안 만듦) 재사용. 13개 소스 전부 seed 완료,
+  다음 정기 `map_sync`가 쓸데없이 넓은 범위를 다시 긁지 않도록 함.
+- PR #8/#9/#10 배포(`a20ca04` → `994d848`), 헬스체크 전부 통과.
+- crontab에 신규 `map_inventory.sh` 줄(일요일 20시) 추가 + 기존 4개 일간
+  크론(02/04/11/12시) 주석 해제 — `crontab -l`로 5줄 정확히 등록됨을
+  최종 확인.
+
+**이번 라운드가 보여주는 공통 패턴**: 10/1~10/2 라운드(§1-F~1-I)의
+"일회성 백필 극대화" 노력에도, 운영 돌리기 전까지는 보이지 않는 간극이
+3개나 더 있었다(백필 vs 정기 동기화의 북마크 분리, `docker compose exec`의
+환경변수 비전달, 전체 재대조의 운영 주기 공백). 전부 사용자가 실제
+운영 로그/crontab/admin.html을 가져와 "이게 맞나?"로 질문한 데서
+발견됐다 — 코드 리뷰만으로는 드러나지 않는 종류의 간극이었다.
+
 ## 2. 테스트 로그 (실행/실패/SKIP/BLOCKED 네 가지로 구분)
 
 ### 실행 — unit + contract (DB 불필요, `pytest tests/ -k "not _db"`)
