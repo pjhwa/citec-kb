@@ -1,4 +1,9 @@
-from app.graph.extract import Edge, extract_hierarchy, extract_structured_components
+from app.graph.extract import (
+    Edge,
+    extract_business_entities,
+    extract_hierarchy,
+    extract_structured_components,
+)
 
 
 def test_extract_hierarchy_returns_parent_of_edges_in_order():
@@ -56,3 +61,23 @@ def test_extract_structured_components_dedupes_empty_strings():
     issue_frame = {"components": ["Redis", "", "Redis"]}
     edges = extract_structured_components(doc, issue_frame=issue_frame, checkitem=None)
     assert [e.target_value for e in edges] == ["Redis"]
+
+
+def test_extract_business_entities_includes_business_and_platform_only():
+    doc = {"id": "d1"}
+    document_entities = [
+        {"entity_id": "sys:monimo", "entity_type": "business_system"},
+        {"entity_id": "sys:scp", "entity_type": "platform"},
+        {"entity_id": "sys:redis", "entity_type": "component"},
+    ]
+    edges = extract_business_entities(doc, document_entities=document_entities)
+    assert edges == [
+        Edge(rel_type="MENTIONS_ENTITY", target_label="BusinessEntity", target_key="id",
+             target_value="sys:monimo", tag="EXTRACTED"),
+        Edge(rel_type="MENTIONS_ENTITY", target_label="BusinessEntity", target_key="id",
+             target_value="sys:scp", tag="EXTRACTED"),
+    ]
+
+
+def test_extract_business_entities_empty_when_no_rows():
+    assert extract_business_entities({"id": "d1"}, document_entities=[]) == []

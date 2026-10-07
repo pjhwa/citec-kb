@@ -70,3 +70,25 @@ def extract_structured_components(
             )
         )
     return edges
+
+
+_BUSINESS_ENTITY_TYPES = {"business_system", "platform"}
+
+
+def extract_business_entities(doc: dict, *, document_entities: list[dict]) -> list[Edge]:
+    """document_entities 미러. entities.type이 business_system/platform인 행만
+    BusinessEntity로 — component/tech_term은 Component 쪽(Task 8)에서 다룬다."""
+    edges: list[Edge] = []
+    for row in document_entities:
+        if row.get("entity_type") not in _BUSINESS_ENTITY_TYPES:
+            continue
+        edges.append(
+            Edge(
+                rel_type="MENTIONS_ENTITY",
+                target_label="BusinessEntity",
+                target_key="id",
+                target_value=row["entity_id"],
+                tag="EXTRACTED",
+            )
+        )
+    return edges
