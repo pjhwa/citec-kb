@@ -312,17 +312,35 @@ def iter_confluence_docs(root: Path) -> Iterator[DocumentDraft]:
 
 
 def iter_confluence_map(root: Path) -> Iterator[DocumentDraft]:
-    """Lightweight structure-only index (title/URL/breadcrumb, no body) for
-    Confluence spaces CI-TEC references but does not fully ingest — only
-    LOOKIN (confluence_docs) and TechRepo (tech_repo) get full body text.
+    """Index for Confluence spaces CI-TEC references but doesn't run a
+    dedicated full sync for — only LOOKIN (confluence_docs) and TechRepo
+    (tech_repo) have their own full-sync pipeline.
+
+    Until 2026-10-01 this really was structure-only (title/URL/breadcrumb,
+    no body) — see app.confluence.map_sync._write_map_page's "2026-10-01
+    backfill round" comment. Since then _write_map_page also writes the
+    full cleaned page text (same clean_body(storage_html_to_text(...)) as
+    confluence_docs/tech_repo use) after the breadcrumb, so body_md here
+    **does** contain real page content once a source has been crawled/
+    backfilled under that code — this adapter just passes through whatever
+    _write_map_page wrote to the file; it does no truncation itself. A raw
+    confluence_map/*.md file crawled *before* that date (and never
+    re-crawled/backfilled since) still has only the breadcrumb, with no way
+    to tell the difference from this file's content alone — check
+    metadata["source_version"]/["source_modified_at"] presence as a proxy
+    (both were added in the same round) if it matters which case you're in.
 
     Same frontmatter shape as confluence_docs/tech_repo (key : value block)
     but with a `경로`(breadcrumb) field instead of 폴더분류/디렉토리, plus
-    `space_key`/`유형`(문서|폴더). body_md is just the breadcrumb path again
-    (so path keywords are full-text searchable) — never the real page body.
-    evidence_grade is deliberately "C" (pointer only, not evidence) so it
-    never outranks an actual A-grade confluence_docs/tech_repo document with
-    the same topic.
+    `space_key`/`유형`(문서|폴더). evidence_grade stays deliberately "C"
+    regardless of body richness — not because there's nothing to read
+    (there usually is, now), but as a P0-A trust-contract decision: this is
+    an automated structural crawl, not the same verification/freshness
+    guarantee confluence_docs/tech_repo's dedicated pipelines give, so it
+    must never silently outrank an actual A-grade document on the same
+    topic — see app.confluence.map_sync._write_map_page's full_text comment
+    for why evidence_eligible/evidence_grade intentionally did NOT change
+    when body richness did.
 
     Output contract consumed here is produced by
     app.confluence.map_sync.build_frontmatter_confluence_map() and by

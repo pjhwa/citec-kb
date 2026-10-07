@@ -1065,10 +1065,13 @@ async def kb_tools_help() -> str:
 
 [신뢰도 — 답하기 전에 반드시 확인]
   evidence_grade: A/A- 본문 그대로 인용 가능 · B 아직 미종결(열린 티켓 등, 결론 바뀔 수 있음)
-  · C(=confluence_map 전용) 제목/경로만 있는 포인터, 본문 아님 — 이 결과 하나로 사실을
-  답하지 말 것. 같은 page_id가 tech_repo/confluence_docs에도 있으면 그걸 쓰고,
-  없으면 실제 Confluence 페이지를 열어 확인하거나 "색인엔 있으나 본문 미확인"이라고
-  밝힐 것. 자세한 소스타입별 등급표/근거 모델은 docs/AI_AGENT_GUIDE.md §6 참고.
+  · C(=confluence_map 전용) — 2026-10 이후 크롤/백필된 공간은 본문도 들어있지만
+  (전엔 제목/경로만) evidence_grade="C"는 정책상 그대로 유지: 자동 크롤이라
+  tech_repo/confluence_docs만큼의 검증·최신성 보장이 없다는 뜻. 같은 page_id가
+  tech_repo/confluence_docs에도 있으면 항상 그걸 우선 쓰고(confluence_map은
+  후순위), 본문이 짧고 경로만 있는 모양이면 2026-10-01 이전 데이터라 아직 전체본문
+  백필 전이니 실제 페이지를 열어 확인할 것. 자세한 소스타입별 등급표/근거 모델은
+  docs/AI_AGENT_GUIDE.md §6 참고.
 """
 
 
