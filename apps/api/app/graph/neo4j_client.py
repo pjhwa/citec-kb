@@ -80,14 +80,15 @@ class Neo4jClient:
 
     def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
         """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
-        f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제)."""
+        f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제).
+        max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음)."""
         query = f"""
         MATCH (a:{anchor_label} {{{anchor_key}: $value}})
         OPTIONAL MATCH (a)-[r1]-(n1)
         WHERE n1 <> a
         WITH a, collect(DISTINCT {{node: n1, relation: type(r1), hops: 1}}) AS hop1
-        OPTIONAL MATCH (a)-[]-()-[r2]-(n2)
-        WHERE n2 <> a
+        OPTIONAL MATCH (a)-[]-(p)-[r2]-(n2)
+        WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
         WITH a, hop1, collect(DISTINCT {{node: n2, relation: type(r2), hops: 2}}) AS hop2
         RETURN a AS anchor, hop1 + hop2 AS neighbors
         """
@@ -96,7 +97,7 @@ class Neo4jClient:
         if record is None or record["anchor"] is None:
             return {
                 "found": False, "documents": [], "components": [], "failure_buckets": [],
-                "excluded_hub_components": [], "truncated": False,
+                "excluded_hub_components": [], "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
             }
 
         best_by_id: dict[str, dict] = {}
@@ -139,7 +140,7 @@ class Neo4jClient:
             "found": True,
             "documents": documents, "components": components, "failure_buckets": failure_buckets,
             "excluded_hub_components": sorted(set(excluded_hub_components)),
-            "truncated": False,
+            "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
         }
 
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:

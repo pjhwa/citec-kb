@@ -151,3 +151,45 @@ def test_explore_excludes_hub_components_from_results():
     assert hub_name not in names
     assert hub_name in result["excluded_hub_components"]
     client.close()
+
+
+def test_explore_does_not_traverse_through_hub_pivot_at_hop2():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    anchor_doc = f"test-anchor-{uuid.uuid4()}"
+    hub_name = f"HubPivot-{uuid.uuid4()}"
+    other_doc = f"test-other-{uuid.uuid4()}"
+
+    # Create 5001 documents all pointing to hub_name to make it a hub
+    for i in range(5001):
+        client.merge_document(
+            {"id": f"test-fan2-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    # Create anchor document pointing to hub_name (hop1)
+    client.merge_document(
+        {"id": anchor_doc, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=hub_name, tag="EXTRACTED")],
+    )
+    # Create other_doc also pointing to hub_name (would be hop2 from anchor_doc via hub pivot)
+    client.merge_document(
+        {"id": other_doc, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=hub_name, tag="EXTRACTED")],
+    )
+    client.recompute_hub_flags()
+
+    result = client.explore("Document", "id", anchor_doc, max_hops=2)
+
+    doc_ids = {d["id"] for d in result["documents"]}
+    assert other_doc not in doc_ids  # hub pivot blocks the hop-2 path to other_doc
+    assert hub_name in result["excluded_hub_components"]  # still reachable at hop1, just excluded as a hub
+    client.close()
