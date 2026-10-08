@@ -19,6 +19,8 @@ from app.graph.pipeline import (
     sync_failure_bucket,
 )
 
+logger = logging.getLogger("citec.graph.sync_cli")
+
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
@@ -77,7 +79,11 @@ def main(argv: list[str] | None = None) -> int:
             fb_stats[result] += 1
 
         if not args.skip_hub_recompute:
-            recompute_hub_flags(client)
+            try:
+                recompute_hub_flags(client)
+            except Exception:  # noqa: BLE001 — §4.4와 같은 이유: 허브 재집계 실패가
+                # 이미 끝낸 문서/버킷 동기화 결과 출력을 막으면 안 된다
+                logger.exception("recompute_hub_flags failed")
     finally:
         client.close()
 

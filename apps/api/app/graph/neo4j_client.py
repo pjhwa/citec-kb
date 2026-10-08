@@ -16,12 +16,26 @@ _CONSTRAINTS = [
     ("BusinessEntity", "id"),
 ]
 
+_HUB_DEGREE_THRESHOLD = 5000
+
 
 def _ensure_constraints_tx(tx) -> None:
     for label, key in _CONSTRAINTS:
         tx.run(
             f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.{key} IS UNIQUE"
         )
+
+
+def _recompute_hub_flags_tx(tx) -> None:
+    tx.run(
+        """
+        MATCH (c:Component)
+        OPTIONAL MATCH (c)<-[r:HAS_COMPONENT]-()
+        WITH c, count(r) AS degree
+        SET c.is_hub = (degree > $threshold)
+        """,
+        threshold=_HUB_DEGREE_THRESHOLD,
+    )
 
 
 _DOCUMENT_SET_CLAUSE = """
@@ -55,6 +69,14 @@ class Neo4jClient:
         finding, Task 12) and MERGE isn't race-safe under concurrent writers."""
         with self._driver.session() as session:
             session.execute_write(_ensure_constraints_tx)
+
+    def recompute_hub_flags(self) -> None:
+        """백필 1회 실행이 끝난 뒤 호출 — 모든 Component의 HAS_COMPONENT 입력 degree를
+        다시 집계해 is_hub를 갱신한다(스펙 §3.1). 하드코딩 목록이 아니라 매 실행마다
+        실측으로 재계산되므로, 1단계 설계 §6의 13종 목록처럼 데이터가 바뀌면 틀려지는
+        문제가 구조적으로 없다."""
+        with self._driver.session() as session:
+            session.execute_write(_recompute_hub_flags_tx)
 
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:
