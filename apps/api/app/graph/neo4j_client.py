@@ -78,6 +78,70 @@ class Neo4jClient:
         with self._driver.session() as session:
             session.execute_write(_recompute_hub_flags_tx)
 
+    def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
+        """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
+        f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제)."""
+        query = f"""
+        MATCH (a:{anchor_label} {{{anchor_key}: $value}})
+        OPTIONAL MATCH (a)-[r1]-(n1)
+        WHERE n1 <> a
+        WITH a, collect(DISTINCT {{node: n1, relation: type(r1), hops: 1}}) AS hop1
+        OPTIONAL MATCH (a)-[]-()-[r2]-(n2)
+        WHERE n2 <> a
+        WITH a, hop1, collect(DISTINCT {{node: n2, relation: type(r2), hops: 2}}) AS hop2
+        RETURN a AS anchor, hop1 + hop2 AS neighbors
+        """
+        with self._driver.session() as session:
+            record = session.run(query, value=anchor_value).single()
+        if record is None or record["anchor"] is None:
+            return {
+                "found": False, "documents": [], "components": [], "failure_buckets": [],
+                "excluded_hub_components": [], "truncated": False,
+            }
+
+        best_by_id: dict[str, dict] = {}
+        for entry in record["neighbors"]:
+            node = entry["node"]
+            if node is None:
+                continue
+            elem_id = node.element_id
+            hops = entry["hops"]
+            if elem_id not in best_by_id or hops < best_by_id[elem_id]["hops"]:
+                best_by_id[elem_id] = {"node": node, "relation": entry["relation"], "hops": hops}
+
+        documents: list[dict] = []
+        components: list[dict] = []
+        failure_buckets: list[dict] = []
+        excluded_hub_components: list[str] = []
+        for entry in best_by_id.values():
+            node = entry["node"]
+            labels = set(node.labels)
+            if "Document" in labels:
+                documents.append({
+                    "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+            elif "Component" in labels:
+                if node.get("is_hub"):
+                    excluded_hub_components.append(node["canonical_name"])
+                    continue
+                components.append({
+                    "canonical_name": node["canonical_name"],
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+            elif "FailureBucket" in labels:
+                failure_buckets.append({
+                    "id": node["id"], "bucket_name": node.get("bucket_name"),
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+
+        return {
+            "found": True,
+            "documents": documents, "components": components, "failure_buckets": failure_buckets,
+            "excluded_hub_components": sorted(set(excluded_hub_components)),
+            "truncated": False,
+        }
+
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:
             session.execute_write(_merge_document_tx, doc, list(edges))
