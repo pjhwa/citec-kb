@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.graph.explore import (
     MAX_RESULTS_PER_CATEGORY,
+    dedup_by_key,
     enrich_with_evidence_grade,
     resolve_component_anchor,
     shape_explore_result,
@@ -60,26 +61,22 @@ def test_enrich_with_evidence_grade_merges_by_id():
 
 
 def test_dedup_by_key_removes_duplicates_across_anchors():
-    from app.routers.graph import _dedup_by_key
-
     items = [
         {"id": "d1", "title": "from anchor A", "hops": 2},
         {"id": "d1", "title": "from anchor B", "hops": 2},
         {"id": "d2", "title": "unique", "hops": 1},
     ]
-    deduped = _dedup_by_key(items, "id")
+    deduped = dedup_by_key(items, "id")
     assert len(deduped) == 2
     assert {d["id"] for d in deduped} == {"d1", "d2"}
 
 
 def test_dedup_by_key_keeps_smallest_hops_on_conflict():
-    from app.routers.graph import _dedup_by_key
-
     items = [
         {"id": "d1", "hops": 2},
         {"id": "d1", "hops": 1},  # closer via a different anchor — should win
         {"id": "d1", "hops": 3},
     ]
-    deduped = _dedup_by_key(items, "id")
+    deduped = dedup_by_key(items, "id")
     assert len(deduped) == 1
     assert deduped[0]["hops"] == 1

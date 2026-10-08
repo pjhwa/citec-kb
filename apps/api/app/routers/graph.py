@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.db.models import Document
 from app.db.session import session_scope
 from app.graph.explore import (
+    dedup_by_key,
     enrich_with_evidence_grade,
     resolve_component_anchor,
     shape_explore_result,
@@ -34,18 +35,6 @@ def _build_client() -> Neo4jClient:
 class GraphExploreBody(BaseModel):
     anchor_type: Literal["failure_bucket", "document", "component", "symptom_text"]
     anchor_value: str = Field(..., min_length=1, max_length=2000)
-
-
-def _dedup_by_key(items: list[dict], key: str) -> list[dict]:
-    """복수 앵커(symptom_text가 여러 component에 매칭된 경우)의 explore() 결과를
-    합칠 때 중복 제거 — 설계 스펙의 "복수 앵커를 합쳐 중복 제거" 요구. 중복이면
-    hops가 더 작은(더 가까운) 쪽을 유지한다."""
-    best: dict[str, dict] = {}
-    for item in items:
-        k = item[key]
-        if k not in best or item.get("hops", 99) < best[k].get("hops", 99):
-            best[k] = item
-    return list(best.values())
 
 
 def _resolve_document_anchor_value(anchor_value: str) -> str:
@@ -155,9 +144,9 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
 
     # 복수 앵커(symptom_text가 여러 component에 매칭된 경우) 결과 병합 시 중복 제거
-    merged["documents"] = _dedup_by_key(merged["documents"], "id")
-    merged["components"] = _dedup_by_key(merged["components"], "canonical_name")
-    merged["failure_buckets"] = _dedup_by_key(merged["failure_buckets"], "id")
+    merged["documents"] = dedup_by_key(merged["documents"], "id")
+    merged["components"] = dedup_by_key(merged["components"], "canonical_name")
+    merged["failure_buckets"] = dedup_by_key(merged["failure_buckets"], "id")
     merged["excluded_hub_components"] = sorted(set(merged["excluded_hub_components"]))
 
     doc_ids = [d["id"] for d in merged["documents"]]

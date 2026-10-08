@@ -62,6 +62,20 @@ def shape_explore_result(raw: dict[str, Any], *, as_of: Optional[str], anchor: d
     }
 
 
+def dedup_by_key(items: list[dict], key: str) -> list[dict]:
+    """복수 앵커(symptom_text가 여러 component에 매칭된 경우)의 explore() 결과를
+    합칠 때 중복 제거 — 설계 스펙의 "복수 앵커를 합쳐 중복 제거" 요구. 중복이면
+    hops가 더 작은(더 가까운) 쪽을 유지한다. app.routers.graph(Neo4j 의존)가 아니라
+    여기(Neo4j 비의존)에 둬야 app/graph/explore.py 전체가 CI에서 매번 실제로
+    실행된다는 이 모듈의 설계 원칙(파일 상단 docstring)이 깨지지 않는다."""
+    best: dict[str, dict] = {}
+    for item in items:
+        k = item[key]
+        if k not in best or item.get("hops", 99) < best[k].get("hops", 99):
+            best[k] = item
+    return list(best.values())
+
+
 def enrich_with_evidence_grade(documents: list[dict], grade_by_id: dict[str, str]) -> list[dict]:
     """Document 노드는 evidence_grade를 안 들고 있다(Postgres만 source of truth,
     1단계 설계 §0 원칙) — 그래서 호출자가 Neo4j 결과의 document id들로 Postgres를
