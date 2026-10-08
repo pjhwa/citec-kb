@@ -193,3 +193,49 @@ def test_explore_does_not_traverse_through_hub_pivot_at_hop2():
     assert other_doc not in doc_ids  # hub pivot blocks the hop-2 path to other_doc
     assert hub_name in result["excluded_hub_components"]  # still reachable at hop1, just excluded as a hub
     client.close()
+
+
+def test_is_component_hub_true_for_hub_component():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    hub_name = f"HubSelf-{uuid.uuid4()}"
+    for i in range(5001):
+        client.merge_document(
+            {"id": f"test-selfhub-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    client.recompute_hub_flags()
+
+    assert client.is_component_hub(hub_name) is True
+    client.close()
+
+
+def test_is_component_hub_false_for_non_hub_component():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"NonHub-{uuid.uuid4()}"
+    client.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    client.recompute_hub_flags()
+
+    assert client.is_component_hub(comp_name) is False
+    client.close()
+
+
+def test_is_component_hub_none_for_nonexistent_component():
+    client = _client()
+    client.ensure_constraints()
+
+    assert client.is_component_hub(f"DoesNotExist-{uuid.uuid4()}") is None
+    client.close()

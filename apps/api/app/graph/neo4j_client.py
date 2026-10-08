@@ -143,6 +143,16 @@ class Neo4jClient:
             "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
         }
 
+    def is_component_hub(self, canonical_name: str) -> Optional[bool]:
+        """component 앵커 자신이 허브인지 확인 — 스펙 §2: 허브 자신이 앵커면 2hop 순회를
+        생략하고 즉시 반환해야 한다(토큰 낭비 방지). 존재하지 않는 컴포넌트면 None."""
+        with self._driver.session() as session:
+            record = session.run(
+                "MATCH (c:Component {canonical_name: $name}) RETURN c.is_hub AS is_hub",
+                name=canonical_name,
+            ).single()
+        return bool(record["is_hub"]) if record else None
+
     def resolve_component_case_insensitive(self, value: str) -> Optional[str]:
         """lexicon에 없는 컴포넌트명이 대소문자만 다르게 들어왔을 때(스펙 §2 "대소문자
         무시" 요구) canonical_name을 찾아준다. explore()의 exact-match Cypher는 그대로
@@ -162,6 +172,25 @@ class Neo4jClient:
     def merge_failure_bucket(self, bucket: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:
             session.execute_write(_merge_failure_bucket_tx, bucket, list(edges))
+
+
+_singleton_client: Optional["Neo4jClient"] = None
+
+
+def get_shared_client() -> "Neo4jClient":
+    """요청마다 새 Driver를 만들지 않도록(연결 풀링 혜택을 받도록) 프로세스 전역에서
+    하나만 재사용한다. FastAPI lifespan이 종료 시 close_shared_client()를 호출해야 한다."""
+    global _singleton_client
+    if _singleton_client is None:
+        _singleton_client = Neo4jClient()
+    return _singleton_client
+
+
+def close_shared_client() -> None:
+    global _singleton_client
+    if _singleton_client is not None:
+        _singleton_client.close()
+        _singleton_client = None
 
 
 def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edges: list[Edge]) -> None:

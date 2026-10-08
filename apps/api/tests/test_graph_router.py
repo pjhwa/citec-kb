@@ -29,14 +29,17 @@ def _clear_settings_cache():
     _clear_engine_cache와 동일한 이유로 필요."""
     from app.db import session as db_session
     from app.settings import get_settings
+    from app.graph.neo4j_client import close_shared_client
 
     db_session.get_engine.cache_clear()
     db_session.get_session_factory.cache_clear()
     get_settings.cache_clear()
+    close_shared_client()  # _build_client()의 공유 Neo4jClient(Fix 2)도 같은 이유로 리셋
     yield
     db_session.get_engine.cache_clear()
     db_session.get_session_factory.cache_clear()
     get_settings.cache_clear()
+    close_shared_client()
 
 
 def test_explore_unknown_failure_bucket_returns_404():
@@ -183,3 +186,32 @@ def test_explore_dedups_documents_across_multiple_symptom_anchors():
     body = resp.json()
     doc_ids = [d["id"] for d in body["documents"] if d["id"] == doc_id]
     assert len(doc_ids) == 1
+
+
+def test_explore_component_anchor_that_is_itself_a_hub_short_circuits():
+    """스펙 §2 component 행: 앵커 자신이 is_hub=true면 2hop 순회를 생략하고 즉시
+    excluded_hub_components만 돌려줘야 한다(Fix 1) — 토큰 낭비 방지."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    hub_name = f"HubAnchor-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for i in range(5001):
+        nclient.merge_document(
+            {"id": f"test-hubanchor-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    nclient.recompute_hub_flags()
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": hub_name})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert hub_name in body["excluded_hub_components"]
+    assert body["documents"] == []
+    assert body["components"] == []
