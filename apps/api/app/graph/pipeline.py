@@ -251,3 +251,28 @@ def sync_failure_bucket(
     except Exception:  # noqa: BLE001
         logger.exception("graph sync failed for failure_bucket_id=%s", bucket_id)
         return "failed"
+
+
+_HUB_DEGREE_THRESHOLD = 5000
+
+
+def _recompute_hub_flags_tx(tx) -> None:
+    tx.run(
+        """
+        MATCH (c:Component)
+        OPTIONAL MATCH (c)<-[:HAS_COMPONENT]-()
+        WITH c, count(*) AS degree
+        SET c.is_hub = (degree > $threshold)
+        """,
+        threshold=_HUB_DEGREE_THRESHOLD,
+    )
+
+
+def recompute_hub_flags(client: Neo4jClient) -> None:
+    """백필 1회 실행이 끝난 뒤 호출 — 모든 Component의 HAS_COMPONENT 입력 degree를
+    다시 집계해 is_hub를 갱신한다(스펙 §3.1). 하드코딩 목록이 아니라 매 실행마다
+    실측으로 재계산되므로, 1단계 설계 §6의 13종 목록처럼 데이터가 바뀌면 틀려지는
+    문제가 구조적으로 없다. 증분 실행 때마다 돌 필요는 없지만(비용이 전체
+    Component 스캔 1회뿐이라 가벼움) 기본은 매번 실행 — sync_cli의
+    --skip-hub-recompute로 끌 수 있다."""
+    client._driver.session().execute_write(_recompute_hub_flags_tx)

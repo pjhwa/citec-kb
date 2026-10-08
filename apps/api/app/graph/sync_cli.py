@@ -14,6 +14,7 @@ from app.db.session import session_scope
 from app.graph.pipeline import (
     build_external_id_index,
     build_neo4j_client,
+    recompute_hub_flags,
     sync_document,
     sync_failure_bucket,
 )
@@ -24,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="대상 건수만 세고 종료")
     p.add_argument("--source-ids", help="쉼표구분 document_id만 처리(디버그용)")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument(
+        "--skip-hub-recompute", action="store_true",
+        help="Component.is_hub 재집계 생략(디버그/부분 실행용)",
+    )
     args = p.parse_args(argv)
 
     logging.basicConfig(
@@ -70,6 +75,9 @@ def main(argv: list[str] | None = None) -> int:
                 bucket_id, client=client, all_buckets=all_buckets, external_id_index=external_id_index
             )
             fb_stats[result] += 1
+
+        if not args.skip_hub_recompute:
+            recompute_hub_flags(client)
     finally:
         client.close()
 
