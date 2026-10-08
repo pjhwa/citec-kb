@@ -54,6 +54,29 @@ def test_explore_unknown_failure_bucket_returns_404():
     assert resp.status_code == 404
 
 
+def test_shared_neo4j_client_survives_across_requests():
+    """Fix 2 검증 — 요청 1회가 끝나도 공유 Neo4jClient가 닫히지 않아야 한다.
+    만약 어딘가 숨어서 요청마다 close()가 호출된다면, 두 번째 요청이 503으로
+    바뀐다(닫힌 driver로 세션을 열 수 없으므로) — 그래서 r2도 404여야 맞다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.neo4j_client import get_shared_client
+
+    client = TestClient(app)
+    r1 = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": f"missing-{uuid.uuid4()}"},
+    )
+    shared = get_shared_client()
+    r2 = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": f"missing-{uuid.uuid4()}"},
+    )
+    assert get_shared_client() is shared
+    assert r1.status_code == 404
+    assert r2.status_code == 404
+
+
 def test_explore_symptom_text_with_no_component_match_returns_empty():
     from fastapi.testclient import TestClient
     from app.main import app
