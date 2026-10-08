@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     raw_dir: str = Field(default="/data/raw", alias="RAW_DIR")
 
+    neo4j_uri: str = Field(default="bolt://localhost:8579", alias="NEO4J_URI")
+    neo4j_username: str = Field(default="neo4j", alias="NEO4J_USERNAME")
+    neo4j_password: str = Field(default="citecgraph", alias="NEO4J_PASSWORD")
+
     confluence_base_url: str | None = Field(default=None, alias="CONFLUENCE_BASE_URL")
     confluence_username: str | None = Field(default=None, alias="CONFLUENCE_USERNAME")
     confluence_password: str | None = Field(default=None, alias="CONFLUENCE_PASSWORD")

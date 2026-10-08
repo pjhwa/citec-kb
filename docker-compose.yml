@@ -29,6 +29,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5.26-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-citecgraph}
+      NEO4J_PLUGINS: '["graph-data-science"]'
+    ports:
+      - "8578:7474"
+      - "8579:7687"
+    volumes:
+      - neo4jdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
@@ -182,3 +199,4 @@ services:
 
 volumes:
   pgdata:
+  neo4jdata:
