@@ -6,6 +6,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from sqlalchemy import func
+
 from app.db.models import GraphSyncState
 from app.db.session import session_scope
 
@@ -43,3 +45,10 @@ def mark_failed(document_id: str, *, error: str) -> None:
             row = GraphSyncState(document_id=document_id)
             session.add(row)
         row.last_error = error[:2000]
+
+
+def get_latest_synced_at() -> Optional[datetime]:
+    """graph_sync_state 전체에서 가장 최근 synced_at. 행이 하나도 없으면(백필 전) None —
+    호출자(라우터)가 "아직 동기화된 적 없음"으로 처리한다."""
+    with session_scope() as session:
+        return session.query(func.max(GraphSyncState.synced_at)).scalar()

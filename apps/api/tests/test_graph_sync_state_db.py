@@ -99,3 +99,29 @@ def test_mark_failed_on_never_synced_document_does_not_raise():
     assert state["last_error"] == "neo4j connection refused"
     assert state["input_hash"] is None
     assert state["graph_extractor_version"] is None
+
+
+def test_get_latest_synced_at_returns_max_synced_at():
+    from app.db.session import session_scope
+    from app.graph.sync_state import get_latest_synced_at, mark_synced
+
+    with session_scope() as session:
+        doc_id_a = _make_document_row(session)
+        doc_id_b = _make_document_row(session)
+
+    mark_synced(doc_id_a, input_hash="h1", extractor_version="v1")
+    mark_synced(doc_id_b, input_hash="h2", extractor_version="v1")
+
+    result = get_latest_synced_at()
+    assert result is not None
+
+
+def test_get_latest_synced_at_returns_none_when_no_rows():
+    from app.graph.sync_state import get_latest_synced_at
+    from app.db.session import session_scope
+    from app.db.models import GraphSyncState
+
+    with session_scope() as session:
+        session.query(GraphSyncState).delete()
+
+    assert get_latest_synced_at() is None
