@@ -323,6 +323,26 @@ See §6.3 for the full taxonomy and when to use each:
 새 패턴이면 `kb_register_failure_bucket`으로 등록, 기존 패턴이 맞았거나 틀렸으면
 `kb_refine_failure_bucket(confirm=True/False)`로 되먹임한다.
 
+### 4.16 `kb_graph_explore` — 지식그래프 연관 탐색
+
+`kb_match_failure_bucket`/`kb_similar_incident`로 1차 후보를 찾은 **다음 단계**로 쓴다 —
+검색의 대체재가 아니라 "찾은 것의 주변을 더 깊이 파는" 용도다.
+
+- `kb_graph_explore(anchor_type=, anchor_value=)` — `anchor_type`은 `failure_bucket`/
+  `document`/`component`/`symptom_text` 중 하나. 2hop까지 순회하며, 범용 컴포넌트
+  (`Network`/`Storage` 등 degree 수천 이상)는 항상 제외하고 응답에 `제외된 범용
+  컴포넌트`로만 표시한다.
+- 응답의 `as_of`는 그래프의 마지막 배치 동기화 날짜다 — **실시간이 아니다**(최대 ~1일
+  지연 가능). 최종 사실 확인은 `kb_search`/`kb_get_document`로.
+- `component`/`symptom_text` 입력은 기존 lexicon 사전으로 변형어("넷앱"→`NetApp`)까지
+  해석한다.
+- 응답 상단의 `해석된 앵커:`(component/document/failure_bucket)나 `매칭된 컴포넌트:`(symptom_text)로
+  입력이 실제 무엇으로 해석됐는지 확인한다. `component`는 lexicon에 없으면 대소문자 무시
+  매칭까지 시도한다. 결과가 많으면 카테고리별로 최대 50건까지만 보여주고 "…외 N건"으로
+  생략됨을 표시한다.
+
+**API:** `POST /v1/graph/explore`
+
 ---
 
 ## 5. Time expressions (`relative`)
@@ -407,6 +427,10 @@ It is **not a relevance score** — it is a statement about how directly this ro
 `confluence_map`, you may quote its body, but flag it as unverified/C-grade
 unless you've also opened the live page or found an A-grade copy of the
 same `page_id` elsewhere.
+
+`kb_graph_explore`가 반환하는 문서 결과의 `evidence_grade`도 이 등급 체계를 그대로
+재사용한다 — 그래프 자체는 구조(관계)만 저장하고, 신뢰도 판단 기준은 항상 이 절의
+Postgres 값이 유일한 출처다.
 
 ### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages) — `confluence_map` ranks last
 
@@ -577,6 +601,17 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 1. `kb_citec_domain_catalog()` — confirm the 11 domain names.
 2. `kb_citec_recurring_patterns(group_by="domain", since_days=730, min_count=3)` — report counts straight from the response, don't re-tally.
 3. `kb_citec_failure_bucket_coverage(since_days=730, min_count=3)` — cite only domains with `status="gap"` as "정리 필요"; `no_fb_domain_defined` means the vocabulary doesn't cover that domain yet, not 0% coverage — say so if asked.
+
+### Scenario I — "이 failure_bucket과 관련된 다른 장애·문서가 더 있나?"
+
+1. `kb_get_failure_bucket(bucket_id="FB-12")`로 버킷 확인 (`FB-12`는 예시 — 실제
+   `bucket_id`는 UUID 형식).
+2. `kb_graph_explore(anchor_type="failure_bucket", anchor_value="FB-12")`로 2hop 연관
+   문서/컴포넌트/과거 장애 탐색.
+3. 범용 컴포넌트가 "제외된 범용 컴포넌트"에 뜨면 — 그건 애초에 의미 없는 결과이니
+   무시하고, 나머지 구체적 컴포넌트/문서로만 답변 구성.
+4. `as_of`가 비어 있거나(아직 백필 전) 2일 이상 지났으면 응답에 그 사실을 한 줄
+   명시(신선도 캐비엇).
 
 ---
 

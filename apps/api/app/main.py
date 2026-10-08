@@ -39,6 +39,8 @@ from app.routers import lexicon as lexicon_router  # noqa: E402
 from app.routers import ops as ops_router  # noqa: E402
 from app.routers import tickets as tickets_router  # noqa: E402
 from app.routers import external_compat as external_compat_router  # noqa: E402
+from app.routers import graph as graph_router  # noqa: E402
+from app.graph.neo4j_client import close_shared_client  # noqa: E402
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format=_LOG_FORMAT)
@@ -65,6 +67,7 @@ async def lifespan(_app: FastAPI):
         settings.llm_backend,
     )
     yield
+    close_shared_client()
     logger.info("shutting down api")
 
 
@@ -106,6 +109,7 @@ app.include_router(auth_router.router)
 app.include_router(mock_idp_router.router)
 # wiki-qa compatible /api/* + /v1/external/* for external system integration
 app.include_router(external_compat_router.router)
+app.include_router(graph_router.router)
 
 
 class HealthResponse(BaseModel):

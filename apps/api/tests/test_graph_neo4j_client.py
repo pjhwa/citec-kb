@@ -88,3 +88,154 @@ def test_merge_document_is_idempotent():
         ).single()["n"]
     assert count == 1
     client.close()
+
+
+def test_explore_returns_1hop_and_2hop_neighbors_with_hop_distance():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    fb_id = f"test-fb-{uuid.uuid4()}"
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"TestComp-{uuid.uuid4()}"
+
+    # fb_id -[HAS_EVIDENCE]-> doc_id -[HAS_COMPONENT]-> comp_name (2hop from fb_id)
+    client.merge_failure_bucket(
+        {"id": fb_id, "bucket_name": "b", "fb_domain": "network", "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+              target_value=doc_id, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+
+    result = client.explore("FailureBucket", "id", fb_id, max_hops=2)
+
+    doc_hops = {n["id"]: n["hops"] for n in result["documents"]}
+    comp_hops = {n["canonical_name"]: n["hops"] for n in result["components"]}
+    assert doc_hops.get(doc_id) == 1
+    assert comp_hops.get(comp_name) == 2
+    client.close()
+
+
+def test_explore_excludes_hub_components_from_results():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    hub_name = f"HubComp-{uuid.uuid4()}"
+    for i in range(5001):
+        client.merge_document(
+            {"id": f"test-fan-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    client.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=hub_name, tag="EXTRACTED")],
+    )
+    client.recompute_hub_flags()  # NOTE: this is the Task-1 method on the client, not the pipeline function
+
+    result = client.explore("Document", "id", doc_id, max_hops=2)
+
+    names = {n["canonical_name"] for n in result["components"]}
+    assert hub_name not in names
+    assert hub_name in result["excluded_hub_components"]
+    client.close()
+
+
+def test_explore_does_not_traverse_through_hub_pivot_at_hop2():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    anchor_doc = f"test-anchor-{uuid.uuid4()}"
+    hub_name = f"HubPivot-{uuid.uuid4()}"
+    other_doc = f"test-other-{uuid.uuid4()}"
+
+    # Create 5001 documents all pointing to hub_name to make it a hub
+    for i in range(5001):
+        client.merge_document(
+            {"id": f"test-fan2-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    # Create anchor document pointing to hub_name (hop1)
+    client.merge_document(
+        {"id": anchor_doc, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=hub_name, tag="EXTRACTED")],
+    )
+    # Create other_doc also pointing to hub_name (would be hop2 from anchor_doc via hub pivot)
+    client.merge_document(
+        {"id": other_doc, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=hub_name, tag="EXTRACTED")],
+    )
+    client.recompute_hub_flags()
+
+    result = client.explore("Document", "id", anchor_doc, max_hops=2)
+
+    doc_ids = {d["id"] for d in result["documents"]}
+    assert other_doc not in doc_ids  # hub pivot blocks the hop-2 path to other_doc
+    assert hub_name in result["excluded_hub_components"]  # still reachable at hop1, just excluded as a hub
+    client.close()
+
+
+def test_is_component_hub_true_for_hub_component():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    hub_name = f"HubSelf-{uuid.uuid4()}"
+    for i in range(5001):
+        client.merge_document(
+            {"id": f"test-selfhub-{hub_name}-{i}", "source_type": "tech_repo", "external_id": "x",
+             "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=hub_name, tag="EXTRACTED")],
+        )
+    client.recompute_hub_flags()
+
+    assert client.is_component_hub(hub_name) is True
+    client.close()
+
+
+def test_is_component_hub_false_for_non_hub_component():
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"NonHub-{uuid.uuid4()}"
+    client.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    client.recompute_hub_flags()
+
+    assert client.is_component_hub(comp_name) is False
+    client.close()
+
+
+def test_is_component_hub_none_for_nonexistent_component():
+    client = _client()
+    client.ensure_constraints()
+
+    assert client.is_component_hub(f"DoesNotExist-{uuid.uuid4()}") is None
+    client.close()

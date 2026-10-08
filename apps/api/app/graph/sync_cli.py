@@ -14,9 +14,12 @@ from app.db.session import session_scope
 from app.graph.pipeline import (
     build_external_id_index,
     build_neo4j_client,
+    recompute_hub_flags,
     sync_document,
     sync_failure_bucket,
 )
+
+logger = logging.getLogger("citec.graph.sync_cli")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--dry-run", action="store_true", help="대상 건수만 세고 종료")
     p.add_argument("--source-ids", help="쉼표구분 document_id만 처리(디버그용)")
     p.add_argument("-v", "--verbose", action="store_true")
+    p.add_argument(
+        "--skip-hub-recompute", action="store_true",
+        help="Component.is_hub 재집계 생략(디버그/부분 실행용)",
+    )
     args = p.parse_args(argv)
 
     logging.basicConfig(
@@ -70,6 +77,13 @@ def main(argv: list[str] | None = None) -> int:
                 bucket_id, client=client, all_buckets=all_buckets, external_id_index=external_id_index
             )
             fb_stats[result] += 1
+
+        if not args.skip_hub_recompute:
+            try:
+                recompute_hub_flags(client)
+            except Exception:  # noqa: BLE001 — §4.4와 같은 이유: 허브 재집계 실패가
+                # 이미 끝낸 문서/버킷 동기화 결과 출력을 막으면 안 된다
+                logger.exception("recompute_hub_flags failed")
     finally:
         client.close()
 

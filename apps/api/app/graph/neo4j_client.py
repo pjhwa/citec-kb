@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+import threading
+from typing import Iterable, Optional
 
 from neo4j import GraphDatabase
 
@@ -16,12 +17,26 @@ _CONSTRAINTS = [
     ("BusinessEntity", "id"),
 ]
 
+_HUB_DEGREE_THRESHOLD = 5000
+
 
 def _ensure_constraints_tx(tx) -> None:
     for label, key in _CONSTRAINTS:
         tx.run(
             f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.{key} IS UNIQUE"
         )
+
+
+def _recompute_hub_flags_tx(tx) -> None:
+    tx.run(
+        """
+        MATCH (c:Component)
+        OPTIONAL MATCH (c)<-[r:HAS_COMPONENT]-()
+        WITH c, count(r) AS degree
+        SET c.is_hub = (degree > $threshold)
+        """,
+        threshold=_HUB_DEGREE_THRESHOLD,
+    )
 
 
 _DOCUMENT_SET_CLAUSE = """
@@ -56,6 +71,101 @@ class Neo4jClient:
         with self._driver.session() as session:
             session.execute_write(_ensure_constraints_tx)
 
+    def recompute_hub_flags(self) -> None:
+        """백필 1회 실행이 끝난 뒤 호출 — 모든 Component의 HAS_COMPONENT 입력 degree를
+        다시 집계해 is_hub를 갱신한다(스펙 §3.1). 하드코딩 목록이 아니라 매 실행마다
+        실측으로 재계산되므로, 1단계 설계 §6의 13종 목록처럼 데이터가 바뀌면 틀려지는
+        문제가 구조적으로 없다."""
+        with self._driver.session() as session:
+            session.execute_write(_recompute_hub_flags_tx)
+
+    def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
+        """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
+        f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제).
+        max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음)."""
+        query = f"""
+        MATCH (a:{anchor_label} {{{anchor_key}: $value}})
+        OPTIONAL MATCH (a)-[r1]-(n1)
+        WHERE n1 <> a
+        WITH a, collect(DISTINCT {{node: n1, relation: type(r1), hops: 1}}) AS hop1
+        OPTIONAL MATCH (a)-[]-(p)-[r2]-(n2)
+        WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
+        WITH a, hop1, collect(DISTINCT {{node: n2, relation: type(r2), hops: 2}}) AS hop2
+        RETURN a AS anchor, hop1 + hop2 AS neighbors
+        """
+        with self._driver.session() as session:
+            record = session.run(query, value=anchor_value).single()
+        if record is None or record["anchor"] is None:
+            return {
+                "found": False, "documents": [], "components": [], "failure_buckets": [],
+                "excluded_hub_components": [], "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
+            }
+
+        best_by_id: dict[str, dict] = {}
+        for entry in record["neighbors"]:
+            node = entry["node"]
+            if node is None:
+                continue
+            elem_id = node.element_id
+            hops = entry["hops"]
+            if elem_id not in best_by_id or hops < best_by_id[elem_id]["hops"]:
+                best_by_id[elem_id] = {"node": node, "relation": entry["relation"], "hops": hops}
+
+        documents: list[dict] = []
+        components: list[dict] = []
+        failure_buckets: list[dict] = []
+        excluded_hub_components: list[str] = []
+        for entry in best_by_id.values():
+            node = entry["node"]
+            labels = set(node.labels)
+            if "Document" in labels:
+                documents.append({
+                    "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+            elif "Component" in labels:
+                if node.get("is_hub"):
+                    excluded_hub_components.append(node["canonical_name"])
+                    continue
+                components.append({
+                    "canonical_name": node["canonical_name"],
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+            elif "FailureBucket" in labels:
+                failure_buckets.append({
+                    "id": node["id"], "bucket_name": node.get("bucket_name"),
+                    "relation": entry["relation"], "hops": entry["hops"],
+                })
+
+        return {
+            "found": True,
+            "documents": documents, "components": components, "failure_buckets": failure_buckets,
+            "excluded_hub_components": sorted(set(excluded_hub_components)),
+            "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
+        }
+
+    def is_component_hub(self, canonical_name: str) -> Optional[bool]:
+        """component 앵커 자신이 허브인지 확인 — 스펙 §2: 허브 자신이 앵커면 2hop 순회를
+        생략하고 즉시 반환해야 한다(토큰 낭비 방지). 존재하지 않는 컴포넌트면 None."""
+        with self._driver.session() as session:
+            record = session.run(
+                "MATCH (c:Component {canonical_name: $name}) RETURN c.is_hub AS is_hub",
+                name=canonical_name,
+            ).single()
+        return bool(record["is_hub"]) if record else None
+
+    def resolve_component_case_insensitive(self, value: str) -> Optional[str]:
+        """lexicon에 없는 컴포넌트명이 대소문자만 다르게 들어왔을 때(스펙 §2 "대소문자
+        무시" 요구) canonical_name을 찾아준다. explore()의 exact-match Cypher는 그대로
+        두고, 라우터가 이 메서드로 먼저 정규화한 뒤 explore()를 부른다."""
+        with self._driver.session() as session:
+            record = session.run(
+                "MATCH (c:Component) WHERE toLower(c.canonical_name) = toLower($value) "
+                "RETURN c.canonical_name AS name ORDER BY (c.canonical_name = $value) DESC LIMIT 1",
+                value=value,
+            ).single()
+        return record["name"] if record else None
+
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:
             session.execute_write(_merge_document_tx, doc, list(edges))
@@ -63,6 +173,29 @@ class Neo4jClient:
     def merge_failure_bucket(self, bucket: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:
             session.execute_write(_merge_failure_bucket_tx, bucket, list(edges))
+
+
+_singleton_client: Optional["Neo4jClient"] = None
+_singleton_lock = threading.Lock()
+
+
+def get_shared_client() -> "Neo4jClient":
+    """요청마다 새 Driver를 만들지 않도록(연결 풀링 혜택을 받도록) 프로세스 전역에서
+    하나만 재사용한다. FastAPI lifespan이 종료 시 close_shared_client()를 호출해야 한다."""
+    global _singleton_client
+    if _singleton_client is None:
+        with _singleton_lock:
+            if _singleton_client is None:
+                _singleton_client = Neo4jClient()
+    return _singleton_client
+
+
+def close_shared_client() -> None:
+    global _singleton_client
+    with _singleton_lock:
+        if _singleton_client is not None:
+            _singleton_client.close()
+            _singleton_client = None
 
 
 def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edges: list[Edge]) -> None:

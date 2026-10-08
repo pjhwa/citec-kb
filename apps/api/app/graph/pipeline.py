@@ -251,3 +251,9 @@ def sync_failure_bucket(
     except Exception:  # noqa: BLE001
         logger.exception("graph sync failed for failure_bucket_id=%s", bucket_id)
         return "failed"
+
+
+def recompute_hub_flags(client: Neo4jClient) -> None:
+    """app.graph.sync_cli가 쓰는 얇은 위임 — 실제 구현은 Neo4jClient.recompute_hub_flags()
+    (neo4j_client.py)에 있다. 파이프라인 함수들과 같은 임포트 경로를 유지하기 위해 남겨둔다."""
+    client.recompute_hub_flags()

@@ -24,6 +24,7 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
+_GRAPH_EXPLORE_CAP = 50  # mirrors apps/api/app/graph/explore.py:MAX_RESULTS_PER_CATEGORY (separate process, can't import it)
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -898,6 +899,81 @@ async def kb_similar_incident(
 
 
 @mcp.tool()
+async def kb_graph_explore(
+    anchor_type: str,
+    anchor_value: str,
+) -> str:
+    """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
+
+    anchor_type: "failure_bucket" | "document" | "component" | "symptom_text"
+    anchor_value: 각각 FailureBucket.id / documents.id 또는 external_id /
+                  컴포넌트 이름(예: "NetApp", "넷앱") / 자유 텍스트 증상 설명
+
+    그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
+    반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
+    쓰임새: kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은 다음,
+    그 주변을 더 깊이 파는 용도. 검색의 대체재가 아니다.
+    """
+    if anchor_type not in ("failure_bucket", "document", "component", "symptom_text"):
+        return f"오류: anchor_type은 failure_bucket|document|component|symptom_text 중 하나여야 합니다 (받음: {anchor_type})"
+    if not (anchor_value or "").strip():
+        return "오류: anchor_value가 비어 있습니다."
+    try:
+        async with _client(timeout=30.0) as client:
+            resp = await client.post(
+                "/v1/graph/explore",
+                json={"anchor_type": anchor_type, "anchor_value": anchor_value.strip()},
+            )
+            if resp.status_code == 404:
+                return f"그래프에서 '{anchor_value}'를 찾을 수 없습니다 (as-of 데이터 기준)."
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    lines = [f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
+    anchor = data.get("anchor") or {}
+    if anchor.get("type") == "symptom_text":
+        mc = anchor.get("matched_components") or []
+        lines.append(
+            f"매칭된 컴포넌트: {', '.join(mc)}" if mc
+            else "매칭된 컴포넌트: 없음 — 증상 텍스트에서 알려진 컴포넌트를 못 찾음(kb_similar_incident 권장)"
+        )
+    elif anchor.get("resolved_name") or anchor.get("resolved_id"):
+        lines.append(f"해석된 앵커: {anchor.get('resolved_name') or anchor.get('resolved_id')}")
+    if data.get("found") is False:
+        lines.append("(그래프에 해당 노드 없음)")
+    if data.get("excluded_hub_components"):
+        lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
+
+    docs = data.get("documents") or []
+    lines.append(f"\n연관 문서 ({len(docs)}건{'+' if len(docs) >= _GRAPH_EXPLORE_CAP else ''}):")
+    for d in docs[:20]:
+        lines.append(
+            f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
+            f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
+        )
+    if len(docs) > 20:
+        lines.append(f"  … 외 {len(docs) - 20}건")
+
+    comps = data.get("components") or []
+    lines.append(f"\n연관 컴포넌트 ({len(comps)}건{'+' if len(comps) >= _GRAPH_EXPLORE_CAP else ''}):")
+    for c in comps[:20]:
+        lines.append(f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}")
+    if len(comps) > 20:
+        lines.append(f"  … 외 {len(comps) - 20}건")
+
+    fbs = data.get("failure_buckets") or []
+    lines.append(f"\n연관 과거 장애 ({len(fbs)}건{'+' if len(fbs) >= _GRAPH_EXPLORE_CAP else ''}):")
+    for b in fbs[:20]:
+        lines.append(f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}")
+    if len(fbs) > 20:
+        lines.append(f"  … 외 {len(fbs) - 20}건")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
 async def kb_upload_document(
     filename: str,
     content: str,
@@ -1041,6 +1117,13 @@ async def kb_tools_help() -> str:
                   동작 그대로(등록은 environment=null, 매칭/목록은 필터 없음, refine은 기존
                   값 유지). match/list에서 다른 값으로 태깅된 버킷은 후보에서 제외되고,
                   environment가 비어있는(미확인) 버킷은 계속 후보에 남는다.
+
+[지식그래프 — 연관 탐색]
+  kb_graph_explore(anchor_type=, anchor_value=)
+                  anchor_type: failure_bucket|document|component|symptom_text
+                  장애 분석 시 연관 컴포넌트/문서/과거 장애를 2hop까지 탐색.
+                  kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은
+                  다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인).
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록

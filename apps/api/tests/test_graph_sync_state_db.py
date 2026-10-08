@@ -99,3 +99,45 @@ def test_mark_failed_on_never_synced_document_does_not_raise():
     assert state["last_error"] == "neo4j connection refused"
     assert state["input_hash"] is None
     assert state["graph_extractor_version"] is None
+
+
+def test_get_latest_synced_at_returns_max_synced_at():
+    from app.db.session import session_scope
+    from app.graph.sync_state import get_latest_synced_at, get_state, mark_synced
+
+    with session_scope() as session:
+        doc_id_a = _make_document_row(session)
+        doc_id_b = _make_document_row(session)
+
+    mark_synced(doc_id_a, input_hash="h1", extractor_version="v1")
+    mark_synced(doc_id_b, input_hash="h2", extractor_version="v1")
+
+    result = get_latest_synced_at()
+    later = max(get_state(doc_id_a)["synced_at"], get_state(doc_id_b)["synced_at"])
+    assert result == later
+
+
+def test_get_latest_synced_at_returns_none_when_no_rows():
+    from app.graph.sync_state import get_latest_synced_at
+    from app.db.session import session_scope
+    from app.db.models import GraphSyncState
+
+    with session_scope() as session:
+        existing = [
+            {
+                "document_id": row.document_id,
+                "input_hash": row.input_hash,
+                "graph_extractor_version": row.graph_extractor_version,
+                "synced_at": row.synced_at,
+                "last_error": row.last_error,
+            }
+            for row in session.query(GraphSyncState).all()
+        ]
+        session.query(GraphSyncState).delete()
+
+    try:
+        assert get_latest_synced_at() is None
+    finally:
+        with session_scope() as session:
+            for row in existing:
+                session.add(GraphSyncState(**row))
