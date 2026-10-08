@@ -330,12 +330,16 @@ See §6.3 for the full taxonomy and when to use each:
 
 - `kb_graph_explore(anchor_type=, anchor_value=)` — `anchor_type`은 `failure_bucket`/
   `document`/`component`/`symptom_text` 중 하나. 2hop까지 순회하며, 범용 컴포넌트
-  (`Network`/`Storage` 등 degree 수천 이상)는 기본 제외하고 응답에 `제외된 범용
+  (`Network`/`Storage` 등 degree 수천 이상)는 항상 제외하고 응답에 `제외된 범용
   컴포넌트`로만 표시한다.
 - 응답의 `as_of`는 그래프의 마지막 배치 동기화 날짜다 — **실시간이 아니다**(최대 ~1일
   지연 가능). 최종 사실 확인은 `kb_search`/`kb_get_document`로.
 - `component`/`symptom_text` 입력은 기존 lexicon 사전으로 변형어("넷앱"→`NetApp`)까지
   해석한다.
+- 응답 상단의 `해석된 앵커:`(component/document/failure_bucket)나 `매칭된 컴포넌트:`(symptom_text)로
+  입력이 실제 무엇으로 해석됐는지 확인한다. `component`는 lexicon에 없으면 대소문자 무시
+  매칭까지 시도한다. 결과가 많으면 카테고리별로 최대 50건까지만 보여주고 "…외 N건"으로
+  생략됨을 표시한다.
 
 **API:** `POST /v1/graph/explore`
 
@@ -600,12 +604,14 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 
 ### Scenario I — "이 failure_bucket과 관련된 다른 장애·문서가 더 있나?"
 
-1. `kb_get_failure_bucket(bucket_id="FB-12")`로 버킷 확인.
+1. `kb_get_failure_bucket(bucket_id="FB-12")`로 버킷 확인 (`FB-12`는 예시 — 실제
+   `bucket_id`는 UUID 형식).
 2. `kb_graph_explore(anchor_type="failure_bucket", anchor_value="FB-12")`로 2hop 연관
    문서/컴포넌트/과거 장애 탐색.
 3. 범용 컴포넌트가 "제외된 범용 컴포넌트"에 뜨면 — 그건 애초에 의미 없는 결과이니
    무시하고, 나머지 구체적 컴포넌트/문서로만 답변 구성.
-4. `as_of`가 오늘보다 오래됐으면 응답에 그 사실을 한 줄 명시(신선도 캐비엇).
+4. `as_of`가 비어 있거나(아직 백필 전) 2일 이상 지났으면 응답에 그 사실을 한 줄
+   명시(신선도 캐비엇).
 
 ---
 
