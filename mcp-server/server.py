@@ -24,6 +24,7 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
+_GRAPH_EXPLORE_CAP = 50  # mirrors apps/api/app/graph/explore.py:MAX_RESULTS_PER_CATEGORY (separate process, can't import it)
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -931,26 +932,43 @@ async def kb_graph_explore(
         return _err(e)
 
     lines = [f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
+    anchor = data.get("anchor") or {}
+    if anchor.get("type") == "symptom_text":
+        mc = anchor.get("matched_components") or []
+        lines.append(
+            f"매칭된 컴포넌트: {', '.join(mc)}" if mc
+            else "매칭된 컴포넌트: 없음 — 증상 텍스트에서 알려진 컴포넌트를 못 찾음(kb_similar_incident 권장)"
+        )
+    elif anchor.get("resolved_name") or anchor.get("resolved_id"):
+        lines.append(f"해석된 앵커: {anchor.get('resolved_name') or anchor.get('resolved_id')}")
+    if data.get("found") is False:
+        lines.append("(그래프에 해당 노드 없음)")
     if data.get("excluded_hub_components"):
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
 
     docs = data.get("documents") or []
-    lines.append(f"\n연관 문서 ({len(docs)}건{'+' if data.get('truncated') else ''}):")
+    lines.append(f"\n연관 문서 ({len(docs)}건{'+' if len(docs) >= _GRAPH_EXPLORE_CAP else ''}):")
     for d in docs[:20]:
         lines.append(
             f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
             f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
         )
+    if len(docs) > 20:
+        lines.append(f"  … 외 {len(docs) - 20}건")
 
     comps = data.get("components") or []
-    lines.append(f"\n연관 컴포넌트 ({len(comps)}건):")
+    lines.append(f"\n연관 컴포넌트 ({len(comps)}건{'+' if len(comps) >= _GRAPH_EXPLORE_CAP else ''}):")
     for c in comps[:20]:
         lines.append(f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}")
+    if len(comps) > 20:
+        lines.append(f"  … 외 {len(comps) - 20}건")
 
     fbs = data.get("failure_buckets") or []
-    lines.append(f"\n연관 과거 장애 ({len(fbs)}건):")
+    lines.append(f"\n연관 과거 장애 ({len(fbs)}건{'+' if len(fbs) >= _GRAPH_EXPLORE_CAP else ''}):")
     for b in fbs[:20]:
         lines.append(f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}")
+    if len(fbs) > 20:
+        lines.append(f"  … 외 {len(fbs) - 20}건")
 
     return "\n".join(lines)
 
