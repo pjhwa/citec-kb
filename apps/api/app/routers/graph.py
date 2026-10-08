@@ -33,6 +33,18 @@ class GraphExploreBody(BaseModel):
     anchor_value: str = Field(..., min_length=1, max_length=2000)
 
 
+def _dedup_by_key(items: list[dict], key: str) -> list[dict]:
+    """복수 앵커(symptom_text가 여러 component에 매칭된 경우)의 explore() 결과를
+    합칠 때 중복 제거 — 설계 스펙의 "복수 앵커를 합쳐 중복 제거" 요구. 중복이면
+    hops가 더 작은(더 가까운) 쪽을 유지한다."""
+    best: dict[str, dict] = {}
+    for item in items:
+        k = item[key]
+        if k not in best or item.get("hops", 99) < best[k].get("hops", 99):
+            best[k] = item
+    return list(best.values())
+
+
 def _resolve_document_anchor_value(anchor_value: str) -> str:
     """document 앵커는 documents.id 또는 external_id 둘 다 받는다 — Neo4j의
     Document.id는 항상 documents.id이므로, external_id로 왔으면 Postgres에서
@@ -61,54 +73,88 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     as_of_str = as_of.date().isoformat() if as_of else None
     lexicon_map = load_lexicon_map()
 
-    anchors: list[tuple[str, str, str]] = []
-    if body.anchor_type == "symptom_text":
-        fake_doc = {"body_md": body.anchor_value}
-        edges = extract_lexicon_components(fake_doc, lexicon_map=lexicon_map)
-        if not edges:
-            return shape_explore_result(
-                {"found": True, "documents": [], "components": [], "failure_buckets": [],
-                 "excluded_hub_components": []},
-                as_of=as_of_str,
-                anchor={"type": "symptom_text", "resolved_id": None, "matched_components": []},
-            )
-        anchors = [("Component", "canonical_name", e.target_value) for e in edges]
-    elif body.anchor_type == "component":
-        canonical = resolve_component_anchor(body.anchor_value, lexicon_map)
-        anchors = [("Component", "canonical_name", canonical)]
-    elif body.anchor_type == "document":
-        anchors = [("Document", "id", _resolve_document_anchor_value(body.anchor_value))]
-    else:  # failure_bucket
-        anchors = [("FailureBucket", "id", body.anchor_value)]
-
     client = _build_client()
     try:
+        resolved_name: str | None = None
+        anchors: list[tuple[str, str, str]] = []
+        if body.anchor_type == "symptom_text":
+            fake_doc = {"body_md": body.anchor_value}
+            edges = extract_lexicon_components(fake_doc, lexicon_map=lexicon_map)
+            if not edges:
+                return shape_explore_result(
+                    {"found": True, "documents": [], "components": [], "failure_buckets": [],
+                     "excluded_hub_components": []},
+                    as_of=as_of_str,
+                    anchor={
+                        "type": "symptom_text", "resolved_id": None, "resolved_name": None,
+                        "matched_components": [],
+                    },
+                )
+            # 중복 target_value 제거 — 같은 component로 두 번 explore() 안 부르게
+            seen_values: set[str] = set()
+            anchors = []
+            for e in edges:
+                if e.target_value not in seen_values:
+                    seen_values.add(e.target_value)
+                    anchors.append(("Component", "canonical_name", e.target_value))
+        elif body.anchor_type == "component":
+            canonical = resolve_component_anchor(body.anchor_value, lexicon_map)
+            if canonical == body.anchor_value:
+                # lexicon이 못 알아들었다 — 대소문자만 다른 그래프 노드가 있는지 확인
+                try:
+                    ci_match = client.resolve_component_case_insensitive(canonical)
+                except Exception as exc:  # noqa: BLE001 — Neo4j 장애 격리
+                    raise HTTPException(
+                        status_code=503, detail=f"그래프 저장소 연결 실패: {exc}"
+                    ) from exc
+                if ci_match:
+                    canonical = ci_match
+            anchors = [("Component", "canonical_name", canonical)]
+            resolved_name = canonical
+        elif body.anchor_type == "document":
+            anchors = [("Document", "id", _resolve_document_anchor_value(body.anchor_value))]
+        else:  # failure_bucket
+            anchors = [("FailureBucket", "id", body.anchor_value)]
+
         merged: dict[str, Any] = {
             "found": False, "documents": [], "components": [], "failure_buckets": [],
             "excluded_hub_components": [],
         }
-        for label, key, value in anchors:
-            raw = client.explore(label, key, value, max_hops=2)
-            if not raw.get("found"):
-                continue
-            merged["found"] = True
-            merged["documents"].extend(raw["documents"])
-            merged["components"].extend(raw["components"])
-            merged["failure_buckets"].extend(raw["failure_buckets"])
-            merged["excluded_hub_components"].extend(raw["excluded_hub_components"])
-    except Exception as exc:  # noqa: BLE001 — Neo4j 장애가 기존 검색/API에 안 퍼지게 격리
-        raise HTTPException(status_code=503, detail=f"그래프 저장소 연결 실패: {exc}") from exc
+        try:
+            for label, key, value in anchors:
+                raw = client.explore(label, key, value, max_hops=2)
+                if not raw.get("found"):
+                    continue
+                merged["found"] = True
+                merged["documents"].extend(raw["documents"])
+                merged["components"].extend(raw["components"])
+                merged["failure_buckets"].extend(raw["failure_buckets"])
+                merged["excluded_hub_components"].extend(raw["excluded_hub_components"])
+        except Exception as exc:  # noqa: BLE001 — Neo4j 장애가 기존 검색/API에 안 퍼지게 격리
+            raise HTTPException(status_code=503, detail=f"그래프 저장소 연결 실패: {exc}") from exc
     finally:
         client.close()
 
     if not merged["found"] and body.anchor_type != "symptom_text":
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
 
+    # 복수 앵커(symptom_text가 여러 component에 매칭된 경우) 결과 병합 시 중복 제거
+    merged["documents"] = _dedup_by_key(merged["documents"], "id")
+    merged["components"] = _dedup_by_key(merged["components"], "canonical_name")
+    merged["failure_buckets"] = _dedup_by_key(merged["failure_buckets"], "id")
+    merged["excluded_hub_components"] = sorted(set(merged["excluded_hub_components"]))
+
     doc_ids = [d["id"] for d in merged["documents"]]
     merged["documents"] = enrich_with_evidence_grade(merged["documents"], _fetch_evidence_grades(doc_ids))
 
-    anchor_info: dict[str, Any] = {"type": body.anchor_type, "resolved_id": body.anchor_value}
     if body.anchor_type == "symptom_text":
-        anchor_info["matched_components"] = [a[2] for a in anchors]
+        anchor_info: dict[str, Any] = {
+            "type": "symptom_text", "resolved_id": None, "resolved_name": None,
+            "matched_components": [a[2] for a in anchors],
+        }
+    else:
+        anchor_info = {
+            "type": body.anchor_type, "resolved_id": anchors[0][2], "resolved_name": resolved_name,
+        }
 
     return shape_explore_result(merged, as_of=as_of_str, anchor=anchor_info)

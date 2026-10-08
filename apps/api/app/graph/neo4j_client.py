@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Iterable, Optional
 
 from neo4j import GraphDatabase
 
@@ -142,6 +142,18 @@ class Neo4jClient:
             "excluded_hub_components": sorted(set(excluded_hub_components)),
             "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
         }
+
+    def resolve_component_case_insensitive(self, value: str) -> Optional[str]:
+        """lexicon에 없는 컴포넌트명이 대소문자만 다르게 들어왔을 때(스펙 §2 "대소문자
+        무시" 요구) canonical_name을 찾아준다. explore()의 exact-match Cypher는 그대로
+        두고, 라우터가 이 메서드로 먼저 정규화한 뒤 explore()를 부른다."""
+        with self._driver.session() as session:
+            record = session.run(
+                "MATCH (c:Component) WHERE toLower(c.canonical_name) = toLower($value) "
+                "RETURN c.canonical_name AS name ORDER BY (c.canonical_name = $value) DESC LIMIT 1",
+                value=value,
+            ).single()
+        return record["name"] if record else None
 
     def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
         with self._driver.session() as session:

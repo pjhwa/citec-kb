@@ -64,3 +64,122 @@ def test_explore_symptom_text_with_no_component_match_returns_empty():
     body = resp.json()
     assert body["documents"] == []
     assert body["components"] == []
+
+
+def _neo4j_test_client():
+    from app.graph.neo4j_client import Neo4jClient
+
+    return Neo4jClient(
+        uri=_NEO4J_URI,
+        user=os.environ.get("GRAPH_NEO4J_TEST_USER", "neo4j"),
+        password=os.environ.get("GRAPH_NEO4J_TEST_PASSWORD", "citecgraph"),
+    )
+
+
+def test_explore_component_anchor_returns_resolved_canonical_name():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"TestComp-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["anchor"]["resolved_id"] == comp_name
+    doc_ids = {d["id"] for d in body["documents"]}
+    assert doc_id in doc_ids
+
+
+def test_explore_component_anchor_case_insensitive_fallback():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"MixedCase-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name.lower()}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["anchor"]["resolved_id"] == comp_name
+    doc_ids = {d["id"] for d in body["documents"]}
+    assert doc_id in doc_ids
+
+
+def test_explore_dedups_documents_across_multiple_symptom_anchors():
+    """symptom_text가 같은 문서를 참조하는 2개 이상의 component에 매칭될 때,
+    병합된 결과에서 그 문서가 정확히 한 번만 나와야 한다(Fix 1)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_a = f"netapp-{uuid.uuid4()}"
+    comp_b = f"filer-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [
+            Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                 target_value=comp_a, tag="EXTRACTED"),
+            Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                 target_value=comp_b, tag="EXTRACTED"),
+        ],
+    )
+    nclient.close()
+
+    # symptom_text 경로는 app.graph.extract.extract_lexicon_components를 쓰므로,
+    # 두 component 모두 매칭되도록 extractor를 테스트 동안만 스텁으로 바꿔친다.
+    import app.routers.graph as graph_router_module
+
+    def fake_extract_lexicon_components(doc, lexicon_map):
+        from app.graph.extract import Edge as ExtractEdge
+
+        return [
+            ExtractEdge(rel_type="HAS_COMPONENT", target_label="Component",
+                        target_key="canonical_name", target_value=comp_a, tag="EXTRACTED"),
+            ExtractEdge(rel_type="HAS_COMPONENT", target_label="Component",
+                        target_key="canonical_name", target_value=comp_b, tag="EXTRACTED"),
+        ]
+
+    original = graph_router_module.extract_lexicon_components
+    graph_router_module.extract_lexicon_components = fake_extract_lexicon_components
+    try:
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/graph/explore",
+            json={"anchor_type": "symptom_text", "anchor_value": "doesn't matter, extractor is stubbed"},
+        )
+    finally:
+        graph_router_module.extract_lexicon_components = original
+
+    assert resp.status_code == 200
+    body = resp.json()
+    doc_ids = [d["id"] for d in body["documents"] if d["id"] == doc_id]
+    assert len(doc_ids) == 1
