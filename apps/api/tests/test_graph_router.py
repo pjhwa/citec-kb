@@ -56,25 +56,31 @@ def test_explore_unknown_failure_bucket_returns_404():
 
 def test_shared_neo4j_client_survives_across_requests():
     """Fix 2 검증 — 요청 1회가 끝나도 공유 Neo4jClient가 닫히지 않아야 한다.
-    만약 어딘가 숨어서 요청마다 close()가 호출된다면, 두 번째 요청이 503으로
-    바뀐다(닫힌 driver로 세션을 열 수 없으므로) — 그래서 r2도 404여야 맞다."""
+    driver 구성 횟수를 세어서 정확히 1회만 생성되었는지 확인한다
+    (per-request close() 회귀 방지)."""
+    import app.graph.neo4j_client as neo4j_client_module
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.graph.neo4j_client import get_shared_client
 
-    client = TestClient(app)
-    r1 = client.post(
-        "/v1/graph/explore",
-        json={"anchor_type": "failure_bucket", "anchor_value": f"missing-{uuid.uuid4()}"},
-    )
-    shared = get_shared_client()
-    r2 = client.post(
-        "/v1/graph/explore",
-        json={"anchor_type": "failure_bucket", "anchor_value": f"missing-{uuid.uuid4()}"},
-    )
-    assert get_shared_client() is shared
-    assert r1.status_code == 404
-    assert r2.status_code == 404
+    neo4j_client_module.close_shared_client()  # start from a clean slate
+    construction_count = {"n": 0}
+    real_driver_factory = neo4j_client_module.GraphDatabase.driver
+
+    def counting_driver(*args, **kwargs):
+        construction_count["n"] += 1
+        return real_driver_factory(*args, **kwargs)
+
+    neo4j_client_module.GraphDatabase.driver = counting_driver
+    try:
+        client = TestClient(app)
+        r1 = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": f"nonexistent-{uuid.uuid4()}"})
+        r2 = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": f"nonexistent-{uuid.uuid4()}"})
+        assert r1.status_code == 404
+        assert r2.status_code == 404
+        assert construction_count["n"] == 1  # one driver built, reused across both requests
+    finally:
+        neo4j_client_module.GraphDatabase.driver = real_driver_factory
+        neo4j_client_module.close_shared_client()
 
 
 def test_explore_symptom_text_with_no_component_match_returns_empty():
@@ -238,3 +244,4 @@ def test_explore_component_anchor_that_is_itself_a_hub_short_circuits():
     assert hub_name in body["excluded_hub_components"]
     assert body["documents"] == []
     assert body["components"] == []
+    assert body["failure_buckets"] == []

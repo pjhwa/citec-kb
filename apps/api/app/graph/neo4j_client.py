@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Iterable, Optional
 
 from neo4j import GraphDatabase
@@ -175,6 +176,7 @@ class Neo4jClient:
 
 
 _singleton_client: Optional["Neo4jClient"] = None
+_singleton_lock = threading.Lock()
 
 
 def get_shared_client() -> "Neo4jClient":
@@ -182,15 +184,18 @@ def get_shared_client() -> "Neo4jClient":
     하나만 재사용한다. FastAPI lifespan이 종료 시 close_shared_client()를 호출해야 한다."""
     global _singleton_client
     if _singleton_client is None:
-        _singleton_client = Neo4jClient()
+        with _singleton_lock:
+            if _singleton_client is None:
+                _singleton_client = Neo4jClient()
     return _singleton_client
 
 
 def close_shared_client() -> None:
     global _singleton_client
-    if _singleton_client is not None:
-        _singleton_client.close()
-        _singleton_client = None
+    with _singleton_lock:
+        if _singleton_client is not None:
+            _singleton_client.close()
+            _singleton_client = None
 
 
 def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edges: list[Edge]) -> None:
