@@ -405,3 +405,83 @@ def test_merge_document_resync_removes_legacy_unstamped_parent_of_ghost():
     assert legacy_gone == 0
     assert legit_preserved == 1
     client.close()
+
+
+def test_explore_path_direction_and_structural_priority_over_competing_component_path():
+    """G08(2차 리뷰) — explore()가 hop1/hop2에 방향("up"/"down")과 2hop의 전체
+    경로(중간 노드 포함)를 돌려줘야 하고, 계층(PARENT_OF) 경로가 공유 Component
+    를 통한 경쟁 경로보다 "표시용" 경로로 우선돼야 한다(알파벳 순이면
+    HAS_COMPONENT가 이겨서 설명력이 떨어진다 — 2차 리뷰에서 지적)."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    suffix = uuid.uuid4().hex[:8]
+    grandparent = f"test-gp-{suffix}"
+    parent = f"test-parent-{suffix}"
+    anchor = f"test-anchor-{suffix}"
+    sibling = f"test-sibling-{suffix}"
+    child = f"test-child-{suffix}"
+    grandchild = f"test-grandchild-{suffix}"
+    shared_comp = f"SharedComp-{suffix}"
+
+    client.merge_document(_doc(grandparent), [])
+    client.merge_document(
+        _doc(parent),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=grandparent, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        _doc(anchor),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=parent, tag="EXTRACTED"),
+         Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=shared_comp, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        _doc(sibling),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=parent, tag="EXTRACTED"),
+         # 경쟁 경로: sibling도 anchor와 같은 Component를 가져 2hop
+         # Document-Component-Document 경로가 동시에 존재한다.
+         Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=shared_comp, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        _doc(child),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=anchor, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        _doc(grandchild),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=child, tag="EXTRACTED")],
+    )
+
+    result = client.explore("Document", "id", anchor, max_hops=2)
+    by_id = {d["id"]: d for d in result["documents"]}
+
+    assert by_id[parent]["hops"] == 1
+    assert by_id[parent]["relation"] == "PARENT_OF"
+    assert by_id[parent]["path"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "in"}]
+
+    assert by_id[child]["hops"] == 1
+    assert by_id[child]["path"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "out"}]
+
+    assert by_id[grandparent]["hops"] == 2
+    assert by_id[grandparent]["relation"] == "PARENT_OF"
+    assert [step["direction"] for step in by_id[grandparent]["path"]] == ["in", "in"]
+    assert by_id[grandparent]["path"][0]["via"]["id"] == parent
+
+    # 핵심 검증 — 경쟁 경로가 있어도 구조적 관계(PARENT_OF)가 표시용 경로로 이긴다.
+    assert by_id[sibling]["hops"] == 2
+    assert by_id[sibling]["relation"] == "PARENT_OF"
+    assert [step["direction"] for step in by_id[sibling]["path"]] == ["in", "out"]
+    assert by_id[sibling]["path"][0]["via"]["id"] == parent
+
+    assert by_id[grandchild]["hops"] == 2
+    assert by_id[grandchild]["relation"] == "PARENT_OF"
+    assert [step["direction"] for step in by_id[grandchild]["path"]] == ["out", "out"]
+    assert by_id[grandchild]["path"][0]["via"]["id"] == child
+
+    client.close()

@@ -17,6 +17,67 @@ except ImportError:  # pragma: no cover — requirements-ci.txt가 일부러 neo
 from app.graph.extract import Edge
 from app.settings import get_settings
 
+
+# G08(2차 리뷰): explore()의 경로 선택에서 동점 처리 — 구조적 관계(계층·명시
+# 참조·근거)가 본문 추론 컴포넌트보다 "경로 설명"으로서 우선해야 한다.
+# 알파벳 순(HAS_COMPONENT < PARENT_OF)으로 정렬하면 형제/조손 관계가 계층
+# 경로 대신 공유 컴포넌트 경로로 뒤바뀌어 설명력이 떨어진다.
+_REL_TYPE_PRIORITY = {
+    "PARENT_OF": 0,
+    "REFERENCES": 1,
+    "HAS_EVIDENCE": 2,
+    "MENTIONS_ENTITY": 3,
+    "HAS_COMPONENT": 4,
+    "SIMILAR_TO": 5,
+}
+
+
+def _node_identity(node) -> dict:
+    """노드 하나를 레이블에 맞는 최소 식별 정보로 축약한다(G08 — 중간 노드의
+    "via" 식별에 쓴다. 전체 Neo4j 노드 객체를 그대로 직렬화하지 않는다)."""
+    labels = set(node.labels)
+    if "Document" in labels:
+        return {"label": "Document", "id": node["id"], "title": node.get("title")}
+    if "Component" in labels:
+        return {"label": "Component", "canonical_name": node["canonical_name"]}
+    if "FailureBucket" in labels:
+        return {"label": "FailureBucket", "id": node["id"], "bucket_name": node.get("bucket_name")}
+    if "BusinessEntity" in labels:
+        return {"label": "BusinessEntity", "id": node.get("id")}
+    if "UnresolvedPage" in labels:
+        return {"label": "UnresolvedPage", "external_id": node.get("external_id")}
+    return {"label": next(iter(labels), None)}
+
+
+def _build_path(entry: dict) -> list[dict]:
+    """explore()의 raw neighbor entry(hop1 또는 hop2) -> G08이 요구하는
+    "전체 경로"(node/edge 순서, 방향, EXTRACTED/INFERRED 구분) 리스트.
+    hop1은 길이 1(anchor-neighbor 직접 edge), hop2는 길이 2(anchor-중간노드-
+    neighbor)다. direction은 edge 방향 자체를 뜻한다 — "out"=가까운 쪽(anchor
+    또는 중간노드)이 relationship의 source, "in"=target. "up"/"down"(계층
+    의미)은 PARENT_OF에서만 뜻이 있고 REFERENCES/HAS_COMPONENT 등에는 의미가
+    없어 API 값으로 쓰지 않는다(2차 리뷰 지적) — 렌더링(MCP)에서만 PARENT_OF를
+    ↑/↓로, 나머지를 →/←로 표시한다."""
+    if entry.get("via_node") is not None:
+        return [
+            {
+                "relation": entry["via_relation"], "tag": entry.get("via_tag"),
+                "direction": "out" if entry.get("via_down") else "in",
+                "via": _node_identity(entry["via_node"]),
+            },
+            {
+                "relation": entry["relation"], "tag": entry.get("tag"),
+                "direction": "out" if entry.get("down") else "in",
+            },
+        ]
+    return [
+        {
+            "relation": entry["relation"], "tag": entry.get("tag"),
+            "direction": "out" if entry.get("down") else "in",
+        },
+    ]
+
+
 _CONSTRAINTS = [
     ("Document", "id"),
     ("FailureBucket", "id"),
@@ -110,19 +171,51 @@ class Neo4jClient:
     def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
         """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
         f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제).
-        max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음)."""
+        max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음).
+
+        G08(2차 리뷰): 과거엔 `collect(DISTINCT {...})`가 같은 노드로 가는 서로
+        다른 경로를 전부 별도 항목으로 남겨(NetApp처럼 1hop 문서가 7천 건대면
+        2hop 컴포넌트 하나가 그만큼 중복 생성될 뻔함), 그중 어느 게 "표시"될지는
+        Neo4j 쪽 순서에 맡겨져 비결정적이었다(G09 잔여와 같은 원인). 이제
+        노드별로 Cypher 안에서 먼저 정렬한 뒤 `head(collect(...))`로 결정적으로
+        하나만 고르고, 2hop은 중간 노드(p)와 두 relation의 방향까지 함께 가져와
+        "마지막 relation 하나로 전체 경로를 설명"하던 문제(G08)도 해결한다."""
+        # 동점 처리 키는 elementId가 아니라 도메인 키(id/canonical_name/
+        # external_id)를 쓴다 — elementId는 DB 인스턴스 안에서만 안정적이라,
+        # dev/운영/매 scratch 재구축마다 동일 데이터에 다른 경로가 선택되면
+        # 증거가 환경 간 재현되지 않는다(2차 리뷰 지적).
         query = f"""
         MATCH (a:{anchor_label} {{{anchor_key}: $value}})
         OPTIONAL MATCH (a)-[r1]-(n1)
         WHERE n1 <> a
-        WITH a, collect(DISTINCT {{node: n1, relation: type(r1), hops: 1}}) AS hop1
-        OPTIONAL MATCH (a)-[]-(p)-[r2]-(n2)
-        WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
-        WITH a, hop1, collect(DISTINCT {{node: n2, relation: type(r2), hops: 2}}) AS hop2
+        WITH a, n1, r1
+        ORDER BY coalesce($rel_priority[type(r1)], 99), coalesce(n1.id, n1.canonical_name, n1.external_id)
+        WITH a, n1, head(collect(r1)) AS best_r1
+        WITH a, collect(DISTINCT {{
+            node: n1, relation: type(best_r1), tag: best_r1.tag, hops: 1,
+            down: startNode(best_r1) = a
+        }}) AS hop1
+        CALL {{
+            WITH a
+            OPTIONAL MATCH (a)-[r1b]-(p)-[r2]-(n2)
+            WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
+            WITH a, n2, p, r1b, r2
+            ORDER BY
+                coalesce($rel_priority[type(r1b)], 99) + coalesce($rel_priority[type(r2)], 99),
+                coalesce($rel_priority[type(r1b)], 99),
+                coalesce(p.id, p.canonical_name, p.external_id)
+            WITH a, n2, head(collect({{p: p, r1b: r1b, r2: r2}})) AS best
+            RETURN collect(DISTINCT {{
+                node: n2, relation: type(best.r2), tag: best.r2.tag, hops: 2,
+                down: startNode(best.r2) = best.p,
+                via_node: best.p, via_relation: type(best.r1b), via_tag: best.r1b.tag,
+                via_down: startNode(best.r1b) = a
+            }}) AS hop2
+        }}
         RETURN a AS anchor, hop1 + hop2 AS neighbors
         """
         with self._driver.session() as session:
-            record = session.run(query, value=anchor_value).single()
+            record = session.run(query, value=anchor_value, rel_priority=_REL_TYPE_PRIORITY).single()
         if record is None or record["anchor"] is None:
             return {
                 "found": False, "documents": [], "components": [], "failure_buckets": [],
@@ -137,7 +230,7 @@ class Neo4jClient:
             elem_id = node.element_id
             hops = entry["hops"]
             if elem_id not in best_by_id or hops < best_by_id[elem_id]["hops"]:
-                best_by_id[elem_id] = {"node": node, "relation": entry["relation"], "hops": hops}
+                best_by_id[elem_id] = entry
 
         documents: list[dict] = []
         components: list[dict] = []
@@ -146,11 +239,12 @@ class Neo4jClient:
         for entry in best_by_id.values():
             node = entry["node"]
             labels = set(node.labels)
+            path = _build_path(entry)
             if "Document" in labels:
                 documents.append({
                     "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
                     "external_id": node.get("external_id"),
-                    "relation": entry["relation"], "hops": entry["hops"],
+                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
                 })
             elif "Component" in labels:
                 if node.get("is_hub"):
@@ -158,12 +252,12 @@ class Neo4jClient:
                     continue
                 components.append({
                     "canonical_name": node["canonical_name"],
-                    "relation": entry["relation"], "hops": entry["hops"],
+                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
                 })
             elif "FailureBucket" in labels:
                 failure_buckets.append({
                     "id": node["id"], "bucket_name": node.get("bucket_name"),
-                    "relation": entry["relation"], "hops": entry["hops"],
+                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
                 })
 
         return {
