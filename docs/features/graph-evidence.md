@@ -24,7 +24,7 @@
 | G09 (등급·결정적 정렬) | **완료** | `app.graph.identity.GRADE_RANK`로 통합(A/A-/B/C/machine/draft) — `explore.py`/`failure_bucket.py` 둘 다 여기서 가져옴. **2차 수정**: `_sort_key`가 `(hops, grade)`뿐이라 동률이면 Neo4j `collect()`의 비결정적 순서가 그대로 샜다 — id(컴포넌트는 canonical_name)를 최종 tie-break로 추가해 같은 요청을 반복해도 순서가 같아지게 함. | `test_grade_rank_includes_a_minus`, `test_shape_explore_result_sorts_a_minus_before_b_at_same_hop`, `test_shape_explore_result_breaks_ties_deterministically_by_id` |
 | G07 (cap 뒤 접근) | **완료** | `shape_explore_result`가 카테고리별 `*_total`/`*_truncated`를 돌려주고(전역 `truncated` 하나뿐이던 것 대체), `/v1/graph/explore`에 `documents_offset`/`components_offset`/`failure_buckets_offset` 추가. `kb_graph_explore`도 동명 인자로 다음 페이지를 요청할 수 있다. **MCP 렌더링 구멍 발견 즉시 수정**: 처음엔 50개짜리 페이지를 20줄만 찍고 다음 offset을 +50으로 안내해 21~50번째가 영영 안 보였다 — 이제 페이지 전체(최대 50줄)를 그대로 찍는다. | `tests/test_graph_explore.py`의 페이지네이션 2종, `tests/test_graph_router.py::test_explore_documents_offset_pages_beyond_cap`, `mcp-server/test_graph_explore_format.py`(신규, 0/20/21/50/51건 경계 + offset을 따라가며 전부 도달하는지 end-to-end 확인 — **mcp-server/ 테스트는 CI에 안 물려 있음**, 로컬 venv로만 실행) |
 | G09 잔여 | — | `Neo4jClient.explore()`의 `best_by_id`가 같은 hop에서 동률일 때 보여줄 `relation` 라벨은 여전히 Neo4j `collect()` 순서에 의존(어떤 경로로 도달했다고 "표시"하는지만 비결정적 — 포함 여부·정렬 순서 자체는 결정적). | 미해결 — 영향 적음(같은 노드가 여러 관계로 도달 가능한 드문 경우에만) |
-| G10 (failure_bucket 명시 URL 해석) | **코드·테스트 완료, dev 그래프 반영은 아직 — partial** | 핸드오프의 "resolution" 필드는 이 스키마의 `recommended_action`(`\d failure_buckets`로 확인 — `resolution` 컬럼 자체가 없음). `app.graph.failure_bucket.decode_confluence_tiny_link()`가 Confluence tiny link(`/x/<code>`)를 로컬 디코딩(fetch 없음)하고, `extract_mentioned_references()`가 `root_cause`+`recommended_action`에서 그 URL과 `pageId=` 쿼리를 찾아 `page_identity_index`로 해석되는 것만 `REFERENCES`(HAS_EVIDENCE 아님, §2.7)로 낸다. `classify_evidence()`/`aggregate_evidence_reasons()`로 resolved/external_artifact/legacy_missing/target_not_ingested/unresolved_reference 사유별 집계를 `sync_cli` JSON 출력에 추가(§2.7 요구). | `tests/test_graph_failure_bucket.py` 13종(디코딩 검증 쌍 2개 포함, URL-safe 문자 거부가 캡처 정규식 단계에서도 실제로 작동하는지 end-to-end 3종, tiny-link/pageId 해석, 미해결 조용히 skip, 다른 호스트 거부, **실제 8건 evidence_ref/recommended_action으로 분류 분포가 핸드오프 기대와 정확히 일치**). **실제 dev 데이터로 재현 확인**(읽기 전용): `external_id=2542097469` 존재, dev의 failure_bucket 8건 id/evidence_ref가 핸드오프 표와 정확히 일치. **완료로 올리는 조건(아직 미충족)**: 전체 재백필 후 `--source-ids`로 버킷을 재동기화해 `6ea28d59-...`의 REFERENCES가 실제로 `confluence_map:2542097469`로 잡히고, 그 때 출력되는 `evidence_reasons` 집계를 EVIDENCE.md에 저장해야 한다. |
+| G10 (failure_bucket 명시 URL 해석) | **완료** | 핸드오프의 "resolution" 필드는 이 스키마의 `recommended_action`(`\d failure_buckets`로 확인 — `resolution` 컬럼 자체가 없음). `app.graph.failure_bucket.decode_confluence_tiny_link()`가 Confluence tiny link(`/x/<code>`)를 로컬 디코딩(fetch 없음)하고, `extract_mentioned_references()`가 `root_cause`+`recommended_action`에서 그 URL과 `pageId=` 쿼리를 찾아 `page_identity_index`로 해석되는 것만 `REFERENCES`(HAS_EVIDENCE 아님, §2.7)로 낸다. `classify_evidence()`/`aggregate_evidence_reasons()`로 resolved/external_artifact/legacy_missing/target_not_ingested/unresolved_reference 사유별 집계를 `sync_cli` JSON 출력에 추가(§2.7 요구). | `tests/test_graph_failure_bucket.py` 13종. **전체 재백필 완료 후 dev에 실제 적용 확인됨**: `--source-ids`로 버킷 재동기화 → `evidence_reasons={"resolved":2,"external_artifact":6,"legacy_missing":4,"target_not_ingested":0,"unresolved_reference":0}`(기대 분포와 정확히 일치), Pacemaker 버킷(`6ea28d59-...`) REFERENCES → `confluence_map:2542097469` 직접 조회로 확인(`artifacts/citec-kb-graph-correctness-20261012/EVIDENCE.md`). |
 | G08/G11 잔여 | **미시작** | — | 전체 경로/provenance(2hop 전체 node/edge 순서, EXTRACTED/INFERRED 구분 노출), 기존 테스트의 실제 계약 반영은 G01/G02/G06 fixture 교체분(G11 일부)만 끝남 |
 
 ## 부수적으로 발견/수정
@@ -124,14 +124,52 @@ skills/packet-capture-rca/references/citec-kb-integration.md`. 이 문서는
 넣을지는 그 플러그인의 소스(이 저장소 밖, `packet-capture-rca` 저장소)를
 고치는 별도 작업 — 캐시 사본은 손대지 않는다(이 세션에서 변경 안 함).
 
-## 최종 전체 재백필 결과
+## 최종 전체 재백필 결과 — 완료
 
-실행 중 — `docker compose exec -T api python -m app.graph.sync_cli`(`--generation`
-미지정, dev Neo4j 마커 자동 발급/사용). 완료 후 아래를 채운다: `graph_runs` 최종
-상태/실패 수, `source_type IS NULL`인 연결된 Document 수(≈실패 수와 비교),
-고립된 유령 노드 수(백업 후 삭제 승인 대기 목록), PG에서 사라진 문서의 Neo4j
-잔존 여부, Network/SCP의 `is_hub` 재확인, 실제 kb_search→kb_graph_explore→
-kb_get_document 체인(TGW/NetApp) trace.
+`sync_cli`(`--generation` 미지정, dev Neo4j 마커 자동 발급 `2026-10-12.3.d2f3f9ca`)
+2026-10-12 05:00:52~07:02:01 UTC(~2h1m). `{"documents": {"synced": 114925,
+"skipped": 5, "failed": 0}, "failure_buckets": {"synced": 8, "failed": 0},
+"hub_recompute_ok": true}`. `graph_runs.status = completed`. 원시 로그/상세
+수치는 `artifacts/citec-kb-graph-correctness-20261012/EVIDENCE.md` "전체
+재백필 완료 결과" 섹션.
+
+- **Stamp check**: `extractor_version` 불일치/누락 edge **0건** — 전체 코퍼스가
+  한 번 완전히 새 코드로 교체됨.
+- **고립 유령**: `source_type IS NULL` Document **827개**, 전부 완전히 고립
+  (edge 0개) — 수정 전 raw-id 유령의 잔존. 백업 후 삭제는 별도 승인 대상,
+  이번엔 삭제하지 않음.
+- **UnresolvedPage**: 50개(새 설계대로 정상 생성).
+- **PG-Neo4j 일치**: Neo4j `Document`(source_type NOT NULL) 114930건 ==
+  PG `documents` 114930건, 불일치 0건.
+- **Hub 재확인**: `Network`/`SCP`/`Storage`/`Linux` 등 13개 실측 hub(Ceph,
+  Cluster, Firewall, Kubernetes, Linux, Network, OpenStack, Oracle, SCP,
+  Storage, VMware, Windows, timeout) — Phase 1의 하드코딩 13종 목록이
+  SCP/Kubernetes를 놓쳤던 문제가 실측으로 해결됨을 전체 코퍼스 기준 재확인.
+- **G10 적용**: api/mcp 재시작 후 `--source-ids`로 버킷 재동기화,
+  `evidence_reasons={"resolved":2,"external_artifact":6,"legacy_missing":4,
+  "target_not_ingested":0,"unresolved_reference":0}`(기대 분포와 정확히 일치),
+  Pacemaker 버킷(`6ea28d59-...`) REFERENCES → `confluence_map:2542097469`
+  확인됨 — **G10 완료로 전환**.
+- **실제 Claude Code MCP 체인(이 세션의 실제 `mcp__wiki-mcp__*` 호출, 스크립트
+  아님)**:
+  - `kb_search("상암 수원 TGW Transit Gateway RTT 이전 개선")` — 측정표 원문은
+    top-10에 안 나옴(핸드오프가 지적한 원래 실패와 일치).
+  - `kb_graph_explore(document, confluence_map:595824602)` — 루트에서
+    `confluence_map:604365046`("1. Network")이 **offset 없이 첫 페이지에서
+    바로 보임**(2hop/PARENT_OF) — G07/G01/G02가 실제로 이 케이스를 고쳤음을
+    확인. `confluence_map:604365026`도 1hop에서 보임.
+  - `kb_get_document(confluence_map/604365046.md)` — 본문에서 Multi-AZ
+    Transit Gateway Ping 1분 측정값 **Server 1→1 2.1ms, 1→2 1.1ms, 2→1
+    1.2ms, 2→2 2.0ms**를 그대로 확인(핸드오프 표와 정확히 일치). 이동 전후
+    개선량 데이터는 본문에 없음(= 미확인으로 두는 것이 맞음, 핸드오프 경고와
+    일치).
+  - `kb_graph_explore(symptom_text, "넷앱 스토리지 지연 장애")` — `매칭된
+    컴포넌트: NetApp, Storage` 정상 매칭. 전체 코퍼스 기준 연관 문서
+    7,745건(샘플 500건 규모였던 이전 테스트보다 훨씬 큼 — 실제 운영 규모를
+    반영, G07 페이지네이션이 바로 이런 경우를 위한 것임을 재확인).
+- **타이밍**: `/v1/graph/explore` component 앵커(NetApp) 3회 호출 평균
+  ~1.3초, document 앵커(TGW 루트) 1회 ~0.08초 — MCP 30초 타임아웃에 전혀
+  근접하지 않음.
 
 ## 정리(approved)
 
@@ -139,5 +177,4 @@ kb_get_document 체인(TGW/NetApp) trace.
   — 태그가 있던 이미지 중 `xfetch-backend`/`xfetch-frontend`도 함께 제거됨(이
   리포지토리와 무관한 다른 프로젝트 이미지로 보이며, 미사용으로 판단되어 제거됨).
 - 세션에서 만든 scratch Neo4j 컨테이너(`citec-graph-test-neo4j`)와 Postgres
-  scratch DB(`citec_graph_test`)는 이번 라운드가 끝나는 시점에 정리한다(아직
-  유지 — 재검증에 계속 씀).
+  scratch DB(`citec_graph_test`) 모두 전체 재백필·검증 완료 후 제거함.
