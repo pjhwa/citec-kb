@@ -30,7 +30,12 @@ def resolve_component_anchor(anchor_value: str, lexicon_map: dict[str, list[str]
 
 def _sort_key(item: dict) -> tuple:
     grade = _GRADE_ORDER.get(item.get("evidence_grade") or "", 3)
-    return (item.get("hops", 99), grade)
+    # G09(2차 리뷰): hops/grade만으로는 동률일 때 Neo4j collect()의 비결정적
+    # 순서가 그대로 샌다("결정적 정렬" 요구 §3.2 위반) — id를 최종 tie-break로
+    # 추가한다. 카테고리별 고유 키 필드가 다르므로(documents/failure_buckets는
+    # "id", components는 "canonical_name") 둘 다 본다.
+    tie_break = item.get("id") or item.get("canonical_name") or ""
+    return (item.get("hops", 99), grade, tie_break)
 
 
 def _cap(items: list[dict]) -> tuple[list[dict], bool]:

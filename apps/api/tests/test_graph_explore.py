@@ -33,6 +33,24 @@ def test_shape_explore_result_sorts_by_hops_then_evidence_grade():
     assert shaped["as_of"] == "2026-10-09"
 
 
+def test_shape_explore_result_breaks_ties_deterministically_by_id():
+    # G09(2차 리뷰): hops/grade 동률일 때 입력 순서(Neo4j collect()의 비결정적
+    # 순서)가 아니라 id로 결정적으로 정렬돼야 한다. 입력을 반대 순서로 둬도
+    # 결과가 같아야 한다.
+    raw = {
+        "found": True,
+        "documents": [
+            {"id": "z1", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES",
+             "hops": 1, "evidence_grade": "A"},
+            {"id": "a1", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES",
+             "hops": 1, "evidence_grade": "A"},
+        ],
+        "components": [], "failure_buckets": [], "excluded_hub_components": [],
+    }
+    shaped = shape_explore_result(raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert [d["id"] for d in shaped["documents"]] == ["a1", "z1"]
+
+
 def test_shape_explore_result_sorts_a_minus_before_b_at_same_hop():
     # G09: 과거 로컬 _GRADE_ORDER가 "A-"를 몰라 C와 동일(순서 없음) 취급했다.
     raw = {
