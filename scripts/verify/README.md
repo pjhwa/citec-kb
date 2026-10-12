@@ -8,10 +8,10 @@ dev/운영 공유 인스턴스에는 절대 쓰지 않는다. 실행 전 아래 
 가리키는 대상이 scratch인지 사람이 직접 확인한다:
 
 ```bash
-export GRAPH_TEST_DATABASE_URL="postgresql+psycopg://citec:citec@localhost:8574/citec_graph_test"
+export GRAPH_TEST_DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:8574/citec_graph_test"
 export GRAPH_NEO4J_TEST_URI="bolt://localhost:17687"
 export GRAPH_NEO4J_TEST_USER="neo4j"
-export GRAPH_NEO4J_TEST_PASSWORD="testpassword123"
+export GRAPH_NEO4J_TEST_PASSWORD="<SCRATCH_NEO4J_PASSWORD>"
 ```
 
 | 스크립트 | 확인 항목 | 출력 |

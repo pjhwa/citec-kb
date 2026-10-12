@@ -6,7 +6,7 @@ set -euo pipefail
 : "${GRAPH_TEST_DATABASE_URL:?set to a scratch Postgres DSN}"
 : "${GRAPH_NEO4J_TEST_URI:?set to a scratch Neo4j bolt URI}"
 NEO4J_USER="${GRAPH_NEO4J_TEST_USER:-neo4j}"
-NEO4J_PASS="${GRAPH_NEO4J_TEST_PASSWORD:-testpassword123}"
+NEO4J_PASS="${GRAPH_NEO4J_TEST_PASSWORD:?set to the scratch Neo4j password}"
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../../apps/api"
 LOG=/tmp/graph-verify-generation.log

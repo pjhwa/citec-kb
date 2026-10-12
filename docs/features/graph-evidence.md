@@ -45,18 +45,18 @@
 
 ```bash
 # 격리 Neo4j(절대 dev/운영 공유 인스턴스 아님)
-docker run -d --name citec-graph-test-neo4j -e NEO4J_AUTH=neo4j/testpassword123 \
+docker run -d --name citec-graph-test-neo4j -e NEO4J_AUTH=neo4j/<SCRATCH_NEO4J_PASSWORD> \
   -p 17687:7687 -p 17474:7474 neo4j:5.26-community
 
 # 격리 Postgres(기존 postgres 컨테이너 안에 scratch DB)
 docker compose exec -T postgres psql -U citec -d postgres -c "CREATE DATABASE citec_graph_test;"
-docker compose exec -T -e DATABASE_URL="postgresql+psycopg://citec:citec@postgres:5432/citec_graph_test" \
+docker compose exec -T -e DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/citec_graph_test" \
   api alembic upgrade head
 
 cd apps/api
-GRAPH_TEST_DATABASE_URL="postgresql+psycopg://citec:citec@localhost:8574/citec_graph_test" \
+GRAPH_TEST_DATABASE_URL="postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:8574/citec_graph_test" \
 GRAPH_NEO4J_TEST_URI="bolt://localhost:17687" GRAPH_NEO4J_TEST_USER=neo4j \
-GRAPH_NEO4J_TEST_PASSWORD=testpassword123 NEO4J_USERNAME=neo4j NEO4J_PASSWORD=testpassword123 \
+GRAPH_NEO4J_TEST_PASSWORD=<SCRATCH_NEO4J_PASSWORD> NEO4J_USERNAME=neo4j NEO4J_PASSWORD=<SCRATCH_NEO4J_PASSWORD> \
 /tmp/graph-ci-venv/bin/python -m pytest tests/ -q -k "not mock_idp_e2e and not ops_dashboard_auth"
 ```
 
