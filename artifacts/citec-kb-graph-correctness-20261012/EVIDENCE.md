@@ -186,3 +186,34 @@ HAVING count(DISTINCT source_type) > 1
    AND NOT (array_agg(DISTINCT source_type)::text[] <@ ARRAY['confluence_map','confluence_docs','tech_repo']);
 ```
 결과: **0 rows**.
+
+## Pre-run 실제 kb_graph_explore MCP 호출 (코드 배포 후, 전체 재백필 전 — stale "hang" 확인)
+
+`mcp__wiki-mcp__kb_graph_explore(anchor_type="document", anchor_value="confluence_map:604365046")`
+(이 세션의 실제 MCP 호출, python 스크립트 아님):
+
+```
+as_of: 2026-10-12
+해석된 앵커: confluence_map:604365046
+
+연관 문서 (50건+):
+  - [1hop/PARENT_OF] 20. 성능(상품별) 산출물 (confluence_map, evidence_grade=C) id=confluence_map:604365026
+  (... 중략 ...)
+
+연관 컴포넌트 (4건):
+  - [1hop/HAS_COMPONENT] Network
+  - [1hop/HAS_COMPONENT] SCP
+  - [1hop/HAS_COMPONENT] Firewall
+  - [1hop/HAS_COMPONENT] hang
+
+연관 과거 장애 (0건):
+```
+
+`hang`은 오탐(이 문서 본문에 "hang"/"hung"/"행"/"시스템 멈춤" 전부 없음) — 이 시점
+dev Neo4j는 여전히 수정 전 코드(한 글자 한글 변형어 "행"이 "진행"/"수행" 등에서
+오탐)로 동기화된 과거 데이터였기 때문. 코드는 이미 수정·배포됐지만, 그 문서가
+새 generation으로 재동기화되기 전까지는 그래프에 과거 결과가 남아있다 — G03의
+"재동기화해야만 교체된다" 설계와 일치하는 정상 동작. 전체 재백필 완료 후
+동일 호출을 재실행해 `hang`이 사라지는지 확인한다(아래 "포커스 체크" 섹션에서
+`tech_repo:1153334044` 등 5개 문서만 재동기화한 결과로는 이미 사라짐을 확인했고,
+전체 재백필 완료 후 전체 코퍼스 기준으로 다시 확인한다).
