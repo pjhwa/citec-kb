@@ -926,7 +926,11 @@ async def kb_graph_explore(
     자식 쪽)/↓(anchor가 부모 쪽), 그 외 관계는 →/←. document 앵커는 같은
     Confluence 페이지의 여러 수집본(confluence_map/tech_repo/confluence_docs)
     중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다(대표 1건이 anchor.resolved_id
-    로 표시됨).
+    로 표시됨). "연관 문서" 결과도 같은 페이지의 다른 수집본이 있으면
+    copies=N으로 묶여 나온다(_EN 접미사 체크항목 등은 안 묶임).
+    archived는 비활성화된 원문이라는 뜻 — 결론에 그대로 쓰지 말 것.
+    각 줄의 "원문: kb_get_document(path=...)"가 실제 호출 경로다 —
+    confluence_map 소스는 본문이 발췌(snapshot)뿐이니 참고.
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -1213,7 +1217,10 @@ async def kb_tools_help() -> str:
                   PARENT_OF는 ↑(anchor가 자식 쪽)/↓(anchor가 부모 쪽), 나머지
                   관계는 →/←로 방향 표시. document 앵커는 같은 페이지의 여러
                   수집본(confluence_map/tech_repo/confluence_docs) 중 어느 쪽으로
-                  걸어도 같은 계층을 찾는다.
+                  걸어도 같은 계층을 찾는다. 결과의 같은 페이지 수집본도 하나로
+                  묶여 copies=N으로 표시(_EN 체크항목 등은 안 묶임). archived는
+                  비활성 원문 — 결론에 그대로 쓰지 말 것. "원문: kb_get_document
+                  (path=...)"가 실제 호출 경로, confluence_map은 발췌(snapshot)뿐.
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록

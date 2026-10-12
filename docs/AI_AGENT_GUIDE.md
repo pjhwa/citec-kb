@@ -360,6 +360,15 @@ See §6.3 for the full taxonomy and when to use each:
   tech_repo)가 각각 수집한 "사본" 중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다 — 내부적으로
   모든 사본에 대해 탐색해 병합하며, `anchor.resolved_id`는 그중 결정적으로 고른 대표
   문서를 보여준다.
+- "연관 문서" 결과도 같은 이유로 같은 페이지의 여러 수집본이 하나로 묶여 나온다 —
+  그 문서의 `copies`에 나머지 수집본 id가 담기고, 결과 줄에는 `copies=N`으로 표시된다
+  (`documents_total`도 묶인 뒤의 수). `_EN` 접미사(한영 체크항목) 등 다른 source_type은
+  절대 묶지 않는다.
+- `archived`가 true면 비활성화된(삭제/이동 등으로 더 이상 유효하지 않은) 원문이다 —
+  결론에 그대로 쓰지 말고 `kb_search`로 현재 유효한 문서인지 다시 확인한다.
+- 결과 줄의 "원문: kb_get_document(path='…')"가 실제 호출할 경로다. `confluence_map`
+  소스는 본문이 발췌(snapshot)뿐이라 결과에 `snapshot`이 표시되며, 이 경우 Confluence
+  현재 버전 확인은 `confluence-mcp`(있으면)로 따로 해야 한다.
 
 **API:** `POST /v1/graph/explore`
 
