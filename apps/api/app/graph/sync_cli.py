@@ -84,49 +84,62 @@ def main(argv: list[str] | None = None) -> int:
 
     run_id = _start_run(generation=args.generation)
     client = build_neo4j_client()
-    external_id_index = build_external_id_index()
-    page_identity_index = build_page_identity_index()
     stats = {"synced": 0, "skipped": 0, "failed": 0}
+    fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None
     try:
-        for doc_id in doc_ids:
-            result = sync_document(
-                doc_id, client=client, external_id_index=external_id_index,
-                page_identity_index=page_identity_index, generation=args.generation,
-            )
-            stats[result] += 1
-
-        all_buckets: list[dict] = []
-        with session_scope() as session:
-            for b in session.scalars(select(FailureBucket)).all():
-                all_buckets.append(
-                    {
-                        "id": b.id,
-                        "bucket_name": b.bucket_name,
-                        "confidence": b.confidence,
-                        "discriminating_signals": list(b.discriminating_signals or []),
-                        "counter_signals": list(b.counter_signals or []),
-                    }
+        try:
+            external_id_index = build_external_id_index()
+            page_identity_index = build_page_identity_index()
+            for doc_id in doc_ids:
+                result = sync_document(
+                    doc_id, client=client, external_id_index=external_id_index,
+                    page_identity_index=page_identity_index, generation=args.generation,
                 )
-        fb_stats = {"synced": 0, "failed": 0}
-        for bucket_id in bucket_ids:
-            result = sync_failure_bucket(
-                bucket_id, client=client, all_buckets=all_buckets, external_id_index=external_id_index
-            )
-            fb_stats[result] += 1
+                stats[result] += 1
 
-        if not args.skip_hub_recompute:
-            try:
-                recompute_hub_flags(client)
-                hub_recompute_ok = True
-            except Exception:  # noqa: BLE001 — §4.4와 같은 이유: 허브 재집계 실패가
-                # 이미 끝낸 문서/버킷 동기화 결과 출력을 막으면 안 된다
-                logger.exception("recompute_hub_flags failed")
-                hub_recompute_ok = False
-    finally:
-        client.close()
+            all_buckets: list[dict] = []
+            with session_scope() as session:
+                for b in session.scalars(select(FailureBucket)).all():
+                    all_buckets.append(
+                        {
+                            "id": b.id,
+                            "bucket_name": b.bucket_name,
+                            "confidence": b.confidence,
+                            "discriminating_signals": list(b.discriminating_signals or []),
+                            "counter_signals": list(b.counter_signals or []),
+                        }
+                    )
+            for bucket_id in bucket_ids:
+                result = sync_failure_bucket(
+                    bucket_id, client=client, all_buckets=all_buckets, external_id_index=external_id_index,
+                    generation=args.generation,
+                )
+                fb_stats[result] += 1
 
-    status = "completed" if stats["failed"] == 0 and fb_stats["failed"] == 0 else "failed"
+            if not args.skip_hub_recompute:
+                try:
+                    recompute_hub_flags(client)
+                    hub_recompute_ok = True
+                except Exception:  # noqa: BLE001 — §4.4와 같은 이유: 허브 재집계 실패가
+                    # 이미 끝낸 문서/버킷 동기화 결과 출력을 막으면 안 된다
+                    logger.exception("recompute_hub_flags failed")
+                    hub_recompute_ok = False
+        finally:
+            client.close()
+    except Exception:  # noqa: BLE001 — G05: 여기서 못 잡으면 graph_runs가 영원히
+        # "running"으로 남아 다음 배치 모니터링이 "진행 중"과 "죽음"을 구분 못 한다.
+        logger.exception("sync_cli run failed unexpectedly")
+        _finish_run(
+            run_id, status="failed",
+            documents_synced=stats["synced"], documents_skipped=stats["skipped"],
+            documents_failed=stats["failed"], buckets_synced=fb_stats["synced"],
+            buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
+        )
+        raise
+
+    ok = stats["failed"] == 0 and fb_stats["failed"] == 0 and hub_recompute_ok is not False
+    status = "completed" if ok else "completed_warn"  # status 컬럼 String(16) 한도
     _finish_run(
         run_id, status=status,
         documents_synced=stats["synced"], documents_skipped=stats["skipped"],
@@ -134,10 +147,11 @@ def main(argv: list[str] | None = None) -> int:
         buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
     )
     print(json.dumps(
-        {"run_id": run_id, "generation": args.generation, "documents": stats, "failure_buckets": fb_stats},
+        {"run_id": run_id, "generation": args.generation, "documents": stats, "failure_buckets": fb_stats,
+         "hub_recompute_ok": hub_recompute_ok},
         ensure_ascii=False,
     ))
-    return 0 if status == "completed" else 1
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

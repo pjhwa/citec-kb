@@ -179,13 +179,19 @@ class Neo4jClient:
             ).single()
         return record["name"] if record else None
 
-    def merge_document(self, doc: dict, edges: Iterable[Edge]) -> None:
+    def merge_document(
+        self, doc: dict, edges: Iterable[Edge], *,
+        extractor_version: str = "unstamped", generation: str = "unstamped",
+    ) -> None:
         with self._driver.session() as session:
-            session.execute_write(_merge_document_tx, doc, list(edges))
+            session.execute_write(_merge_document_tx, doc, list(edges), extractor_version, generation)
 
-    def merge_failure_bucket(self, bucket: dict, edges: Iterable[Edge]) -> None:
+    def merge_failure_bucket(
+        self, bucket: dict, edges: Iterable[Edge], *,
+        extractor_version: str = "unstamped", generation: str = "unstamped",
+    ) -> None:
         with self._driver.session() as session:
-            session.execute_write(_merge_failure_bucket_tx, bucket, list(edges))
+            session.execute_write(_merge_failure_bucket_tx, bucket, list(edges), extractor_version, generation)
 
 
 _singleton_client: Optional["Neo4jClient"] = None
@@ -246,7 +252,27 @@ def _replace_owned_edges_tx(
         )
 
 
-def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edges: list[Edge]) -> None:
+def _delete_legacy_unstamped_parent_of_tx(tx, value: str) -> None:
+    """G02 방향 수정 전 코드는 PARENT_OF를 (child)-[:PARENT_OF]->(ancestor)로
+    썼다(자신 기준 outgoing) — 지금은 parent가 소스이므로 "자신이 parent인
+    다른 문서로의 outgoing PARENT_OF"가 정상적으로 존재할 수 있어, 자신의
+    outgoing PARENT_OF를 통째로 지울 수 없다. extractor_version이 찍힌 edge는
+    새 코드가 쓴 "내가 부모인" 정상 edge이므로 보존하고, 찍히지 않은(이번
+    수정 전에 쓰인) outgoing PARENT_OF만 유령으로 간주해 지운다."""
+    tx.run(
+        """
+        MATCH (s:Document {id: $value})-[r:PARENT_OF]->()
+        WHERE r.extractor_version IS NULL
+        DELETE r
+        """,
+        value=value,
+    )
+
+
+def _merge_edges(
+    tx, source_label: str, source_key: str, source_value: str, edges: list[Edge],
+    extractor_version: str, generation: str,
+) -> None:
     for e in edges:
         # target_label/rel_type은 이 저장소의 고정 enum("PARENT_OF" 등)뿐이라
         # f-string 삽입이 안전하다 — 외부 입력이 이 값으로 들어오는 경로는 없다.
@@ -256,28 +282,34 @@ def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edge
                 MATCH (s:{source_label} {{{source_key}: $source_value}})
                 MATCH (t:{e.target_label} {{{e.target_key}: $target_value}})
                 MERGE (t)-[r:{e.rel_type}]->(s)
-                SET r.tag = $tag
+                SET r.tag = $tag, r.extractor_version = $extractor_version, r.generation = $generation
             """
         else:
             query = f"""
                 MATCH (s:{source_label} {{{source_key}: $source_value}})
                 MATCH (t:{e.target_label} {{{e.target_key}: $target_value}})
                 MERGE (s)-[r:{e.rel_type}]->(t)
-                SET r.tag = $tag
+                SET r.tag = $tag, r.extractor_version = $extractor_version, r.generation = $generation
             """
-        tx.run(query, source_value=source_value, target_value=e.target_value, tag=e.tag)
+        tx.run(
+            query, source_value=source_value, target_value=e.target_value, tag=e.tag,
+            extractor_version=extractor_version, generation=generation,
+        )
 
 
-def _merge_document_tx(tx, doc: dict, edges: list[Edge]) -> None:
+def _merge_document_tx(tx, doc: dict, edges: list[Edge], extractor_version: str, generation: str) -> None:
     tx.run(f"MERGE (d:Document {{id: $id}}){_DOCUMENT_SET_CLAUSE}", **doc)
     _replace_owned_edges_tx(
         tx, "Document", "id", doc["id"],
         outgoing=_DOCUMENT_OWNED_OUTGOING, incoming=_DOCUMENT_OWNED_INCOMING,
     )
-    _merge_edges(tx, "Document", "id", doc["id"], edges)
+    _delete_legacy_unstamped_parent_of_tx(tx, doc["id"])
+    _merge_edges(tx, "Document", "id", doc["id"], edges, extractor_version, generation)
 
 
-def _merge_failure_bucket_tx(tx, bucket: dict, edges: list[Edge]) -> None:
+def _merge_failure_bucket_tx(
+    tx, bucket: dict, edges: list[Edge], extractor_version: str, generation: str,
+) -> None:
     tx.run(
         """
         MERGE (b:FailureBucket {id: $id})
@@ -293,4 +325,4 @@ def _merge_failure_bucket_tx(tx, bucket: dict, edges: list[Edge]) -> None:
         tx, "FailureBucket", "id", bucket["id"],
         outgoing=_BUCKET_OWNED_OUTGOING, incoming=[],
     )
-    _merge_edges(tx, "FailureBucket", "id", bucket["id"], edges)
+    _merge_edges(tx, "FailureBucket", "id", bucket["id"], edges, extractor_version, generation)

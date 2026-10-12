@@ -151,7 +151,10 @@ def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) 
     )
     for variant, canonical in variants_sorted:
         if _HANGUL_RE.search(variant):
-            if variant in body_lower:
+            # 왼쪽 경계만 강제: 바로 앞 글자가 한글이면 안 됨(예: "행"이 "진행"/
+            # "수행" 안에서 매칭되는 것을 막음) — 오른쪽은 열어 둬서 조사가 붙은
+            # 꼴("넷앱에서")은 그대로 매칭되게 한다.
+            if re.search(r"(?<![가-힣])" + re.escape(variant), body_lower):
                 canonicals.add(canonical)
         else:
             if re.search(r"\b" + re.escape(variant) + r"\b", body_lower):

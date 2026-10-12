@@ -232,7 +232,7 @@ def sync_document(
         # Neo4jClient._merge_document_tx가 머지 전에 이 문서가 소유하는 managed
         # edge를 전부 지우고 새로 쓰므로(G03), 본문에서 사라진 멘션도 여기서
         # 자동 제거된다 — 더 이상 "그래프가 단조증가만 하는" 문제가 아니다.
-        client.merge_document(doc_dict, edges)
+        client.merge_document(doc_dict, edges, extractor_version=EXTRACTOR_VERSION, generation=generation)
         try:
             sync_state.mark_synced(
                 document_id, input_hash=input_hash, extractor_version=EXTRACTOR_VERSION,
@@ -259,6 +259,7 @@ def sync_failure_bucket(
     client: Neo4jClient,
     all_buckets: list[dict],
     external_id_index: dict[str, list[dict]] | None = None,
+    generation: str = DEFAULT_GENERATION,
 ) -> Literal["synced", "failed"]:
     try:
         with session_scope() as session:
@@ -278,7 +279,7 @@ def sync_failure_bucket(
         edges = extract_evidence(
             bucket_dict, external_id_index=external_id_index or {}
         ) + extract_similar_to(bucket_dict, other_buckets=all_buckets)
-        client.merge_failure_bucket(bucket_dict, edges)
+        client.merge_failure_bucket(bucket_dict, edges, extractor_version=EXTRACTOR_VERSION, generation=generation)
         return "synced"
     except Exception:  # noqa: BLE001
         logger.exception("graph sync failed for failure_bucket_id=%s", bucket_id)

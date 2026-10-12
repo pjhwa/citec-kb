@@ -147,6 +147,21 @@ def test_extract_lexicon_components_matches_korean_variant_with_josa_suffix():
     assert [e.target_value for e in edges] == ["NetApp"]
 
 
+def test_extract_lexicon_components_korean_single_char_variant_avoids_false_positive():
+    # "행"(hang)이 "진행"/"수행" 같은 흔한 단어 안에서 오탐되면 안 된다 —
+    # 왼쪽 경계(바로 앞 글자가 한글이면 매칭 안 함)로 막는다.
+    doc = {"id": "d1", "body_md": "작업을 정상적으로 진행 및 수행했습니다"}
+    lexicon_map = {"행": ["hang", "hung", "soft lockup", "행"]}
+    assert extract_lexicon_components(doc, lexicon_map=lexicon_map) == []
+
+
+def test_extract_lexicon_components_korean_variant_still_matches_at_word_start():
+    doc = {"id": "d1", "body_md": "서버가 행 상태에 빠졌다"}
+    lexicon_map = {"행": ["hang", "hung", "soft lockup", "행"]}
+    edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
+    assert [e.target_value for e in edges] == ["hang"]
+
+
 def test_extract_lexicon_components_ascii_boundary_avoids_partial_match():
     # "SQL"이 "MySQLX" 같은 더 긴 식별자 내부의 부분 문자열로 오탐되면 안 된다.
     doc = {"id": "d1", "body_md": "MySQLX 드라이버 업데이트"}

@@ -358,3 +358,50 @@ def test_merge_document_parent_of_to_unresolved_page_does_not_create_document():
     assert as_document == 0
     assert as_unresolved == 1
     client.close()
+
+
+def test_merge_document_resync_removes_legacy_unstamped_parent_of_ghost():
+    """회귀 테스트 — G02 방향 수정 전 코드가 쓴 (child)-[:PARENT_OF]->(raw-id ghost)
+    유령 edge는 extractor_version이 없다. 자식을 새 코드로 재동기화하면 그
+    유령은 지워져야 하고, 자식이 다른 문서의 "정상 부모"로서 갖는 outgoing
+    PARENT_OF(= 그 문서가 재동기화될 때 새로 찍힌 edge)는 보존돼야 한다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    child_id = f"test-child-{uuid.uuid4()}"
+    grandchild_id = f"test-grandchild-{uuid.uuid4()}"
+    legacy_ghost_raw_id = f"legacy-raw-{uuid.uuid4()}"
+
+    client.merge_document(_doc(child_id), [])
+    # 이번 자식이 "정상 부모"로서 갖는 outgoing PARENT_OF — grandchild 재동기화가
+    # 새 코드로 찍은 edge, 지워지면 안 된다.
+    client.merge_document(
+        _doc(grandchild_id),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=child_id, tag="EXTRACTED")],
+        extractor_version="2026-10-12.1", generation="gen-X",
+    )
+    # 과거(수정 전) 코드가 직접 심은 유령 edge — extractor_version 없음.
+    with client._driver.session() as session:
+        session.run(
+            "MATCH (c:Document {id: $child}) MERGE (g:Document {id: $ghost}) "
+            "MERGE (c)-[r:PARENT_OF]->(g)",
+            child=child_id, ghost=legacy_ghost_raw_id,
+        )
+
+    # child를 새 코드로 재동기화(부모 없음 — 최상위라고 가정)
+    client.merge_document(_doc(child_id), [], extractor_version="2026-10-12.1", generation="gen-X")
+
+    with client._driver.session() as session:
+        legacy_gone = session.run(
+            "MATCH (:Document {id: $child})-[r:PARENT_OF]->(:Document {id: $ghost}) RETURN count(r) AS n",
+            child=child_id, ghost=legacy_ghost_raw_id,
+        ).single()["n"]
+        legit_preserved = session.run(
+            "MATCH (:Document {id: $child})-[r:PARENT_OF]->(:Document {id: $grandchild}) RETURN count(r) AS n",
+            grandchild=grandchild_id, child=child_id,
+        ).single()["n"]
+    assert legacy_gone == 0
+    assert legit_preserved == 1
+    client.close()
