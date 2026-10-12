@@ -970,23 +970,25 @@ async def kb_graph_explore(
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
 
     def _render_category(label: str, items: list, offset: int, total_key: str, trunc_key: str,
-                          line_fn) -> None:
+                          offset_param: str, line_fn) -> None:
+        # 표시 줄 수 == 페이지 크기여야 한다 — 과거엔 페이지(최대 50)를 20줄만
+        # 찍고 "offset+len(items)"를 다음 offset으로 안내해 21~50번째 항목이
+        # 영원히 안 보이는 구멍이 있었다(2차 리뷰에서 지적). 전부 찍는다.
         total = data.get(total_key, len(items))
         truncated = data.get(trunc_key, False)
         shown_from = offset + 1 if items else offset
         shown_to = offset + len(items)
         lines.append(f"\n{label} ({total}건 중 {shown_from}-{shown_to}건 표시):")
-        for item in items[:20]:
+        for item in items:
             lines.append(line_fn(item))
-        if len(items) > 20:
-            lines.append(f"  … 이 페이지 안에서 {len(items) - 20}건 더(위 offset 그대로, MCP 표시만 20줄 제한)")
         if truncated:
             next_offset = offset + len(items)
-            lines.append(f"  … 다음 페이지: 같은 조건으로 offset={next_offset} 재호출")
+            lines.append(f"  … 다음 페이지: {offset_param}={next_offset}로 재호출")
 
     docs = data.get("documents") or []
     _render_category(
         "연관 문서", docs, documents_offset, "documents_total", "documents_truncated",
+        "documents_offset",
         lambda d: (
             f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
             f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
@@ -996,12 +998,14 @@ async def kb_graph_explore(
     comps = data.get("components") or []
     _render_category(
         "연관 컴포넌트", comps, components_offset, "components_total", "components_truncated",
+        "components_offset",
         lambda c: f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}",
     )
 
     fbs = data.get("failure_buckets") or []
     _render_category(
         "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
+        "failure_buckets_offset",
         lambda b: f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}",
     )
 
