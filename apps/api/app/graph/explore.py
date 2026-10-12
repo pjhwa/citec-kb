@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from app.graph.identity import GRADE_RANK
+from app.graph.identity import GRADE_RANK, resolve_representative
 
 MAX_RESULTS_PER_CATEGORY = 50
 
@@ -164,3 +164,56 @@ def enrich_with_evidence_grade(documents: list[dict], grade_by_id: dict[str, str
     1단계 설계 §0 원칙) — 그래서 호출자가 Neo4j 결과의 document id들로 Postgres를
     배치 조회한 뒤 이 함수로 병합한다. 못 찾으면 None(삭제된 문서 등 엣지 케이스)."""
     return [{**doc, "evidence_grade": grade_by_id.get(doc["id"])} for doc in documents]
+
+
+def enrich_with_document_metadata(documents: list[dict], enrichment_by_id: dict[str, dict]) -> list[dict]:
+    """evidence_grade뿐 아니라 archived 여부까지 한 번에 병합한다(G08 2차 리뷰
+    — "비활성 문서가 표시돼야 한다"). 문서별 필드 이름을 "status"로 하면
+    응답 최상위의 "status"(found/not_found/...)와 이름이 겹쳐 혼동을 주므로
+    "archived" bool로 명확히 분리한다. 호출자는 PG를 한 번만 조회해 이 dict와
+    collapse_duplicate_copies에 같이 넘긴다."""
+    out = []
+    for doc in documents:
+        meta = enrichment_by_id.get(doc["id"]) or {}
+        out.append({
+            **doc, "evidence_grade": meta.get("evidence_grade"),
+            "archived": meta.get("status") == "archived",
+        })
+    return out
+
+
+_COLLAPSIBLE_SOURCE_TYPES = {"confluence_map", "confluence_docs", "tech_repo"}
+
+
+def collapse_duplicate_copies(documents: list[dict], *, enrichment_by_id: dict[str, dict]) -> list[dict]:
+    """같은 Confluence 페이지를 confluence_map/confluence_docs/tech_repo가 각각
+    따로 수집한 "사본"을 하나의 논리 후보로 묶는다(G08 §2.6 "같은 Confluence
+    page의 수집본은 하나의 논리 후보로 묶고 실제 수집본 목록을 보존"). 이 세
+    source_type 밖으로는 교차 소스 external_id 충돌이 실제 코퍼스에 없음을
+    확인했으므로(docs/features/graph-evidence.md) 이 세 소스로만 묶는다 —
+    "_EN" 접미사(한영 체크항목) 등 다른 source_type은 절대 묶지 않는다(§2.6
+    금지사항: "_EN 접미사만으로 일반 문서를 합치지 않는다")."""
+    groups: dict[str, list[dict]] = {}
+    passthrough: list[dict] = []
+    for doc in documents:
+        meta = enrichment_by_id.get(doc["id"]) or {}
+        source_type = meta.get("source_type")
+        external_id = meta.get("external_id")
+        if source_type in _COLLAPSIBLE_SOURCE_TYPES and external_id:
+            groups.setdefault(external_id, []).append(doc)
+        else:
+            passthrough.append(doc)
+
+    collapsed: list[dict] = []
+    for external_id in sorted(groups):
+        group = groups[external_id]
+        if len(group) == 1:
+            collapsed.append(group[0])
+            continue
+        candidates = [{**(enrichment_by_id.get(d["id"]) or {}), "document_id": d["id"]} for d in group]
+        best = resolve_representative(candidates)
+        rep_id = best["document_id"] if best else group[0]["id"]
+        rep_doc = dict(next(d for d in group if d["id"] == rep_id))
+        rep_doc["copies"] = sorted(d["id"] for d in group if d["id"] != rep_id)
+        collapsed.append(rep_doc)
+    return collapsed + passthrough

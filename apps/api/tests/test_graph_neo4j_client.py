@@ -463,25 +463,25 @@ def test_explore_path_direction_and_structural_priority_over_competing_component
 
     assert by_id[parent]["hops"] == 1
     assert by_id[parent]["relation"] == "PARENT_OF"
-    assert by_id[parent]["path"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "in"}]
+    assert by_id[parent]["route"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "in"}]
 
     assert by_id[child]["hops"] == 1
-    assert by_id[child]["path"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "out"}]
+    assert by_id[child]["route"] == [{"relation": "PARENT_OF", "tag": "EXTRACTED", "direction": "out"}]
 
     assert by_id[grandparent]["hops"] == 2
     assert by_id[grandparent]["relation"] == "PARENT_OF"
-    assert [step["direction"] for step in by_id[grandparent]["path"]] == ["in", "in"]
-    assert by_id[grandparent]["path"][0]["via"]["id"] == parent
+    assert [step["direction"] for step in by_id[grandparent]["route"]] == ["in", "in"]
+    assert by_id[grandparent]["route"][0]["via"]["id"] == parent
 
     # 핵심 검증 — 경쟁 경로가 있어도 구조적 관계(PARENT_OF)가 표시용 경로로 이긴다.
     assert by_id[sibling]["hops"] == 2
     assert by_id[sibling]["relation"] == "PARENT_OF"
-    assert [step["direction"] for step in by_id[sibling]["path"]] == ["in", "out"]
-    assert by_id[sibling]["path"][0]["via"]["id"] == parent
+    assert [step["direction"] for step in by_id[sibling]["route"]] == ["in", "out"]
+    assert by_id[sibling]["route"][0]["via"]["id"] == parent
 
     assert by_id[grandchild]["hops"] == 2
     assert by_id[grandchild]["relation"] == "PARENT_OF"
-    assert [step["direction"] for step in by_id[grandchild]["path"]] == ["out", "out"]
-    assert by_id[grandchild]["path"][0]["via"]["id"] == child
+    assert [step["direction"] for step in by_id[grandchild]["route"]] == ["out", "out"]
+    assert by_id[grandchild]["route"][0]["via"]["id"] == child
 
     client.close()

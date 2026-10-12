@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from app.graph.explore import (
     MAX_RESULTS_PER_CATEGORY,
+    collapse_duplicate_copies,
     dedup_by_key,
+    enrich_with_document_metadata,
     enrich_with_evidence_grade,
     resolve_component_anchor,
     shape_explore_result,
@@ -231,3 +233,58 @@ def test_dedup_by_key_tie_break_is_deterministic_regardless_of_input_order():
     # a가 더 작은 키라 항상 a가 이긴다. 중요한 건 "어느 쪽이든" 입력 순서와
     # 무관하게 같은 결과가 나온다는 것.
     assert winner_forward == winner_backward == a
+
+
+def test_enrich_with_document_metadata_adds_grade_and_archived_flag():
+    docs = [{"id": "d1", "title": "t"}, {"id": "d2", "title": "t2"}]
+    enrichment = {"d1": {"evidence_grade": "A", "status": "archived"},
+                  "d2": {"evidence_grade": "C", "status": "active"}}
+    enriched = enrich_with_document_metadata(docs, enrichment)
+    assert enriched[0]["evidence_grade"] == "A"
+    assert enriched[0]["archived"] is True
+    assert enriched[1]["archived"] is False
+
+
+def test_enrich_with_document_metadata_missing_doc_defaults():
+    docs = [{"id": "d1", "title": "t"}]
+    enriched = enrich_with_document_metadata(docs, {})
+    assert enriched[0]["evidence_grade"] is None
+    assert enriched[0]["archived"] is False
+
+
+def test_collapse_duplicate_copies_picks_representative_and_lists_others():
+    docs = [
+        {"id": "confluence_map:X", "title": "사본"},
+        {"id": "tech_repo:X", "title": "원본"},
+    ]
+    enrichment = {
+        "confluence_map:X": {"source_type": "confluence_map", "external_id": "123",
+                              "evidence_grade": "C", "status": "active"},
+        "tech_repo:X": {"source_type": "tech_repo", "external_id": "123",
+                         "evidence_grade": "A", "status": "active"},
+    }
+    collapsed = collapse_duplicate_copies(docs, enrichment_by_id=enrichment)
+    assert len(collapsed) == 1
+    assert collapsed[0]["id"] == "tech_repo:X"  # tier 1 소스가 대표
+    assert collapsed[0]["copies"] == ["confluence_map:X"]
+
+
+def test_collapse_duplicate_copies_never_merges_checkitem_en_suffix():
+    docs = [
+        {"id": "checkitem:FOO", "title": "원본"},
+        {"id": "checkitem:FOO_EN", "title": "번역본"},
+    ]
+    enrichment = {
+        "checkitem:FOO": {"source_type": "checkitem", "external_id": "FOO"},
+        "checkitem:FOO_EN": {"source_type": "checkitem", "external_id": "FOO_EN"},
+    }
+    collapsed = collapse_duplicate_copies(docs, enrichment_by_id=enrichment)
+    assert len(collapsed) == 2  # checkitem은 collapsible 소스가 아니므로 둘 다 유지
+
+
+def test_collapse_duplicate_copies_single_copy_passes_through_unchanged():
+    docs = [{"id": "tech_repo:X", "title": "원본"}]
+    enrichment = {"tech_repo:X": {"source_type": "tech_repo", "external_id": "123"}}
+    collapsed = collapse_duplicate_copies(docs, enrichment_by_id=enrichment)
+    assert collapsed == docs
+    assert "copies" not in collapsed[0]

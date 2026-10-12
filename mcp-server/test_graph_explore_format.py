@@ -92,3 +92,44 @@ def test_zero_documents_renders_without_error(monkeypatch):
     payload = _page_payload(total=0, offset=0)
     out = _run(monkeypatch, payload)
     assert "연관 문서 (0건" in out
+
+
+def test_renders_copies_archived_and_snapshot_tags(monkeypatch):
+    payload = {
+        "as_of": "2026-10-12", "anchor": {"type": "component", "resolved_id": "NetApp"},
+        "found": True,
+        "documents": [{
+            "id": "tech_repo:1", "title": "같은 페이지", "source_type": "tech_repo",
+            "evidence_grade": "A", "hops": 1, "route": [{"relation": "HAS_COMPONENT", "direction": "in"}],
+            "copies": ["confluence_map:1"], "archived": True,
+            "access": {"mcp_args": {"path": "tech_repo/1.md"}, "body_kind": "fulltext"},
+        }],
+        "components": [], "failure_buckets": [], "excluded_hub_components": [],
+        "documents_total": 1, "documents_truncated": False,
+        "components_total": 0, "components_truncated": False,
+        "failure_buckets_total": 0, "failure_buckets_truncated": False,
+    }
+    out = _run(monkeypatch, payload)
+    assert "copies=1" in out
+    assert "archived" in out
+    assert "원문: kb_get_document(path='tech_repo/1.md')" in out
+
+
+def test_renders_snapshot_tag_for_confluence_map_body_kind(monkeypatch):
+    payload = {
+        "as_of": "2026-10-12", "anchor": {"type": "component", "resolved_id": "NetApp"},
+        "found": True,
+        "documents": [{
+            "id": "confluence_map:1", "title": "요약본", "source_type": "confluence_map",
+            "evidence_grade": "C", "hops": 1, "route": [{"relation": "HAS_COMPONENT", "direction": "in"}],
+            "access": {"mcp_args": {"path": "confluence_map/1.md"}, "body_kind": "snapshot"},
+        }],
+        "components": [], "failure_buckets": [], "excluded_hub_components": [],
+        "documents_total": 1, "documents_truncated": False,
+        "components_total": 0, "components_truncated": False,
+        "failure_buckets_total": 0, "failure_buckets_truncated": False,
+    }
+    out = _run(monkeypatch, payload)
+    assert "snapshot" in out
+    assert "copies=" not in out
+    assert "archived" not in out.split("snapshot")[0].split("]")[0]

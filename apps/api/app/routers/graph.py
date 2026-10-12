@@ -11,9 +11,11 @@ from sqlalchemy import select
 
 from app.db.models import Document
 from app.db.session import session_scope
+from app.doc_access import attach_document_access
 from app.graph.explore import (
+    collapse_duplicate_copies,
     dedup_by_key,
-    enrich_with_evidence_grade,
+    enrich_with_document_metadata,
     filter_excluded_documents,
     resolve_component_anchor,
     shape_explore_result,
@@ -97,24 +99,37 @@ def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
     return representative_id, all_ids
 
 
-def _fetch_evidence_grades(document_ids: list[str]) -> dict[str, str]:
-    if not document_ids:
-        return {}
-    with session_scope() as session:
-        rows = session.execute(
-            select(Document.id, Document.evidence_grade).where(Document.id.in_(document_ids))
-        ).all()
-    return {row[0]: row[1] for row in rows}
+_ENRICHMENT_COLUMNS = (
+    Document.id, Document.evidence_grade, Document.status, Document.source_type,
+    Document.external_id,
+    Document.metadata_["ancestor_ids"],
+    Document.metadata_["space_key"].astext,
+)
 
 
-def _fetch_ancestor_ids(document_ids: list[str]) -> dict[str, list[str]]:
+def _fetch_document_enrichment(document_ids: list[str]) -> dict[str, dict]:
+    """G08 2차 리뷰 — grade/상태(archived 포함)/계층(ancestor_ids)/동일 페이지
+    판별에 필요한 source_type·external_id·space_key를 PG 왕복 한 번으로 전부
+    가져온다(과거엔 _fetch_evidence_grades와 _fetch_ancestor_ids 두 번 왕복).
+    space_key가 없으면 resolve_representative의 source tier 계산이 confluence_map
+    LOOKIN/TechRepo를 tier 3로 잘못 떨어뜨려, G01 resolver와 다른 대표를 고를
+    수 있다 — 반드시 같이 가져온다. metadata_ 전체(JSONB)가 아니라 필요한 두
+    키만 서버 쪽에서 뽑아 전송량을 줄인다(NetApp류 수천 건 후보에서 중요)."""
     if not document_ids:
         return {}
+    unique_ids = sorted(set(document_ids))
     with session_scope() as session:
         rows = session.execute(
-            select(Document.id, Document.metadata_).where(Document.id.in_(document_ids))
+            select(*_ENRICHMENT_COLUMNS).where(Document.id.in_(unique_ids))
         ).all()
-    return {row[0]: list((row[1] or {}).get("ancestor_ids") or []) for row in rows}
+    out: dict[str, dict] = {}
+    for doc_id, grade, status, source_type, external_id, ancestor_ids, space_key in rows:
+        out[doc_id] = {
+            "evidence_grade": grade, "status": status, "source_type": source_type,
+            "external_id": external_id, "space_key": space_key,
+            "ancestor_ids": list(ancestor_ids or []),
+        }
+    return out
 
 
 @router.post("/graph/explore")
@@ -211,9 +226,14 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         fan_out_ids = {a[2] for a in anchors}
         merged["documents"] = [d for d in merged["documents"] if d["id"] not in fan_out_ids]
 
+    # PG 왕복 1회로 통합 — grade/상태/계층(ancestor_ids)/동일 페이지 판별에
+    # 쓰는 source_type·external_id를 전부 가져온다(G08). G04 필터와 collapse가
+    # 둘 다 이 하나의 결과를 쓴다.
+    enrichment = _fetch_document_enrichment([d["id"] for d in merged["documents"]])
+
     # G04 — 제외 필터를 dedup/정렬/cap 이전에 적용
     if body.exclude_page_ids or body.exclude_subtree_ids or body.exclude_source_types:
-        ancestor_ids_by_doc_id = _fetch_ancestor_ids([d["id"] for d in merged["documents"]])
+        ancestor_ids_by_doc_id = {doc_id: e["ancestor_ids"] for doc_id, e in enrichment.items()}
         merged["documents"] = filter_excluded_documents(
             merged["documents"],
             exclude_page_ids=set(body.exclude_page_ids),
@@ -228,8 +248,10 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     merged["failure_buckets"] = dedup_by_key(merged["failure_buckets"], "id")
     merged["excluded_hub_components"] = sorted(set(merged["excluded_hub_components"]))
 
-    doc_ids = [d["id"] for d in merged["documents"]]
-    merged["documents"] = enrich_with_evidence_grade(merged["documents"], _fetch_evidence_grades(doc_ids))
+    # 동일 Confluence 페이지의 다른 소스 수집본을 하나의 논리 후보로 묶는다
+    # (G08) — dedup 이후, 정렬/cap 이전. *_total은 이 묶인 뒤의 수를 센다.
+    merged["documents"] = collapse_duplicate_copies(merged["documents"], enrichment_by_id=enrichment)
+    merged["documents"] = enrich_with_document_metadata(merged["documents"], enrichment)
 
     if body.anchor_type == "symptom_text":
         anchor_info: dict[str, Any] = {
@@ -245,7 +267,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             "type": body.anchor_type, "resolved_id": anchors[0][2], "resolved_name": resolved_name,
         }
 
-    return shape_explore_result(
+    shaped = shape_explore_result(
         merged, as_of=as_of_str, anchor=anchor_info,
         offsets={
             "documents": body.documents_offset,
@@ -253,3 +275,9 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             "failure_buckets": body.failure_buckets_offset,
         },
     )
+    # attach_document_access(원문 접근 경로 — kb_search/kb_get_document와 같은
+    # 빌더 재사용, §2.6 "존재하지 않는 path를 합성하지 않는다")는 실제로 보여줄
+    # 페이지(최대 50건)에만 적용한다 — NetApp처럼 전체 후보가 수천 건이면 그
+    # 전부에 대해 만들 필요가 없다.
+    shaped["documents"] = [attach_document_access(dict(d)) for d in shaped["documents"]]
+    return shaped

@@ -243,7 +243,7 @@ class Neo4jClient:
                 documents.append({
                     "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
                     "external_id": node.get("external_id"),
-                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
+                    "relation": entry["relation"], "hops": entry["hops"], "route": path,
                 })
             elif "Component" in labels:
                 if node.get("is_hub"):
@@ -251,12 +251,12 @@ class Neo4jClient:
                     continue
                 components.append({
                     "canonical_name": node["canonical_name"],
-                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
+                    "relation": entry["relation"], "hops": entry["hops"], "route": path,
                 })
             elif "FailureBucket" in labels:
                 failure_buckets.append({
                     "id": node["id"], "bucket_name": node.get("bucket_name"),
-                    "relation": entry["relation"], "hops": entry["hops"], "path": path,
+                    "relation": entry["relation"], "hops": entry["hops"], "route": path,
                 })
 
         return {

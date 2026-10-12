@@ -977,13 +977,13 @@ async def kb_graph_explore(
     if data.get("excluded_hub_components"):
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
 
-    def _render_path(path: list) -> str:
+    def _render_route(route: list) -> str:
         # G08(2차 리뷰) — "마지막 relation 하나"가 아니라 anchor부터 이
         # 노드까지의 전체 경로를 보여준다. PARENT_OF는 계층 의미가 있어 ↑/↓,
         # 나머지(REFERENCES/HAS_COMPONENT 등)는 방향만 있는 →/←로 표시해
         # "down=자식"이라는 계층 어휘를 다른 관계 타입에 잘못 끌어오지 않는다.
         parts = []
-        for step in path or []:
+        for step in route or []:
             relation = step.get("relation")
             is_out = step.get("direction") == "out"
             marker = ("↓" if is_out else "↑") if relation == "PARENT_OF" else ("→" if is_out else "←")
@@ -1010,28 +1010,43 @@ async def kb_graph_explore(
             next_offset = offset + len(items)
             lines.append(f"  … 다음 페이지: {offset_param}={next_offset}로 재호출")
 
+    def _render_document_line(d: dict) -> str:
+        # G08(2차 리뷰) — copies/archived/원문 접근 경로를 한 줄에 더한다.
+        access = d.get("access") or {}
+        mcp_args = access.get("mcp_args") or {}
+        tags = []
+        copies = d.get("copies") or []
+        if copies:
+            tags.append(f"copies={len(copies)}")
+        if d.get("archived"):
+            tags.append("archived")
+        if access.get("body_kind") == "snapshot":
+            tags.append("snapshot")
+        tag_str = f" [{', '.join(tags)}]" if tags else ""
+        access_str = f" 원문: kb_get_document(path='{mcp_args['path']}')" if mcp_args.get("path") else ""
+        return (
+            f"  - [{d.get('hops')}hop {_render_route(d.get('route'))}] {d.get('title')}{tag_str} "
+            f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}{access_str}"
+        )
+
     docs = data.get("documents") or []
     _render_category(
         "연관 문서", docs, documents_offset, "documents_total", "documents_truncated",
-        "documents_offset",
-        lambda d: (
-            f"  - [{d.get('hops')}hop {_render_path(d.get('path'))}] {d.get('title')} "
-            f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
-        ),
+        "documents_offset", _render_document_line,
     )
 
     comps = data.get("components") or []
     _render_category(
         "연관 컴포넌트", comps, components_offset, "components_total", "components_truncated",
         "components_offset",
-        lambda c: f"  - [{c.get('hops')}hop {_render_path(c.get('path'))}] {c.get('canonical_name')}",
+        lambda c: f"  - [{c.get('hops')}hop {_render_route(c.get('route'))}] {c.get('canonical_name')}",
     )
 
     fbs = data.get("failure_buckets") or []
     _render_category(
         "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
         "failure_buckets_offset",
-        lambda b: f"  - [{b.get('hops')}hop {_render_path(b.get('path'))}] {b.get('bucket_name')} id={b.get('id')}",
+        lambda b: f"  - [{b.get('hops')}hop {_render_route(b.get('route'))}] {b.get('bucket_name')} id={b.get('id')}",
     )
 
     return "\n".join(lines)

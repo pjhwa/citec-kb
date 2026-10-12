@@ -468,3 +468,58 @@ def test_explore_documents_offset_pages_beyond_cap():
     assert body2["documents_truncated"] is False
     seen_ids = {d["id"] for d in body1["documents"]} | {d["id"] for d in body2["documents"]}
     assert seen_ids == set(doc_ids)
+
+
+def test_explore_collapses_duplicate_page_copies_in_results():
+    """G08 2차 리뷰 — 같은 Confluence 페이지를 confluence_map/tech_repo가 각각
+    수집한 두 문서가 "연관 문서" 결과에 둘 다 나오면, 하나로 묶이고 나머지는
+    copies에 담겨야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    comp_name = f"CollapseComp-{uuid_mod.uuid4()}"
+    shared_external_id = str(uuid_mod.uuid4())
+    copy_a = f"tech_repo:{shared_external_id}"
+    copy_b = f"confluence_map:{shared_external_id}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(copy_a, "tech_repo"), (copy_b, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=copy_a, source_type="tech_repo", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=copy_b, source_type="confluence_map", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp.status_code == 200
+    docs = resp.json()["documents"]
+    matching = [d for d in docs if d["id"] in (copy_a, copy_b)]
+    assert len(matching) == 1  # 둘이 하나로 묶임
+    assert matching[0]["id"] == copy_a  # tech_repo가 tier 1이라 대표
+    assert matching[0]["copies"] == [copy_b]
+    # attach_document_access가 실제 문서 경로(route — 그래프 2hop 경로와는
+    # 다른 필드)로 올바르게 채워졌는지 확인(2차 리뷰에서 지적된 path 키
+    # 충돌 회귀 테스트 — route와 "원문 접근 path"가 같은 이름을 쓰면 후자가
+    # 전자로 덮어써진다).
+    assert matching[0]["access"]["mcp_args"]["path"] == f"tech_repo/{shared_external_id}.md"
+    assert f"path=tech_repo%2F{shared_external_id}" in matching[0]["web_url"]
+    assert matching[0]["route"] == [{"relation": "HAS_COMPONENT", "tag": "EXTRACTED", "direction": "in"}]
