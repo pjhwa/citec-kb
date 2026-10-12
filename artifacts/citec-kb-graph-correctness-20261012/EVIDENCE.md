@@ -276,3 +276,18 @@ RETURN d.id, d.title
 
 `status: found`가 첫 줄에 기계가 읽을 수 있는 형태로 출력됨. 컴포넌트 결과도
 방향 표시(`→HAS_COMPONENT`) 포함.
+
+## G08 collapse — 실측 (component anchor "NetApp", 2026-10-12, api/mcp 재시작 후)
+
+- `documents_total`: collapse 전 7,745 -> collapse 후 **7,058** (687건 접힘).
+- 실제 NetApp 2hop 결과 안에서 `documents_offset=100`부터 수십 건의
+  confluence_docs/confluence_map 쌍이 즉시 발견됨(예:
+  `confluence_docs:1008130713` -> `copies: ["confluence_map:1008130713"]`).
+  `_EN` 접미사(checkitem) 문서는 전혀 섞이지 않음(collapsible 소스가 아님).
+- `document` 앵커 재현: `confluence_map:970662798`로 걸면
+  `anchor.resolved_id == "tech_repo:970662798"`(tier 1 대표) — G01 resolver와
+  G08 collapse가 같은 대표를 고름(일치 확인).
+- 타이밍(재측정, api/mcp 재시작 후): NetApp component 1.9~2.26초(이전
+  1.8~2.0초와 동급 — enrichment 쿼리를 JSONB 두 키만 선택하도록 줄인 효과로
+  collapse 로직이 추가됐음에도 유의한 회귀 없음), symptom_text 1.8~2.13초,
+  document(595824602) 0.09~0.12초. 전부 MCP 30초 타임아웃에 전혀 근접하지 않음.
