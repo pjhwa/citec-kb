@@ -217,3 +217,48 @@ dev Neo4j는 여전히 수정 전 코드(한 글자 한글 변형어 "행"이 "�
 동일 호출을 재실행해 `hang`이 사라지는지 확인한다(아래 "포커스 체크" 섹션에서
 `tech_repo:1153334044` 등 5개 문서만 재동기화한 결과로는 이미 사라짐을 확인했고,
 전체 재백필 완료 후 전체 코퍼스 기준으로 다시 확인한다).
+
+## 전체 재백필 완료 결과 (2026-10-12 05:00:52 ~ 07:02:01 UTC, ~2h1m)
+
+```
+{"run_id": "074c710a-4f59-4528-a5ff-af14d0f3702a", "generation": "2026-10-12.3.d2f3f9ca",
+ "documents": {"synced": 114925, "skipped": 5, "failed": 0},
+ "failure_buckets": {"synced": 8, "failed": 0}, "hub_recompute_ok": true}
+```
+`graph_runs.status = completed`.
+
+### Stamp check (레거시 unstamped edge 잔존 여부)
+```
+MATCH ()-[r]->() WHERE r.extractor_version IS NULL OR r.extractor_version <> '2026-10-12.3'
+RETURN type(r), count(*)
+```
+결과: **빈 리스트** — 전체 코퍼스에 구 버전/unstamped edge가 하나도 남지 않음.
+
+### 고립/잔존 노드
+- `source_type IS NULL`인 Document(= 수정 전 raw-id 유령): **827개**, 전부
+  완전히 고립(어떤 edge도 없음) — 참조하는 쪽이 전부 재동기화되며 자연히
+  끊어졌다. 백업 후 삭제는 별도 승인 대상(삭제하지 않음).
+- `UnresolvedPage`(새 설계의 정상 미해결 참조 표현): **50개**.
+- Neo4j `Document`(source_type NOT NULL) 수 == PG `documents` 전체 행 수:
+  **114930 == 114930**, PG에서 사라진 문서가 Neo4j에 "정상 Document"로
+  남아있는 경우: **0건**.
+
+### Hub 재확인
+`Network`/`SCP`/`Storage`/`Linux` 모두 `is_hub=true`. 전체 hub 목록(13개):
+Ceph, Cluster, Firewall, Kubernetes, Linux, Network, OpenStack, Oracle, SCP,
+Storage, VMware, Windows, timeout — 실측 degree 기준(Phase 1의 하드코딩
+13종 목록이 SCP/Kubernetes를 놓쳤던 문제가 근본적으로 해결됨을 재확인).
+
+### G10 적용 (api/mcp 재시작 후, `--source-ids`로 버킷 재동기화)
+```
+{"documents": {"synced": 0, "skipped": 1, "failed": 0}, "failure_buckets": {"synced": 8, "failed": 0},
+ "evidence_reasons": {"resolved": 2, "external_artifact": 6, "legacy_missing": 4,
+                       "target_not_ingested": 0, "unresolved_reference": 0}}
+```
+Pacemaker 버킷(`6ea28d59-...`) REFERENCES 확인:
+```
+MATCH (b:FailureBucket {id:"6ea28d59-e09b-4eb2-a42e-cef46d0a9d3f"})-[:REFERENCES]->(d:Document)
+RETURN d.id, d.title
+-> confluence_map:2542097469, "2026-09-16 SCP v2 수원 DBaaS 장애 분석: 원인·영향·복구 및 재발 방지"
+```
+핸드오프가 명시한 "분석 원문"과 정확히 일치.
