@@ -3,6 +3,8 @@ app.graph.extract의 Document 추출기와 입력 타입이 다르다(스펙 §3
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 
 from app.failure_buckets.match import rank_buckets
@@ -12,6 +14,72 @@ from app.graph.identity import best_candidate_id as best_candidate
 _CONFLUENCE_RE = re.compile(r"confluence:(?:[A-Za-z0-9_]+/)?(\d+)", re.IGNORECASE)
 _CITECTS_RE = re.compile(r"citects-\d+", re.IGNORECASE)
 _SIMILAR_TO_THRESHOLD = 0.75  # apps/api/app/failure_buckets/service.py:99 와 동일하게 유지
+
+# G10 — evidence_ref 밖, root_cause/recommended_action 본문에 명시된 Confluence
+# URL(예: "분석 원문: https://devops.sdsdev.co.kr/confluence/x/PVSFlw")을 찾는다.
+# 정해진 호스트만 — 임의 외부 URL은 절대 fetch하지 않는다(§2.7 금지사항).
+_CONFLUENCE_HOST = "devops.sdsdev.co.kr/confluence"
+_TINY_LINK_RE = re.compile(
+    rf"https?://{re.escape(_CONFLUENCE_HOST)}/x/([A-Za-z0-9]+)"
+)
+_PAGE_ID_PARAM_RE = re.compile(
+    rf"https?://{re.escape(_CONFLUENCE_HOST)}/[^\s)]*pageId=(\d+)"
+)
+
+
+def decode_confluence_tiny_link(code: str) -> int | None:
+    """Confluence "tiny link"(/x/<code>)는 page id(4바이트 little-endian)를
+    base64로 인코딩한 뒤 끝의 'A'(값 0인 6비트 묶음) 런을 잘라낸 것이다 —
+    디코딩은 그 반대로 'A'를 다시 채워 넣는다. 알려진 두 쌍으로 검증됨:
+    "9uAFJ" -> 604365046, "PVSFlw" -> 2542097469. code에 -/_/+//=가 있으면
+    (URL-safe 변형 매핑이 검증되지 않았으므로) None — 추정으로 채우지 않는다."""
+    if not code or any(c in code for c in "-_+/="):
+        return None
+    try:
+        raw = base64.b64decode(code + "A" * (-len(code) % 4))
+    except (binascii.Error, ValueError):
+        return None
+    # 'A' 패딩은 추가 base64 문자를 1개 더 요구할 수 있어(예: 길이 5 -> 3개 추가 ->
+    # 8문자 -> 6바이트) 4바이트보다 길게 디코딩될 수 있다 — 하지만 패딩이 만드는
+    # 초과 바이트는 little-endian에서 최상위(=끝)에 오는 0이라 값에 영향이 없다
+    # (검증: "9uAFJ"(5자)도 6바이트로 디코딩되지만 604365046과 정확히 일치).
+    return int.from_bytes(raw, "little")
+
+
+def extract_mentioned_references(
+    bucket: dict, *, page_identity_index: dict[str, list[dict]] | None = None,
+) -> list[Edge]:
+    """evidence_ref가 아니라 root_cause/recommended_action 본문에 명시적으로
+    언급된 Confluence 원문 URL을 REFERENCES로 낸다(HAS_EVIDENCE가 아님 — 단순
+    언급과 명시적 근거 연결은 구분해야 한다, §2.7). URL을 fetch하지 않고 로컬
+    디코딩만 한다. page_identity_index로 해석 안 되면(코퍼스에 없음) 조용히
+    건너뛴다 — 없는 페이지를 가리키는 edge를 만들지 않는다."""
+    text = f"{bucket.get('root_cause') or ''} {bucket.get('recommended_action') or ''}"
+    if not text.strip():
+        return []
+    index = page_identity_index or {}
+
+    raw_ids: set[str] = set()
+    for m in _TINY_LINK_RE.finditer(text):
+        page_id = decode_confluence_tiny_link(m.group(1))
+        if page_id is not None:
+            raw_ids.add(str(page_id))
+    for m in _PAGE_ID_PARAM_RE.finditer(text):
+        raw_ids.add(m.group(1))
+
+    targets: list[str] = []
+    seen: set[str] = set()
+    for raw_id in sorted(raw_ids):
+        resolved = best_candidate(index.get(raw_id.lower(), []))
+        if resolved and resolved not in seen:
+            seen.add(resolved)
+            targets.append(resolved)
+
+    return [
+        Edge(rel_type="REFERENCES", target_label="Document", target_key="id",
+             target_value=t, tag="EXTRACTED")
+        for t in targets
+    ]
 
 
 def extract_evidence(bucket: dict, *, external_id_index: dict[str, list[dict]]) -> list[Edge]:

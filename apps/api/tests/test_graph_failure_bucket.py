@@ -96,3 +96,72 @@ def test_extract_similar_to_below_threshold_returns_empty():
          "discriminating_signals": ["완전히 무관"], "counter_signals": []},
     ]
     assert extract_similar_to(bucket, other_buckets=others) == []
+
+
+def test_decode_confluence_tiny_link_known_pairs():
+    from app.graph.failure_bucket import decode_confluence_tiny_link
+
+    assert decode_confluence_tiny_link("9uAFJ") == 604365046
+    assert decode_confluence_tiny_link("PVSFlw") == 2542097469
+
+
+def test_decode_confluence_tiny_link_rejects_url_safe_chars():
+    from app.graph.failure_bucket import decode_confluence_tiny_link
+
+    assert decode_confluence_tiny_link("abc-def") is None
+    assert decode_confluence_tiny_link("abc_def") is None
+    assert decode_confluence_tiny_link("") is None
+
+
+def test_extract_mentioned_references_resolves_tiny_link_in_recommended_action():
+    from app.graph.failure_bucket import extract_mentioned_references
+
+    bucket = {
+        "id": "fb1", "root_cause": "...",
+        "recommended_action": (
+            "정본 선택과 트랜잭션 정합성을 확인해야 한다. "
+            "분석 원문: https://devops.sdsdev.co.kr/confluence/x/PVSFlw"
+        ),
+    }
+    index = _candidates(("2542097469", "confluence_map:2542097469", "C"))
+    edges = extract_mentioned_references(bucket, page_identity_index=index)
+    assert edges == [
+        Edge(rel_type="REFERENCES", target_label="Document", target_key="id",
+             target_value="confluence_map:2542097469", tag="EXTRACTED")
+    ]
+
+
+def test_extract_mentioned_references_target_not_ingested_is_silently_skipped():
+    from app.graph.failure_bucket import extract_mentioned_references
+
+    bucket = {
+        "id": "fb1", "root_cause": "",
+        "recommended_action": "분석 원문: https://devops.sdsdev.co.kr/confluence/x/PVSFlw",
+    }
+    assert extract_mentioned_references(bucket, page_identity_index={}) == []
+
+
+def test_extract_mentioned_references_ignores_non_confluence_host():
+    from app.graph.failure_bucket import extract_mentioned_references
+
+    bucket = {"id": "fb1", "root_cause": "see https://example.com/x/PVSFlw", "recommended_action": ""}
+    index = _candidates(("2542097469", "doc-a", "A"))
+    assert extract_mentioned_references(bucket, page_identity_index=index) == []
+
+
+def test_extract_mentioned_references_resolves_pageid_query_param():
+    from app.graph.failure_bucket import extract_mentioned_references
+
+    bucket = {
+        "id": "fb1", "root_cause": "",
+        "recommended_action": "https://devops.sdsdev.co.kr/confluence/pages/viewpage.action?pageId=2542097469",
+    }
+    index = _candidates(("2542097469", "confluence_map:2542097469", "C"))
+    edges = extract_mentioned_references(bucket, page_identity_index=index)
+    assert [e.target_value for e in edges] == ["confluence_map:2542097469"]
+
+
+def test_extract_mentioned_references_empty_text_returns_empty():
+    from app.graph.failure_bucket import extract_mentioned_references
+
+    assert extract_mentioned_references({"id": "fb1"}, page_identity_index={}) == []

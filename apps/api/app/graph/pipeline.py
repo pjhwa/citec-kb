@@ -26,7 +26,7 @@ from app.graph.extract import (
     extract_references,
     extract_structured_components,
 )
-from app.graph.failure_bucket import extract_evidence, extract_similar_to
+from app.graph.failure_bucket import extract_evidence, extract_mentioned_references, extract_similar_to
 from app.graph.hashing import compute_graph_hash
 from app.graph.neo4j_client import Neo4jClient
 from app.lexicon.seed import load_lexicon_map
@@ -259,6 +259,7 @@ def sync_failure_bucket(
     client: Neo4jClient,
     all_buckets: list[dict],
     external_id_index: dict[str, list[dict]] | None = None,
+    page_identity_index: dict[str, list[dict]] | None = None,
     generation: str = DEFAULT_GENERATION,
 ) -> Literal["synced", "failed"]:
     try:
@@ -275,10 +276,14 @@ def sync_failure_bucket(
                 "evidence_ref": bucket.evidence_ref,
                 "symptom": bucket.symptom,
                 "discriminating_signals": list(bucket.discriminating_signals or []),
+                "root_cause": bucket.root_cause,
+                "recommended_action": bucket.recommended_action,
             }
-        edges = extract_evidence(
-            bucket_dict, external_id_index=external_id_index or {}
-        ) + extract_similar_to(bucket_dict, other_buckets=all_buckets)
+        edges = (
+            extract_evidence(bucket_dict, external_id_index=external_id_index or {})
+            + extract_similar_to(bucket_dict, other_buckets=all_buckets)
+            + extract_mentioned_references(bucket_dict, page_identity_index=page_identity_index)
+        )
         client.merge_failure_bucket(bucket_dict, edges, extractor_version=EXTRACTOR_VERSION, generation=generation)
         return "synced"
     except Exception:  # noqa: BLE001

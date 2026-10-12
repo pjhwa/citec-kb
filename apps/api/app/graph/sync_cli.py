@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
             for bucket_id in bucket_ids:
                 result = sync_failure_bucket(
                     bucket_id, client=client, all_buckets=all_buckets, external_id_index=external_id_index,
-                    generation=args.generation,
+                    page_identity_index=page_identity_index, generation=args.generation,
                 )
                 fb_stats[result] += 1
 
