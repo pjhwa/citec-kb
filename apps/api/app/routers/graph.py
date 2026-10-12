@@ -89,7 +89,11 @@ def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
         return anchor_value, [anchor_value]
     best = resolve_representative(candidates)
     representative_id = best["document_id"] if best else anchor_value
-    all_ids = [c["document_id"] for c in candidates]
+    # 정렬 — SQL 쪽에 ORDER BY가 없어 fan-out 앵커 순서가 요청마다 달라질 수
+    # 있었다(2차 리뷰 지적). explore() 호출 순서가 바뀌어도 merged 결과 자체는
+    # dedup_by_key의 결정적 tie-break로 같아지지만, 중간 과정(어떤 anchor가
+    # 먼저 hub-check에 걸리는지 등)까지 재현 가능하게 정렬해 둔다.
+    all_ids = sorted(c["document_id"] for c in candidates)
     return representative_id, all_ids
 
 
@@ -141,6 +145,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     "type": "symptom_text", "resolved_id": None, "resolved_name": None,
                     "matched_components": [],
                 },
+                status="no_match",
             )
         # 중복 target_value 제거 — 같은 component로 두 번 explore() 안 부르게
         seen_values: set[str] = set()

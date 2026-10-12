@@ -52,17 +52,25 @@ def _paginate(items: list[dict], offset: int) -> tuple[list[dict], int, bool]:
 
 def shape_explore_result(
     raw: dict[str, Any], *, as_of: Optional[str], anchor: dict[str, Any],
-    offsets: dict[str, int] | None = None,
+    offsets: dict[str, int] | None = None, status: Optional[str] = None,
 ) -> dict[str, Any]:
     """Neo4jClient.explore()의 raw 출력(found/documents/components/failure_buckets/
     excluded_hub_components) -> API 응답 모양(as_of/anchor/정렬/절단 포함).
 
     offsets: {"documents": int, "components": int, "failure_buckets": int} —
-    카테고리별 독립 페이지 시작 위치(G07). 생략하면 전부 0(첫 페이지)."""
+    카테고리별 독립 페이지 시작 위치(G07). 생략하면 전부 0(첫 페이지).
+
+    status(G08 §2.6 — "found/not_found/no_match/filtered/isolated/partial/
+    backend_error를 기계가 구분하도록"): 호출자가 명시하면 그대로 쓰고, 생략
+    하면 found/neighbor 존재 여부로 자동 산출한다("not_found"/"isolated"/
+    "found"만 — "no_match"/"filtered"/"backend_error"는 symptom_text 무매칭,
+    G04 anchor 자체 제외, Neo4j 오류처럼 이 함수가 알 수 없는 맥락이 있어야
+    호출자가 명시해야 한다. "partial"은 아직 그 상태를 만드는 경로가 없어
+    정의하지 않는다 — 2차 리뷰 지적대로 쓰이지 않는 enum 값을 미리 넣지 않음)."""
     offsets = offsets or {}
     if not raw.get("found"):
         return {
-            "as_of": as_of, "anchor": anchor, "found": False,
+            "as_of": as_of, "anchor": anchor, "found": False, "status": status or "not_found",
             "documents": [], "components": [], "failure_buckets": [],
             "excluded_hub_components": raw.get("excluded_hub_components") or [],
             "truncated": False,
@@ -79,8 +87,11 @@ def shape_explore_result(
     components, comp_total, comp_trunc = _paginate(components, offsets.get("components", 0))
     failure_buckets, fb_total, fb_trunc = _paginate(failure_buckets, offsets.get("failure_buckets", 0))
 
+    if status is None:
+        status = "found" if (doc_total or comp_total or fb_total) else "isolated"
+
     return {
-        "as_of": as_of, "anchor": anchor, "found": True,
+        "as_of": as_of, "anchor": anchor, "found": True, "status": status,
         "documents": documents, "components": components, "failure_buckets": failure_buckets,
         "excluded_hub_components": raw.get("excluded_hub_components") or [],
         # 하위 호환 — 셋 중 하나라도 더 있으면 True(기존 소비자는 이 필드만 봐도 된다).
@@ -91,16 +102,25 @@ def shape_explore_result(
     }
 
 
+def _dedup_tie_break_key(item: dict) -> tuple:
+    # G08(2차 리뷰) 잔여 — hops가 같을 때 과거엔 "먼저 본 쪽"이 이겨서, 입력
+    # 순서(여러 앵커를 어떤 순서로 순회했는지)에 따라 같은 요청의 결과가
+    # 달라질 수 있었다. 항목 내용만으로 결정되는 키로 비교해 입력 순서와
+    # 무관하게 항상 같은 승자를 고른다.
+    return (item.get("hops", 99), item.get("relation") or "", item.get("tag") or "")
+
+
 def dedup_by_key(items: list[dict], key: str) -> list[dict]:
     """복수 앵커(symptom_text가 여러 component에 매칭된 경우)의 explore() 결과를
     합칠 때 중복 제거 — 설계 스펙의 "복수 앵커를 합쳐 중복 제거" 요구. 중복이면
-    hops가 더 작은(더 가까운) 쪽을 유지한다. app.routers.graph(Neo4j 의존)가 아니라
-    여기(Neo4j 비의존)에 둬야 app/graph/explore.py 전체가 CI에서 매번 실제로
-    실행된다는 이 모듈의 설계 원칙(파일 상단 docstring)이 깨지지 않는다."""
+    hops가 더 작은(더 가까운) 쪽을 유지하고, 동률이면 _dedup_tie_break_key로
+    결정적으로 고른다. app.routers.graph(Neo4j 의존)가 아니라 여기(Neo4j
+    비의존)에 둬야 app/graph/explore.py 전체가 CI에서 매번 실제로 실행된다는
+    이 모듈의 설계 원칙(파일 상단 docstring)이 깨지지 않는다."""
     best: dict[str, dict] = {}
     for item in items:
         k = item[key]
-        if k not in best or item.get("hops", 99) < best[k].get("hops", 99):
+        if k not in best or _dedup_tie_break_key(item) < _dedup_tie_break_key(best[k]):
             best[k] = item
     return list(best.values())
 

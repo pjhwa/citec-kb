@@ -191,3 +191,43 @@ def test_dedup_by_key_keeps_smallest_hops_on_conflict():
     deduped = dedup_by_key(items, "id")
     assert len(deduped) == 1
     assert deduped[0]["hops"] == 1
+
+
+def test_shape_explore_result_status_found_vs_isolated():
+    found_raw = {"found": True, "documents": [{"id": "d1", "hops": 1, "relation": "REFERENCES"}],
+                 "components": [], "failure_buckets": [], "excluded_hub_components": []}
+    shaped = shape_explore_result(found_raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert shaped["status"] == "found"
+
+    isolated_raw = {"found": True, "documents": [], "components": [], "failure_buckets": [],
+                     "excluded_hub_components": []}
+    shaped = shape_explore_result(isolated_raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert shaped["status"] == "isolated"
+
+
+def test_shape_explore_result_status_not_found():
+    shaped = shape_explore_result(
+        {"found": False, "excluded_hub_components": []},
+        as_of="2026-10-09", anchor={"type": "document", "resolved_id": "missing"},
+    )
+    assert shaped["status"] == "not_found"
+
+
+def test_shape_explore_result_status_override():
+    shaped = shape_explore_result(
+        {"found": True, "documents": [], "components": [], "failure_buckets": [], "excluded_hub_components": []},
+        as_of="2026-10-09", anchor={"type": "symptom_text"}, status="no_match",
+    )
+    assert shaped["status"] == "no_match"
+
+
+def test_dedup_by_key_tie_break_is_deterministic_regardless_of_input_order():
+    # G08(2차 리뷰) 잔여 — hops가 같을 때 입력 순서가 바뀌어도 같은 승자를 골라야 한다.
+    a = {"id": "d1", "hops": 2, "relation": "HAS_COMPONENT", "tag": "INFERRED"}
+    b = {"id": "d1", "hops": 2, "relation": "PARENT_OF", "tag": "EXTRACTED"}
+    winner_forward = dedup_by_key([a, b], "id")[0]
+    winner_backward = dedup_by_key([b, a], "id")[0]
+    # (hops, relation, tag) 키 비교 — "HAS_COMPONENT" < "PARENT_OF" 알파벳상
+    # a가 더 작은 키라 항상 a가 이긴다. 중요한 건 "어느 쪽이든" 입력 순서와
+    # 무관하게 같은 결과가 나온다는 것.
+    assert winner_forward == winner_backward == a
