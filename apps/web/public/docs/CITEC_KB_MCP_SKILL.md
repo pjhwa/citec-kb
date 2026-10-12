@@ -74,7 +74,20 @@ citec-kb MCP가 연결돼 있는지 불확실하면 `kb_health()`로 먼저 확�
 | 공수/비용 추정 | `kb_capacity_estimate` |
 | CI-TEC 11개 도메인 반복장애/커버리지 갭 | `kb_citec_domain_catalog`(먼저) → `kb_citec_recurring_patterns` / `kb_citec_failure_bucket_coverage` |
 | 진단 패턴(네트워크/클러스터 등) 매칭·등록 | `kb_match_failure_bucket` → 없으면 `kb_register_failure_bucket`, 맞았으면 `kb_refine_failure_bucket(confirm=True)` |
+| 1차 후보를 찾은 뒤 연관 컴포넌트/문서/과거 장애를 더 깊이 | `kb_graph_explore`(검색 대체재 아님 — 이 표의 다른 도구로 1차 후보를 먼저 찾은 다음 단계로만 쓸 것) |
 | 뭘 써야 할지 모름 | `kb_tools_help` |
+
+---
+
+### 3.1 `kb_graph_explore` 쓸 때 추가로 챙길 것
+
+- `exclude_page_ids`/`exclude_subtree_ids`/`exclude_source_types`(쉼표구분)로
+  평가/검증 보고서 같은 걸 결과에서 뺄 수 있다 — 일반 업무 질문에는 비워 둔다.
+- 카테고리당 최대 50건까지 페이지로 끊긴다. 응답이 "N건 중 X-Y건 표시"이고
+  Y<N이면 다 본 게 아니다 — `documents_offset`/`components_offset`/
+  `failure_buckets_offset`을 응답이 알려주는 다음 값으로 올려 재호출한다.
+- `as_of`는 그래프의 마지막 배치 동기화 날짜(최대 ~1일 지연) — 최종 사실
+  확인은 반드시 `kb_search`/`kb_get_document`로 원문을 열어서.
 
 ---
 

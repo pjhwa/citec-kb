@@ -32,7 +32,9 @@ def list_terms(limit: int = Query(100, ge=1, le=500)) -> dict[str, Any]:
 
 
 @router.post("/seed")
-def post_seed(replace: bool = True) -> dict[str, Any]:
+def post_seed(replace: bool = False) -> dict[str, Any]:
+    """G06 — 기본값은 비파괴 upsert. seed 파일에 없는 기존 항목까지 지우고
+    다시 심으려면 명시적으로 ?replace=true를 전달해야 한다."""
     return seed_lexicon(replace=replace)
 
 

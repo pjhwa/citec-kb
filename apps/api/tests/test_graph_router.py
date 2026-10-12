@@ -245,3 +245,281 @@ def test_explore_component_anchor_that_is_itself_a_hub_short_circuits():
     assert body["documents"] == []
     assert body["components"] == []
     assert body["failure_buckets"] == []
+
+
+def test_explore_excludes_document_by_page_id():
+    """G04: exclude_page_ids에 걸린 문서는 candidate 단계에서 빠져야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"ExclComp-{uuid.uuid4()}"
+    excluded_doc_id = f"test-excl-{uuid.uuid4()}"
+    excluded_page_id = str(uuid.uuid4())
+    kept_doc_id = f"test-keep-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": excluded_doc_id, "source_type": "confluence_map", "external_id": excluded_page_id,
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_document(
+        {"id": kept_doc_id, "source_type": "confluence_map", "external_id": "other",
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name, "exclude_page_ids": [excluded_page_id]},
+    )
+    assert resp.status_code == 200
+    doc_ids = {d["id"] for d in resp.json()["documents"]}
+    assert excluded_doc_id not in doc_ids
+    assert kept_doc_id in doc_ids
+
+
+def test_explore_document_anchor_fans_out_across_duplicate_external_id_copies():
+    """G01: 같은 external_id를 가진 서로 다른 source_type 수집본 중 "대표"가
+    아닌 쪽으로 앵커를 걸어도, 대표 쪽에 붙은 구조(PARENT_OF 등)를 찾아야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    shared_external_id = str(uuid_mod.uuid4())
+    representative_id = f"tech_repo:{shared_external_id}"  # tier 1 소스 — 대표로 뽑힘
+    duplicate_id = f"confluence_map:{shared_external_id}"   # tier 3 소스 — 대표 아님
+    child_id = f"test-child-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    # 대표(tech_repo) 쪽에만 실제 PARENT_OF가 붙어 있다고 가정(=child의 부모로 해석된 쪽)
+    nclient.merge_document(
+        {"id": representative_id, "source_type": "tech_repo", "external_id": shared_external_id,
+         "title": "대표", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+    nclient.merge_document(
+        {"id": child_id, "source_type": "tech_repo", "external_id": "x", "title": "자식",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=representative_id, tag="EXTRACTED")],
+        extractor_version="2026-10-12.1", generation="gen-X",
+    )
+    nclient.close()
+
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(Document(
+            id=representative_id, source_type="tech_repo", external_id=shared_external_id,
+            title="대표", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=duplicate_id, source_type="confluence_map", external_id=shared_external_id,
+            title="사본", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": duplicate_id})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["anchor"]["resolved_id"] == representative_id
+    doc_ids = {d["id"] for d in body["documents"]}
+    assert child_id in doc_ids
+
+
+
+def test_explore_document_anchor_excludes_its_own_fanout_copies_from_documents():
+    """G01 fan-out 부작용 회귀 테스트 — 같은 external_id의 다른 수집본이
+    "연관 문서"에 자기 자신(의 복제본)으로 나오면 안 된다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    shared_external_id = str(uuid_mod.uuid4())
+    copy_a = f"tech_repo:{shared_external_id}"
+    copy_b = f"confluence_map:{shared_external_id}"
+    comp_name = f"SharedComp-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(copy_a, "tech_repo"), (copy_b, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+            extractor_version="2026-10-12.2", generation="gen-X",
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=copy_a, source_type="tech_repo", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=copy_b, source_type="confluence_map", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": copy_a})
+    assert resp.status_code == 200
+    doc_ids = {d["id"] for d in resp.json()["documents"]}
+    assert copy_a not in doc_ids
+    assert copy_b not in doc_ids
+
+
+def test_explore_document_anchor_with_null_external_id_does_not_fanout_to_everything():
+    """2차 리뷰에서 지적: external_id가 NULL이면 Document.external_id == None이
+    SQL의 IS NULL로 해석돼, external_id가 없는 모든 문서로 fan-out할 뻔했다.
+    other_id는 Neo4j에 실제로 존재시켜, fan-out됐다면 200+other_id 관련 결과가
+    나왔을 상황을 만든다 — 고쳐졌다면 anchor_id 단독 조회라 404여야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    anchor_id = f"test-noext-{uuid_mod.uuid4()}"
+    other_id = f"test-noext-other-{uuid_mod.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": other_id, "source_type": "confluence_map", "external_id": "unrelated", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+    nclient.close()
+    with session_scope() as session:
+        # (source_type, external_id) 유니크 제약 때문에 같은 external_id=''를
+        # 공유하려면 서로 다른 source_type이어야 한다 — 실제로 가능한 유일한 조합.
+        # 이전 실행이 남긴 같은 (source_type, '') 행이 있으면 유니크 제약을
+        # 깨므로, 재실행 가능하도록 먼저 지운다(테스트 데이터만, uuid 접두사로
+        # 식별 가능한 이 테스트 전용 행이 아니라도 이 조합 자체가 운영 데이터에는
+        # 나타나지 않는다 — 위 실제 코퍼스 조회에서 external_id='' 0건 확인됨).
+        session.query(Document).filter(
+            Document.source_type.in_(["tech_repo", "confluence_map"]), Document.external_id == ""
+        ).delete(synchronize_session=False)
+        session.add(Document(
+            id=anchor_id, source_type="tech_repo", external_id='',
+            title="앵커", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=other_id, source_type="confluence_map", external_id='',
+            title="다른 문서(무관)", body_md="x", content_hash="h2", status="active", evidence_grade="A",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": anchor_id})
+    assert resp.status_code == 404  # 그래프에 없는 단일 앵커 — fan-out으로 other_id까지 끌려오면 안 됨
+
+
+def test_explore_documents_offset_pages_beyond_cap():
+    """G07: documents_offset으로 cap(50) 뒤의 후보에 접근할 수 있어야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"PageComp-{uuid_mod.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    doc_ids = []
+    for i in range(60):
+        doc_id = f"test-page-{comp_name}-{i:03d}"
+        doc_ids.append(doc_id)
+        nclient.merge_document(
+            {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+             "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    client = TestClient(app)
+    page1 = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert page1.status_code == 200
+    body1 = page1.json()
+    assert len(body1["documents"]) == 50
+    assert body1["documents_truncated"] is True
+    assert body1["documents_total"] == 60
+
+    page2 = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name, "documents_offset": 50},
+    )
+    assert page2.status_code == 200
+    body2 = page2.json()
+    assert len(body2["documents"]) == 10
+    assert body2["documents_truncated"] is False
+    seen_ids = {d["id"] for d in body1["documents"]} | {d["id"] for d in body2["documents"]}
+    assert seen_ids == set(doc_ids)
+
+
+def test_explore_collapses_duplicate_page_copies_in_results():
+    """G08 2차 리뷰 — 같은 Confluence 페이지를 confluence_map/tech_repo가 각각
+    수집한 두 문서가 "연관 문서" 결과에 둘 다 나오면, 하나로 묶이고 나머지는
+    copies에 담겨야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    comp_name = f"CollapseComp-{uuid_mod.uuid4()}"
+    shared_external_id = str(uuid_mod.uuid4())
+    copy_a = f"tech_repo:{shared_external_id}"
+    copy_b = f"confluence_map:{shared_external_id}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(copy_a, "tech_repo"), (copy_b, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=copy_a, source_type="tech_repo", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=copy_b, source_type="confluence_map", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp.status_code == 200
+    docs = resp.json()["documents"]
+    matching = [d for d in docs if d["id"] in (copy_a, copy_b)]
+    assert len(matching) == 1  # 둘이 하나로 묶임
+    assert matching[0]["id"] == copy_a  # tech_repo가 tier 1이라 대표
+    assert matching[0]["copies"] == [copy_b]
+    # attach_document_access가 실제 문서 경로(route — 그래프 2hop 경로와는
+    # 다른 필드)로 올바르게 채워졌는지 확인(2차 리뷰에서 지적된 path 키
+    # 충돌 회귀 테스트 — route와 "원문 접근 path"가 같은 이름을 쓰면 후자가
+    # 전자로 덮어써진다).
+    assert matching[0]["access"]["mcp_args"]["path"] == f"tech_repo/{shared_external_id}.md"
+    assert f"path=tech_repo%2F{shared_external_id}" in matching[0]["web_url"]
+    assert matching[0]["route"] == [{"relation": "HAS_COMPONENT", "tag": "EXTRACTED", "direction": "in"}]

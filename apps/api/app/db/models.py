@@ -572,7 +572,33 @@ class GraphSyncState(Base):
     )
     input_hash: Mapped[Optional[str]] = mapped_column(String(64))
     graph_extractor_version: Mapped[Optional[str]] = mapped_column(String(32))
+    graph_generation: Mapped[Optional[str]] = mapped_column(String(64))
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     last_error: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class GraphRun(Base):
+    """배치 1회 실행 요약 — graph_sync_state의 max(synced_at)만으로는 부분 실패나
+    진행 중 상태를 구분할 수 없어(G05) 추가한다. app.graph.sync_cli가 쓴다.
+    """
+
+    __tablename__ = "graph_runs"
+
+    run_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    extractor_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    generation: Mapped[str] = mapped_column(String(64), nullable=False)
+    lexicon_version: Mapped[Optional[str]] = mapped_column(String(64))
+    documents_synced: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    documents_skipped: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    documents_failed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    buckets_synced: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    buckets_failed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    unresolved_references: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    hub_recompute_ok: Mapped[Optional[bool]] = mapped_column(Boolean)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="running")

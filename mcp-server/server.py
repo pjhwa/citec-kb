@@ -24,7 +24,6 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
-_GRAPH_EXPLORE_CAP = 50  # mirrors apps/api/app/graph/explore.py:MAX_RESULTS_PER_CATEGORY (separate process, can't import it)
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -902,12 +901,36 @@ async def kb_similar_incident(
 async def kb_graph_explore(
     anchor_type: str,
     anchor_value: str,
+    exclude_page_ids: str = "",
+    exclude_subtree_ids: str = "",
+    exclude_source_types: str = "",
+    documents_offset: int = 0,
+    components_offset: int = 0,
+    failure_buckets_offset: int = 0,
 ) -> str:
     """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
 
     anchor_type: "failure_bucket" | "document" | "component" | "symptom_text"
     anchor_value: 각각 FailureBucket.id / documents.id 또는 external_id /
                   컴포넌트 이름(예: "NetApp", "넷앱") / 자유 텍스트 증상 설명
+    exclude_page_ids/exclude_subtree_ids/exclude_source_types: 쉼표구분 선택 인자 —
+                  평가/검증 보고서처럼 결과에서 빼야 할 페이지·하위트리·source_type을
+                  candidate 단계에서 제외한다(일반 업무 질문에는 보통 비워 둔다).
+    documents_offset/components_offset/failure_buckets_offset: 한 카테고리의
+                  전체 후보가 50건을 넘으면("N건 중 X-Y건 표시" + 다음 페이지
+                  안내로 알 수 있음) 그 수만큼 올려 재호출한다(예: documents_offset=50).
+
+    응답 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를 판단할
+    것 — 문장으로 추측하지 말 것. 각 결과의 [Nhop 경로]는 anchor부터 그
+    노드까지의 전체 경로다(마지막 관계 하나가 아님) — PARENT_OF는 ↑(anchor가
+    자식 쪽)/↓(anchor가 부모 쪽), 그 외 관계는 →/←. document 앵커는 같은
+    Confluence 페이지의 여러 수집본(confluence_map/tech_repo/confluence_docs)
+    중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다(대표 1건이 anchor.resolved_id
+    로 표시됨). "연관 문서" 결과도 같은 페이지의 다른 수집본이 있으면
+    copies=N으로 묶여 나온다(_EN 접미사 체크항목 등은 안 묶임).
+    archived는 비활성화된 원문이라는 뜻 — 결론에 그대로 쓰지 말 것.
+    각 줄의 "원문: kb_get_document(path=...)"가 실제 호출 경로다 —
+    confluence_map 소스는 본문이 발췌(snapshot)뿐이니 참고.
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -918,11 +941,23 @@ async def kb_graph_explore(
         return f"오류: anchor_type은 failure_bucket|document|component|symptom_text 중 하나여야 합니다 (받음: {anchor_type})"
     if not (anchor_value or "").strip():
         return "오류: anchor_value가 비어 있습니다."
+
+    def _split(s: str) -> list[str]:
+        return [t.strip() for t in (s or "").split(",") if t.strip()]
+
     try:
         async with _client(timeout=30.0) as client:
             resp = await client.post(
                 "/v1/graph/explore",
-                json={"anchor_type": anchor_type, "anchor_value": anchor_value.strip()},
+                json={
+                    "anchor_type": anchor_type, "anchor_value": anchor_value.strip(),
+                    "exclude_page_ids": _split(exclude_page_ids),
+                    "exclude_subtree_ids": _split(exclude_subtree_ids),
+                    "exclude_source_types": _split(exclude_source_types),
+                    "documents_offset": documents_offset,
+                    "components_offset": components_offset,
+                    "failure_buckets_offset": failure_buckets_offset,
+                },
             )
             if resp.status_code == 404:
                 return f"그래프에서 '{anchor_value}'를 찾을 수 없습니다 (as-of 데이터 기준)."
@@ -931,7 +966,7 @@ async def kb_graph_explore(
     except httpx.HTTPError as e:
         return _err(e)
 
-    lines = [f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
+    lines = [f"status: {data.get('status', '(unknown)')}", f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
     anchor = data.get("anchor") or {}
     if anchor.get("type") == "symptom_text":
         mc = anchor.get("matched_components") or []
@@ -946,29 +981,77 @@ async def kb_graph_explore(
     if data.get("excluded_hub_components"):
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
 
-    docs = data.get("documents") or []
-    lines.append(f"\n연관 문서 ({len(docs)}건{'+' if len(docs) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for d in docs[:20]:
-        lines.append(
-            f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
-            f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
+    def _render_route(route: list) -> str:
+        # G08(2차 리뷰) — "마지막 relation 하나"가 아니라 anchor부터 이
+        # 노드까지의 전체 경로를 보여준다. PARENT_OF는 계층 의미가 있어 ↑/↓,
+        # 나머지(REFERENCES/HAS_COMPONENT 등)는 방향만 있는 →/←로 표시해
+        # "down=자식"이라는 계층 어휘를 다른 관계 타입에 잘못 끌어오지 않는다.
+        parts = []
+        for step in route or []:
+            relation = step.get("relation")
+            is_out = step.get("direction") == "out"
+            marker = ("↓" if is_out else "↑") if relation == "PARENT_OF" else ("→" if is_out else "←")
+            parts.append(f"{marker}{relation}")
+            via = step.get("via")
+            if via:
+                name = via.get("id") or via.get("canonical_name") or via.get("bucket_name") or via.get("external_id") or "?"
+                parts.append(str(name))
+        return " ".join(parts)
+
+    def _render_category(label: str, items: list, offset: int, total_key: str, trunc_key: str,
+                          offset_param: str, line_fn) -> None:
+        # 표시 줄 수 == 페이지 크기여야 한다 — 과거엔 페이지(최대 50)를 20줄만
+        # 찍고 "offset+len(items)"를 다음 offset으로 안내해 21~50번째 항목이
+        # 영원히 안 보이는 구멍이 있었다(2차 리뷰에서 지적). 전부 찍는다.
+        total = data.get(total_key, len(items))
+        truncated = data.get(trunc_key, False)
+        shown_from = offset + 1 if items else offset
+        shown_to = offset + len(items)
+        lines.append(f"\n{label} ({total}건 중 {shown_from}-{shown_to}건 표시):")
+        for item in items:
+            lines.append(line_fn(item))
+        if truncated:
+            next_offset = offset + len(items)
+            lines.append(f"  … 다음 페이지: {offset_param}={next_offset}로 재호출")
+
+    def _render_document_line(d: dict) -> str:
+        # G08(2차 리뷰) — copies/archived/원문 접근 경로를 한 줄에 더한다.
+        access = d.get("access") or {}
+        mcp_args = access.get("mcp_args") or {}
+        tags = []
+        copies = d.get("copies") or []
+        if copies:
+            tags.append(f"copies={len(copies)}")
+        if d.get("archived"):
+            tags.append("archived")
+        if access.get("body_kind") == "snapshot":
+            tags.append("snapshot")
+        tag_str = f" [{', '.join(tags)}]" if tags else ""
+        access_str = f" 원문: kb_get_document(path='{mcp_args['path']}')" if mcp_args.get("path") else ""
+        return (
+            f"  - [{d.get('hops')}hop {_render_route(d.get('route'))}] {d.get('title')}{tag_str} "
+            f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}{access_str}"
         )
-    if len(docs) > 20:
-        lines.append(f"  … 외 {len(docs) - 20}건")
+
+    docs = data.get("documents") or []
+    _render_category(
+        "연관 문서", docs, documents_offset, "documents_total", "documents_truncated",
+        "documents_offset", _render_document_line,
+    )
 
     comps = data.get("components") or []
-    lines.append(f"\n연관 컴포넌트 ({len(comps)}건{'+' if len(comps) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for c in comps[:20]:
-        lines.append(f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}")
-    if len(comps) > 20:
-        lines.append(f"  … 외 {len(comps) - 20}건")
+    _render_category(
+        "연관 컴포넌트", comps, components_offset, "components_total", "components_truncated",
+        "components_offset",
+        lambda c: f"  - [{c.get('hops')}hop {_render_route(c.get('route'))}] {c.get('canonical_name')}",
+    )
 
     fbs = data.get("failure_buckets") or []
-    lines.append(f"\n연관 과거 장애 ({len(fbs)}건{'+' if len(fbs) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for b in fbs[:20]:
-        lines.append(f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}")
-    if len(fbs) > 20:
-        lines.append(f"  … 외 {len(fbs) - 20}건")
+    _render_category(
+        "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
+        "failure_buckets_offset",
+        lambda b: f"  - [{b.get('hops')}hop {_render_route(b.get('route'))}] {b.get('bucket_name')} id={b.get('id')}",
+    )
 
     return "\n".join(lines)
 
@@ -1119,11 +1202,25 @@ async def kb_tools_help() -> str:
                   environment가 비어있는(미확인) 버킷은 계속 후보에 남는다.
 
 [지식그래프 — 연관 탐색]
-  kb_graph_explore(anchor_type=, anchor_value=)
+  kb_graph_explore(anchor_type=, anchor_value=, exclude_page_ids=, exclude_subtree_ids=,
+                    exclude_source_types=, documents_offset=, components_offset=,
+                    failure_buckets_offset=)
                   anchor_type: failure_bucket|document|component|symptom_text
                   장애 분석 시 연관 컴포넌트/문서/과거 장애를 2hop까지 탐색.
                   kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은
                   다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인).
+                  카테고리당 최대 50건, 그 이상이면 응답에 "N건 중 X-Y건 표시"와
+                  다음 페이지 안내가 나온다 — *_offset으로 재호출해 끝까지 볼 것.
+                  맨 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를
+                  판단할 것 — 문장으로 추측하지 말 것. 각 결과 줄의 [Nhop 경로]는
+                  anchor부터 그 노드까지 전체 경로다(마지막 관계만이 아님) —
+                  PARENT_OF는 ↑(anchor가 자식 쪽)/↓(anchor가 부모 쪽), 나머지
+                  관계는 →/←로 방향 표시. document 앵커는 같은 페이지의 여러
+                  수집본(confluence_map/tech_repo/confluence_docs) 중 어느 쪽으로
+                  걸어도 같은 계층을 찾는다. 결과의 같은 페이지 수집본도 하나로
+                  묶여 copies=N으로 표시(_EN 체크항목 등은 안 묶임). archived는
+                  비활성 원문 — 결론에 그대로 쓰지 말 것. "원문: kb_get_document
+                  (path=...)"가 실제 호출 경로, confluence_map은 발췌(snapshot)뿐.
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록

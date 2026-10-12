@@ -338,8 +338,37 @@ See §6.3 for the full taxonomy and when to use each:
   해석한다.
 - 응답 상단의 `해석된 앵커:`(component/document/failure_bucket)나 `매칭된 컴포넌트:`(symptom_text)로
   입력이 실제 무엇으로 해석됐는지 확인한다. `component`는 lexicon에 없으면 대소문자 무시
-  매칭까지 시도한다. 결과가 많으면 카테고리별로 최대 50건까지만 보여주고 "…외 N건"으로
-  생략됨을 표시한다.
+  매칭까지 시도한다. 카테고리별 전체 후보는 최대 50건씩 페이지로 끊긴다 — 응답이
+  "N건 중 X-Y건 표시"면 전부 본 게 아니다, `documents_offset`/`components_offset`/
+  `failure_buckets_offset`을 다음 시작 위치로 올려 재호출해야 끝까지 확인할 수 있다.
+  정답이 50건 뒤에 숨어 있을 수 있으니, 특히 document 앵커에서 결과가 많으면 끝까지
+  확인할 것.
+- `exclude_page_ids`/`exclude_subtree_ids`/`exclude_source_types`(쉼표구분)로 평가·검증
+  보고서 등 결과에서 빼야 할 페이지/하위트리/source_type을 걸러낼 수 있다(일반 업무
+  질문에는 보통 비워 둔다).
+- 응답 맨 첫 줄 `status:`를 가장 먼저 본다 — `found`(결과 있음)/`not_found`(앵커 자체가
+  그래프에 없음)/`no_match`(symptom_text에서 알려진 컴포넌트를 못 찾음)/`isolated`
+  (앵커는 있는데 연관 항목이 0건). 문장을 해석해서 성공/실패를 추측하지 말고 이 값으로
+  판단한다.
+- 결과 줄의 `[Nhop 경로]`는 anchor부터 그 노드까지의 **전체 경로**다(마지막 관계 하나가
+  아니다). `PARENT_OF`는 계층 의미가 있어 `↑`(anchor가 그 쪽의 자식 — 즉 위로 올라가는
+  방향)/`↓`(anchor가 그 쪽의 부모 — 아래로 내려가는 방향)로, 나머지 관계(`REFERENCES`/
+  `HAS_COMPONENT` 등)는 방향만 있는 `→`/`←`로 표시한다. 2hop이면 중간 노드 id/이름이
+  경로 중간에 같이 나온다(예: `↑PARENT_OF confluence_map:338017591 ↓PARENT_OF`는
+  "anchor의 부모"를 거쳐 그 부모의 또 다른 자식(형제)에 도달했다는 뜻).
+- `document` 앵커는 같은 Confluence 페이지를 여러 source(confluence_map/confluence_docs/
+  tech_repo)가 각각 수집한 "사본" 중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다 — 내부적으로
+  모든 사본에 대해 탐색해 병합하며, `anchor.resolved_id`는 그중 결정적으로 고른 대표
+  문서를 보여준다.
+- "연관 문서" 결과도 같은 이유로 같은 페이지의 여러 수집본이 하나로 묶여 나온다 —
+  그 문서의 `copies`에 나머지 수집본 id가 담기고, 결과 줄에는 `copies=N`으로 표시된다
+  (`documents_total`도 묶인 뒤의 수). `_EN` 접미사(한영 체크항목) 등 다른 source_type은
+  절대 묶지 않는다.
+- `archived`가 true면 비활성화된(삭제/이동 등으로 더 이상 유효하지 않은) 원문이다 —
+  결론에 그대로 쓰지 말고 `kb_search`로 현재 유효한 문서인지 다시 확인한다.
+- 결과 줄의 "원문: kb_get_document(path='…')"가 실제 호출할 경로다. `confluence_map`
+  소스는 본문이 발췌(snapshot)뿐이라 결과에 `snapshot`이 표시되며, 이 경우 Confluence
+  현재 버전 확인은 `confluence-mcp`(있으면)로 따로 해야 한다.
 
 **API:** `POST /v1/graph/explore`
 

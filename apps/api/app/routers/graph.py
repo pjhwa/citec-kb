@@ -11,13 +11,17 @@ from sqlalchemy import select
 
 from app.db.models import Document
 from app.db.session import session_scope
+from app.doc_access import attach_document_access
 from app.graph.explore import (
+    collapse_duplicate_copies,
     dedup_by_key,
-    enrich_with_evidence_grade,
+    enrich_with_document_metadata,
+    filter_excluded_documents,
     resolve_component_anchor,
     shape_explore_result,
 )
 from app.graph.extract import extract_lexicon_components
+from app.graph.identity import resolve_representative
 from app.graph.neo4j_client import Neo4jClient, get_shared_client
 from app.graph.sync_state import get_latest_synced_at
 from app.lexicon.seed import load_lexicon_map
@@ -35,28 +39,97 @@ def _build_client() -> Neo4jClient:
 class GraphExploreBody(BaseModel):
     anchor_type: Literal["failure_bucket", "document", "component", "symptom_text"]
     anchor_value: str = Field(..., min_length=1, max_length=2000)
+    # G04 — app.retrieval.search.SearchFilters와 동일한 의미. candidate 생성
+    # 이후, dedup/정렬/cap 이전에 적용한다(최소 구현 — 중간 경로 bridge 차단,
+    # anchor 자체 제외는 이번 범위 밖, docs/features/graph-evidence.md 참고).
+    exclude_page_ids: list[str] = Field(default_factory=list)
+    exclude_subtree_ids: list[str] = Field(default_factory=list)
+    exclude_source_types: list[str] = Field(default_factory=list)
+    # G07 — 카테고리별 독립 페이지 시작 위치. cap(50) 뒤에 숨은 후보에 접근하는
+    # 유일한 수단이다.
+    documents_offset: int = Field(default=0, ge=0)
+    components_offset: int = Field(default=0, ge=0)
+    failure_buckets_offset: int = Field(default=0, ge=0)
 
 
-def _resolve_document_anchor_value(anchor_value: str) -> str:
-    """document 앵커는 documents.id 또는 external_id 둘 다 받는다 — Neo4j의
-    Document.id는 항상 documents.id이므로, external_id로 왔으면 Postgres에서
-    한 번 찾아 id로 바꾼다."""
+def _rows_to_candidates(rows) -> list[dict[str, Any]]:
+    return [
+        {"document_id": r[0], "evidence_grade": r[1], "status": r[2], "source_type": r[3],
+         "space_key": (r[4] or {}).get("space_key")}
+        for r in rows
+    ]
+
+
+_DOC_IDENTITY_COLUMNS = (
+    Document.id, Document.evidence_grade, Document.status, Document.source_type, Document.metadata_,
+)
+
+
+def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
+    """document 앵커는 documents.id 또는 external_id 둘 다 받는다. G01: 같은
+    external_id를 가진 수집본이 여러 개(예: confluence_map과 tech_repo가 같은
+    페이지를 따로 수집)일 수 있는데, 그래프 구조(PARENT_OF 등)는 그중 결정적으로
+    고른 "대표" 문서에만 붙는다 — 그래서 어느 수집본으로 앵커를 걸어도 같은
+    계층/관계를 찾으려면, resolved_id는 대표 하나를 보여주되 explore()는 같은
+    external_id를 공유하는 모든 수집본에 대해 수행하고 병합해야 한다.
+    반환: (응답에 보여줄 대표 document_id, 실제로 explore할 전체 document_id 목록)."""
     with session_scope() as session:
         doc = session.get(Document, anchor_value)
-        if doc is not None:
-            return doc.id
-        doc = session.scalar(select(Document).where(Document.external_id == anchor_value))
-        return doc.id if doc is not None else anchor_value
+        external_id = doc.external_id if doc is not None else anchor_value
+        if not external_id:
+            # external_id가 NULL/빈 문자열이면 Document.external_id == external_id가
+            # SQL의 "IS NULL"로 해석돼 같은 상태인 모든 문서로 fan-out하는 사고가
+            # 난다(2차 리뷰에서 지적) — 그 경우는 fan-out 없이 단일 앵커로 둔다.
+            return (doc.id if doc is not None else anchor_value), [doc.id if doc is not None else anchor_value]
+        rows = session.execute(
+            select(*_DOC_IDENTITY_COLUMNS).where(Document.external_id == external_id)
+        ).all()
+    candidates = _rows_to_candidates(rows)
+    if not candidates:
+        # external_id로도 못 찾았다 — anchor_value 자체가 documents.id일 수 있으니
+        # 그대로 단일 앵커로 둔다(존재하지 않으면 404로 자연히 떨어진다).
+        return anchor_value, [anchor_value]
+    best = resolve_representative(candidates)
+    representative_id = best["document_id"] if best else anchor_value
+    # 정렬 — SQL 쪽에 ORDER BY가 없어 fan-out 앵커 순서가 요청마다 달라질 수
+    # 있었다(2차 리뷰 지적). explore() 호출 순서가 바뀌어도 merged 결과 자체는
+    # dedup_by_key의 결정적 tie-break로 같아지지만, 중간 과정(어떤 anchor가
+    # 먼저 hub-check에 걸리는지 등)까지 재현 가능하게 정렬해 둔다.
+    all_ids = sorted(c["document_id"] for c in candidates)
+    return representative_id, all_ids
 
 
-def _fetch_evidence_grades(document_ids: list[str]) -> dict[str, str]:
+_ENRICHMENT_COLUMNS = (
+    Document.id, Document.evidence_grade, Document.status, Document.source_type,
+    Document.external_id,
+    Document.metadata_["ancestor_ids"],
+    Document.metadata_["space_key"].astext,
+)
+
+
+def _fetch_document_enrichment(document_ids: list[str]) -> dict[str, dict]:
+    """G08 2차 리뷰 — grade/상태(archived 포함)/계층(ancestor_ids)/동일 페이지
+    판별에 필요한 source_type·external_id·space_key를 PG 왕복 한 번으로 전부
+    가져온다(과거엔 _fetch_evidence_grades와 _fetch_ancestor_ids 두 번 왕복).
+    space_key가 없으면 resolve_representative의 source tier 계산이 confluence_map
+    LOOKIN/TechRepo를 tier 3로 잘못 떨어뜨려, G01 resolver와 다른 대표를 고를
+    수 있다 — 반드시 같이 가져온다. metadata_ 전체(JSONB)가 아니라 필요한 두
+    키만 서버 쪽에서 뽑아 전송량을 줄인다(NetApp류 수천 건 후보에서 중요)."""
     if not document_ids:
         return {}
+    unique_ids = sorted(set(document_ids))
     with session_scope() as session:
         rows = session.execute(
-            select(Document.id, Document.evidence_grade).where(Document.id.in_(document_ids))
+            select(*_ENRICHMENT_COLUMNS).where(Document.id.in_(unique_ids))
         ).all()
-    return {row[0]: row[1] for row in rows}
+    out: dict[str, dict] = {}
+    for doc_id, grade, status, source_type, external_id, ancestor_ids, space_key in rows:
+        out[doc_id] = {
+            "evidence_grade": grade, "status": status, "source_type": source_type,
+            "external_id": external_id, "space_key": space_key,
+            "ancestor_ids": list(ancestor_ids or []),
+        }
+    return out
 
 
 @router.post("/graph/explore")
@@ -73,6 +146,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     # 오류가 "그래프 저장소 연결 실패"로 잘못 표시될 수 있어 합치지 않았다).
     client = _build_client()
     resolved_name: str | None = None
+    resolved_document_id: str | None = None
     anchors: list[tuple[str, str, str]] = []
     if body.anchor_type == "symptom_text":
         fake_doc = {"body_md": body.anchor_value}
@@ -86,6 +160,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     "type": "symptom_text", "resolved_id": None, "resolved_name": None,
                     "matched_components": [],
                 },
+                status="no_match",
             )
         # 중복 target_value 제거 — 같은 component로 두 번 explore() 안 부르게
         seen_values: set[str] = set()
@@ -109,7 +184,8 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         anchors = [("Component", "canonical_name", canonical)]
         resolved_name = canonical
     elif body.anchor_type == "document":
-        anchors = [("Document", "id", _resolve_document_anchor_value(body.anchor_value))]
+        resolved_document_id, document_ids = _resolve_document_anchor_ids(body.anchor_value)
+        anchors = [("Document", "id", doc_id) for doc_id in document_ids]
     else:  # failure_bucket
         anchors = [("FailureBucket", "id", body.anchor_value)]
 
@@ -143,23 +219,65 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     if not merged["found"] and body.anchor_type != "symptom_text":
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
 
+    if body.anchor_type == "document":
+        # G01 fan-out 부작용: 같은 external_id의 다른 수집본들은 본문/컴포넌트가
+        # 같아 서로의 2hop 이웃으로 잡힌다(둘 다 같은 Component를 거쳐 도달) —
+        # 앵커 자신의 복제본들은 "연관 문서"가 아니라 앵커 자신이므로 제외한다.
+        fan_out_ids = {a[2] for a in anchors}
+        merged["documents"] = [d for d in merged["documents"] if d["id"] not in fan_out_ids]
+
+    # PG 왕복 1회로 통합 — grade/상태/계층(ancestor_ids)/동일 페이지 판별에
+    # 쓰는 source_type·external_id를 전부 가져온다(G08). G04 필터와 collapse가
+    # 둘 다 이 하나의 결과를 쓴다.
+    enrichment = _fetch_document_enrichment([d["id"] for d in merged["documents"]])
+
+    # G04 — 제외 필터를 dedup/정렬/cap 이전에 적용
+    if body.exclude_page_ids or body.exclude_subtree_ids or body.exclude_source_types:
+        ancestor_ids_by_doc_id = {doc_id: e["ancestor_ids"] for doc_id, e in enrichment.items()}
+        merged["documents"] = filter_excluded_documents(
+            merged["documents"],
+            exclude_page_ids=set(body.exclude_page_ids),
+            exclude_subtree_ids=set(body.exclude_subtree_ids),
+            exclude_source_types=set(body.exclude_source_types),
+            ancestor_ids_by_doc_id=ancestor_ids_by_doc_id,
+        )
+
     # 복수 앵커(symptom_text가 여러 component에 매칭된 경우) 결과 병합 시 중복 제거
     merged["documents"] = dedup_by_key(merged["documents"], "id")
     merged["components"] = dedup_by_key(merged["components"], "canonical_name")
     merged["failure_buckets"] = dedup_by_key(merged["failure_buckets"], "id")
     merged["excluded_hub_components"] = sorted(set(merged["excluded_hub_components"]))
 
-    doc_ids = [d["id"] for d in merged["documents"]]
-    merged["documents"] = enrich_with_evidence_grade(merged["documents"], _fetch_evidence_grades(doc_ids))
+    # 동일 Confluence 페이지의 다른 소스 수집본을 하나의 논리 후보로 묶는다
+    # (G08) — dedup 이후, 정렬/cap 이전. *_total은 이 묶인 뒤의 수를 센다.
+    merged["documents"] = collapse_duplicate_copies(merged["documents"], enrichment_by_id=enrichment)
+    merged["documents"] = enrich_with_document_metadata(merged["documents"], enrichment)
 
     if body.anchor_type == "symptom_text":
         anchor_info: dict[str, Any] = {
             "type": "symptom_text", "resolved_id": None, "resolved_name": None,
             "matched_components": [a[2] for a in anchors],
         }
+    elif body.anchor_type == "document":
+        anchor_info = {
+            "type": body.anchor_type, "resolved_id": resolved_document_id, "resolved_name": resolved_name,
+        }
     else:
         anchor_info = {
             "type": body.anchor_type, "resolved_id": anchors[0][2], "resolved_name": resolved_name,
         }
 
-    return shape_explore_result(merged, as_of=as_of_str, anchor=anchor_info)
+    shaped = shape_explore_result(
+        merged, as_of=as_of_str, anchor=anchor_info,
+        offsets={
+            "documents": body.documents_offset,
+            "components": body.components_offset,
+            "failure_buckets": body.failure_buckets_offset,
+        },
+    )
+    # attach_document_access(원문 접근 경로 — kb_search/kb_get_document와 같은
+    # 빌더 재사용, §2.6 "존재하지 않는 path를 합성하지 않는다")는 실제로 보여줄
+    # 페이지(최대 50건)에만 적용한다 — NetApp처럼 전체 후보가 수천 건이면 그
+    # 전부에 대해 만들 필요가 없다.
+    shaped["documents"] = [attach_document_access(dict(d)) for d in shaped["documents"]]
+    return shaped

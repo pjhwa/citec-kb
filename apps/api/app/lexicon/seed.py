@@ -55,7 +55,11 @@ def load_lexicon_seed_file() -> dict[str, Any]:
     return d
 
 
-def seed_lexicon(*, replace: bool = True) -> dict[str, Any]:
+def seed_lexicon(*, replace: bool = False) -> dict[str, Any]:
+    """replace=True는 seed 파일에 없는 기존 항목(공용 DB에 수동 추가된 별칭 등)을
+    먼저 전부 지운다 — G06: 공용 DB에서 무심코 실행하면 안 되므로 기본값을 False로
+    바꿨다(과거 기본값 True 때문에 운영에서 10건이 삭제된 사고가 있었다). False는
+    seed 파일의 canonical만 upsert하고 다른 항목은 건드리지 않는다."""
     data = load_lexicon_seed_file()
     terms = data.get("terms") or []
     n = 0
@@ -87,42 +91,38 @@ def seed_lexicon(*, replace: bool = True) -> dict[str, Any]:
     }
 
 
+def build_lexicon_map(terms: list[dict[str, Any]]) -> dict[str, list[str]]:
+    """순수 함수 — [{"canonical","variants"},...] -> 소문자 토큰 -> [canonical,
+    변형어...] 맵(variants[0]이 항상 canonical). DB 행이든 seed 파일 행이든
+    같은 모양(dict with "canonical"/"variants")이라 둘 다 이 함수 하나로
+    처리한다(G11 — load_lexicon_map()이 이 로직을 세 군데에 중복해서 갖고
+    있던 것을 통합, DB 없이도 실제 core.json으로 테스트 가능해짐)."""
+    mapping: dict[str, list[str]] = {}
+    for t in terms:
+        can = str(t["canonical"])
+        variants = [can] + list(t.get("variants") or [])
+        for v in variants:
+            key = v.lower()
+            mapping.setdefault(key, [])
+            for x in variants:
+                if x not in mapping[key]:
+                    mapping[key].append(x)
+    return mapping
+
+
 @lru_cache(maxsize=1)
 def load_lexicon_map() -> dict[str, list[str]]:
     """Map lowercased token -> variants (includes canonical)."""
-    mapping: dict[str, list[str]] = {}
     try:
         with session_scope() as session:
             rows = list(session.scalars(select(LexiconTerm)).all())
-            if not rows:
-                # fall back to file
-                for t in load_lexicon_seed_file().get("terms") or []:
-                    can = str(t["canonical"])
-                    variants = [can] + list(t.get("variants") or [])
-                    for v in variants:
-                        mapping.setdefault(v.lower(), [])
-                        for x in variants:
-                            if x not in mapping[v.lower()]:
-                                mapping[v.lower()].append(x)
-                return mapping
-            for r in rows:
-                variants = [r.canonical] + list(r.variants or [])
-                for v in variants:
-                    key = v.lower()
-                    mapping.setdefault(key, [])
-                    for x in variants:
-                        if x not in mapping[key]:
-                            mapping[key].append(x)
+            if rows:
+                return build_lexicon_map(
+                    [{"canonical": r.canonical, "variants": list(r.variants or [])} for r in rows]
+                )
     except Exception:  # noqa: BLE001
-        for t in load_lexicon_seed_file().get("terms") or []:
-            can = str(t["canonical"])
-            variants = [can] + list(t.get("variants") or [])
-            for v in variants:
-                mapping.setdefault(v.lower(), [])
-                for x in variants:
-                    if x not in mapping[v.lower()]:
-                        mapping[v.lower()].append(x)
-    return mapping
+        pass
+    return build_lexicon_map(load_lexicon_seed_file().get("terms") or [])
 
 
 def main() -> None:
