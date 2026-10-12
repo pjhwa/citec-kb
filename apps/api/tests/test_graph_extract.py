@@ -147,17 +147,26 @@ def test_extract_lexicon_components_matches_korean_variant_with_josa_suffix():
     assert [e.target_value for e in edges] == ["NetApp"]
 
 
-def test_extract_lexicon_components_korean_single_char_variant_avoids_false_positive():
-    # "행"(hang)이 "진행"/"수행" 같은 흔한 단어 안에서 오탐되면 안 된다 —
-    # 왼쪽 경계(바로 앞 글자가 한글이면 매칭 안 함)로 막는다.
-    doc = {"id": "d1", "body_md": "작업을 정상적으로 진행 및 수행했습니다"}
+def test_extract_lexicon_components_korean_single_syllable_variant_never_matches():
+    # "행"(hang) 같은 한글 한 글자짜리 변형어는 왼쪽 경계만으로는 "진행"/"수행"
+    # 뿐 아니라 "행정"/"행사"/"행동"/"1행"(표의 행) 같은 흔한 단어·단위 표현도
+    # 못 걸러낸다 — 그래프 매칭에서 완전히 제외한다(1차 리뷰에서 재현).
     lexicon_map = {"행": ["hang", "hung", "soft lockup", "행"]}
-    assert extract_lexicon_components(doc, lexicon_map=lexicon_map) == []
+    for body in [
+        "작업을 정상적으로 진행 및 수행했습니다",
+        "서버가 행 상태에 빠졌다",  # 왼쪽 경계만으로는 걸렸을 케이스
+        "표의 1행을 확인하라",
+        "행정 절차를 완료했다",
+        "다음 행으로 이동한다",
+    ]:
+        doc = {"id": "d1", "body_md": body}
+        assert extract_lexicon_components(doc, lexicon_map=lexicon_map) == [], body
 
 
-def test_extract_lexicon_components_korean_variant_still_matches_at_word_start():
-    doc = {"id": "d1", "body_md": "서버가 행 상태에 빠졌다"}
-    lexicon_map = {"행": ["hang", "hung", "soft lockup", "행"]}
+def test_extract_lexicon_components_korean_single_syllable_variant_still_reachable_via_other_variants():
+    # 한 글자 변형어만 빠진다 — 같은 canonical의 다른(두 글자 이상) 변형어는 정상 매칭.
+    doc = {"id": "d1", "body_md": "서버가 hung 상태에 빠졌다"}
+    lexicon_map = {"행": ["hang", "hung", "soft lockup", "행"], "hung": ["hang", "hung", "soft lockup", "행"]}
     edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
     assert [e.target_value for e in edges] == ["hang"]
 
@@ -167,6 +176,37 @@ def test_extract_lexicon_components_ascii_boundary_avoids_partial_match():
     doc = {"id": "d1", "body_md": "MySQLX 드라이버 업데이트"}
     lexicon_map = {"sql": ["SQL"]}
     assert extract_lexicon_components(doc, lexicon_map=lexicon_map) == []
+
+
+def test_extract_lexicon_components_ascii_boundary_rejects_path_hostname_dotted_key():
+    # 2차 리뷰에서 실제 코퍼스로 재현된 회귀 — \\b는 "/","-",".""을 전부 경계로
+    # 봐서 과거(_TOKEN_RE, 이 문자들을 토큰에 포함) 안 걸리던 경로/호스트명/점
+    # 구분 키 안의 부분 문자열이 새로 오탐됐다.
+    cases = [
+        ("filesystem", {"fs": ["fs"]}, "설정 확인: /sys/fs/cgroup/memory/ 아래에서"),
+        ("filesystem", {"fs": ["fs"]}, "vfs.fs.size[/,pfree] 메트릭 확인"),
+        ("filesystem", {"fs": ["fs"]}, "fs.file-max 파라미터를 조정했다"),
+        ("MDS", {"mds": ["MDS"]}, "ceph-mds=enabled 로 설정돼 있음"),
+        ("SCP", {"scp": ["SCP"]}, "scp-pbupa02 서버에서 DNS 오류 발생"),
+    ]
+    for canonical, lexicon_map, body in cases:
+        doc = {"id": "d1", "body_md": body}
+        assert extract_lexicon_components(doc, lexicon_map=lexicon_map) == [], (canonical, body)
+
+
+def test_extract_lexicon_components_ascii_boundary_still_matches_sentence_final_and_josa():
+    # 경계를 좁혔다고 G06의 핵심 이득(조사/문장부호 뒤 매칭)까지 잃으면 안 된다.
+    cases = [
+        ("Redis", {"redis": ["Redis"]}, "장애 원인은 Redis. 재기동함"),
+        ("Redis", {"redis": ["Redis"]}, "Redis가 다운되어 복구함"),
+        ("NetApp", {"netapp": ["NetApp"]}, "NetApp에서 지연이 발생했다"),
+        ("SQL Server", {"sql server": ["SQL Server"]}, "MS SQL Server 장애 발생"),
+        ("NetApp_Cluster", {"netapp cluster": ["NetApp_Cluster", "NetApp Cluster"]}, "NetApp Cluster 장애 발생"),
+    ]
+    for canonical, lexicon_map, body in cases:
+        doc = {"id": "d1", "body_md": body}
+        edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
+        assert [e.target_value for e in edges] == [canonical], (canonical, body)
 
 
 def test_extract_references_finds_ticket_id_and_resolves_via_index():

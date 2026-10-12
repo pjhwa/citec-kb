@@ -33,7 +33,7 @@ from app.lexicon.seed import load_lexicon_map
 
 logger = logging.getLogger("citec.graph")
 
-EXTRACTOR_VERSION = "2026-10-12.1"  # G01/G02: 계층 추출 로직이 바뀌어 올림 — hash가
+EXTRACTOR_VERSION = "2026-10-12.3"  # G06: ASCII 변형어 경계 재설계로 또 올림 — hash가
 # 같아도 이 버전 변경만으로 기존 graph_sync_state가 전부 재동기화 대상이 된다.
 
 DEFAULT_GENERATION = "2026-10-12.g1"  # G05 — 환경변수 GRAPH_GENERATION으로 override

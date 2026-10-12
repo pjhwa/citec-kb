@@ -22,6 +22,7 @@ _CONSTRAINTS = [
     ("FailureBucket", "id"),
     ("Component", "canonical_name"),
     ("BusinessEntity", "id"),
+    ("UnresolvedPage", "external_id"),  # G01 — 없으면 MERGE/MATCH가 전체 레이블 스캔
 ]
 
 _HUB_DEGREE_THRESHOLD = 5000
@@ -90,6 +91,21 @@ class Neo4jClient:
         문제가 구조적으로 없다."""
         with self._driver.session() as session:
             session.execute_write(_recompute_hub_flags_tx)
+
+    def read_generation_marker(self) -> Optional[str]:
+        """G05 — 어떤 generation으로 이 Neo4j가 마지막으로 쓰였는지는 Neo4j
+        자신에게 물어야 한다(Postgres의 --generation 플래그 값은 사람이 깜빡하고
+        안 바꿔도 전혀 알 길이 없다 — 1차 리뷰에서 지적된 바로 그 문제)."""
+        with self._driver.session() as session:
+            record = session.run("MATCH (m:GraphMeta {key: 'generation'}) RETURN m.value AS v").single()
+        return record["v"] if record else None
+
+    def write_generation_marker(self, generation: str) -> None:
+        with self._driver.session() as session:
+            session.run(
+                "MERGE (m:GraphMeta {key: 'generation'}) SET m.value = $v",
+                v=generation,
+            )
 
     def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
         """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라

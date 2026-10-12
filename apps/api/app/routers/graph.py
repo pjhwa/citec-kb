@@ -69,6 +69,11 @@ def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
     with session_scope() as session:
         doc = session.get(Document, anchor_value)
         external_id = doc.external_id if doc is not None else anchor_value
+        if not external_id:
+            # external_id가 NULL/빈 문자열이면 Document.external_id == external_id가
+            # SQL의 "IS NULL"로 해석돼 같은 상태인 모든 문서로 fan-out하는 사고가
+            # 난다(2차 리뷰에서 지적) — 그 경우는 fan-out 없이 단일 앵커로 둔다.
+            return (doc.id if doc is not None else anchor_value), [doc.id if doc is not None else anchor_value]
         rows = session.execute(
             select(*_DOC_IDENTITY_COLUMNS).where(Document.external_id == external_id)
         ).all()
@@ -188,6 +193,13 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
 
     if not merged["found"] and body.anchor_type != "symptom_text":
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
+
+    if body.anchor_type == "document":
+        # G01 fan-out 부작용: 같은 external_id의 다른 수집본들은 본문/컴포넌트가
+        # 같아 서로의 2hop 이웃으로 잡힌다(둘 다 같은 Component를 거쳐 도달) —
+        # 앵커 자신의 복제본들은 "연관 문서"가 아니라 앵커 자신이므로 제외한다.
+        fan_out_ids = {a[2] for a in anchors}
+        merged["documents"] = [d for d in merged["documents"] if d["id"] not in fan_out_ids]
 
     # G04 — 제외 필터를 dedup/정렬/cap 이전에 적용
     if body.exclude_page_ids or body.exclude_subtree_ids or body.exclude_source_types:

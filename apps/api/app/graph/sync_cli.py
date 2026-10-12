@@ -15,7 +15,6 @@ from sqlalchemy import select
 from app.db.models import Document, FailureBucket, GraphRun
 from app.db.session import session_scope
 from app.graph.pipeline import (
-    DEFAULT_GENERATION,
     EXTRACTOR_VERSION,
     build_external_id_index,
     build_neo4j_client,
@@ -58,9 +57,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Component.is_hub 재집계 생략(디버그/부분 실행용)",
     )
     p.add_argument(
-        "--generation", default=os.environ.get("GRAPH_GENERATION", DEFAULT_GENERATION),
-        help="그래프 세대 식별자(G05) — 다른 Neo4j로 옮길 때 바꾸면 PG의 과거 "
-             "skip 상태를 무시하고 전체 재동기화한다. 기본: $GRAPH_GENERATION",
+        "--generation", default=os.environ.get("GRAPH_GENERATION"),
+        help="그래프 세대 식별자(G05) — 명시하면 이 Neo4j의 GraphMeta 마커에도 "
+             "덮어쓴다. 생략하면(및 $GRAPH_GENERATION 미설정) 이 Neo4j에 이미 "
+             "찍힌 마커를 읽어 쓴다 — 마커가 없으면(최초 1회) 새로 만든다. "
+             "즉 --generation을 깜빡 안 바꿔도 '다른 Neo4j로 옮겼는데 과거 "
+             "generation으로 착각해 전부 skip'되는 사고(1차 리뷰에서 지적)가 "
+             "구조적으로 안 난다 — 판단 기준이 사람의 플래그가 아니라 "
+             "Neo4j 자신이 들고 있는 값이기 때문이다.",
     )
     args = p.parse_args(argv)
 
@@ -82,8 +86,22 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"documents": len(doc_ids), "failure_buckets": len(bucket_ids)}))
         return 0
 
-    run_id = _start_run(generation=args.generation)
     client = build_neo4j_client()
+    if args.generation:
+        generation = args.generation
+        client.write_generation_marker(generation)
+    else:
+        generation = client.read_generation_marker()
+        if generation is None:
+            # 마커가 없다(최초 1회거나 새 Neo4j) — 고정 상수로 fallback하면
+            # 과거(이번 세션에서 실제로 겪은) "다른 Neo4j인데 PG에 이미 있던
+            # 같은 상수값 때문에 전부 skip" 버그가 그대로 재발한다(2차 리뷰에서
+            # 지적). 매번 고유한 값을 새로 만든다.
+            generation = f"{EXTRACTOR_VERSION}.{uuid4().hex[:8]}"
+        client.write_generation_marker(generation)
+    args.generation = generation  # 아래에서 그대로 참조되는 모든 곳에 일관되게 반영
+
+    run_id = _start_run(generation=args.generation)
     stats = {"synced": 0, "skipped": 0, "failed": 0}
     fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None

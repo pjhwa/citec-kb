@@ -134,11 +134,18 @@ def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) 
     G06: 과거엔 공백 없는 단일 토큰만 집합으로 비교해 "NetApp Cluster"/"SQL
     Server"처럼 여러 단어로 된 등록 구문이 절대 안 매칭됐다 — 이제 변형어 문자열
     자체로 본문을 검사한다. 한글 변형어는 조사가 붙어도("넷앱에서") 찾을 수 있게
-    단순 포함 검사를 쓰고(한글은 공백 경계가 느슨해 \\b가 조사 앞에서 끊기지
-    않음), ASCII 변형어는 \\b로 감싸 부분 문자열 오탐(예: "SQLX" 안의 "SQL")을
-    막는다. 긴 등록 구문을 먼저 봐 짧은 변형어가 같은 자리에서 중복 집계되는
-    것을 줄인다(완전한 상호배타는 아님 — "NetApp"과 "NetApp Cluster"는 같은
-    본문에서 둘 다 나올 수 있고, 둘 다 매칭되는 것이 맞는 동작이다)."""
+    단순 포함 검사를 쓴다. ASCII 변형어는 \\b가 아니라 커스텀 경계를 쓴다 — \\b는
+    `/`,`-`,`.`을 전부 경계로 보기 때문에, 과거 `_TOKEN_RE`(이 문자들을 토큰
+    안에 포함시켜 비교)로는 절대 안 걸리던 "/sys/fs/cgroup"의 fs, "ceph-mds"의
+    mds, "scp-pbupa02"의 scp가 전부 오탐으로 걸렸다(2차 리뷰에서 실제 코퍼스로
+    재현). 새 경계는 좌우로 "영문/숫자/밑줄/슬래시/하이픈이 직접 붙어 있지 않고,
+    점(.) 뒤에 영문/숫자/밑줄이 와서 식별자의 일부가 되는 경우도 아님"을
+    요구한다 — 그 결과 과거 정밀도(경로/호스트명/점구분 키 안의 부분 문자열
+    차단)는 되살리면서, 문장 끝의 "Redis." 나 조사 붙은 "Redis가"/"NetApp에서"는
+    오른쪽에 한글이 와도 안 막히므로 여전히 매칭된다. 긴 등록 구문을 먼저 봐
+    짧은 변형어가 같은 자리에서 중복 집계되는 것을 줄인다(완전한 상호배타는
+    아님 — "NetApp"과 "NetApp Cluster"는 같은 본문에서 둘 다 나올 수 있고, 둘
+    다 매칭되는 것이 맞는 동작이다)."""
     body = doc.get("body_md") or ""
     if not body:
         return []
@@ -150,14 +157,27 @@ def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) 
         key=lambda item: -len(item[0]),
     )
     for variant, canonical in variants_sorted:
+        if len(variant) == 1 and _HANGUL_RE.fullmatch(variant):
+            # 한글 한 글자짜리 변형어("행")는 그래프 매칭에서 완전히 제외한다 —
+            # 왼쪽 경계만 강제하는 걸로는 "행정"/"행사"/"행동"/"1행"(표의 행)처럼
+            # 흔한 단어·단위 표현을 전혀 못 막는다(1차 리뷰에서 재현). seed에는
+            # 그대로 두어 검색 FTS 확장에는 계속 쓰이고, hang 자체는 hung/soft
+            # lockup/시스템 멈춤/"hang"(영문)으로도 여전히 매칭된다.
+            continue
         if _HANGUL_RE.search(variant):
-            # 왼쪽 경계만 강제: 바로 앞 글자가 한글이면 안 됨(예: "행"이 "진행"/
-            # "수행" 안에서 매칭되는 것을 막음) — 오른쪽은 열어 둬서 조사가 붙은
-            # 꼴("넷앱에서")은 그대로 매칭되게 한다.
+            # 왼쪽 경계만 강제: 바로 앞 글자가 한글이면 안 됨(예: "넷앱"이 다른
+            # 한글 단어 안에 섞여 나오는 걸 막음) — 오른쪽은 열어 둬서 조사가
+            # 붙은 꼴("넷앱에서")은 그대로 매칭되게 한다. 두 글자 이상이면 이
+            # 정도 경계로 충분하다(한 글자짜리 오탐은 위에서 이미 걸러짐).
             if re.search(r"(?<![가-힣])" + re.escape(variant), body_lower):
                 canonicals.add(canonical)
         else:
-            if re.search(r"\b" + re.escape(variant) + r"\b", body_lower):
+            pattern = (
+                r"(?<![a-z0-9_/\-])(?<![a-z0-9_]\.)"
+                + re.escape(variant)
+                + r"(?![a-z0-9_/\-])(?!\.[a-z0-9_])"
+            )
+            if re.search(pattern, body_lower):
                 canonicals.add(canonical)
     return [
         Edge(

@@ -335,3 +335,94 @@ def test_explore_document_anchor_fans_out_across_duplicate_external_id_copies():
     doc_ids = {d["id"] for d in body["documents"]}
     assert child_id in doc_ids
 
+
+
+def test_explore_document_anchor_excludes_its_own_fanout_copies_from_documents():
+    """G01 fan-out 부작용 회귀 테스트 — 같은 external_id의 다른 수집본이
+    "연관 문서"에 자기 자신(의 복제본)으로 나오면 안 된다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    shared_external_id = str(uuid_mod.uuid4())
+    copy_a = f"tech_repo:{shared_external_id}"
+    copy_b = f"confluence_map:{shared_external_id}"
+    comp_name = f"SharedComp-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(copy_a, "tech_repo"), (copy_b, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+            extractor_version="2026-10-12.2", generation="gen-X",
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=copy_a, source_type="tech_repo", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=copy_b, source_type="confluence_map", external_id=shared_external_id,
+            title="같은 페이지", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": copy_a})
+    assert resp.status_code == 200
+    doc_ids = {d["id"] for d in resp.json()["documents"]}
+    assert copy_a not in doc_ids
+    assert copy_b not in doc_ids
+
+
+def test_explore_document_anchor_with_null_external_id_does_not_fanout_to_everything():
+    """2차 리뷰에서 지적: external_id가 NULL이면 Document.external_id == None이
+    SQL의 IS NULL로 해석돼, external_id가 없는 모든 문서로 fan-out할 뻔했다.
+    other_id는 Neo4j에 실제로 존재시켜, fan-out됐다면 200+other_id 관련 결과가
+    나왔을 상황을 만든다 — 고쳐졌다면 anchor_id 단독 조회라 404여야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    anchor_id = f"test-noext-{uuid_mod.uuid4()}"
+    other_id = f"test-noext-other-{uuid_mod.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": other_id, "source_type": "confluence_map", "external_id": "unrelated", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+    nclient.close()
+    with session_scope() as session:
+        # (source_type, external_id) 유니크 제약 때문에 같은 external_id=''를
+        # 공유하려면 서로 다른 source_type이어야 한다 — 실제로 가능한 유일한 조합.
+        # 이전 실행이 남긴 같은 (source_type, '') 행이 있으면 유니크 제약을
+        # 깨므로, 재실행 가능하도록 먼저 지운다(테스트 데이터만, uuid 접두사로
+        # 식별 가능한 이 테스트 전용 행이 아니라도 이 조합 자체가 운영 데이터에는
+        # 나타나지 않는다 — 위 실제 코퍼스 조회에서 external_id='' 0건 확인됨).
+        session.query(Document).filter(
+            Document.source_type.in_(["tech_repo", "confluence_map"]), Document.external_id == ""
+        ).delete(synchronize_session=False)
+        session.add(Document(
+            id=anchor_id, source_type="tech_repo", external_id='',
+            title="앵커", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=other_id, source_type="confluence_map", external_id='',
+            title="다른 문서(무관)", body_md="x", content_hash="h2", status="active", evidence_grade="A",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": anchor_id})
+    assert resp.status_code == 404  # 그래프에 없는 단일 앵커 — fan-out으로 other_id까지 끌려오면 안 됨
