@@ -282,3 +282,56 @@ def test_explore_excludes_document_by_page_id():
     doc_ids = {d["id"] for d in resp.json()["documents"]}
     assert excluded_doc_id not in doc_ids
     assert kept_doc_id in doc_ids
+
+
+def test_explore_document_anchor_fans_out_across_duplicate_external_id_copies():
+    """G01: 같은 external_id를 가진 서로 다른 source_type 수집본 중 "대표"가
+    아닌 쪽으로 앵커를 걸어도, 대표 쪽에 붙은 구조(PARENT_OF 등)를 찾아야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    shared_external_id = str(uuid_mod.uuid4())
+    representative_id = f"tech_repo:{shared_external_id}"  # tier 1 소스 — 대표로 뽑힘
+    duplicate_id = f"confluence_map:{shared_external_id}"   # tier 3 소스 — 대표 아님
+    child_id = f"test-child-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    # 대표(tech_repo) 쪽에만 실제 PARENT_OF가 붙어 있다고 가정(=child의 부모로 해석된 쪽)
+    nclient.merge_document(
+        {"id": representative_id, "source_type": "tech_repo", "external_id": shared_external_id,
+         "title": "대표", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+    nclient.merge_document(
+        {"id": child_id, "source_type": "tech_repo", "external_id": "x", "title": "자식",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=representative_id, tag="EXTRACTED")],
+        extractor_version="2026-10-12.1", generation="gen-X",
+    )
+    nclient.close()
+
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        session.add(Document(
+            id=representative_id, source_type="tech_repo", external_id=shared_external_id,
+            title="대표", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=duplicate_id, source_type="confluence_map", external_id=shared_external_id,
+            title="사본", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": duplicate_id})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["anchor"]["resolved_id"] == representative_id
+    doc_ids = {d["id"] for d in body["documents"]}
+    assert child_id in doc_ids
+

@@ -53,7 +53,7 @@ def resolve_representative(candidates: list[dict[str, Any]]) -> Optional[dict[st
 def best_candidate_id(candidates: list[dict[str, Any]]) -> Optional[str]:
     """resolve_representative()에서 document_id만 뽑는 래퍼 — 기존
     app.graph.failure_bucket.best_candidate()와
-    app.routers.graph._resolve_document_anchor_value()의 "임의 첫 행" 선택을
+    app.routers.graph._resolve_document_anchor_ids()의 "임의 첫 행" 선택을
     대체한다(동일 정책 재사용)."""
     best = resolve_representative(candidates)
     return best["document_id"] if best else None

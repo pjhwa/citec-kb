@@ -45,25 +45,42 @@ class GraphExploreBody(BaseModel):
     exclude_source_types: list[str] = Field(default_factory=list)
 
 
-def _resolve_document_anchor_value(anchor_value: str) -> str:
-    """document 앵커는 documents.id 또는 external_id 둘 다 받는다 — Neo4j의
-    Document.id는 항상 documents.id이므로, external_id로 왔으면 Postgres에서
-    대표 문서를 결정적으로 골라 id로 바꾼다(G01 — 과거 "임의 첫 행" 대체)."""
-    with session_scope() as session:
-        doc = session.get(Document, anchor_value)
-        if doc is not None:
-            return doc.id
-        rows = session.execute(
-            select(Document.id, Document.evidence_grade, Document.status, Document.source_type,
-                   Document.metadata_).where(Document.external_id == anchor_value)
-        ).all()
-    candidates = [
+def _rows_to_candidates(rows) -> list[dict[str, Any]]:
+    return [
         {"document_id": r[0], "evidence_grade": r[1], "status": r[2], "source_type": r[3],
          "space_key": (r[4] or {}).get("space_key")}
         for r in rows
     ]
+
+
+_DOC_IDENTITY_COLUMNS = (
+    Document.id, Document.evidence_grade, Document.status, Document.source_type, Document.metadata_,
+)
+
+
+def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
+    """document 앵커는 documents.id 또는 external_id 둘 다 받는다. G01: 같은
+    external_id를 가진 수집본이 여러 개(예: confluence_map과 tech_repo가 같은
+    페이지를 따로 수집)일 수 있는데, 그래프 구조(PARENT_OF 등)는 그중 결정적으로
+    고른 "대표" 문서에만 붙는다 — 그래서 어느 수집본으로 앵커를 걸어도 같은
+    계층/관계를 찾으려면, resolved_id는 대표 하나를 보여주되 explore()는 같은
+    external_id를 공유하는 모든 수집본에 대해 수행하고 병합해야 한다.
+    반환: (응답에 보여줄 대표 document_id, 실제로 explore할 전체 document_id 목록)."""
+    with session_scope() as session:
+        doc = session.get(Document, anchor_value)
+        external_id = doc.external_id if doc is not None else anchor_value
+        rows = session.execute(
+            select(*_DOC_IDENTITY_COLUMNS).where(Document.external_id == external_id)
+        ).all()
+    candidates = _rows_to_candidates(rows)
+    if not candidates:
+        # external_id로도 못 찾았다 — anchor_value 자체가 documents.id일 수 있으니
+        # 그대로 단일 앵커로 둔다(존재하지 않으면 404로 자연히 떨어진다).
+        return anchor_value, [anchor_value]
     best = resolve_representative(candidates)
-    return best["document_id"] if best else anchor_value
+    representative_id = best["document_id"] if best else anchor_value
+    all_ids = [c["document_id"] for c in candidates]
+    return representative_id, all_ids
 
 
 def _fetch_evidence_grades(document_ids: list[str]) -> dict[str, str]:
@@ -100,6 +117,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     # 오류가 "그래프 저장소 연결 실패"로 잘못 표시될 수 있어 합치지 않았다).
     client = _build_client()
     resolved_name: str | None = None
+    resolved_document_id: str | None = None
     anchors: list[tuple[str, str, str]] = []
     if body.anchor_type == "symptom_text":
         fake_doc = {"body_md": body.anchor_value}
@@ -136,7 +154,8 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         anchors = [("Component", "canonical_name", canonical)]
         resolved_name = canonical
     elif body.anchor_type == "document":
-        anchors = [("Document", "id", _resolve_document_anchor_value(body.anchor_value))]
+        resolved_document_id, document_ids = _resolve_document_anchor_ids(body.anchor_value)
+        anchors = [("Document", "id", doc_id) for doc_id in document_ids]
     else:  # failure_bucket
         anchors = [("FailureBucket", "id", body.anchor_value)]
 
@@ -194,6 +213,10 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         anchor_info: dict[str, Any] = {
             "type": "symptom_text", "resolved_id": None, "resolved_name": None,
             "matched_components": [a[2] for a in anchors],
+        }
+    elif body.anchor_type == "document":
+        anchor_info = {
+            "type": body.anchor_type, "resolved_id": resolved_document_id, "resolved_name": resolved_name,
         }
     else:
         anchor_info = {
