@@ -916,9 +916,17 @@ async def kb_graph_explore(
     exclude_page_ids/exclude_subtree_ids/exclude_source_types: 쉼표구분 선택 인자 —
                   평가/검증 보고서처럼 결과에서 빼야 할 페이지·하위트리·source_type을
                   candidate 단계에서 제외한다(일반 업무 질문에는 보통 비워 둔다).
-    documents_offset/components_offset/failure_buckets_offset: 한 카테고리가
-                  50건을 넘으면(아래 "+"로 표시) 각 50건씩 더 보려면 이 값을
-                  그 수만큼 올려 재호출한다(예: documents_offset=50).
+    documents_offset/components_offset/failure_buckets_offset: 한 카테고리의
+                  전체 후보가 50건을 넘으면("N건 중 X-Y건 표시" + 다음 페이지
+                  안내로 알 수 있음) 그 수만큼 올려 재호출한다(예: documents_offset=50).
+
+    응답 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를 판단할
+    것 — 문장으로 추측하지 말 것. 각 결과의 [Nhop 경로]는 anchor부터 그
+    노드까지의 전체 경로다(마지막 관계 하나가 아님) — PARENT_OF는 ↑(anchor가
+    자식 쪽)/↓(anchor가 부모 쪽), 그 외 관계는 →/←. document 앵커는 같은
+    Confluence 페이지의 여러 수집본(confluence_map/tech_repo/confluence_docs)
+    중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다(대표 1건이 anchor.resolved_id
+    로 표시됨).
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -1184,6 +1192,13 @@ async def kb_tools_help() -> str:
                   다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인).
                   카테고리당 최대 50건, 그 이상이면 응답에 "N건 중 X-Y건 표시"와
                   다음 페이지 안내가 나온다 — *_offset으로 재호출해 끝까지 볼 것.
+                  맨 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를
+                  판단할 것 — 문장으로 추측하지 말 것. 각 결과 줄의 [Nhop 경로]는
+                  anchor부터 그 노드까지 전체 경로다(마지막 관계만이 아님) —
+                  PARENT_OF는 ↑(anchor가 자식 쪽)/↓(anchor가 부모 쪽), 나머지
+                  관계는 →/←로 방향 표시. document 앵커는 같은 페이지의 여러
+                  수집본(confluence_map/tech_repo/confluence_docs) 중 어느 쪽으로
+                  걸어도 같은 계층을 찾는다.
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록

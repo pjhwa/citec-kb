@@ -346,6 +346,20 @@ See §6.3 for the full taxonomy and when to use each:
 - `exclude_page_ids`/`exclude_subtree_ids`/`exclude_source_types`(쉼표구분)로 평가·검증
   보고서 등 결과에서 빼야 할 페이지/하위트리/source_type을 걸러낼 수 있다(일반 업무
   질문에는 보통 비워 둔다).
+- 응답 맨 첫 줄 `status:`를 가장 먼저 본다 — `found`(결과 있음)/`not_found`(앵커 자체가
+  그래프에 없음)/`no_match`(symptom_text에서 알려진 컴포넌트를 못 찾음)/`isolated`
+  (앵커는 있는데 연관 항목이 0건). 문장을 해석해서 성공/실패를 추측하지 말고 이 값으로
+  판단한다.
+- 결과 줄의 `[Nhop 경로]`는 anchor부터 그 노드까지의 **전체 경로**다(마지막 관계 하나가
+  아니다). `PARENT_OF`는 계층 의미가 있어 `↑`(anchor가 그 쪽의 자식 — 즉 위로 올라가는
+  방향)/`↓`(anchor가 그 쪽의 부모 — 아래로 내려가는 방향)로, 나머지 관계(`REFERENCES`/
+  `HAS_COMPONENT` 등)는 방향만 있는 `→`/`←`로 표시한다. 2hop이면 중간 노드 id/이름이
+  경로 중간에 같이 나온다(예: `↑PARENT_OF confluence_map:338017591 ↓PARENT_OF`는
+  "anchor의 부모"를 거쳐 그 부모의 또 다른 자식(형제)에 도달했다는 뜻).
+- `document` 앵커는 같은 Confluence 페이지를 여러 source(confluence_map/confluence_docs/
+  tech_repo)가 각각 수집한 "사본" 중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다 — 내부적으로
+  모든 사본에 대해 탐색해 병합하며, `anchor.resolved_id`는 그중 결정적으로 고른 대표
+  문서를 보여준다.
 
 **API:** `POST /v1/graph/explore`
 
