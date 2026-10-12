@@ -21,12 +21,13 @@ def get_state(document_id: str) -> Optional[dict[str, Any]]:
             "document_id": row.document_id,
             "input_hash": row.input_hash,
             "graph_extractor_version": row.graph_extractor_version,
+            "graph_generation": row.graph_generation,
             "synced_at": row.synced_at,
             "last_error": row.last_error,
         }
 
 
-def mark_synced(document_id: str, *, input_hash: str, extractor_version: str) -> None:
+def mark_synced(document_id: str, *, input_hash: str, extractor_version: str, generation: str) -> None:
     with session_scope() as session:
         row = session.get(GraphSyncState, document_id)
         if row is None:
@@ -34,6 +35,7 @@ def mark_synced(document_id: str, *, input_hash: str, extractor_version: str) ->
             session.add(row)
         row.input_hash = input_hash
         row.graph_extractor_version = extractor_version
+        row.graph_generation = generation
         row.synced_at = datetime.now(timezone.utc)
         row.last_error = None
 

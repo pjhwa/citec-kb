@@ -33,7 +33,10 @@ from app.lexicon.seed import load_lexicon_map
 
 logger = logging.getLogger("citec.graph")
 
-EXTRACTOR_VERSION = "2026-10-08.1"
+EXTRACTOR_VERSION = "2026-10-12.1"  # G01/G02: 계층 추출 로직이 바뀌어 올림 — hash가
+# 같아도 이 버전 변경만으로 기존 graph_sync_state가 전부 재동기화 대상이 된다.
+
+DEFAULT_GENERATION = "2026-10-12.g1"  # G05 — 환경변수 GRAPH_GENERATION으로 override
 
 # 스펙 §0.1 — CI-TEC 1차 산출물이 confluence_map의 유일한 두 "승격" 공간이다.
 _TIER_1_SOURCE_TYPES = {"tech_repo", "confluence_docs", "checkitem"}
@@ -61,31 +64,47 @@ def build_neo4j_client(*, uri: str | None = None, user: str | None = None, passw
     return client
 
 
-def build_external_id_index() -> dict[str, list[dict]]:
-    """external_id(소문자 정규화) -> [{"document_id","evidence_grade"}, ...].
-    extract_evidence가 그대로 쓰고, extract_references는 app.graph.failure_bucket.
-    best_candidate()로 단일 document_id만 뽑아 쓴다(§4.2 — evidence_grade 높은
-    쪽 우선). 세션당 한 번만 만들어 모든 문서/버킷이 공유한다."""
+def build_page_identity_index() -> dict[str, list[dict]]:
+    """external_id/raw page id(소문자 정규화) ->
+    [{"document_id","evidence_grade","status","source_type","space_key"}, ...].
+    build_external_id_index()보다 넓은 상위집합 — app.graph.identity의 결정적
+    tie-break(active/grade/source tier/id)에 필요한 필드를 전부 담는다(G01).
+    세션당 한 번만 만들어 모든 문서/버킷/계층 추출이 공유한다."""
     with session_scope() as session:
         rows = session.execute(
-            select(Document.id, Document.external_id, Document.evidence_grade)
+            select(
+                Document.id, Document.external_id, Document.evidence_grade,
+                Document.status, Document.source_type, Document.metadata_,
+            )
         ).all()
     index: dict[str, list[dict]] = {}
-    for doc_id, external_id, grade in rows:
+    for doc_id, external_id, grade, status, source_type, metadata in rows:
         key = (external_id or "").strip().lower()
         if not key:
             continue
-        index.setdefault(key, []).append({"document_id": doc_id, "evidence_grade": grade})
+        index.setdefault(key, []).append({
+            "document_id": doc_id, "evidence_grade": grade, "status": status,
+            "source_type": source_type, "space_key": (metadata or {}).get("space_key"),
+        })
     return index
+
+
+def build_external_id_index() -> dict[str, list[dict]]:
+    """build_page_identity_index()의 하위집합(document_id/evidence_grade만) —
+    기존 호출자(extract_evidence)와의 하위 호환을 위해 유지."""
+    return {
+        key: [{"document_id": c["document_id"], "evidence_grade": c["evidence_grade"]} for c in candidates]
+        for key, candidates in build_page_identity_index().items()
+    }
 
 
 def _simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[str, str]:
     """extract_references가 쓰는 "단일 best document_id" 매핑으로 축약."""
-    from app.graph.failure_bucket import best_candidate
+    from app.graph.identity import best_candidate_id
 
     out: dict[str, str] = {}
     for key, candidates in rich_index.items():
-        best = best_candidate(candidates)
+        best = best_candidate_id(candidates)
         if best:
             out[key] = best
     return out
@@ -113,8 +132,24 @@ def _cached_simple_reference_index(rich_index: dict[str, list[dict]]) -> dict[st
     return result
 
 
+def _dedup_edges_prefer_extracted(edges: list) -> list:
+    """같은 (target_label,target_key,target_value,rel_type) 쌍에 EXTRACTED와
+    INFERRED가 둘 다 나오면(예: 구조화 컴포넌트 + 본문 lexicon 매칭이 같은
+    컴포넌트를 가리킴) EXTRACTED를 우선한다 — Neo4j에 쓰기 전에 끝내서,
+    과거처럼 "마지막 SET r.tag가 이긴다"는 순서 의존을 없앤다(G03)."""
+    best: dict[tuple, object] = {}
+    for e in edges:
+        key = (e.target_label, e.target_key, e.target_value, e.rel_type)
+        if key not in best or (best[key].tag != "EXTRACTED" and e.tag == "EXTRACTED"):
+            best[key] = e
+    return list(best.values())
+
+
 def sync_document(
-    document_id: str, *, client: Neo4jClient, external_id_index: dict[str, list[dict]] | None = None
+    document_id: str, *, client: Neo4jClient,
+    external_id_index: dict[str, list[dict]] | None = None,
+    page_identity_index: dict[str, list[dict]] | None = None,
+    generation: str = DEFAULT_GENERATION,
 ) -> Literal["synced", "skipped", "failed"]:
     """문서 1건 동기화 — 문서 단위 격리(§4.4): 실패해도 예외를 밖으로 던지지 않고
     "failed"를 반환해, pipeline을 호출하는 쪽(향후 CLI)이 배치를 멈추지 않게 한다."""
@@ -177,35 +212,32 @@ def sync_document(
             state
             and state["input_hash"] == input_hash
             and state["graph_extractor_version"] == EXTRACTOR_VERSION
+            and state.get("graph_generation") == generation
         ):
             return "skipped"
 
         lexicon_map = load_lexicon_map()
         reference_index = _cached_simple_reference_index(external_id_index or {})
-        # 알려진 한계(의도적으로 이 태스크 범위 밖, 문서화만): 아래 엣지 목록에서
-        # extract_lexicon_components(INFERRED)가 extract_structured_components(EXTRACTED)
-        # 뒤에 온다 — 같은 (document, Component) 쌍에 둘 다 엣지를 내면
-        # Neo4jClient._merge_edges의 "SET r.tag = $tag"가 무조건 마지막 값으로 덮어써서
-        # EXTRACTED가 항상 INFERRED로 바뀐다(순서 바꿔도 반대로 바뀔 뿐, 근본 해결은
-        # 아님). EXTRACTED/INFERRED 구분을 신뢰도 가중치 등에 쓰려면 이 문제를 먼저
-        # 고쳐야 한다 — 예: Neo4jClient 쪽에서 "EXTRACTED가 있으면 유지" 같은 병합
-        # 우선순위 규칙 추가.
-        edges = (
-            extract_hierarchy(doc_dict)
+        # extract_lexicon_components(INFERRED)와 extract_structured_components
+        # (EXTRACTED)가 같은 (document, Component) 쌍에 둘 다 엣지를 낼 수 있다 —
+        # _dedup_edges_prefer_extracted가 Neo4j에 쓰기 전에 EXTRACTED를 우선해
+        # 하나만 남긴다(G03 — 과거 "마지막 SET r.tag가 이긴다" 순서 의존 제거).
+        edges = _dedup_edges_prefer_extracted(
+            extract_hierarchy(doc_dict, page_identity_index=page_identity_index or {})
             + extract_structured_components(doc_dict, issue_frame=issue_frame_dict, checkitem=checkitem_dict)
             + extract_business_entities(doc_dict, document_entities=document_entities)
             + extract_lexicon_components(doc_dict, lexicon_map=lexicon_map)
             + extract_references(doc_dict, external_id_index=reference_index)
         )
-        # 알려진 한계(의도적으로 이 태스크 범위 밖): 문서 내용이 바뀌어 재동기화될 때
-        # 이전 추출에서 나왔지만 새 추출에서는 더 안 나오는 엣지(예: 본문에서 사라진
-        # 컴포넌트 언급)는 지워지지 않는다 — merge_document는 MERGE만 하고 DELETE는
-        # 안 한다. 그래프가 단조증가만 하는 문제 — 나중 태스크에서
-        # Neo4jClient._merge_document_tx가 재병합 전에 해당 문서의 기존
-        # EXTRACTED/INFERRED 엣지를 지우도록 고쳐야 한다.
+        # Neo4jClient._merge_document_tx가 머지 전에 이 문서가 소유하는 managed
+        # edge를 전부 지우고 새로 쓰므로(G03), 본문에서 사라진 멘션도 여기서
+        # 자동 제거된다 — 더 이상 "그래프가 단조증가만 하는" 문제가 아니다.
         client.merge_document(doc_dict, edges)
         try:
-            sync_state.mark_synced(document_id, input_hash=input_hash, extractor_version=EXTRACTOR_VERSION)
+            sync_state.mark_synced(
+                document_id, input_hash=input_hash, extractor_version=EXTRACTOR_VERSION,
+                generation=generation,
+            )
         except Exception:  # noqa: BLE001 — 그래프엔 이미 반영됐는데 상태 기록만 실패한 경우도
             # 배치를 죽이면 안 된다(§4.4와 같은 이유). 다음 실행에서 해시 불일치로 재시도된다.
             logger.exception("failed to record graph_sync_state for document_id=%s (merge itself succeeded)", document_id)

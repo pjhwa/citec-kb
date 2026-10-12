@@ -59,7 +59,7 @@ def test_mark_synced_then_get_state_roundtrips():
     with session_scope() as session:
         doc_id = _make_document_row(session)
 
-    mark_synced(doc_id, input_hash="h1", extractor_version="v1")
+    mark_synced(doc_id, input_hash="h1", extractor_version="v1", generation="g1")
     state = get_state(doc_id)
     assert state is not None
     assert state["input_hash"] == "h1"
@@ -74,7 +74,7 @@ def test_mark_failed_sets_error_without_clearing_hash():
     with session_scope() as session:
         doc_id = _make_document_row(session)
 
-    mark_synced(doc_id, input_hash="h1", extractor_version="v1")
+    mark_synced(doc_id, input_hash="h1", extractor_version="v1", generation="g1")
     mark_failed(doc_id, error="neo4j connection refused")
     state = get_state(doc_id)
     assert state["last_error"] == "neo4j connection refused"
@@ -109,8 +109,8 @@ def test_get_latest_synced_at_returns_max_synced_at():
         doc_id_a = _make_document_row(session)
         doc_id_b = _make_document_row(session)
 
-    mark_synced(doc_id_a, input_hash="h1", extractor_version="v1")
-    mark_synced(doc_id_b, input_hash="h2", extractor_version="v1")
+    mark_synced(doc_id_a, input_hash="h1", extractor_version="v1", generation="g1")
+    mark_synced(doc_id_b, input_hash="h2", extractor_version="v1", generation="g1")
 
     result = get_latest_synced_at()
     later = max(get_state(doc_id_a)["synced_at"], get_state(doc_id_b)["synced_at"])
@@ -128,6 +128,7 @@ def test_get_latest_synced_at_returns_none_when_no_rows():
                 "document_id": row.document_id,
                 "input_hash": row.input_hash,
                 "graph_extractor_version": row.graph_extractor_version,
+                "graph_generation": row.graph_generation,
                 "synced_at": row.synced_at,
                 "last_error": row.last_error,
             }
@@ -141,3 +142,21 @@ def test_get_latest_synced_at_returns_none_when_no_rows():
         with session_scope() as session:
             for row in existing:
                 session.add(GraphSyncState(**row))
+
+
+def test_mark_synced_records_generation():
+    """G05: 새 Neo4j 타깃(=다른 generation)으로 옮기면 hash가 같아도 재동기화가
+    필요하다는 걸 판단할 수 있어야 한다 — 그 판단의 재료가 되는 값을 저장한다."""
+    from app.db.session import session_scope
+    from app.graph.sync_state import get_state, mark_synced
+
+    with session_scope() as session:
+        doc_id = _make_document_row(session)
+
+    mark_synced(doc_id, input_hash="h1", extractor_version="v1", generation="gen-A")
+    state = get_state(doc_id)
+    assert state["graph_generation"] == "gen-A"
+
+    mark_synced(doc_id, input_hash="h1", extractor_version="v1", generation="gen-B")
+    state = get_state(doc_id)
+    assert state["graph_generation"] == "gen-B"

@@ -55,7 +55,11 @@ def load_lexicon_seed_file() -> dict[str, Any]:
     return d
 
 
-def seed_lexicon(*, replace: bool = True) -> dict[str, Any]:
+def seed_lexicon(*, replace: bool = False) -> dict[str, Any]:
+    """replace=True는 seed 파일에 없는 기존 항목(공용 DB에 수동 추가된 별칭 등)을
+    먼저 전부 지운다 — G06: 공용 DB에서 무심코 실행하면 안 되므로 기본값을 False로
+    바꿨다(과거 기본값 True 때문에 운영에서 10건이 삭제된 사고가 있었다). False는
+    seed 파일의 canonical만 upsert하고 다른 항목은 건드리지 않는다."""
     data = load_lexicon_seed_file()
     terms = data.get("terms") or []
     n = 0

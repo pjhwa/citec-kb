@@ -7,9 +7,13 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from app.graph.identity import GRADE_RANK
+
 MAX_RESULTS_PER_CATEGORY = 50
 
-_GRADE_ORDER = {"A": 0, "B": 1, "C": 2}
+# G09: 과거 로컬 정의가 "A-"를 빠뜨려 C와 동일 취급했다 — app.graph.identity의
+# 단일 소스로 통합.
+_GRADE_ORDER = GRADE_RANK
 
 
 def resolve_component_anchor(anchor_value: str, lexicon_map: dict[str, list[str]]) -> str:
@@ -74,6 +78,40 @@ def dedup_by_key(items: list[dict], key: str) -> list[dict]:
         if k not in best or item.get("hops", 99) < best[k].get("hops", 99):
             best[k] = item
     return list(best.values())
+
+
+def filter_excluded_documents(
+    documents: list[dict],
+    *,
+    exclude_page_ids: set[str] | None = None,
+    exclude_subtree_ids: set[str] | None = None,
+    exclude_source_types: set[str] | None = None,
+    ancestor_ids_by_doc_id: dict[str, list[str]] | None = None,
+) -> list[dict]:
+    """G04 — 평가 보고서/제외 트리를 candidate 단계에서 걷어낸다(정렬·cap 이전).
+    app.retrieval.search의 exclude_page_ids/exclude_subtree_ids/exclude_source_types와
+    같은 의미: page_ids/source_types는 문서 자신을, subtree_ids는 Postgres의
+    ancestor_ids 메타데이터(ancestor_ids_by_doc_id로 주입)로 판정한다."""
+    exclude_page_ids = exclude_page_ids or set()
+    exclude_subtree_ids = exclude_subtree_ids or set()
+    exclude_source_types = exclude_source_types or set()
+    ancestor_ids_by_doc_id = ancestor_ids_by_doc_id or {}
+    if not (exclude_page_ids or exclude_subtree_ids or exclude_source_types):
+        return documents
+
+    kept = []
+    for doc in documents:
+        if doc.get("external_id") in exclude_page_ids:
+            continue
+        if doc.get("source_type") in exclude_source_types:
+            continue
+        ancestors = set(ancestor_ids_by_doc_id.get(doc["id"]) or [])
+        if doc.get("external_id") in exclude_subtree_ids:
+            continue
+        if ancestors & exclude_subtree_ids:
+            continue
+        kept.append(doc)
+    return kept
 
 
 def enrich_with_evidence_grade(documents: list[dict], grade_by_id: dict[str, str]) -> list[dict]:

@@ -239,3 +239,122 @@ def test_is_component_hub_none_for_nonexistent_component():
 
     assert client.is_component_hub(f"DoesNotExist-{uuid.uuid4()}") is None
     client.close()
+
+
+def _doc(doc_id: str) -> dict:
+    return {"id": doc_id, "source_type": "confluence_map", "external_id": "x", "title": "t",
+            "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1}
+
+
+def test_merge_document_parent_of_is_written_parent_to_child():
+    """G02: Edge.target_value는 "내 부모"를 뜻하지만, Neo4j에는 실제로
+    parent->child로 저장돼야 한다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    parent_id = f"test-parent-{uuid.uuid4()}"
+    child_id = f"test-child-{uuid.uuid4()}"
+    client.merge_document(_doc(parent_id), [])
+    client.merge_document(
+        _doc(child_id),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=parent_id, tag="EXTRACTED")],
+    )
+    with client._driver.session() as session:
+        forward = session.run(
+            "MATCH (p:Document {id: $p})-[r:PARENT_OF]->(c:Document {id: $c}) RETURN count(r) AS n",
+            p=parent_id, c=child_id,
+        ).single()["n"]
+        backward = session.run(
+            "MATCH (c:Document {id: $c})-[r:PARENT_OF]->(p:Document {id: $p}) RETURN count(r) AS n",
+            p=parent_id, c=child_id,
+        ).single()["n"]
+    assert forward == 1
+    assert backward == 0
+    client.close()
+
+
+def test_merge_document_resync_replaces_owned_parent_of_edge():
+    """G03: 자식이 다른 부모로 재동기화되면 옛 PARENT_OF가 남지 않아야 한다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    old_parent = f"test-oldparent-{uuid.uuid4()}"
+    new_parent = f"test-newparent-{uuid.uuid4()}"
+    child_id = f"test-child-{uuid.uuid4()}"
+    client.merge_document(_doc(old_parent), [])
+    client.merge_document(_doc(new_parent), [])
+    client.merge_document(
+        _doc(child_id),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=old_parent, tag="EXTRACTED")],
+    )
+    client.merge_document(
+        _doc(child_id),
+        [Edge(rel_type="PARENT_OF", target_label="Document", target_key="id",
+              target_value=new_parent, tag="EXTRACTED")],
+    )
+    with client._driver.session() as session:
+        old_count = session.run(
+            "MATCH (:Document {id: $p})-[r:PARENT_OF]->(:Document {id: $c}) RETURN count(r) AS n",
+            p=old_parent, c=child_id,
+        ).single()["n"]
+        new_count = session.run(
+            "MATCH (:Document {id: $p})-[r:PARENT_OF]->(:Document {id: $c}) RETURN count(r) AS n",
+            p=new_parent, c=child_id,
+        ).single()["n"]
+    assert old_count == 0
+    assert new_count == 1
+    client.close()
+
+
+def test_merge_document_resync_removes_vanished_component_mention():
+    """G03: 본문에서 사라진 컴포넌트 멘션의 edge가 재동기화 후 남지 않아야 한다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    comp_name = f"TestComp-{uuid.uuid4()}"
+    client.merge_document(
+        _doc(doc_id),
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="INFERRED")],
+    )
+    client.merge_document(_doc(doc_id), [])  # 재추출 결과 더 이상 언급 없음
+    with client._driver.session() as session:
+        count = session.run(
+            "MATCH (:Document {id: $id})-[r:HAS_COMPONENT]->(:Component {canonical_name: $c}) "
+            "RETURN count(r) AS n",
+            id=doc_id, c=comp_name,
+        ).single()["n"]
+    assert count == 0
+    client.close()
+
+
+def test_merge_document_parent_of_to_unresolved_page_does_not_create_document():
+    """G01: 코퍼스에 없는 부모는 Document가 아니라 UnresolvedPage로 남아야 한다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    child_id = f"test-child-{uuid.uuid4()}"
+    raw_parent_id = f"raw-{uuid.uuid4()}"
+    client.merge_document(
+        _doc(child_id),
+        [Edge(rel_type="PARENT_OF", target_label="UnresolvedPage", target_key="external_id",
+              target_value=raw_parent_id, tag="EXTRACTED")],
+    )
+    with client._driver.session() as session:
+        as_document = session.run(
+            "MATCH (n:Document {id: $v}) RETURN count(n) AS n", v=raw_parent_id,
+        ).single()["n"]
+        as_unresolved = session.run(
+            "MATCH (n:UnresolvedPage {external_id: $v})-[:PARENT_OF]->(:Document {id: $c}) "
+            "RETURN count(n) AS n", v=raw_parent_id, c=child_id,
+        ).single()["n"]
+    assert as_document == 0
+    assert as_unresolved == 1
+    client.close()

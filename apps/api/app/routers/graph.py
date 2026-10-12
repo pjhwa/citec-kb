@@ -14,10 +14,12 @@ from app.db.session import session_scope
 from app.graph.explore import (
     dedup_by_key,
     enrich_with_evidence_grade,
+    filter_excluded_documents,
     resolve_component_anchor,
     shape_explore_result,
 )
 from app.graph.extract import extract_lexicon_components
+from app.graph.identity import resolve_representative
 from app.graph.neo4j_client import Neo4jClient, get_shared_client
 from app.graph.sync_state import get_latest_synced_at
 from app.lexicon.seed import load_lexicon_map
@@ -35,18 +37,33 @@ def _build_client() -> Neo4jClient:
 class GraphExploreBody(BaseModel):
     anchor_type: Literal["failure_bucket", "document", "component", "symptom_text"]
     anchor_value: str = Field(..., min_length=1, max_length=2000)
+    # G04 — app.retrieval.search.SearchFilters와 동일한 의미. candidate 생성
+    # 이후, dedup/정렬/cap 이전에 적용한다(최소 구현 — 중간 경로 bridge 차단,
+    # anchor 자체 제외는 이번 범위 밖, docs/features/graph-evidence.md 참고).
+    exclude_page_ids: list[str] = Field(default_factory=list)
+    exclude_subtree_ids: list[str] = Field(default_factory=list)
+    exclude_source_types: list[str] = Field(default_factory=list)
 
 
 def _resolve_document_anchor_value(anchor_value: str) -> str:
     """document 앵커는 documents.id 또는 external_id 둘 다 받는다 — Neo4j의
     Document.id는 항상 documents.id이므로, external_id로 왔으면 Postgres에서
-    한 번 찾아 id로 바꾼다."""
+    대표 문서를 결정적으로 골라 id로 바꾼다(G01 — 과거 "임의 첫 행" 대체)."""
     with session_scope() as session:
         doc = session.get(Document, anchor_value)
         if doc is not None:
             return doc.id
-        doc = session.scalar(select(Document).where(Document.external_id == anchor_value))
-        return doc.id if doc is not None else anchor_value
+        rows = session.execute(
+            select(Document.id, Document.evidence_grade, Document.status, Document.source_type,
+                   Document.metadata_).where(Document.external_id == anchor_value)
+        ).all()
+    candidates = [
+        {"document_id": r[0], "evidence_grade": r[1], "status": r[2], "source_type": r[3],
+         "space_key": (r[4] or {}).get("space_key")}
+        for r in rows
+    ]
+    best = resolve_representative(candidates)
+    return best["document_id"] if best else anchor_value
 
 
 def _fetch_evidence_grades(document_ids: list[str]) -> dict[str, str]:
@@ -57,6 +74,16 @@ def _fetch_evidence_grades(document_ids: list[str]) -> dict[str, str]:
             select(Document.id, Document.evidence_grade).where(Document.id.in_(document_ids))
         ).all()
     return {row[0]: row[1] for row in rows}
+
+
+def _fetch_ancestor_ids(document_ids: list[str]) -> dict[str, list[str]]:
+    if not document_ids:
+        return {}
+    with session_scope() as session:
+        rows = session.execute(
+            select(Document.id, Document.metadata_).where(Document.id.in_(document_ids))
+        ).all()
+    return {row[0]: list((row[1] or {}).get("ancestor_ids") or []) for row in rows}
 
 
 @router.post("/graph/explore")
@@ -142,6 +169,17 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
 
     if not merged["found"] and body.anchor_type != "symptom_text":
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
+
+    # G04 — 제외 필터를 dedup/정렬/cap 이전에 적용
+    if body.exclude_page_ids or body.exclude_subtree_ids or body.exclude_source_types:
+        ancestor_ids_by_doc_id = _fetch_ancestor_ids([d["id"] for d in merged["documents"]])
+        merged["documents"] = filter_excluded_documents(
+            merged["documents"],
+            exclude_page_ids=set(body.exclude_page_ids),
+            exclude_subtree_ids=set(body.exclude_subtree_ids),
+            exclude_source_types=set(body.exclude_source_types),
+            ancestor_ids_by_doc_id=ancestor_ids_by_doc_id,
+        )
 
     # 복수 앵커(symptom_text가 여러 component에 매칭된 경우) 결과 병합 시 중복 제거
     merged["documents"] = dedup_by_key(merged["documents"], "id")

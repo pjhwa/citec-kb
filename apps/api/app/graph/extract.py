@@ -20,25 +20,54 @@ class Edge:
     tag: str  # "EXTRACTED" | "INFERRED"
 
 
-def extract_hierarchy(doc: dict) -> list[Edge]:
-    """metadata["ancestor_ids"] -> PARENT_OF(ancestor -> doc) for each ancestor.
+def extract_hierarchy(doc: dict, *, page_identity_index: dict[str, list[dict]] | None = None) -> list[Edge]:
+    """metadata["ancestor_ids"] -> 직계 부모 1개만 PARENT_OF로 낸다(G02 — 조상
+    전체가 아니라 바로 위 부모만; Neo4jClient._merge_edges가 PARENT_OF를 특수
+    취급해 실제로는 parent->child 방향으로 쓴다).
 
     adapters.py builds ancestor_ids as [root, ..., parent, self] (see
     apps/api/app/confluence/map_sync.py build_frontmatter_confluence_map and
-    apps/api/app/ingest/adapters.py:233-237/294-298/351-355) — the last
-    element is the page's own id, which this function drops.
+    apps/api/app/ingest/adapters.py:233-237/294-298/351-355) — ancestor_ids는
+    raw Confluence page id(접두사 없음)라, doc["id"](예: "confluence_map:604365046")
+    와는 절대 같아질 수 없다 — self 제거는 doc["external_id"](raw id)로 해야
+    한다(G01). doc["id"] 비교도 안전망으로 남겨 다른 source 패턴을 보호한다.
+
+    page_identity_index(app.graph.pipeline.build_page_identity_index()의 출력,
+    raw id 소문자 -> candidate 목록)로 부모를 Postgres의 대표 Document로
+    해석한다. 코퍼스에 없으면 UnresolvedPage로 낸다 — Document처럼 보이는 빈
+    노드를 만들지 않는다(G01 금지사항).
     """
+    from app.graph.identity import best_candidate_id
+
     ancestor_ids = (doc.get("metadata") or {}).get("ancestor_ids") or []
-    chain = [a for a in ancestor_ids if a != doc["id"]]
+    self_raw = (doc.get("external_id") or "").strip().lower()
+    chain = [
+        a for a in ancestor_ids
+        if a != doc["id"] and str(a).strip().lower() != self_raw
+    ]
+    if not chain:
+        return []
+    parent_raw = chain[-1]
+    index = page_identity_index or {}
+    resolved_id = best_candidate_id(index.get(str(parent_raw).strip().lower(), []))
+    if resolved_id:
+        return [
+            Edge(
+                rel_type="PARENT_OF",
+                target_label="Document",
+                target_key="id",
+                target_value=resolved_id,
+                tag="EXTRACTED",
+            )
+        ]
     return [
         Edge(
             rel_type="PARENT_OF",
-            target_label="Document",
-            target_key="id",
-            target_value=ancestor_id,
+            target_label="UnresolvedPage",
+            target_key="external_id",
+            target_value=str(parent_raw),
             tag="EXTRACTED",
         )
-        for ancestor_id in chain
     ]
 
 
@@ -74,7 +103,6 @@ def extract_structured_components(
 
 
 _BUSINESS_ENTITY_TYPES = {"business_system", "platform"}
-_TOKEN_RE = re.compile(r"[A-Za-z가-힣0-9_/\-\.]+")
 
 
 def extract_business_entities(doc: dict, *, document_entities: list[dict]) -> list[Edge]:
@@ -96,18 +124,38 @@ def extract_business_entities(doc: dict, *, document_entities: list[dict]) -> li
     return edges
 
 
+_HANGUL_RE = re.compile(r"[가-힣]")
+
+
 def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) -> list[Edge]:
-    """app.lexicon.seed.load_lexicon_map()의 출력(토큰 소문자 -> [canonical,...])을
-    그대로 입력받아 본문에서 매칭된 canonical들을 HAS_COMPONENT(INFERRED)로 낸다."""
+    """app.lexicon.seed.load_lexicon_map()의 출력(소문자 변형어 -> [canonical,...])을
+    그대로 입력받아 본문에서 매칭된 canonical들을 HAS_COMPONENT(INFERRED)로 낸다.
+
+    G06: 과거엔 공백 없는 단일 토큰만 집합으로 비교해 "NetApp Cluster"/"SQL
+    Server"처럼 여러 단어로 된 등록 구문이 절대 안 매칭됐다 — 이제 변형어 문자열
+    자체로 본문을 검사한다. 한글 변형어는 조사가 붙어도("넷앱에서") 찾을 수 있게
+    단순 포함 검사를 쓰고(한글은 공백 경계가 느슨해 \\b가 조사 앞에서 끊기지
+    않음), ASCII 변형어는 \\b로 감싸 부분 문자열 오탐(예: "SQLX" 안의 "SQL")을
+    막는다. 긴 등록 구문을 먼저 봐 짧은 변형어가 같은 자리에서 중복 집계되는
+    것을 줄인다(완전한 상호배타는 아님 — "NetApp"과 "NetApp Cluster"는 같은
+    본문에서 둘 다 나올 수 있고, 둘 다 매칭되는 것이 맞는 동작이다)."""
     body = doc.get("body_md") or ""
     if not body:
         return []
-    tokens = {t.lower() for t in _TOKEN_RE.findall(body)}
+    body_lower = body.lower()
+
     canonicals: set[str] = set()
-    for tok in tokens:
-        variants = lexicon_map.get(tok)
-        if variants:
-            canonicals.add(variants[0])  # load_lexicon_map()의 variants[0] == canonical
+    variants_sorted = sorted(
+        ((variant, names[0]) for variant, names in lexicon_map.items() if names and variant),
+        key=lambda item: -len(item[0]),
+    )
+    for variant, canonical in variants_sorted:
+        if _HANGUL_RE.search(variant):
+            if variant in body_lower:
+                canonicals.add(canonical)
+        else:
+            if re.search(r"\b" + re.escape(variant) + r"\b", body_lower):
+                canonicals.add(canonical)
     return [
         Edge(
             rel_type="HAS_COMPONENT",

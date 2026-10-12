@@ -5,7 +5,14 @@ from __future__ import annotations
 import threading
 from typing import Iterable, Optional
 
-from neo4j import GraphDatabase
+try:
+    from neo4j import GraphDatabase
+except ImportError:  # pragma: no cover — requirements-ci.txt가 일부러 neo4j를 뺀다
+    # (G01~G05 작업 중 발견): app.main이 이 모듈을 거치는 graph 라우터를 항상
+    # import하므로, 이 import가 모듈 최상단에서 실패하면 app.main을 import하는
+    # 모든 테스트(예: test_mock_idp_e2e.py)가 그래프와 전혀 무관해도 CI에서
+    # 깨진다. 실제로 Neo4jClient를 생성할 때만 필요하므로 지연시킨다.
+    GraphDatabase = None  # type: ignore[assignment]
 
 from app.graph.extract import Edge
 from app.settings import get_settings
@@ -54,6 +61,11 @@ class Neo4jClient:
     def __init__(
         self, uri: str | None = None, user: str | None = None, password: str | None = None
     ) -> None:
+        if GraphDatabase is None:
+            raise ImportError(
+                "neo4j package not installed — not in requirements-ci.txt by design; "
+                "install it (requirements.txt) to actually connect to Neo4j"
+            )
         settings = get_settings()
         self._driver = GraphDatabase.driver(
             uri or settings.neo4j_uri,
@@ -121,6 +133,7 @@ class Neo4jClient:
             if "Document" in labels:
                 documents.append({
                     "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
+                    "external_id": node.get("external_id"),
                     "relation": entry["relation"], "hops": entry["hops"],
                 })
             elif "Component" in labels:
@@ -198,26 +211,69 @@ def close_shared_client() -> None:
             _singleton_client = None
 
 
+# G02: PARENT_OF는 extract_hierarchy 기준으로 "자신의 부모"를 가리키지만, 실제
+# Neo4j에는 의미대로 parent->child로 써야 한다 — 그래서 이 rel_type만
+# source/target을 뒤집어 MERGE한다(G02 결정 — docs/superpowers/specs/
+# 2026-10-12-graph-correctness-decisions.md). 다른 rel_type은 그대로
+# source->target.
+_FLIPPED_REL_TYPES = {"PARENT_OF"}
+
+# G03: 재동기화 때 지워야 할 "이 엔티티가 소유한" managed relationship 목록 —
+# PARENT_OF는 자신이 타깃(자신은 child)이라 incoming, 나머지는 자신이
+# 소스라 outgoing. 둘을 구분해야 "자신이 부모인 다른 문서들의 PARENT_OF"를
+# 실수로 지우지 않는다.
+_DOCUMENT_OWNED_OUTGOING = ["HAS_COMPONENT", "REFERENCES", "MENTIONS_ENTITY"]
+_DOCUMENT_OWNED_INCOMING = ["PARENT_OF"]
+_BUCKET_OWNED_OUTGOING = ["HAS_EVIDENCE", "SIMILAR_TO"]
+
+
+def _replace_owned_edges_tx(
+    tx, label: str, key: str, value: str, *, outgoing: list[str], incoming: list[str]
+) -> None:
+    """merge_* 쓰기 전에 호출 — 이 엔티티가 과거에 냈던 managed edge를 전부
+    지운 뒤 새 edges로 재생성한다(G03 — 멱등 재동기화, 사라진 멘션도 자동 제거)."""
+    if outgoing:
+        rel_pattern = "|".join(outgoing)
+        tx.run(
+            f"MATCH (s:{label} {{{key}: $value}})-[r:{rel_pattern}]->() DELETE r",
+            value=value,
+        )
+    if incoming:
+        rel_pattern = "|".join(incoming)
+        tx.run(
+            f"MATCH (s:{label} {{{key}: $value}})<-[r:{rel_pattern}]-() DELETE r",
+            value=value,
+        )
+
+
 def _merge_edges(tx, source_label: str, source_key: str, source_value: str, edges: list[Edge]) -> None:
     for e in edges:
         # target_label/rel_type은 이 저장소의 고정 enum("PARENT_OF" 등)뿐이라
         # f-string 삽입이 안전하다 — 외부 입력이 이 값으로 들어오는 경로는 없다.
         tx.run(f"MERGE (t:{e.target_label} {{{e.target_key}: $value}})", value=e.target_value)
-        tx.run(
-            f"""
-            MATCH (s:{source_label} {{{source_key}: $source_value}})
-            MATCH (t:{e.target_label} {{{e.target_key}: $target_value}})
-            MERGE (s)-[r:{e.rel_type}]->(t)
-            SET r.tag = $tag
-            """,
-            source_value=source_value,
-            target_value=e.target_value,
-            tag=e.tag,
-        )
+        if e.rel_type in _FLIPPED_REL_TYPES:
+            query = f"""
+                MATCH (s:{source_label} {{{source_key}: $source_value}})
+                MATCH (t:{e.target_label} {{{e.target_key}: $target_value}})
+                MERGE (t)-[r:{e.rel_type}]->(s)
+                SET r.tag = $tag
+            """
+        else:
+            query = f"""
+                MATCH (s:{source_label} {{{source_key}: $source_value}})
+                MATCH (t:{e.target_label} {{{e.target_key}: $target_value}})
+                MERGE (s)-[r:{e.rel_type}]->(t)
+                SET r.tag = $tag
+            """
+        tx.run(query, source_value=source_value, target_value=e.target_value, tag=e.tag)
 
 
 def _merge_document_tx(tx, doc: dict, edges: list[Edge]) -> None:
     tx.run(f"MERGE (d:Document {{id: $id}}){_DOCUMENT_SET_CLAUSE}", **doc)
+    _replace_owned_edges_tx(
+        tx, "Document", "id", doc["id"],
+        outgoing=_DOCUMENT_OWNED_OUTGOING, incoming=_DOCUMENT_OWNED_INCOMING,
+    )
     _merge_edges(tx, "Document", "id", doc["id"], edges)
 
 
@@ -232,5 +288,9 @@ def _merge_failure_bucket_tx(tx, bucket: dict, edges: list[Edge]) -> None:
             b.evidence_ref = $evidence_ref
         """,
         **bucket,
+    )
+    _replace_owned_edges_tx(
+        tx, "FailureBucket", "id", bucket["id"],
+        outgoing=_BUCKET_OWNED_OUTGOING, incoming=[],
     )
     _merge_edges(tx, "FailureBucket", "id", bucket["id"], edges)

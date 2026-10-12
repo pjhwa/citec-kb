@@ -54,7 +54,7 @@
     {"canonical": "L4/L7", "variants": [], "priority": 30},
     {"canonical": "MDS", "variants": [], "priority": 30},
     {"canonical": "MSA", "variants": [], "priority": 30},
-    {"canonical": "NetApp", "variants": [], "priority": 25},
+    {"canonical": "NetApp", "variants": ["netapp", "넷앱"], "priority": 25},
     {"canonical": "NetApp_Cluster", "variants": ["NetApp Cluster"], "priority": 30},
     {"canonical": "NetApp_E_EF", "variants": ["NetApp E-Series", "NetApp EF"], "priority": 30},
     {"canonical": "Nginx", "variants": [], "priority": 25},

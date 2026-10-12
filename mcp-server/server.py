@@ -902,12 +902,18 @@ async def kb_similar_incident(
 async def kb_graph_explore(
     anchor_type: str,
     anchor_value: str,
+    exclude_page_ids: str = "",
+    exclude_subtree_ids: str = "",
+    exclude_source_types: str = "",
 ) -> str:
     """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
 
     anchor_type: "failure_bucket" | "document" | "component" | "symptom_text"
     anchor_value: 각각 FailureBucket.id / documents.id 또는 external_id /
                   컴포넌트 이름(예: "NetApp", "넷앱") / 자유 텍스트 증상 설명
+    exclude_page_ids/exclude_subtree_ids/exclude_source_types: 쉼표구분 선택 인자 —
+                  평가/검증 보고서처럼 결과에서 빼야 할 페이지·하위트리·source_type을
+                  candidate 단계에서 제외한다(일반 업무 질문에는 보통 비워 둔다).
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -918,11 +924,20 @@ async def kb_graph_explore(
         return f"오류: anchor_type은 failure_bucket|document|component|symptom_text 중 하나여야 합니다 (받음: {anchor_type})"
     if not (anchor_value or "").strip():
         return "오류: anchor_value가 비어 있습니다."
+
+    def _split(s: str) -> list[str]:
+        return [t.strip() for t in (s or "").split(",") if t.strip()]
+
     try:
         async with _client(timeout=30.0) as client:
             resp = await client.post(
                 "/v1/graph/explore",
-                json={"anchor_type": anchor_type, "anchor_value": anchor_value.strip()},
+                json={
+                    "anchor_type": anchor_type, "anchor_value": anchor_value.strip(),
+                    "exclude_page_ids": _split(exclude_page_ids),
+                    "exclude_subtree_ids": _split(exclude_subtree_ids),
+                    "exclude_source_types": _split(exclude_source_types),
+                },
             )
             if resp.status_code == 404:
                 return f"그래프에서 '{anchor_value}'를 찾을 수 없습니다 (as-of 데이터 기준)."

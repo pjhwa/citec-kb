@@ -77,6 +77,91 @@ def test_sync_one_document_creates_node_and_is_idempotent():
         client.close()
 
 
+def test_sync_document_resyncs_when_generation_changes():
+    """G05: 같은 hash라도 generation이 바뀌면(=다른 Neo4j로 옮김) skip하지 않는다."""
+    import app.graph.pipeline as pipeline
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    doc_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(
+            Document(
+                id=doc_id, source_type="tech_repo", external_id=str(uuid.uuid4()),
+                title="테스트 문서", body_md="Redis 장애", content_hash="h1",
+            )
+        )
+
+    client = pipeline.build_neo4j_client(
+        uri=_NEO4J_URI,
+        user=os.environ.get("GRAPH_NEO4J_TEST_USER", "neo4j"),
+        password=os.environ.get("GRAPH_NEO4J_TEST_PASSWORD", "citecgraph"),
+    )
+    try:
+        first = pipeline.sync_document(doc_id, client=client, generation="gen-A")
+        assert first == "synced"
+        same_gen = pipeline.sync_document(doc_id, client=client, generation="gen-A")
+        assert same_gen == "skipped"
+        new_gen = pipeline.sync_document(doc_id, client=client, generation="gen-B")
+        assert new_gen == "synced"
+    finally:
+        client.close()
+
+
+def test_sync_document_resolves_direct_parent_via_page_identity_index():
+    """G01/G02 end-to-end: TGW 재현 입력 — ancestor_ids가 raw page id 체인이고
+    문서 id는 source-prefixed일 때, 직계 부모 1개만 올바르게 해석돼야 한다."""
+    import app.graph.pipeline as pipeline
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    parent_doc_id = f"confluence_map:{uuid.uuid4()}"
+    parent_external_id = parent_doc_id.split(":", 1)[1]
+    child_doc_id = f"confluence_map:{uuid.uuid4()}"
+    child_external_id = child_doc_id.split(":", 1)[1]
+    grandparent_raw_id = str(uuid.uuid4())  # 코퍼스에 없음 — unresolved
+
+    with session_scope() as session:
+        session.add(Document(
+            id=parent_doc_id, source_type="confluence_map", external_id=parent_external_id,
+            title="부모", body_md="x", content_hash="hp", status="active", evidence_grade="C",
+        ))
+        session.add(Document(
+            id=child_doc_id, source_type="confluence_map", external_id=child_external_id,
+            title="자식", body_md="x", content_hash="hc", status="active", evidence_grade="C",
+            metadata_={"ancestor_ids": [grandparent_raw_id, parent_external_id, child_external_id]},
+        ))
+
+    client = pipeline.build_neo4j_client(
+        uri=_NEO4J_URI,
+        user=os.environ.get("GRAPH_NEO4J_TEST_USER", "neo4j"),
+        password=os.environ.get("GRAPH_NEO4J_TEST_PASSWORD", "citecgraph"),
+    )
+    try:
+        page_identity_index = pipeline.build_page_identity_index()
+        result = pipeline.sync_document(
+            child_doc_id, client=client, page_identity_index=page_identity_index,
+        )
+        assert result == "synced"
+        with client._driver.session() as session:
+            direct_parent = session.run(
+                "MATCH (p:Document {id: $p})-[r:PARENT_OF]->(c:Document {id: $c}) RETURN count(r) AS n",
+                p=parent_doc_id, c=child_doc_id,
+            ).single()["n"]
+            no_grandparent_edge = session.run(
+                "MATCH ()-[r:PARENT_OF]->(c:Document {id: $c}) RETURN count(r) AS n",
+                c=child_doc_id,
+            ).single()["n"]
+            fake_document_for_raw_id = session.run(
+                "MATCH (n:Document {id: $v}) RETURN count(n) AS n", v=grandparent_raw_id,
+            ).single()["n"]
+        assert direct_parent == 1
+        assert no_grandparent_edge == 1  # 직계 부모 하나만 — 조상 전체 아님
+        assert fake_document_for_raw_id == 0  # grandparent는 unresolved라 Document로 안 생김
+    finally:
+        client.close()
+
+
 def test_sync_document_handles_deleted_document_without_raising():
     import app.graph.pipeline as pipeline
     from app.db.models import Document

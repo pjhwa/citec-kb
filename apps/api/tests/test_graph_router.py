@@ -245,3 +245,40 @@ def test_explore_component_anchor_that_is_itself_a_hub_short_circuits():
     assert body["documents"] == []
     assert body["components"] == []
     assert body["failure_buckets"] == []
+
+
+def test_explore_excludes_document_by_page_id():
+    """G04: exclude_page_ids에 걸린 문서는 candidate 단계에서 빠져야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"ExclComp-{uuid.uuid4()}"
+    excluded_doc_id = f"test-excl-{uuid.uuid4()}"
+    excluded_page_id = str(uuid.uuid4())
+    kept_doc_id = f"test-keep-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": excluded_doc_id, "source_type": "confluence_map", "external_id": excluded_page_id,
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_document(
+        {"id": kept_doc_id, "source_type": "confluence_map", "external_id": "other",
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name, "exclude_page_ids": [excluded_page_id]},
+    )
+    assert resp.status_code == 200
+    doc_ids = {d["id"] for d in resp.json()["documents"]}
+    assert excluded_doc_id not in doc_ids
+    assert kept_doc_id in doc_ids

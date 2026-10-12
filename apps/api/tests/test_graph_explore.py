@@ -33,6 +33,22 @@ def test_shape_explore_result_sorts_by_hops_then_evidence_grade():
     assert shaped["as_of"] == "2026-10-09"
 
 
+def test_shape_explore_result_sorts_a_minus_before_b_at_same_hop():
+    # G09: 과거 로컬 _GRADE_ORDER가 "A-"를 몰라 C와 동일(순서 없음) 취급했다.
+    raw = {
+        "found": True,
+        "documents": [
+            {"id": "d-b", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES",
+             "hops": 1, "evidence_grade": "B"},
+            {"id": "d-aminus", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES",
+             "hops": 1, "evidence_grade": "A-"},
+        ],
+        "components": [], "failure_buckets": [], "excluded_hub_components": [],
+    }
+    shaped = shape_explore_result(raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert [d["id"] for d in shaped["documents"]] == ["d-aminus", "d-b"]
+
+
 def test_shape_explore_result_truncates_at_cap():
     docs = [
         {"id": f"d{i}", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES", "hops": 1}
@@ -58,6 +74,41 @@ def test_enrich_with_evidence_grade_merges_by_id():
     enriched = enrich_with_evidence_grade(documents, grade_by_id)
     assert enriched[0]["evidence_grade"] == "A"
     assert enriched[1]["evidence_grade"] is None
+
+
+def test_filter_excluded_documents_removes_by_page_id():
+    from app.graph.explore import filter_excluded_documents
+
+    docs = [{"id": "d1", "external_id": "2586676618", "source_type": "confluence_map"},
+            {"id": "d2", "external_id": "999", "source_type": "confluence_map"}]
+    kept = filter_excluded_documents(docs, exclude_page_ids={"2586676618"})
+    assert [d["id"] for d in kept] == ["d2"]
+
+
+def test_filter_excluded_documents_removes_by_subtree_ancestor():
+    from app.graph.explore import filter_excluded_documents
+
+    docs = [{"id": "d1", "external_id": "111", "source_type": "confluence_map"}]
+    kept = filter_excluded_documents(
+        docs, exclude_subtree_ids={"2550166358"},
+        ancestor_ids_by_doc_id={"d1": ["2550166358", "111"]},
+    )
+    assert kept == []
+
+
+def test_filter_excluded_documents_removes_by_source_type():
+    from app.graph.explore import filter_excluded_documents
+
+    docs = [{"id": "d1", "external_id": "x", "source_type": "support_history"}]
+    kept = filter_excluded_documents(docs, exclude_source_types={"support_history"})
+    assert kept == []
+
+
+def test_filter_excluded_documents_noop_when_no_filters():
+    from app.graph.explore import filter_excluded_documents
+
+    docs = [{"id": "d1", "external_id": "x", "source_type": "confluence_map"}]
+    assert filter_excluded_documents(docs) == docs
 
 
 def test_dedup_by_key_removes_duplicates_across_anchors():

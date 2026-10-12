@@ -7,18 +7,11 @@ import re
 
 from app.failure_buckets.match import rank_buckets
 from app.graph.extract import Edge
+from app.graph.identity import best_candidate_id as best_candidate
 
-_GRADE_RANK = {"A": 0, "A-": 1, "B": 2, "C": 3, "machine": 4, "draft": 5}
 _CONFLUENCE_RE = re.compile(r"confluence:(?:[A-Za-z0-9_]+/)?(\d+)", re.IGNORECASE)
 _CITECTS_RE = re.compile(r"citects-\d+", re.IGNORECASE)
 _SIMILAR_TO_THRESHOLD = 0.75  # apps/api/app/failure_buckets/service.py:99 와 동일하게 유지
-
-
-def best_candidate(candidates: list[dict]) -> str | None:
-    if not candidates:
-        return None
-    best = min(candidates, key=lambda c: _GRADE_RANK.get(c["evidence_grade"], 99))
-    return best["document_id"]
 
 
 def extract_evidence(bucket: dict, *, external_id_index: dict[str, list[dict]]) -> list[Edge]:
