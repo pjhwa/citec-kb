@@ -195,8 +195,7 @@ class Neo4jClient:
             node: n1, relation: type(best_r1), tag: best_r1.tag, hops: 1,
             down: startNode(best_r1) = a
         }}) AS hop1
-        CALL {{
-            WITH a
+        CALL (a) {{
             OPTIONAL MATCH (a)-[r1b]-(p)-[r2]-(n2)
             WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
             WITH a, n2, p, r1b, r2
