@@ -24,7 +24,7 @@
 | G09 (등급·결정적 정렬) | **완료** | `app.graph.identity.GRADE_RANK`로 통합(A/A-/B/C/machine/draft) — `explore.py`/`failure_bucket.py` 둘 다 여기서 가져옴. **2차 수정**: `_sort_key`가 `(hops, grade)`뿐이라 동률이면 Neo4j `collect()`의 비결정적 순서가 그대로 샜다 — id(컴포넌트는 canonical_name)를 최종 tie-break로 추가해 같은 요청을 반복해도 순서가 같아지게 함. | `test_grade_rank_includes_a_minus`, `test_shape_explore_result_sorts_a_minus_before_b_at_same_hop`, `test_shape_explore_result_breaks_ties_deterministically_by_id` |
 | G07 (cap 뒤 접근) | **완료** | `shape_explore_result`가 카테고리별 `*_total`/`*_truncated`를 돌려주고(전역 `truncated` 하나뿐이던 것 대체), `/v1/graph/explore`에 `documents_offset`/`components_offset`/`failure_buckets_offset` 추가. `kb_graph_explore`도 동명 인자로 다음 페이지를 요청할 수 있다. **MCP 렌더링 구멍 발견 즉시 수정**: 처음엔 50개짜리 페이지를 20줄만 찍고 다음 offset을 +50으로 안내해 21~50번째가 영영 안 보였다 — 이제 페이지 전체(최대 50줄)를 그대로 찍는다. | `tests/test_graph_explore.py`의 페이지네이션 2종, `tests/test_graph_router.py::test_explore_documents_offset_pages_beyond_cap`, `mcp-server/test_graph_explore_format.py`(신규, 0/20/21/50/51건 경계 + offset을 따라가며 전부 도달하는지 end-to-end 확인 — **mcp-server/ 테스트는 CI에 안 물려 있음**, 로컬 venv로만 실행) |
 | G09 잔여 | — | `Neo4jClient.explore()`의 `best_by_id`가 같은 hop에서 동률일 때 보여줄 `relation` 라벨은 여전히 Neo4j `collect()` 순서에 의존(어떤 경로로 도달했다고 "표시"하는지만 비결정적 — 포함 여부·정렬 순서 자체는 결정적). | 미해결 — 영향 적음(같은 노드가 여러 관계로 도달 가능한 드문 경우에만) |
-| G10 (failure_bucket 명시 URL 해석) | **완료** | 핸드오프의 "resolution" 필드는 이 스키마의 `recommended_action`(`\d failure_buckets`로 확인 — `resolution` 컬럼 자체가 없음). `app.graph.failure_bucket.decode_confluence_tiny_link()`가 Confluence tiny link(`/x/<code>`)를 로컬 디코딩(fetch 없음)하고, `extract_mentioned_references()`가 `root_cause`+`recommended_action`에서 그 URL과 `pageId=` 쿼리를 찾아 `page_identity_index`로 해석되는 것만 `REFERENCES`(HAS_EVIDENCE 아님 — 단순 언급과 근거 연결 구분, §2.7)로 낸다. `REFERENCES`를 `_BUCKET_OWNED_OUTGOING`에 추가해 재동기화 시 교체되게 함. | `tests/test_graph_failure_bucket.py`에 7종 추가(디코딩 검증 쌍 2개, URL-safe 문자 거부, tiny-link/pageId 해석, 미해결 조용히 skip, 다른 호스트 거부). **실제 dev 데이터로 재현 확인**(읽기 전용): `external_id=2542097469` 존재, dev의 failure_bucket 8건 id/evidence_ref가 핸드오프 표와 정확히 일치. **아직 dev 그래프에는 반영 안 됨** — 현재 진행 중인 전체 재백필이 끝날 때마다 버킷도 재동기화되므로, 이 커밋 이후 `--source-ids`로 버킷을 다시 돌려야 실제로 적용된다. |
+| G10 (failure_bucket 명시 URL 해석) | **코드·테스트 완료, dev 그래프 반영은 아직 — partial** | 핸드오프의 "resolution" 필드는 이 스키마의 `recommended_action`(`\d failure_buckets`로 확인 — `resolution` 컬럼 자체가 없음). `app.graph.failure_bucket.decode_confluence_tiny_link()`가 Confluence tiny link(`/x/<code>`)를 로컬 디코딩(fetch 없음)하고, `extract_mentioned_references()`가 `root_cause`+`recommended_action`에서 그 URL과 `pageId=` 쿼리를 찾아 `page_identity_index`로 해석되는 것만 `REFERENCES`(HAS_EVIDENCE 아님, §2.7)로 낸다. `classify_evidence()`/`aggregate_evidence_reasons()`로 resolved/external_artifact/legacy_missing/target_not_ingested/unresolved_reference 사유별 집계를 `sync_cli` JSON 출력에 추가(§2.7 요구). | `tests/test_graph_failure_bucket.py` 13종(디코딩 검증 쌍 2개 포함, URL-safe 문자 거부가 캡처 정규식 단계에서도 실제로 작동하는지 end-to-end 3종, tiny-link/pageId 해석, 미해결 조용히 skip, 다른 호스트 거부, **실제 8건 evidence_ref/recommended_action으로 분류 분포가 핸드오프 기대와 정확히 일치**). **실제 dev 데이터로 재현 확인**(읽기 전용): `external_id=2542097469` 존재, dev의 failure_bucket 8건 id/evidence_ref가 핸드오프 표와 정확히 일치. **완료로 올리는 조건(아직 미충족)**: 전체 재백필 후 `--source-ids`로 버킷을 재동기화해 `6ea28d59-...`의 REFERENCES가 실제로 `confluence_map:2542097469`로 잡히고, 그 때 출력되는 `evidence_reasons` 집계를 EVIDENCE.md에 저장해야 한다. |
 | G08/G11 잔여 | **미시작** | — | 전체 경로/provenance(2hop 전체 node/edge 순서, EXTRACTED/INFERRED 구분 노출), 기존 테스트의 실제 계약 반영은 G01/G02/G06 fixture 교체분(G11 일부)만 끝남 |
 
 ## 부수적으로 발견/수정
@@ -101,6 +101,28 @@ GitHub Actions CI는 `GRAPH_TEST_DATABASE_URL`을 설정하지 않으므로(그�
 - confluence-mcp/github-mcp 세션 도구 없음 — 라이브 Confluence 재검증, 10월 9일
   zip 재다운로드·SHA256 확인 미수행. 코드 근거(`evidence/source-excerpts.md`)와
   개발 DB/Neo4j 직접 조회로 대체했다.
+- Codex 쪽 스킬 동기화 — 이 호스트/세션에는 Codex 환경 접근이 없다. §3.4가
+  요구하는 "Codex 공유 원본 동기화"는 패치 절차만 남기고 미검증으로 둔다.
+
+## 설치된 스킬 조사 결과(§3.4)
+
+`citec-mcp-workbench`라는 이름의 스킬은 이 호스트 `~/.claude/skills/`
+(find-skills/pisa-item-generator/synced/token-diet뿐)와
+`~/.claude/plugins/cache/`를 뒤져도 **어디에도 설치돼 있지 않다** — 정본은
+이 저장소의 `docs/CITEC_KB_MCP_SKILL.md`(와 그 미러 `apps/web/public/docs/
+CITEC_KB_MCP_SKILL.md`)뿐이고, 둘 다 이번에 `kb_graph_explore` 섹션을
+추가했다(위 커밋). 비교 대상 "설치된 캐시 사본"이 없으므로 diff할 것이 없다.
+
+단, `citec-kb`를 참조하는 **다른** 설치된 플러그인 스킬이 하나 있다 —
+`~/.claude/plugins/cache/packet-capture-rca-local/packet-capture-rca/0.3.3/
+skills/packet-capture-rca/references/citec-kb-integration.md`. 이 문서는
+`kb_match_failure_bucket`/`kb_search`/`kb_list_failure_buckets`/
+`kb_similar_incident`/`kb_get_failure_bucket`/`kb_register_failure_bucket`/
+`kb_refine_failure_bucket`만 언급하고 **`kb_graph_explore`는 없다**. 이
+스킬의 범위(failure_bucket 자가개선 루프)상 graph 탐색이 필수는 아니라
+결함으로 단정하지 않지만, "매칭된 패턴을 더 깊이 보고 싶을 때" 후속 단계로
+넣을지는 그 플러그인의 소스(이 저장소 밖, `packet-capture-rca` 저장소)를
+고치는 별도 작업 — 캐시 사본은 손대지 않는다(이 세션에서 변경 안 함).
 
 ## 최종 전체 재백필 결과
 

@@ -65,10 +65,10 @@
   Document"로 남아있으면 G03의 "비활성·누락 문서가 근거 목록에 정상 문서로 나오지
   않아야 한다" 요구를 아직 충족 못 한 것(이번 범위는 재동기화되는 문서의 managed
   edge 정리까지만 보장 — 문서 자체가 사라진 경우의 Document 노드 정리는 별도).
-- `tech_repo`/`confluence_docs`/`confluence_map`의 failure_bucket 8건을
-  `--source-ids`로 재동기화해(버킷은 매 CLI 실행 끝에 전부 재동기화되므로 전체
-  재백필에 자동 포함됨) `6ea28d59-...`(Pacemaker)의 REFERENCES가
-  `confluence_map:2542097469`로 잡히는지 확인(G10).
+- failure_bucket 8건은 `sync_cli`가 끝에서 매번 전부 재동기화하므로 이번 전체
+  재백필에 자동 포함된다 — 끝난 뒤 `6ea28d59-...`(Pacemaker)의 REFERENCES가
+  `confluence_map:2542097469`로 잡히는지, `sync_cli` JSON의 `evidence_reasons`
+  집계가 기대 분포와 맞는지 확인(G10).
 - 실제 Claude Code 세션에서 `kb_search` → `kb_graph_explore` → `kb_get_document`
   체인을 한국어 질문으로 1회 수행해 trace를 남긴다(이 보고서의 python 스크립트
   호출이 아니라 실제 MCP 도구 호출).
