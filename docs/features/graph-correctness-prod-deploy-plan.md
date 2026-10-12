@@ -32,15 +32,22 @@
    `replace=false`로 바뀌었으므로 쿼리 파라미터 없이 호출해도 안전 — upsert만
    함). lexicon 내용은 `graph_sync_state.input_hash`에 안 들어가므로, 이
    순서를 지키지 않으면 재시딩 전에 동기화된 문서들은 EXTRACTOR_VERSION이
-   바뀌기 전까지 넷앱/넷앱 별칭을 못 잡는다.
+   바뀌기 전까지 넷앱 별칭을 못 잡는다.
 5. **전체 재백필**: `scripts/graph_sync.sh`(= `sync_cli`) `--generation` 없이
    실행 — 운영 Neo4j에 마커가 없으므로 새로 발급되고, `EXTRACTOR_VERSION`이
    `2026-10-12.3`으로 올라 있어 기존 `graph_sync_state`의 입력 해시 일치
    여부와 무관하게 전체가 재동기화된다(의도된 동작 — G01/G02/G03/G06 모두
    추출 로직이 바뀌었으므로 전체 재추출이 필요). 운영 코퍼스는 115,235건 —
-   dev 측정(~19문서/초) 기준 전체 재백필은 약 100분 추정, 운영 쓰기 부하가
-   다르면 달라질 수 있다.
-6. **cron 재개**(3단계에서 멈췄다면).
+   dev에서 이번 전체 재백필 중 **실측한 처리율은 ~16.5문서/초**(5분 구간
+   직접 측정, `graph_sync_state` 증가량 기준) — 115,235건 기준 약 116분
+   추정. 운영 쓰기 부하·네트워크가 다르면 달라질 수 있으니, 3단계의 cron
+   중지는 이 추정보다 여유 있게(예: 3시간) 잡는다.
+6. **mcp 컨테이너도 함께 재시작**: `docker compose restart api mcp`(또는
+   `worker`까지 포함) — `api`만 재시작하면 REST 응답 모양은 바뀌어도
+   `kb_graph_explore`가 그 새 필드(`documents_total` 등)를 쓰는 MCP 프로세스
+   자체는 안 재시작돼 그대로일 수 있다(이번 세션에서 실제로 겪음 — api만
+   재시작하고 mcp를 안 재시작하면 변경이 반쯤 반영된 것처럼 보인다).
+7. **cron 재개**(3단계에서 멈췄다면).
 
 ## 완료 판정
 
@@ -52,6 +59,16 @@
   기록한다.
 - Component `Network`/`SCP`의 `is_hub = true`(운영 전체 코퍼스 기준 — dev
   샘플 규모에서는 안 걸릴 수 있다).
+- Neo4j `Document` 중 PG `documents`에 더 이상 없는 id 수를 센다(`MATCH (d:Document)
+  RETURN d.id` 결과를 PG `documents.id` 전체와 대조, 또는 소규모면 `documents.id
+  IN (...)` 역질의) — 원문이 삭제/비활성화된 뒤에도 Neo4j에 그 문서가 "정상
+  Document"로 남아있으면 G03의 "비활성·누락 문서가 근거 목록에 정상 문서로 나오지
+  않아야 한다" 요구를 아직 충족 못 한 것(이번 범위는 재동기화되는 문서의 managed
+  edge 정리까지만 보장 — 문서 자체가 사라진 경우의 Document 노드 정리는 별도).
+- `tech_repo`/`confluence_docs`/`confluence_map`의 failure_bucket 8건을
+  `--source-ids`로 재동기화해(버킷은 매 CLI 실행 끝에 전부 재동기화되므로 전체
+  재백필에 자동 포함됨) `6ea28d59-...`(Pacemaker)의 REFERENCES가
+  `confluence_map:2542097469`로 잡히는지 확인(G10).
 - 실제 Claude Code 세션에서 `kb_search` → `kb_graph_explore` → `kb_get_document`
   체인을 한국어 질문으로 1회 수행해 trace를 남긴다(이 보고서의 python 스크립트
   호출이 아니라 실제 MCP 도구 호출).
