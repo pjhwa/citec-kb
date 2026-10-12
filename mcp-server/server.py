@@ -954,7 +954,7 @@ async def kb_graph_explore(
     except httpx.HTTPError as e:
         return _err(e)
 
-    lines = [f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
+    lines = [f"status: {data.get('status', '(unknown)')}", f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
     anchor = data.get("anchor") or {}
     if anchor.get("type") == "symptom_text":
         mc = anchor.get("matched_components") or []
@@ -968,6 +968,23 @@ async def kb_graph_explore(
         lines.append("(그래프에 해당 노드 없음)")
     if data.get("excluded_hub_components"):
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
+
+    def _render_path(path: list) -> str:
+        # G08(2차 리뷰) — "마지막 relation 하나"가 아니라 anchor부터 이
+        # 노드까지의 전체 경로를 보여준다. PARENT_OF는 계층 의미가 있어 ↑/↓,
+        # 나머지(REFERENCES/HAS_COMPONENT 등)는 방향만 있는 →/←로 표시해
+        # "down=자식"이라는 계층 어휘를 다른 관계 타입에 잘못 끌어오지 않는다.
+        parts = []
+        for step in path or []:
+            relation = step.get("relation")
+            is_out = step.get("direction") == "out"
+            marker = ("↓" if is_out else "↑") if relation == "PARENT_OF" else ("→" if is_out else "←")
+            parts.append(f"{marker}{relation}")
+            via = step.get("via")
+            if via:
+                name = via.get("id") or via.get("canonical_name") or via.get("bucket_name") or via.get("external_id") or "?"
+                parts.append(str(name))
+        return " ".join(parts)
 
     def _render_category(label: str, items: list, offset: int, total_key: str, trunc_key: str,
                           offset_param: str, line_fn) -> None:
@@ -990,7 +1007,7 @@ async def kb_graph_explore(
         "연관 문서", docs, documents_offset, "documents_total", "documents_truncated",
         "documents_offset",
         lambda d: (
-            f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
+            f"  - [{d.get('hops')}hop {_render_path(d.get('path'))}] {d.get('title')} "
             f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
         ),
     )
@@ -999,14 +1016,14 @@ async def kb_graph_explore(
     _render_category(
         "연관 컴포넌트", comps, components_offset, "components_total", "components_truncated",
         "components_offset",
-        lambda c: f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}",
+        lambda c: f"  - [{c.get('hops')}hop {_render_path(c.get('path'))}] {c.get('canonical_name')}",
     )
 
     fbs = data.get("failure_buckets") or []
     _render_category(
         "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
         "failure_buckets_offset",
-        lambda b: f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}",
+        lambda b: f"  - [{b.get('hops')}hop {_render_path(b.get('path'))}] {b.get('bucket_name')} id={b.get('id')}",
     )
 
     return "\n".join(lines)
