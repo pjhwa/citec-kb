@@ -16,6 +16,7 @@ from app.db.models import Document, FailureBucket, GraphRun
 from app.db.session import session_scope
 from app.graph.pipeline import (
     EXTRACTOR_VERSION,
+    aggregate_evidence_reasons,
     build_external_id_index,
     build_neo4j_client,
     build_page_identity_index,
@@ -105,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     stats = {"synced": 0, "skipped": 0, "failed": 0}
     fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None
+    evidence_reasons: dict[str, int] = {}
     try:
         try:
             external_id_index = build_external_id_index()
@@ -126,6 +128,9 @@ def main(argv: list[str] | None = None) -> int:
                             "confidence": b.confidence,
                             "discriminating_signals": list(b.discriminating_signals or []),
                             "counter_signals": list(b.counter_signals or []),
+                            "evidence_ref": b.evidence_ref,
+                            "root_cause": b.root_cause,
+                            "recommended_action": b.recommended_action,
                         }
                     )
             for bucket_id in bucket_ids:
@@ -134,6 +139,10 @@ def main(argv: list[str] | None = None) -> int:
                     page_identity_index=page_identity_index, generation=args.generation,
                 )
                 fb_stats[result] += 1
+
+            evidence_reasons = aggregate_evidence_reasons(
+                all_buckets, external_id_index=external_id_index, page_identity_index=page_identity_index,
+            )
 
             if not args.skip_hub_recompute:
                 try:
@@ -166,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps(
         {"run_id": run_id, "generation": args.generation, "documents": stats, "failure_buckets": fb_stats,
-         "hub_recompute_ok": hub_recompute_ok},
+         "hub_recompute_ok": hub_recompute_ok, "evidence_reasons": evidence_reasons},
         ensure_ascii=False,
     ))
     return 0 if ok else 1

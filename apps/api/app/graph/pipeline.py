@@ -26,7 +26,13 @@ from app.graph.extract import (
     extract_references,
     extract_structured_components,
 )
-from app.graph.failure_bucket import extract_evidence, extract_mentioned_references, extract_similar_to
+from app.graph.failure_bucket import (
+    _EVIDENCE_REASONS,
+    classify_evidence,
+    extract_evidence,
+    extract_mentioned_references,
+    extract_similar_to,
+)
 from app.graph.hashing import compute_graph_hash
 from app.graph.neo4j_client import Neo4jClient
 from app.lexicon.seed import load_lexicon_map
@@ -279,8 +285,13 @@ def sync_failure_bucket(
                 "root_cause": bucket.root_cause,
                 "recommended_action": bucket.recommended_action,
             }
+        # extract_evidence는 page_identity_index(= 상위집합: document_id/
+        # evidence_grade/status/source_type/space_key)를 받아도 그대로 동작한다
+        # — best_candidate_id가 기대하는 키 구조가 같고, active>grade>source
+        # tier>id tie-break까지 덤으로 적용된다(G01 잔여 해소, 2차 리뷰 지적).
+        richer_index = page_identity_index or external_id_index or {}
         edges = (
-            extract_evidence(bucket_dict, external_id_index=external_id_index or {})
+            extract_evidence(bucket_dict, external_id_index=richer_index)
             + extract_similar_to(bucket_dict, other_buckets=all_buckets)
             + extract_mentioned_references(bucket_dict, page_identity_index=page_identity_index)
         )
@@ -289,6 +300,25 @@ def sync_failure_bucket(
     except Exception:  # noqa: BLE001
         logger.exception("graph sync failed for failure_bucket_id=%s", bucket_id)
         return "failed"
+
+
+def aggregate_evidence_reasons(
+    buckets: list[dict], *, external_id_index: dict[str, list[dict]] | None = None,
+    page_identity_index: dict[str, list[dict]] | None = None,
+) -> dict[str, int]:
+    """G10 §2.7 — resolved/external_artifact/legacy_missing/target_not_ingested/
+    unresolved_reference 사유별 수를 전체 failure_bucket에 대해 합산한다
+    (sync_cli가 배치 종료 시 1회 호출, buckets는 evidence_ref/root_cause/
+    recommended_action을 포함해야 한다)."""
+    richer_index = page_identity_index or external_id_index or {}
+    totals = {r: 0 for r in _EVIDENCE_REASONS}
+    for bucket in buckets:
+        counts = classify_evidence(
+            bucket, external_id_index=richer_index, page_identity_index=page_identity_index,
+        )
+        for reason, n in counts.items():
+            totals[reason] += n
+    return totals
 
 
 def recompute_hub_flags(client: Neo4jClient) -> None:

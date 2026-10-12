@@ -20,11 +20,61 @@ _SIMILAR_TO_THRESHOLD = 0.75  # apps/api/app/failure_buckets/service.py:99 와 �
 # 정해진 호스트만 — 임의 외부 URL은 절대 fetch하지 않는다(§2.7 금지사항).
 _CONFLUENCE_HOST = "devops.sdsdev.co.kr/confluence"
 _TINY_LINK_RE = re.compile(
-    rf"https?://{re.escape(_CONFLUENCE_HOST)}/x/([A-Za-z0-9]+)"
+    # 코드 전체(-, _ 포함)를 캡처해야 decode_confluence_tiny_link의 URL-safe
+    # 문자 거부가 실제로 작동한다 — [A-Za-z0-9]+만 캡처하면 "/x/ab-cd_e"가
+    # "ab"로 잘려 들어가 거부 로직을 거치지 않고 잘못된 page id로 디코딩될
+    # 뻔했다(2차 리뷰에서 지적).
+    rf"https?://{re.escape(_CONFLUENCE_HOST)}/x/([A-Za-z0-9_\-]+)"
 )
 _PAGE_ID_PARAM_RE = re.compile(
     rf"https?://{re.escape(_CONFLUENCE_HOST)}/[^\s)]*pageId=(\d+)"
 )
+_CAPTURE_LOG_RE = re.compile(r"\b(?:capture|log):", re.IGNORECASE)
+_LEGACY_RE = re.compile(r"\blegacy:", re.IGNORECASE)
+
+_EVIDENCE_REASONS = ("resolved", "external_artifact", "legacy_missing",
+                     "target_not_ingested", "unresolved_reference")
+
+
+def classify_evidence(
+    bucket: dict, *, external_id_index: dict[str, list[dict]],
+    page_identity_index: dict[str, list[dict]] | None = None,
+) -> dict[str, int]:
+    """evidence_ref 토큰과 root_cause/recommended_action에 언급된 URL을 모두
+    사유별로 집계한다(§2.7 "resolved/external_artifact/legacy_missing/
+    target_not_ingested/unresolved_reference 사유별 수 제공" 요구) — edge 생성
+    (extract_evidence/extract_mentioned_references)과는 독립적인 참고 집계라,
+    한 bucket이 여러 사유를 동시에 가질 수 있다(예: evidence_ref는 log: 하나뿐
+    이지만 recommended_action에 resolved되는 URL이 있으면 둘 다 +1)."""
+    reasons = {r: 0 for r in _EVIDENCE_REASONS}
+    ref = bucket.get("evidence_ref") or ""
+
+    for m in _CONFLUENCE_RE.finditer(ref):
+        key = m.group(1)
+        reasons["resolved" if best_candidate(external_id_index.get(key, [])) else "target_not_ingested"] += 1
+    for m in _CITECTS_RE.finditer(ref):
+        key = m.group(0).lower()
+        reasons["resolved" if best_candidate(external_id_index.get(key, [])) else "target_not_ingested"] += 1
+    reasons["external_artifact"] += len(_CAPTURE_LOG_RE.findall(ref))
+    reasons["legacy_missing"] += len(_LEGACY_RE.findall(ref))
+    if ref.strip() and not any(
+        reasons[r] for r in ("resolved", "target_not_ingested", "external_artifact", "legacy_missing")
+    ):
+        reasons["unresolved_reference"] += 1
+
+    text = f"{bucket.get('root_cause') or ''} {bucket.get('recommended_action') or ''}"
+    page_index = page_identity_index or {}
+    for m in _TINY_LINK_RE.finditer(text):
+        page_id = decode_confluence_tiny_link(m.group(1))
+        if page_id is None:
+            continue
+        key = str(page_id).lower()
+        reasons["resolved" if best_candidate(page_index.get(key, [])) else "target_not_ingested"] += 1
+    for m in _PAGE_ID_PARAM_RE.finditer(text):
+        key = m.group(1).lower()
+        reasons["resolved" if best_candidate(page_index.get(key, [])) else "target_not_ingested"] += 1
+
+    return reasons
 
 
 def decode_confluence_tiny_link(code: str) -> int | None:
