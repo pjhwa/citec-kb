@@ -1,0 +1,188 @@
+# 지식그래프 정합성 수정 — 실패 주입/검증 원시 로그 (2026-10-12)
+
+scratch Neo4j + scratch Postgres에서 실행. 상세 설명은 docs/features/graph-evidence.md.
+
+## generation_mint_and_skip.sh
+```
+=== run 1: no marker yet -> mint + sync ===
+2026-10-12 13:59:00,412 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Document) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_3a9f7910 FOR (e:Document) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:00,413 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_9ccdf9b2 FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:FailureBucket) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:00,414 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_713a57df FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Component) REQUIRE n.canonical_name IS UNIQUE'
+2026-10-12 13:59:00,416 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_b77cbcfe FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:BusinessEntity) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:00,417 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_e2524304 FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:UnresolvedPage) REQUIRE n.external_id IS UNIQUE'
+{"run_id": "4ec7cfdc-3557-439d-af78-50edd84f6296", "generation": "2026-10-12.3.8d1f4893", "documents": {"synced": 84, "skipped": 0, "failed": 0}, "failure_buckets": {"synced": 0, "failed": 0}, "hub_recompute_ok": true}
+=== run 2: same marker -> all skip ===
+2026-10-12 13:59:04,509 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Document) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_3a9f7910 FOR (e:Document) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:04,510 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_9ccdf9b2 FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:FailureBucket) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:04,513 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_713a57df FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Component) REQUIRE n.canonical_name IS UNIQUE'
+2026-10-12 13:59:04,514 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_b77cbcfe FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:BusinessEntity) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:04,515 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_e2524304 FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:UnresolvedPage) REQUIRE n.external_id IS UNIQUE'
+{"run_id": "2843c9da-e8f3-48c9-ae5c-dd19d215c446", "generation": "2026-10-12.3.8d1f4893", "documents": {"synced": 0, "skipped": 84, "failed": 0}, "failure_buckets": {"synced": 0, "failed": 0}, "hub_recompute_ok": true}
+=== delete marker, run 3: new mint -> full resync again ===
+2026-10-12 13:59:07,325 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Document) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_3a9f7910 FOR (e:Document) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:07,326 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_9ccdf9b2 FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:FailureBucket) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:07,328 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_713a57df FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Component) REQUIRE n.canonical_name IS UNIQUE'
+2026-10-12 13:59:07,329 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_b77cbcfe FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:BusinessEntity) REQUIRE n.id IS UNIQUE'
+2026-10-12 13:59:07,330 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_e2524304 FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:UnresolvedPage) REQUIRE n.external_id IS UNIQUE'
+{"run_id": "50d99d1a-0b06-4e57-b105-ef73576bbb23", "generation": "2026-10-12.3.2da8c2ed", "documents": {"synced": 84, "skipped": 0, "failed": 0}, "failure_buckets": {"synced": 0, "failed": 0}, "hub_recompute_ok": true}
+```
+
+## hub_recompute_failure_injection.py
+```
+2026-10-12 14:09:36,120 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Document) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_3a9f7910 FOR (e:Document) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:36,122 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_9ccdf9b2 FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:FailureBucket) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:36,124 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_713a57df FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Component) REQUIRE n.canonical_name IS UNIQUE'
+2026-10-12 14:09:36,125 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_b77cbcfe FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:BusinessEntity) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:36,126 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_e2524304 FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:UnresolvedPage) REQUIRE n.external_id IS UNIQUE'
+2026-10-12 14:09:36,911 ERROR citec.graph.sync_cli recompute_hub_flags failed
+Traceback (most recent call last):
+  File "/home/citec/dev/citec-kb/apps/api/app/graph/sync_cli.py", line 140, in main
+    recompute_hub_flags(client)
+  File "/home/citec/dev/citec-kb/apps/api/../../scripts/verify/hub_recompute_failure_injection.py", line 12, in boom
+    raise RuntimeError("simulated hub recompute failure (verify script)")
+RuntimeError: simulated hub recompute failure (verify script)
+exit code: 1
+{"run_id": "2e7210ac-4eb9-4621-a494-2b1a30b41d2e", "generation": "2026-10-12.3.2da8c2ed", "documents": {"synced": 0, "skipped": 84, "failed": 0}, "failure_buckets": {"synced": 0, "failed": 0}, "hub_recompute_ok": false}
+```
+
+## crash_mid_run_injection.py
+```
+2026-10-12 14:09:38,278 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Document) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_3a9f7910 FOR (e:Document) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Document) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:38,280 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_9ccdf9b2 FOR (e:FailureBucket) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:FailureBucket) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:38,281 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_713a57df FOR (e:Component) REQUIRE (e.canonical_name) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:Component) REQUIRE n.canonical_name IS UNIQUE'
+2026-10-12 14:09:38,282 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_b77cbcfe FOR (e:BusinessEntity) REQUIRE (e.id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:BusinessEntity) REQUIRE n.id IS UNIQUE'
+2026-10-12 14:09:38,283 INFO neo4j.notifications Received notification from DBMS server: {severity: INFORMATION} {code: Neo.ClientNotification.Schema.IndexOrConstraintAlreadyExists} {category: SCHEMA} {title: `CREATE CONSTRAINT IF NOT EXISTS FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` has no effect.} {description: `CONSTRAINT constraint_e2524304 FOR (e:UnresolvedPage) REQUIRE (e.external_id) IS UNIQUE` already exists.} {position: None} for query: 'CREATE CONSTRAINT IF NOT EXISTS FOR (n:UnresolvedPage) REQUIRE n.external_id IS UNIQUE'
+2026-10-12 14:09:38,305 ERROR citec.graph.sync_cli sync_cli run failed unexpectedly
+Traceback (most recent call last):
+  File "/home/citec/dev/citec-kb/apps/api/app/graph/sync_cli.py", line 113, in main
+    result = sync_document(
+             ^^^^^^^^^^^^^^
+  File "/home/citec/dev/citec-kb/apps/api/../../scripts/verify/crash_mid_run_injection.py", line 17, in boom
+    raise RuntimeError("simulated catastrophic failure (verify script)")
+RuntimeError: simulated catastrophic failure (verify script)
+last run status: failed
+```
+
+## lexicon_matcher_diff_2000docs.py (old vs new 매처, 실제 코퍼스 2000건 샘플)
+```
+sample size: 2000
+
+3PAR                     15     15   1.00
+A10                      16     16   1.00
+AIX                      38     39   1.03
+Alteon                    7      7   1.00
+Apache                   25     26   1.04
+Arista                    8      9   1.12
+BFD                       1      1   1.00
+Brocade                   3      3   1.00
+Ceph                     88     90   1.02
+Cisco_IOS                 3      4   1.33
+Cisco_NXOS                5      7   1.40
+Citrix                   12     12   1.00
+Cluster                 248    282   1.14
+DB2                      20     20   1.00
+ESXi                     74     76   1.03
+Extreme                  10     10   1.00
+F5                       14     14   1.00
+Firewall                158    168   1.06
+Fortinet                 17     17   1.00
+GRO                       2      3   1.50
+HANA                     47     48   1.02
+HAProxy                  18     19   1.06
+HNAS                      3      3   1.00
+HP-UX                    21     21   1.00
+HPE_AOS-CX                3      3   1.00
+HPE_Comware               1      1   1.00
+IIS                      11     11   1.00
+Isilon                    6      6   1.00
+JBoss                    19     19   1.00
+JEUS                     13     15   1.15
+Kafka                    23     24   1.04
+Kubernetes              153    158   1.03
+L2/L3                     7     10   1.43
+L4/L7                     5      5   1.00
+Linux                   139    149   1.07
+MDS                      13     13   1.00
+MSA                      10     13   1.30
+MTU                      23     24   1.04
+MySQL                    61     62   1.02
+NFS                      48     48   1.00
+NSX_T                    37     41   1.11
+NSX_V                     7      7   1.00
+NetApp                   66     68   1.03
+NetApp_Cluster            2      3   1.50
+NetApp_E_EF               3      3   1.00
+Network                 426    453   1.06
+Nginx                    27     28   1.04
+OpenStack               381    384   1.01
+Oracle                  131    138   1.05
+PostgreSQL               55     55   1.00
+Redis                    31     31   1.00
+SCP                     670    735   1.10
+SDS_PaaS                  7     11   1.57
+SKE_K8S                   4      5   1.25
+SQL Server               19     42   2.21  <-- FLAG
+Secui                    16     16   1.00
+Solaris                  15     15   1.00
+Storage                 409    434   1.06
+Symmetrix                 4      4   1.00
+TMAX                      3      4   1.33
+Tibero                   27     27   1.00
+Tomcat                   23     23   1.00
+VMware                  151    159   1.05
+VNX_Unity                 2      2   1.00
+VSP                       5      6   1.20
+Veritas                  10     10   1.00
+Weblogic                 15     16   1.07
+WebtoB                   10     11   1.10
+Wildfly                  12     12   1.00
+Windows                 126    132   1.05
+ZS                        7      7   1.00
+filesystem               85    109   1.28
+hang                     95     75   0.79
+monimo                   33     36   1.09
+timeout                  67     74   1.10
+
+--- flagged: context around first new-only match ---
+
+=== SQL Server ===
+  [confluence_map:241683065] ...EPAS   　 4 (PaaS) MySQL   　 5 (PaaS) MS SQL Server    　 6 (PaaS) Tibero   　 7 (PaaS) Redis...
+  [confluence_map:2336268586] ... Linux 10   Windows 3   DBMS Oracle 2   SQL Server (Azure) 3   Redis 1   미들웨어 Tomcat 2   J...
+  [confluence_map:2491855512] ...racle Linux Oracle Linux 7 ~ 9.x 　   DB SQL Server Windows 용 2016 ~ 2025 (x86_32, x86_64) ...
+  [confluence_docs:1885050530] ...racle Database의 경쟁력: IBM DB2, Microsoft SQL Server와의 비교   시장 지위 및 경쟁 환경   Oracle Database는...
+```
+
+## 포커스 체크 before/after (전체 재백필 승인 전, dev `citec-kb-neo4j-1`)
+
+대상: TGW 3문서(595824602/604365026/604365046), `confluence_docs:1117787168`,
+구 샘플의 유령 소유자 `tech_repo:1153334044`.
+
+실행:
+```
+docker compose exec -T api python -m app.graph.sync_cli \
+  --source-ids "confluence_map:595824602,confluence_map:604365026,confluence_map:604365046,confluence_docs:1117787168,tech_repo:1153334044" \
+  -v
+```
+결과: `{"documents": {"synced": 5, "skipped": 0, "failed": 0}, "failure_buckets": {"synced": 8, "failed": 0}, "hub_recompute_ok": true}`
+(`--generation` 미지정 — dev Neo4j에 마커가 없어 새로 발급됨: `2026-10-12.3.d2f3f9ca`)
+
+Before:
+- `tech_repo:1153334044`의 unstamped outgoing PARENT_OF(유령) 수: **6**
+- TGW 페이지(`confluence_map:604365046`)의 HAS_COMPONENT: `Network, SCP, Firewall, hang`(hang은 오탐)
+
+After:
+- `tech_repo:1153334044`의 unstamped outgoing PARENT_OF(유령) 수: **0**
+- TGW 페이지의 HAS_COMPONENT: `Network, SCP, Firewall`(hang 사라짐)
+- TGW 페이지의 직계 부모: `confluence_map:604365026`(1건, 정확)
+- 루트(595824602)에서 내려가는 방향: `595824602 -[:PARENT_OF]-> 604365026`(1건, 정확)
+- GraphMeta 마커: `2026-10-12.3.d2f3f9ca`(저장 확인됨)
+
+교차 소스 external_id 충돌 조회:
+```sql
+SELECT external_id, array_agg(DISTINCT source_type) AS source_types
+FROM documents
+GROUP BY external_id
+HAVING count(DISTINCT source_type) > 1
+   AND NOT (array_agg(DISTINCT source_type)::text[] <@ ARRAY['confluence_map','confluence_docs','tech_repo']);
+```
+결과: **0 rows**.

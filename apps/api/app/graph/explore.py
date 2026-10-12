@@ -38,36 +38,56 @@ def _sort_key(item: dict) -> tuple:
     return (item.get("hops", 99), grade, tie_break)
 
 
-def _cap(items: list[dict]) -> tuple[list[dict], bool]:
-    if len(items) <= MAX_RESULTS_PER_CATEGORY:
-        return items, False
-    return items[:MAX_RESULTS_PER_CATEGORY], True
+def _paginate(items: list[dict], offset: int) -> tuple[list[dict], int, bool]:
+    """G07 — 정렬된 전체 후보에서 offset부터 최대 MAX_RESULTS_PER_CATEGORY개를
+    돌려준다. 과거엔 cap=50에서 끊긴 뒤로는 접근 수단이 전혀 없었다(정확히
+    50개와 51개 이상이 MCP에서 똑같이 "50건+"로 보임) — total/truncated를
+    카테고리별로 따로 돌려주고, offset으로 다음 페이지를 요청할 수 있게 한다."""
+    total = len(items)
+    offset = max(0, offset)
+    page = items[offset:offset + MAX_RESULTS_PER_CATEGORY]
+    truncated = offset + len(page) < total
+    return page, total, truncated
 
 
-def shape_explore_result(raw: dict[str, Any], *, as_of: Optional[str], anchor: dict[str, Any]) -> dict[str, Any]:
+def shape_explore_result(
+    raw: dict[str, Any], *, as_of: Optional[str], anchor: dict[str, Any],
+    offsets: dict[str, int] | None = None,
+) -> dict[str, Any]:
     """Neo4jClient.explore()의 raw 출력(found/documents/components/failure_buckets/
-    excluded_hub_components) -> API 응답 모양(as_of/anchor/정렬/절단 포함)."""
+    excluded_hub_components) -> API 응답 모양(as_of/anchor/정렬/절단 포함).
+
+    offsets: {"documents": int, "components": int, "failure_buckets": int} —
+    카테고리별 독립 페이지 시작 위치(G07). 생략하면 전부 0(첫 페이지)."""
+    offsets = offsets or {}
     if not raw.get("found"):
         return {
             "as_of": as_of, "anchor": anchor, "found": False,
             "documents": [], "components": [], "failure_buckets": [],
             "excluded_hub_components": raw.get("excluded_hub_components") or [],
             "truncated": False,
+            "documents_total": 0, "documents_truncated": False,
+            "components_total": 0, "components_truncated": False,
+            "failure_buckets_total": 0, "failure_buckets_truncated": False,
         }
 
     documents = sorted(raw.get("documents") or [], key=_sort_key)
     components = sorted(raw.get("components") or [], key=_sort_key)
     failure_buckets = sorted(raw.get("failure_buckets") or [], key=_sort_key)
 
-    documents, doc_trunc = _cap(documents)
-    components, comp_trunc = _cap(components)
-    failure_buckets, fb_trunc = _cap(failure_buckets)
+    documents, doc_total, doc_trunc = _paginate(documents, offsets.get("documents", 0))
+    components, comp_total, comp_trunc = _paginate(components, offsets.get("components", 0))
+    failure_buckets, fb_total, fb_trunc = _paginate(failure_buckets, offsets.get("failure_buckets", 0))
 
     return {
         "as_of": as_of, "anchor": anchor, "found": True,
         "documents": documents, "components": components, "failure_buckets": failure_buckets,
         "excluded_hub_components": raw.get("excluded_hub_components") or [],
+        # 하위 호환 — 셋 중 하나라도 더 있으면 True(기존 소비자는 이 필드만 봐도 된다).
         "truncated": doc_trunc or comp_trunc or fb_trunc,
+        "documents_total": doc_total, "documents_truncated": doc_trunc,
+        "components_total": comp_total, "components_truncated": comp_trunc,
+        "failure_buckets_total": fb_total, "failure_buckets_truncated": fb_trunc,
     }
 
 

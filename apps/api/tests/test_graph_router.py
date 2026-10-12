@@ -426,3 +426,45 @@ def test_explore_document_anchor_with_null_external_id_does_not_fanout_to_everyt
     client = TestClient(app)
     resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": anchor_id})
     assert resp.status_code == 404  # 그래프에 없는 단일 앵커 — fan-out으로 other_id까지 끌려오면 안 됨
+
+
+def test_explore_documents_offset_pages_beyond_cap():
+    """G07: documents_offset으로 cap(50) 뒤의 후보에 접근할 수 있어야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"PageComp-{uuid_mod.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    doc_ids = []
+    for i in range(60):
+        doc_id = f"test-page-{comp_name}-{i:03d}"
+        doc_ids.append(doc_id)
+        nclient.merge_document(
+            {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+             "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    client = TestClient(app)
+    page1 = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert page1.status_code == 200
+    body1 = page1.json()
+    assert len(body1["documents"]) == 50
+    assert body1["documents_truncated"] is True
+    assert body1["documents_total"] == 60
+
+    page2 = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name, "documents_offset": 50},
+    )
+    assert page2.status_code == 200
+    body2 = page2.json()
+    assert len(body2["documents"]) == 10
+    assert body2["documents_truncated"] is False
+    seen_ids = {d["id"] for d in body1["documents"]} | {d["id"] for d in body2["documents"]}
+    assert seen_ids == set(doc_ids)

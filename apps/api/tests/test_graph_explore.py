@@ -79,6 +79,48 @@ def test_shape_explore_result_truncates_at_cap():
     assert shaped["truncated"] is True
 
 
+def test_shape_explore_result_exposes_per_category_total_and_truncated():
+    # G07: 정확히 50개(안 잘림)와 51개(잘림)를 전역 truncated만으로는 구분 못 했다.
+    docs_50 = [
+        {"id": f"d{i}", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES", "hops": 1}
+        for i in range(MAX_RESULTS_PER_CATEGORY)
+    ]
+    raw = {"found": True, "documents": docs_50, "components": [], "failure_buckets": [],
+           "excluded_hub_components": []}
+    shaped = shape_explore_result(raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert shaped["documents_total"] == MAX_RESULTS_PER_CATEGORY
+    assert shaped["documents_truncated"] is False
+
+    docs_51 = docs_50 + [{"id": "d-extra", "title": "t", "source_type": "tech_repo",
+                           "relation": "REFERENCES", "hops": 1}]
+    raw["documents"] = docs_51
+    shaped = shape_explore_result(raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert shaped["documents_total"] == MAX_RESULTS_PER_CATEGORY + 1
+    assert shaped["documents_truncated"] is True
+
+
+def test_shape_explore_result_offset_pages_through_sorted_candidates():
+    # G07: offset으로 51번째 항목(cap 뒤에 숨은 후보)에 접근할 수 있어야 한다 —
+    # TGW 케이스처럼 50건+ 중 21~50번째에 실제 정답이 있는 상황.
+    docs = [
+        {"id": f"d{i:03d}", "title": "t", "source_type": "tech_repo", "relation": "REFERENCES", "hops": 1}
+        for i in range(60)
+    ]
+    raw = {"found": True, "documents": docs, "components": [], "failure_buckets": [],
+           "excluded_hub_components": []}
+    page1 = shape_explore_result(raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"})
+    assert [d["id"] for d in page1["documents"]][:3] == ["d000", "d001", "d002"]
+    assert page1["documents_truncated"] is True
+
+    page2 = shape_explore_result(
+        raw, as_of="2026-10-09", anchor={"type": "document", "resolved_id": "d0"},
+        offsets={"documents": 50},
+    )
+    assert [d["id"] for d in page2["documents"]] == [f"d{i:03d}" for i in range(50, 60)]
+    assert page2["documents_truncated"] is False
+    assert page2["documents_total"] == 60
+
+
 def test_shape_explore_result_not_found():
     raw = {"found": False, "documents": [], "components": [], "failure_buckets": [],
            "excluded_hub_components": []}

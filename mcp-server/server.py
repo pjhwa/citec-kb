@@ -24,7 +24,6 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
-_GRAPH_EXPLORE_CAP = 50  # mirrors apps/api/app/graph/explore.py:MAX_RESULTS_PER_CATEGORY (separate process, can't import it)
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -905,6 +904,9 @@ async def kb_graph_explore(
     exclude_page_ids: str = "",
     exclude_subtree_ids: str = "",
     exclude_source_types: str = "",
+    documents_offset: int = 0,
+    components_offset: int = 0,
+    failure_buckets_offset: int = 0,
 ) -> str:
     """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
 
@@ -914,6 +916,9 @@ async def kb_graph_explore(
     exclude_page_ids/exclude_subtree_ids/exclude_source_types: 쉼표구분 선택 인자 —
                   평가/검증 보고서처럼 결과에서 빼야 할 페이지·하위트리·source_type을
                   candidate 단계에서 제외한다(일반 업무 질문에는 보통 비워 둔다).
+    documents_offset/components_offset/failure_buckets_offset: 한 카테고리가
+                  50건을 넘으면(아래 "+"로 표시) 각 50건씩 더 보려면 이 값을
+                  그 수만큼 올려 재호출한다(예: documents_offset=50).
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -937,6 +942,9 @@ async def kb_graph_explore(
                     "exclude_page_ids": _split(exclude_page_ids),
                     "exclude_subtree_ids": _split(exclude_subtree_ids),
                     "exclude_source_types": _split(exclude_source_types),
+                    "documents_offset": documents_offset,
+                    "components_offset": components_offset,
+                    "failure_buckets_offset": failure_buckets_offset,
                 },
             )
             if resp.status_code == 404:
@@ -961,29 +969,41 @@ async def kb_graph_explore(
     if data.get("excluded_hub_components"):
         lines.append(f"제외된 범용 컴포넌트: {', '.join(data['excluded_hub_components'])}")
 
+    def _render_category(label: str, items: list, offset: int, total_key: str, trunc_key: str,
+                          line_fn) -> None:
+        total = data.get(total_key, len(items))
+        truncated = data.get(trunc_key, False)
+        shown_from = offset + 1 if items else offset
+        shown_to = offset + len(items)
+        lines.append(f"\n{label} ({total}건 중 {shown_from}-{shown_to}건 표시):")
+        for item in items[:20]:
+            lines.append(line_fn(item))
+        if len(items) > 20:
+            lines.append(f"  … 이 페이지 안에서 {len(items) - 20}건 더(위 offset 그대로, MCP 표시만 20줄 제한)")
+        if truncated:
+            next_offset = offset + len(items)
+            lines.append(f"  … 다음 페이지: 같은 조건으로 offset={next_offset} 재호출")
+
     docs = data.get("documents") or []
-    lines.append(f"\n연관 문서 ({len(docs)}건{'+' if len(docs) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for d in docs[:20]:
-        lines.append(
+    _render_category(
+        "연관 문서", docs, documents_offset, "documents_total", "documents_truncated",
+        lambda d: (
             f"  - [{d.get('hops')}hop/{d.get('relation')}] {d.get('title')} "
             f"({d.get('source_type')}, evidence_grade={d.get('evidence_grade')}) id={d.get('id')}"
-        )
-    if len(docs) > 20:
-        lines.append(f"  … 외 {len(docs) - 20}건")
+        ),
+    )
 
     comps = data.get("components") or []
-    lines.append(f"\n연관 컴포넌트 ({len(comps)}건{'+' if len(comps) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for c in comps[:20]:
-        lines.append(f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}")
-    if len(comps) > 20:
-        lines.append(f"  … 외 {len(comps) - 20}건")
+    _render_category(
+        "연관 컴포넌트", comps, components_offset, "components_total", "components_truncated",
+        lambda c: f"  - [{c.get('hops')}hop/{c.get('relation')}] {c.get('canonical_name')}",
+    )
 
     fbs = data.get("failure_buckets") or []
-    lines.append(f"\n연관 과거 장애 ({len(fbs)}건{'+' if len(fbs) >= _GRAPH_EXPLORE_CAP else ''}):")
-    for b in fbs[:20]:
-        lines.append(f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}")
-    if len(fbs) > 20:
-        lines.append(f"  … 외 {len(fbs) - 20}건")
+    _render_category(
+        "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
+        lambda b: f"  - [{b.get('hops')}hop/{b.get('relation')}] {b.get('bucket_name')} id={b.get('id')}",
+    )
 
     return "\n".join(lines)
 
@@ -1134,11 +1154,15 @@ async def kb_tools_help() -> str:
                   environment가 비어있는(미확인) 버킷은 계속 후보에 남는다.
 
 [지식그래프 — 연관 탐색]
-  kb_graph_explore(anchor_type=, anchor_value=)
+  kb_graph_explore(anchor_type=, anchor_value=, exclude_page_ids=, exclude_subtree_ids=,
+                    exclude_source_types=, documents_offset=, components_offset=,
+                    failure_buckets_offset=)
                   anchor_type: failure_bucket|document|component|symptom_text
                   장애 분석 시 연관 컴포넌트/문서/과거 장애를 2hop까지 탐색.
                   kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은
                   다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인).
+                  카테고리당 최대 50건, 그 이상이면 응답에 "N건 중 X-Y건 표시"와
+                  다음 페이지 안내가 나온다 — *_offset으로 재호출해 끝까지 볼 것.
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록

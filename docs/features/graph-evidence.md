@@ -33,29 +33,32 @@
   `neo4j_client.py`의 import를 optional로 바꾸고 실제 `Neo4jClient()` 생성
   시점에만 에러를 내도록 수정.
 
-## 코드 리뷰에서 걸러낸 것(실제 dev 전체 재백필 전, 총 3회 kill)
+## 코드 리뷰에서 걸러낸 것(실제 dev 전체 재백필 전, 총 2회 kill)
 
-전체 dev 재백필(새 generation)을 세 번 시도했고, 매번 리뷰에서 실제 결함을
-찾아 **그 자리에서 kill**한 뒤 수정·재검증했다 — 완성된 뒤에야 네 번째로
-진짜 전체 재백필을 실행했다. 세 번 모두 `graph_runs`에 `status=running`으로
-남은 행이 있다(`generation` 값: `2026-10-12.g1`, `2026-10-12.g2`, 그리고
-`--source-ids` 포커스 체크 이전의 세 번째 시도분) — kill은 SIGKILL이라
-`sync_cli`의 바깥 try/except(G05 수정)로도 못 잡는다. dev 전용이라
-`running`으로 방치해도 피해는 없다(사람이 봤을 때 "그 시점에 멈췄다"는
-정확한 기록이기도 하다).
+전체 dev 재백필(새 generation)을 두 번 kill했다 — `graph_runs`에
+`status=running`으로 남은 두 행(`generation=2026-10-12.g1`,
+`2026-10-12.g2`). kill은 SIGKILL이라 `sync_cli`의 바깥 try/except(G05 수정)
+로도 못 잡는다. dev 전용이라 `running`으로 방치해도 피해는 없다(정확한
+전체 이력은 `SELECT generation, status, started_at, completed_at FROM
+graph_runs ORDER BY started_at`로 확인 가능).
 
-1. **1차**: G03(PARENT_OF 방향 수정 전 코드가 쓴 유령이 지워지지 않음),
+1. **g1 kill**: G03(PARENT_OF 방향 수정 전 코드가 쓴 유령이 지워지지 않음),
    G06(한글 한 글자 변형어 "행" 오탐) — 둘 다 코드 리뷰만으로 발견, 실행 중
    kill.
-2. **2차**: G06 ASCII 경계가 과거보다 오히려 정밀도를 떨어뜨림(path/hostname/
-   dotted key 오탐) — 실제 코퍼스 2000건 diff로 재현. G01 fan-out이 또
-   다른 두 버그를 만듦(복제본이 서로의 연관 문서로 나옴, external_id=''가
-   SQL `IS NULL`/falsy 비교로 fan-out됨). G05의 `--generation` 사람 실수
-   의존성도 이 라운드에서 마커 기반으로 구조적으로 제거.
-3. **3차(포커스 체크)**: 코드 결함은 못 찾음 — `tech_repo:1153334044`(구
-   유령 소유자)와 TGW 3문서, `confluence_docs:1117787168`를
-   `--source-ids`로만 재동기화해 before/after를 실측하고서야 전체 실행을
-   승인했다. 결과는 `artifacts/citec-kb-graph-correctness-20261012/evidence/`.
+2. **g2 kill**: G06 한 글자 제외 규칙으로 고쳤는데도, ASCII `\b` 경계가
+   과거보다 오히려 정밀도를 떨어뜨리는 걸 코드 리뷰로 다시 지적받아(아직
+   실행 전) kill.
+3. 그 사이 코드 리뷰(아무 것도 실행 중이지 않을 때)에서 추가로 찾은 것:
+   ASCII 경계 오탐을 실제 코퍼스 2000건 diff로 재현, G01 fan-out의 두 부작용
+   (복제본이 서로의 연관 문서로 나옴, `external_id=''`가 SQL `IS NULL`/
+   falsy 비교로 fan-out됨), G05 `--generation`의 사람 실수 의존성(마커
+   기반으로 구조적으로 제거).
+4. **포커스 체크(`--source-ids`로만 재동기화, 전체 실행 아님)**:
+   `tech_repo:1153334044`(구 유령 소유자)와 TGW 3문서,
+   `confluence_docs:1117787168`를 재동기화해 before/after를 실측하고서야
+   전체 실행을 승인했다 — 정상 완료됨(`2026-10-12.3.d2f3f9ca`,
+   05:00:08~05:00:22 UTC). 결과는
+   `artifacts/citec-kb-graph-correctness-20261012/evidence/`.
 
 4번째(최종) 실행은 `--generation` 없이(=마커 자동 발급/재사용) 실행했고,
 완료 결과는 이 문서 하단 "최종 전체 재백필 결과"에 기록한다(실행 중이면

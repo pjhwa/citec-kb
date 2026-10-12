@@ -338,8 +338,14 @@ See §6.3 for the full taxonomy and when to use each:
   해석한다.
 - 응답 상단의 `해석된 앵커:`(component/document/failure_bucket)나 `매칭된 컴포넌트:`(symptom_text)로
   입력이 실제 무엇으로 해석됐는지 확인한다. `component`는 lexicon에 없으면 대소문자 무시
-  매칭까지 시도한다. 결과가 많으면 카테고리별로 최대 50건까지만 보여주고 "…외 N건"으로
-  생략됨을 표시한다.
+  매칭까지 시도한다. 카테고리별 전체 후보는 최대 50건씩 페이지로 끊긴다 — 응답이
+  "N건 중 X-Y건 표시"면 전부 본 게 아니다, `documents_offset`/`components_offset`/
+  `failure_buckets_offset`을 다음 시작 위치로 올려 재호출해야 끝까지 확인할 수 있다.
+  정답이 50건 뒤에 숨어 있을 수 있으니, 특히 document 앵커에서 결과가 많으면 끝까지
+  확인할 것.
+- `exclude_page_ids`/`exclude_subtree_ids`/`exclude_source_types`(쉼표구분)로 평가·검증
+  보고서 등 결과에서 빼야 할 페이지/하위트리/source_type을 걸러낼 수 있다(일반 업무
+  질문에는 보통 비워 둔다).
 
 **API:** `POST /v1/graph/explore`
 

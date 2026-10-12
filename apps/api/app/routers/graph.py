@@ -43,6 +43,11 @@ class GraphExploreBody(BaseModel):
     exclude_page_ids: list[str] = Field(default_factory=list)
     exclude_subtree_ids: list[str] = Field(default_factory=list)
     exclude_source_types: list[str] = Field(default_factory=list)
+    # G07 — 카테고리별 독립 페이지 시작 위치. cap(50) 뒤에 숨은 후보에 접근하는
+    # 유일한 수단이다.
+    documents_offset: int = Field(default=0, ge=0)
+    components_offset: int = Field(default=0, ge=0)
+    failure_buckets_offset: int = Field(default=0, ge=0)
 
 
 def _rows_to_candidates(rows) -> list[dict[str, Any]]:
@@ -235,4 +240,11 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             "type": body.anchor_type, "resolved_id": anchors[0][2], "resolved_name": resolved_name,
         }
 
-    return shape_explore_result(merged, as_of=as_of_str, anchor=anchor_info)
+    return shape_explore_result(
+        merged, as_of=as_of_str, anchor=anchor_info,
+        offsets={
+            "documents": body.documents_offset,
+            "components": body.components_offset,
+            "failure_buckets": body.failure_buckets_offset,
+        },
+    )
