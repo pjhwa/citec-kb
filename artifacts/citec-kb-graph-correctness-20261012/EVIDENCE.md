@@ -262,3 +262,17 @@ RETURN d.id, d.title
 -> confluence_map:2542097469, "2026-09-16 SCP v2 수원 DBaaS 장애 분석: 원인·영향·복구 및 재발 방지"
 ```
 핸드오프가 명시한 "분석 원문"과 정확히 일치.
+
+## G08 실제 MCP 라이브 트레이스 — 방향/경로 표시 검증 (2026-10-12, api+mcp 재시작 후)
+
+`mcp__wiki-mcp__kb_graph_explore(anchor_type="document", anchor_value="confluence_map:595824602")`
+
+예측과 정확히 일치:
+- `338017591`(부모): `[1hop ↑PARENT_OF]`
+- `604365026`(자식): `[1hop ↓PARENT_OF]`
+- `327519070`(조부모): `[2hop ↑PARENT_OF confluence_map:338017591 ↑PARENT_OF]`
+- `338017596`(형제): `[2hop ↑PARENT_OF confluence_map:338017591 ↓PARENT_OF]`
+- `604365046`(TGW, 손자): `[2hop ↓PARENT_OF confluence_map:604365026 ↓PARENT_OF]`
+
+`status: found`가 첫 줄에 기계가 읽을 수 있는 형태로 출력됨. 컴포넌트 결과도
+방향 표시(`→HAS_COMPONENT`) 포함.
