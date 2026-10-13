@@ -37,6 +37,8 @@ INTEGRATION_FILES=(
   tests/test_graph_router.py
   tests/test_lexicon_seed_db.py
   tests/test_graph_sync_cli_db.py
+  tests/test_graph_sync_cli_subprocess_db.py
+  tests/test_graph_runs_seq_migration_db.py
   tests/test_ghost_node_audit_db.py
 )
 
