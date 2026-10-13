@@ -92,3 +92,122 @@ def test_audit_excludes_multi_label_node_even_if_source_type_null_and_isolated()
                 a=true_ghost_id, b=multi_label_id,
             )
         driver.close()
+
+
+def test_execute_deletion_cancelled_without_exact_confirmation():
+    """"delete" 외의 입력(또는 거부)이면 아무것도 지우지 않아야 한다."""
+    mod = _load_ghost_audit_module()
+    driver = _driver()
+    node_id = f"cancel-{uuid.uuid4()}"
+    try:
+        with driver.session() as session:
+            session.run("CREATE (:Document {id: $id})", id=node_id)
+
+        result = mod._execute_deletion(driver, confirm=lambda _prompt: False)
+        assert result == {"requested": 1, "deleted": 0, "cancelled": True}
+
+        with driver.session() as session:
+            count = session.run(
+                "MATCH (d:Document {id: $id}) RETURN count(d) AS c", id=node_id
+            ).single()["c"]
+        assert count == 1
+    finally:
+        with driver.session() as session:
+            session.run("MATCH (d:Document {id: $id}) DETACH DELETE d", id=node_id)
+        driver.close()
+
+
+def test_execute_deletion_deletes_only_true_ghosts_and_writes_manifest(tmp_path, monkeypatch):
+    """confirm=True일 때 실제로 유령만 지우고, 정상 노드(관계 보유)는
+    남겨야 한다. 삭제 manifest 파일도 tmp_path 아래에 남아야 한다."""
+    mod = _load_ghost_audit_module()
+    monkeypatch.chdir(tmp_path)
+    driver = _driver()
+    ghost_id = f"ghost-{uuid.uuid4()}"
+    linked_id = f"linked-{uuid.uuid4()}"
+    other_id = f"other-{uuid.uuid4()}"
+    try:
+        with driver.session() as session:
+            session.run("CREATE (:Document {id: $id})", id=ghost_id)
+            session.run(
+                "CREATE (a:Document {id: $linked})-[:HAS_COMPONENT]->(:Component {canonical_name: $c})",
+                linked=linked_id, c=f"comp-{linked_id}",
+            )
+            session.run("CREATE (:Document {id: $id, source_type: 'confluence_docs'})", id=other_id)
+
+        result = mod._execute_deletion(driver, confirm=lambda _prompt: True)
+        assert result["requested"] == 1
+        assert result["deleted"] == 1
+        assert "manifest" in result
+        assert (tmp_path / result["manifest"]).exists()
+
+        with driver.session() as session:
+            remaining = {
+                r["id"]
+                for r in session.run(
+                    "MATCH (d:Document) WHERE d.id IN [$g, $l, $o] RETURN d.id AS id",
+                    g=ghost_id, l=linked_id, o=other_id,
+                )
+            }
+        assert remaining == {linked_id, other_id}
+    finally:
+        with driver.session() as session:
+            session.run(
+                "MATCH (d:Document) WHERE d.id IN [$g, $l, $o] "
+                "OPTIONAL MATCH (d)-[r]-() DETACH DELETE d",
+                g=ghost_id, l=linked_id, o=other_id,
+            )
+            session.run(
+                f"MATCH (c:Component {{canonical_name: 'comp-{linked_id}'}}) DETACH DELETE c"
+            )
+        driver.close()
+
+
+def test_execute_deletion_batch_failure_is_retry_safe(tmp_path, monkeypatch):
+    """배치 중간 실패 시: 이미 처리된 배치는 커밋된 채 남고, 재시도하면
+    idempotent하게 나머지만 지워져야 한다.
+
+    _audit()의 _GHOST_QUERY는 d.id로 ORDER BY 하므로(Task 1), 배치는 생성
+    순서가 아니라 id 문자열의 사전순으로 나뉜다. 따라서 이 ids 리스트도
+    사전순으로 미리 정렬해, "앞의 2개가 첫 배치"라는 테스트의 전제가 실제
+    배치 순서와 항상 일치하도록 한다(그렇지 않으면 1/6 확률로만 통과하는
+    flaky 테스트가 된다)."""
+    mod = _load_ghost_audit_module()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mod, "_DELETE_BATCH_SIZE", 2)
+    driver = _driver()
+    ids = sorted(f"batch-{uuid.uuid4()}" for _ in range(4))
+    try:
+        with driver.session() as session:
+            for i in ids:
+                session.run("CREATE (:Document {id: $id})", id=i)
+
+        orig_delete_batch = mod._delete_batch
+        calls = {"n": 0}
+
+        def flaky(session, batch_ids):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise RuntimeError("simulated batch failure")
+            return orig_delete_batch(session, batch_ids)
+
+        monkeypatch.setattr(mod, "_delete_batch", flaky)
+        with pytest.raises(RuntimeError):
+            mod._execute_deletion(driver, confirm=lambda _prompt: True)
+
+        with driver.session() as session:
+            remaining = {
+                r["id"]
+                for r in session.run(
+                    "MATCH (d:Document) WHERE d.id IN $ids RETURN d.id AS id", ids=ids
+                )
+            }
+        assert remaining == set(ids[2:])  # first batch (ids[0:2]) already deleted
+
+        monkeypatch.setattr(mod, "_delete_batch", orig_delete_batch)
+        result = mod._execute_deletion(driver, confirm=lambda _prompt: True)
+        assert result["deleted"] == 2  # only the remaining batch
+    finally:
+        with driver.session() as session:
+            session.run("MATCH (d:Document) WHERE d.id IN $ids DETACH DELETE d", ids=ids)
+        driver.close()

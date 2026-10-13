@@ -64,9 +64,59 @@ def _audit(driver) -> dict:
     }
 
 
+_DELETE_BATCH_SIZE = 5000
+
+
+def _delete_batch(session, ids: list[str]) -> int:
+    result = session.run(
+        "UNWIND $ids AS id MATCH (d:Document {id: id}) "
+        "WHERE d.source_type IS NULL AND labels(d) = ['Document'] "
+        "DETACH DELETE d RETURN count(d) AS deleted",
+        ids=ids,
+    )
+    return result.single()["deleted"]
+
+
+def _execute_deletion(driver, *, confirm) -> dict:
+    """락은 호출자(main())가 미리 잡아둔 상태에서 불린다. 과거 dry-run
+    manifest는 신뢰하지 않고, 이 호출 시점에 판정 쿼리를 다시 실행해
+    삭제 대상을 확정한다(TOCTOU 방지)."""
+    result = _audit(driver)
+    ids = [g["id"] for g in result["would_delete"]]
+    if not ids:
+        return {"requested": 0, "deleted": 0}
+
+    prompt = f"{len(ids)}건을 삭제하시겠습니까? 되돌릴 수 없습니다. 'delete' 입력: "
+    if not confirm(prompt):
+        return {"requested": len(ids), "deleted": 0, "cancelled": True}
+
+    manifest_path = (
+        f"artifacts/ghost_node_deletion_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    )
+    os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"deleted_at": datetime.now(timezone.utc).isoformat(), "ids": ids},
+            f, ensure_ascii=False, indent=2,
+        )
+
+    deleted_total = 0
+    with driver.session() as session:
+        for i in range(0, len(ids), _DELETE_BATCH_SIZE):
+            batch = ids[i : i + _DELETE_BATCH_SIZE]
+            deleted_total += _delete_batch(session, batch)
+
+    return {"requested": len(ids), "deleted": deleted_total, "manifest": manifest_path}
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out", default=None, help="백업 manifest(JSON) 저장 경로 — 기본: artifacts/ghost_node_audit_<timestamp>.json")
+    p.add_argument(
+        "--execute", action="store_true",
+        help="dry-run이 아니라 실제로 삭제한다 — sync_cli와 같은 advisory lock을 "
+             "먼저 잡고, 그 시점에 판정 쿼리를 다시 실행해 'delete' 확인을 받은 뒤 삭제한다.",
+    )
     args = p.parse_args(argv)
 
     try:
@@ -83,6 +133,36 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    if args.execute:
+        from app.db.session import get_engine
+        from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+
+        lock_conn = get_engine().connect()
+        got_lock = lock_conn.exec_driver_sql(
+            "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+        ).scalar()
+        if not got_lock:
+            lock_conn.close()
+            driver.close()
+            print("✗ sync_cli가 이미 같은 락을 쥐고 있습니다 — 삭제를 시도하지 않고 중단합니다", file=sys.stderr)
+            print(json.dumps({"error": "lock_held_by_another_run"}), file=sys.stderr)
+            return 1
+        try:
+            outcome = _execute_deletion(
+                driver, confirm=lambda prompt: input(prompt).strip() == "delete"
+            )
+        finally:
+            lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+            lock_conn.close()
+            driver.close()
+        print(json.dumps(outcome, ensure_ascii=False))
+        if outcome.get("cancelled"):
+            print("삭제를 취소했습니다.")
+            return 0
+        print(f"요청 {outcome['requested']}건 중 {outcome['deleted']}건 삭제 완료.")
+        return 0
+
     try:
         result = _audit(driver)
     finally:
