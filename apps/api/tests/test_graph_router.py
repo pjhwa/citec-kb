@@ -905,6 +905,8 @@ def test_graph_status_liveness_running_when_lock_actually_held():
     finally:
         lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
         lock_conn.close()
+        with session_scope() as session:
+            session.query(GraphRun).filter_by(run_id=run_id).delete()
 
 
 def test_graph_status_liveness_likely_dead_when_lock_not_held():
@@ -917,18 +919,25 @@ def test_graph_status_liveness_likely_dead_when_lock_not_held():
     from datetime import datetime, timezone
 
     run_id = str(uuid.uuid4())
-    with session_scope() as session:
-        session.add(GraphRun(
-            run_id=run_id, extractor_version="v", generation="g", scope="full",
-            status="running", lock_holder_pid=999999999, heartbeat_at=datetime.now(timezone.utc),
-        ))
+    try:
+        with session_scope() as session:
+            session.add(GraphRun(
+                run_id=run_id, extractor_version="v", generation="g", scope="full",
+                status="running", lock_holder_pid=999999999, heartbeat_at=datetime.now(timezone.utc),
+            ))
 
-    client = TestClient(app)
-    resp = client.get("/v1/graph/status")
-    assert resp.status_code == 200
-    liveness = resp.json()["latest_run"]["liveness"]
-    assert liveness["state"] == "likely_dead"
-    assert liveness["lock_currently_held"] is False
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        assert resp.status_code == 200
+        liveness = resp.json()["latest_run"]["liveness"]
+        assert liveness["state"] == "likely_dead"
+        assert liveness["lock_currently_held"] is False
+    finally:
+        # status='running'인 채로 남겨두면, 다른 테스트 파일(특히 실제
+        # 서브프로세스가 "지금 막 생긴 running 행"을 기다리는 테스트)이
+        # 이 leftover를 자기 것으로 착각할 수 있다 — 반드시 정리한다.
+        with session_scope() as session:
+            session.query(GraphRun).filter_by(run_id=run_id).delete()
 
 
 def test_graph_status_liveness_stalled_when_heartbeat_too_old():
@@ -966,6 +975,10 @@ def test_graph_status_liveness_stalled_when_heartbeat_too_old():
     finally:
         lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
         lock_conn.close()
+        # status='running'인 채로 남겨두면 다른 테스트(서브프로세스 하드킬
+        # 테스트 등)가 leftover를 자기 것으로 착각할 수 있다.
+        with session_scope() as session:
+            session.query(GraphRun).filter_by(run_id=run_id).delete()
 
 
 def test_graph_status_liveness_unknown_when_no_lock_holder_pid_recorded():
@@ -978,16 +991,20 @@ def test_graph_status_liveness_unknown_when_no_lock_holder_pid_recorded():
     from app.db.session import session_scope
 
     run_id = str(uuid.uuid4())
-    with session_scope() as session:
-        session.add(GraphRun(
-            run_id=run_id, extractor_version="v", generation="g", scope="full", status="running",
-        ))
+    try:
+        with session_scope() as session:
+            session.add(GraphRun(
+                run_id=run_id, extractor_version="v", generation="g", scope="full", status="running",
+            ))
 
-    client = TestClient(app)
-    resp = client.get("/v1/graph/status")
-    liveness = resp.json()["latest_run"]["liveness"]
-    assert liveness["state"] == "unknown"
-    assert liveness["lock_holder_pid"] is None
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        liveness = resp.json()["latest_run"]["liveness"]
+        assert liveness["state"] == "unknown"
+        assert liveness["lock_holder_pid"] is None
+    finally:
+        with session_scope() as session:
+            session.query(GraphRun).filter_by(run_id=run_id).delete()
 
 
 def test_graph_status_read_state_consistent_when_full_run_cleanly_completed():

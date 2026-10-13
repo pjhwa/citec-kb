@@ -139,3 +139,48 @@ def test_sync_cli_marks_prior_running_rows_abandoned_on_next_run():
     with session_scope() as session:
         stale_row = session.get(GraphRun, stale_run_id)
         assert stale_row.status == "abandoned"
+
+
+def test_heartbeat_raises_when_lock_connection_is_terminated():
+    """F04(2026-10-13 최종 핸드오프) §5 — fencing 직접 확인: lock_conn의
+    백엔드가 중간에 죽으면(DB 재시작, 관리자의 pg_terminate_backend 등),
+    _heartbeat()가 조용히 넘어가지 않고 그대로 예외를 던져야 한다 — 이게
+    실제로 main()의 예외 처리 경로를 타서 run을 중단시키는 근거다."""
+    import uuid as uuid_module
+    import pytest as pytest_module
+    from app.db.session import session_scope, get_engine
+    from app.db.models import GraphRun
+    from app.graph.sync_cli import _ADVISORY_LOCK_KEY, _heartbeat
+
+    run_id = str(uuid_module.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="full", status="running",
+        ))
+
+    lock_conn = get_engine().connect()
+    got = lock_conn.exec_driver_sql(
+        "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+    ).scalar()
+    assert got is True
+    victim_pid = lock_conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+
+    # 다른 커넥션에서 그 백엔드를 강제 종료 — "프로세스는 살아있는데 DB
+    # 커넥션만 끊긴" 상황을 정확히 재현한다(하드킬 서브프로세스 테스트와는
+    # 다른 각도: 거긴 프로세스 전체가 죽는 경우).
+    killer = get_engine().connect()
+    try:
+        killer.exec_driver_sql("SELECT pg_terminate_backend(%s)", (victim_pid,))
+        killer.commit()
+    finally:
+        killer.close()
+
+    try:
+        with pytest_module.raises(Exception):
+            _heartbeat(lock_conn, run_id)
+    finally:
+        # status='running'인 채로 남겨두면 다른 테스트(서브프로세스
+        # 하드킬 테스트의 "지금 막 생긴 running 행 기다리기")가 이
+        # leftover를 자기 것으로 착각할 수 있다.
+        with session_scope() as session:
+            session.query(GraphRun).filter_by(run_id=run_id).delete()

@@ -86,9 +86,22 @@ def _spawn_sync_cli(*extra_args: str) -> subprocess.Popen:
     )
 
 
-def _poll_for_running_row(doc_ids_substr: str | None = None, timeout_s: float = 15.0):
-    """graph_runs에 status='running'인 행이 나타날 때까지 짧게 기다렸다가
-    그 행을 반환한다. 자리 생성 전에 폴링이 시작될 수 있으므로 재시도."""
+def _existing_run_ids() -> set[str]:
+    """공유 스크래치 DB에는 다른 테스트 파일(예: test_graph_router.py의
+    liveness 테스트들)이 정리하지 않고 남긴 status='running' 행이 있을 수
+    있다 — 그런 leftover를 "우리 서브프로세스가 막 만든 행"으로 착각하지
+    않도록, 스폰 직전 존재하는 run_id 전체를 스냅샷으로 떠둔다."""
+    from sqlalchemy import select
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        return set(session.scalars(select(GraphRun.run_id)).all())
+
+
+def _poll_for_running_row(before_run_ids: set[str], timeout_s: float = 30.0):
+    """graph_runs에 status='running'이면서 before_run_ids에 없던(= 지금
+    막 생긴) 행이 나타날 때까지 기다렸다가 반환한다."""
     from sqlalchemy import select
     from app.db.models import GraphRun
     from app.db.session import session_scope
@@ -96,13 +109,14 @@ def _poll_for_running_row(doc_ids_substr: str | None = None, timeout_s: float = 
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         with session_scope() as session:
-            row = session.scalar(
+            rows = session.scalars(
                 select(GraphRun).where(GraphRun.status == "running").order_by(GraphRun.seq.desc())
-            )
-            if row is not None:
-                return {"run_id": row.run_id, "lock_holder_pid": row.lock_holder_pid}
+            ).all()
+            for row in rows:
+                if row.run_id not in before_run_ids:
+                    return {"run_id": row.run_id, "lock_holder_pid": row.lock_holder_pid}
         time.sleep(0.05)
-    raise TimeoutError("no 'running' graph_runs row appeared in time")
+    raise TimeoutError("no NEW 'running' graph_runs row appeared in time")
 
 
 def test_hard_killed_subprocess_leaves_running_row_that_next_run_marks_abandoned():
@@ -115,9 +129,10 @@ def test_hard_killed_subprocess_leaves_running_row_that_next_run_marks_abandoned
     from app.db.session import session_scope, get_engine
 
     doc_ids = _seed_documents(400)
+    before_run_ids = _existing_run_ids()
     proc = _spawn_sync_cli()
     try:
-        running = _poll_for_running_row()
+        running = _poll_for_running_row(before_run_ids)
         killed_run_id = running["run_id"]
         pid = running["lock_holder_pid"]
         assert pid is not None
@@ -169,9 +184,10 @@ def test_two_real_subprocesses_second_one_is_rejected_by_advisory_lock():
     lock_held_by_another_run으로 즉시 거부되는지 확인한다(mock이나 같은
     프로세스 안의 커넥션이 아니라 실제 OS 프로세스 2개)."""
     doc_ids = _seed_documents(400)
+    before_run_ids = _existing_run_ids()
     proc_a = _spawn_sync_cli()
     try:
-        _poll_for_running_row()  # proc_a가 확실히 락을 잡고 돌기 시작한 뒤에
+        _poll_for_running_row(before_run_ids)  # proc_a가 확실히 락을 잡고 돌기 시작한 뒤에
         proc_b = _spawn_sync_cli("--source-ids", f"nonexistent-{uuid.uuid4()}", "--skip-hub-recompute")
         _, stderr_b = proc_b.communicate(timeout=30)
         assert proc_b.returncode == 1
