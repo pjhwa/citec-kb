@@ -477,3 +477,39 @@ R01의 핸드오프 재현 입력 4종을 dev 재시작 후 실제 `mcp__wiki-mc
 - **전체 재백필 필요**: 없음(이번 라운드는 모두 restart-only) — 단
   `FailureBucket.evidence_reasons_json`은 다음 `sync_failure_bucket`
   실행(이미 예정된 재백필에 포함됨) 전까지는 기존 bucket에 비어 있다.
+
+## 2026-10-13 유령 노드 정리 — 구현 완료(실행은 별도 승인)
+
+운영 재백필 후 확인된 고립 유령 `Document` 노드 78,493건(`source_type IS
+NULL`, 관계 0개 — G01 이전 raw-id 스텁 잔존, 샘플 검증 결과 `{id: ...}`
+단 하나의 속성뿐인 빈 노드임을 확인)에 대해, 설계
+(`docs/superpowers/specs/2026-10-13-ghost-node-cleanup-design.md`)와 구현
+계획(`docs/superpowers/plans/2026-10-13-ghost-node-cleanup.md`)에 따라
+`scripts/verify/ghost_node_audit.py --execute`를 추가했다:
+
+- 판정 쿼리에 `labels(d) = ['Document']` 가드 추가(멀티 라벨 노드 과잉
+  삭제 방지).
+- `--execute`는 sync_cli와 동일한 Postgres advisory lock을 먼저 잡고,
+  실패하면(sync_cli 실행 중) 즉시 중단.
+- 락 획득 후 **그 시점에 판정 쿼리를 재실행**해 대상을 확정(과거 dry-run
+  manifest는 신뢰하지 않음), `"delete"` 입력 확인, 삭제 직전 manifest를
+  `artifacts/ghost_node_deletion_<timestamp>.json`에 저장, 5,000건 배치로
+  `DETACH DELETE`(배치 삭제 Cypher 자체에도 `source_type IS NULL AND
+  labels(d) = ['Document'] AND NOT (d)--()` 전체 유령 조건을 다시 걸어
+  방어적으로 중복 확인 — 배치별 독립 트랜잭션이라 중단 시 재실행도
+  idempotent).
+- advisory lock 해제는 unlock 자체가 실패해도 커넥션이 반드시 닫히도록
+  중첩 try/finally로 처리(sync_cli의 `_release_lock()`과 동일한 패턴
+  재사용). 비대화형 환경(cron 등)에서 `input()`이 `EOFError`를 던지는
+  경우도 깨끗하게 취소 처리.
+- dev scratch Neo4j+Postgres에서 `apps/api/tests/test_ghost_node_audit_db.py`
+  (멀티 라벨 제외, 확인 취소, 정상 노드 보존, 배치 실패 후 재시도
+  idempotency, sync_cli와의 동시 실행 차단 — Neo4j 드라이버를 fake로
+  바꿔 락 충돌 시 판정 쿼리 자체가 전혀 실행되지 않음을 직접 증명)으로
+  검증, 5개 테스트 전부 통과. `scripts/verify/run_integration_tests.sh`의
+  `INTEGRATION_FILES`에도 등록됨.
+
+**운영 실행은 이 세션에서 하지 않음** — 실행 전 전체 Neo4j 백업(기존
+`prod_deploy_and_backfill.sh`의 볼륨 mountpoint tar 방식)을 사람이 별도로
+뜬 뒤, `docker compose cp`로 최신 스크립트를 컨테이너에 올리고 사람이
+직접 `--execute`를 실행·확인하는 것이 설계상 의도된 절차다.

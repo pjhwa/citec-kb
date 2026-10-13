@@ -8,6 +8,7 @@ Skipped unless both GRAPH_TEST_DATABASE_URL and GRAPH_NEO4J_TEST_URI are set
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import uuid
 from pathlib import Path
@@ -104,7 +105,13 @@ def test_execute_deletion_cancelled_without_exact_confirmation():
             session.run("CREATE (:Document {id: $id})", id=node_id)
 
         result = mod._execute_deletion(driver, confirm=lambda _prompt: False)
-        assert result == {"requested": 1, "deleted": 0, "cancelled": True}
+        # requested는 공유 스크래치 Neo4j에 다른 테스트 파일이 남긴 고립
+        # 노드가 섞여 있으면 1보다 커질 수 있다(이 테스트가 심은 노드 외에
+        # 다른 진짜 유령도 같이 집계되므로) — 그래도 >=1이어야 하고, 취소
+        # 경로이므로 deleted/cancelled는 항상 고정값이어야 한다.
+        assert result["requested"] >= 1
+        assert result["deleted"] == 0
+        assert result["cancelled"] is True
 
         with driver.session() as session:
             count = session.run(
@@ -136,10 +143,19 @@ def test_execute_deletion_deletes_only_true_ghosts_and_writes_manifest(tmp_path,
             session.run("CREATE (:Document {id: $id, source_type: 'confluence_docs'})", id=other_id)
 
         result = mod._execute_deletion(driver, confirm=lambda _prompt: True)
-        assert result["requested"] == 1
-        assert result["deleted"] == 1
+        # requested/deleted는 공유 스크래치 Neo4j에 다른 테스트 파일이 남긴
+        # 고립 노드가 섞여 있으면 1보다 커질 수 있다 — 핵심 보장(유령만
+        # 지우고 정상 노드는 남긴다)은 아래 manifest 내용과 remaining 조회로
+        # 이 테스트가 심은 id 단위로 직접 확인한다.
+        assert result["requested"] >= 1
+        assert result["deleted"] >= 1
         assert "manifest" in result
-        assert (tmp_path / result["manifest"]).exists()
+        manifest_file = tmp_path / result["manifest"]
+        assert manifest_file.exists()
+        deleted_ids = set(json.loads(manifest_file.read_text())["ids"])
+        assert ghost_id in deleted_ids
+        assert linked_id not in deleted_ids
+        assert other_id not in deleted_ids
 
         with driver.session() as session:
             remaining = {
