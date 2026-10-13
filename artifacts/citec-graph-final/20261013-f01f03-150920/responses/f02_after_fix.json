@@ -1,0 +1,7 @@
+{
+  "id": "f02_after_fix",
+  "tool": "kb_graph_explore",
+  "args": {"anchor_type": "failure_bucket", "anchor_value": "89d78df7-1d5b-465c-ae93-82face68ae24"},
+  "response_text": "status: isolated\nas_of: 2026-10-12\n해석된 앵커: NSX LB SNAT-backend stale-ACK 즉시 RST (연결 시퀀스 상태 오조회)\n앵커 자신의 evidence_reasons=unknown (아직 이 라운드 코드로 재백필되지 않음)\n\n연관 문서 (0건 중 0-0건 표시):\n\n연관 컴포넌트 (0건 중 0-0건 표시):\n\n연관 과거 장애 (0건 중 0-0건 표시):",
+  "note": "Live mcp__wiki-mcp__kb_graph_explore call against dev stack after fix. Before fix, anchor line only showed the raw UUID with no bucket_name and no evidence_reasons line at all (comparison/raw/bucket_3.json). Now shows the real bucket_name AND an explicit evidence_reasons=unknown (not silently absent) because dev's Neo4j has not been through a full resync since the evidence_reasons_json feature landed (confirmed via direct Cypher query: all 8 buckets on dev show evidence_reasons_json=NULL) -- user confirmed this is expected dev state, not a new bug. On production (already fully resynced), the same anchor-level evidence_reasons would show the real computed reasons instead of 'unknown', per the Neo4jClient.explore()/DB-touching test coverage added in this fix."
+}

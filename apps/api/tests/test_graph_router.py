@@ -777,3 +777,90 @@ def test_explore_collapses_duplicate_page_copies_in_results():
     assert matching[0]["access"]["mcp_args"]["path"] == f"tech_repo/{shared_external_id}.md"
     assert f"path=tech_repo%2F{shared_external_id}" in matching[0]["web_url"]
     assert matching[0]["route"] == [{"relation": "HAS_COMPONENT", "tag": "EXTRACTED", "direction": "in"}]
+
+
+def test_explore_isolated_failure_bucket_anchor_exposes_own_evidence_reasons():
+    """F02(2026-10-13 최종 핸드오프) — anchor_type=failure_bucket이 isolated
+    (이웃 0개)일 때도, 조회한 bucket 자신의 evidence_reasons가 anchor 안에
+    실려야 한다. 과거엔 isolated 응답에 evidence_reasons가 전혀 없었다(실제
+    재현: comparison/raw/bucket_3.json — status=isolated, 세 카테고리 0건,
+    evidence_reasons 없음)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    bucket_id = f"test-isolated-fb-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_failure_bucket(
+        {"id": bucket_id, "bucket_name": "외부 capture 전용 버킷", "fb_domain": "network",
+         "protocol": "TCP", "environment": "onprem", "evidence_ref": "capture:x.pcap#frame=1"},
+        [],  # 이웃 없음 — isolated
+        evidence_reasons={"resolved": 0, "external_artifact": 1, "legacy_missing": 0,
+                           "target_not_ingested": 0, "unresolved_reference": 0},
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": bucket_id})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "isolated"
+    assert body["documents"] == []
+    assert body["components"] == []
+    assert body["failure_buckets"] == []
+    assert body["anchor"]["resolved_name"] == "외부 capture 전용 버킷"
+    assert body["anchor"]["evidence_reasons"] == {
+        "resolved": 0, "external_artifact": 1, "legacy_missing": 0,
+        "target_not_ingested": 0, "unresolved_reference": 0,
+    }
+
+
+def test_explore_failure_bucket_anchor_evidence_reasons_is_none_when_not_yet_computed():
+    """evidence_reasons_json이 아직 없는(이 라운드 코드로 재백필 전) bucket은
+    anchor.evidence_reasons가 None(= unknown)이어야 한다 — isolated라는
+    status만으로 "원인이 없다"고 지어내지 않는다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    bucket_id = f"test-unstamped-fb-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_failure_bucket(
+        {"id": bucket_id, "bucket_name": "미재백필 버킷", "fb_domain": "network",
+         "protocol": None, "environment": None, "evidence_ref": None},
+        [], evidence_reasons=None,
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": bucket_id})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["anchor"]["evidence_reasons"] is None
+    assert body["anchor"]["resolved_name"] == "미재백필 버킷"
+
+
+def test_explore_component_anchor_has_no_evidence_reasons_field_pollution():
+    """evidence_reasons는 failure_bucket anchor 전용이다 — component anchor
+    응답의 anchor 딕셔너리에 이 필드가 끼어들면 안 된다(회귀 방지)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"TestComp-{uuid.uuid4()}"
+    doc_id = f"test-doc-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp.status_code == 200
+    assert "evidence_reasons" not in resp.json()["anchor"]

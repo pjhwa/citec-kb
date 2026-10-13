@@ -1086,6 +1086,17 @@ async def kb_graph_explore(
         )
     elif anchor.get("resolved_name") or anchor.get("resolved_id"):
         lines.append(f"해석된 앵커: {anchor.get('resolved_name') or anchor.get('resolved_id')}")
+    if anchor.get("type") == "failure_bucket":
+        # F02(2026-10-13 최종 핸드오프) — 조회한 bucket 자신의 사유. 과거엔
+        # 이웃 bucket(_render_failure_bucket_line) 줄에만 evidence_reasons가
+        # 붙고 anchor 자신에는 안 붙어서, isolated 응답이 "원인 불명"처럼
+        # 보였다(실제로는 외부 capture/legacy라 원래 연결이 없는 정상
+        # 케이스일 수 있음 — unknown과 구분해 보여준다).
+        anchor_reasons = anchor.get("evidence_reasons")
+        lines.append(
+            f"앵커 자신의 evidence_reasons={anchor_reasons}" if anchor_reasons
+            else "앵커 자신의 evidence_reasons=unknown (아직 이 라운드 코드로 재백필되지 않음)"
+        )
     if data.get("found") is False:
         lines.append("(그래프에 해당 노드 없음)")
     if data.get("excluded_hub_components"):

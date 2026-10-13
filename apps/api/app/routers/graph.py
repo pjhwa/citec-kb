@@ -294,6 +294,11 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     }
     backend_error = False
     backend_error_reason: str | None = None
+    # F02(2026-10-13 최종 핸드오프) — anchor_type="failure_bucket"일 때 조회한
+    # bucket 자신의 evidence_reasons(및 bucket_name)를 담는다. 이웃이 0개라도
+    # (status=isolated) 채워져야 한다 — 과거엔 이 값이 어디에도 안 실렸다
+    # (실제 재현: comparison/raw/bucket_3.json).
+    anchor_failure_bucket: dict[str, Any] | None = None
     try:
         for label, key, value in anchors:
             # Fix 1 (스펙 §2): 앵커 자신이 허브 Component면 2hop 순회를 생략하고
@@ -315,6 +320,8 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                 exclude_external_ids=exclude_external_ids, exclude_source_types=exclude_source_types,
                 exclude_subtree_ids=exclude_subtree_ids,
             )
+            if label == "FailureBucket" and raw.get("anchor_node"):
+                anchor_failure_bucket = raw["anchor_node"]
             if not raw.get("found"):
                 continue
             merged["found"] = True
@@ -406,6 +413,17 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         anchor_info = {
             "type": body.anchor_type, "resolved_id": anchors[0][2], "resolved_name": resolved_name,
         }
+        if body.anchor_type == "failure_bucket":
+            # F02 — anchor 자신의 사유. 못 구했으면(아직 이 라운드 코드로
+            # 재백필 안 된 버킷 등) None을 그대로 노출한다 — "unknown과
+            # 부족한 필드를 반환하라"는 요구대로, isolated만 보고 원인을
+            # 추정하지 않는다.
+            anchor_info["resolved_name"] = (
+                anchor_failure_bucket.get("bucket_name") if anchor_failure_bucket else None
+            )
+            anchor_info["evidence_reasons"] = (
+                anchor_failure_bucket.get("evidence_reasons") if anchor_failure_bucket else None
+            )
 
     shaped = shape_explore_result(
         merged, as_of=as_of_str, anchor=anchor_info,

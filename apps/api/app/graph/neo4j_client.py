@@ -246,6 +246,26 @@ class Neo4jClient:
             return {
                 "found": False, "documents": [], "components": [], "failure_buckets": [],
                 "excluded_hub_components": [], "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
+                "anchor_node": None,
+            }
+
+        # F02(2026-10-13 최종 핸드오프) — anchor 자신이 FailureBucket일 때
+        # 그 자신의 bucket_name/evidence_reasons_json은 위 Cypher가 이미
+        # `a`로 함께 가져오고 있었는데(anchor is None 체크에만 쓰고) 여기서
+        # 버려지고 있었다. isolated(이웃 0개) 상태에선 FailureBucket이
+        # neighbors 쪽에 전혀 안 나타나므로, 조회한 bucket 자신의 사유가
+        # 응답 어디에도 실리지 않는 결함(실제 재현:
+        # comparison/raw/bucket_3.json)이 됐다. anchor 노드 자체의 값을
+        # 별도로 뽑아 호출자(routers/graph.py)가 anchor_info에 넣을 수 있게
+        # 한다.
+        anchor_node_obj = record["anchor"]
+        anchor_node: dict[str, Any] | None = None
+        if "FailureBucket" in set(anchor_node_obj.labels):
+            reasons_json = anchor_node_obj.get("evidence_reasons_json")
+            anchor_node = {
+                "label": "FailureBucket",
+                "bucket_name": anchor_node_obj.get("bucket_name"),
+                "evidence_reasons": json.loads(reasons_json) if reasons_json else None,
             }
 
         best_by_id: dict[str, dict] = {}
@@ -298,6 +318,7 @@ class Neo4jClient:
             "documents": documents, "components": components, "failure_buckets": failure_buckets,
             "excluded_hub_components": sorted(set(excluded_hub_components)),
             "truncated": False,  # truncated=False — 결과 cap/절단은 app.graph.explore(Task 4)의 순수 함수에서 처리, 여기선 항상 False
+            "anchor_node": anchor_node,
         }
 
     def is_component_hub(self, canonical_name: str) -> Optional[bool]:

@@ -183,3 +183,55 @@ def test_renders_snapshot_tag_for_confluence_map_body_kind(monkeypatch):
     assert "snapshot" in out
     assert "copies=" not in out
     assert "archived" not in out.split("snapshot")[0].split("]")[0]
+
+
+def test_isolated_failure_bucket_anchor_renders_own_evidence_reasons(monkeypatch):
+    """F02(2026-10-13 최종 핸드오프) — anchor_type=failure_bucket이 isolated일
+    때도 anchor 자신의 evidence_reasons가 렌더링돼야 한다."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "as_of": "2026-10-13", "status": "isolated", "found": True,
+            "anchor": {
+                "type": "failure_bucket", "resolved_id": "fb-1", "resolved_name": "외부 capture 버킷",
+                "evidence_reasons": {"resolved": 0, "external_artifact": 1, "legacy_missing": 0,
+                                      "target_not_ingested": 0, "unresolved_reference": 0},
+            },
+            "documents": [], "components": [], "failure_buckets": [],
+            "excluded_hub_components": [],
+            "documents_total": 0, "documents_truncated": False,
+            "components_total": 0, "components_truncated": False,
+            "failure_buckets_total": 0, "failure_buckets_truncated": False,
+        })
+
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(base_url="http://t", transport=httpx.MockTransport(handler)),
+    )
+    out = asyncio.run(server.kb_graph_explore("failure_bucket", "fb-1"))
+    assert "status: isolated" in out
+    assert "해석된 앵커: 외부 capture 버킷" in out
+    assert "앵커 자신의 evidence_reasons=" in out
+    assert "external_artifact" in out
+
+
+def test_isolated_failure_bucket_anchor_shows_unknown_when_reasons_absent(monkeypatch):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "as_of": "2026-10-13", "status": "isolated", "found": True,
+            "anchor": {
+                "type": "failure_bucket", "resolved_id": "fb-2", "resolved_name": "미재백필 버킷",
+                "evidence_reasons": None,
+            },
+            "documents": [], "components": [], "failure_buckets": [],
+            "excluded_hub_components": [],
+            "documents_total": 0, "documents_truncated": False,
+            "components_total": 0, "components_truncated": False,
+            "failure_buckets_total": 0, "failure_buckets_truncated": False,
+        })
+
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(base_url="http://t", transport=httpx.MockTransport(handler)),
+    )
+    out = asyncio.run(server.kb_graph_explore("failure_bucket", "fb-2"))
+    assert "앵커 자신의 evidence_reasons=unknown" in out

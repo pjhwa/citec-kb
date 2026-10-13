@@ -485,3 +485,76 @@ def test_explore_path_direction_and_structural_priority_over_competing_component
     assert by_id[grandchild]["route"][0]["via"]["id"] == child
 
     client.close()
+
+
+def test_explore_returns_anchor_own_evidence_reasons_when_isolated():
+    """F02(2026-10-13 최종 핸드오프) — anchor_type=failure_bucket이고 이웃이
+    0개(isolated)일 때도, 조회한 bucket 자신의 evidence_reasons/bucket_name이
+    explore()의 반환값(anchor_node)에 실려야 한다. 과거엔 이 Cypher가 anchor
+    노드 자체(a)를 이미 가져오고 있었는데 "anchor is None" 체크에만 쓰고
+    버려서, 이웃이 없는 bucket은 자신의 사유를 전혀 못 보여줬다(실제 재현:
+    comparison/raw/bucket_3.json)."""
+    client = _client()
+    client.ensure_constraints()
+    fb_id = f"test-fb-isolated-{uuid.uuid4()}"
+    client.merge_failure_bucket(
+        {"id": fb_id, "bucket_name": "isolated test bucket", "fb_domain": "network",
+         "protocol": None, "environment": None, "evidence_ref": "capture:x.pcap#frame=1"},
+        [],  # 이웃 edge 없음 — isolated 재현
+        evidence_reasons={"resolved": 0, "external_artifact": 1, "legacy_missing": 0,
+                           "target_not_ingested": 0, "unresolved_reference": 0},
+    )
+
+    result = client.explore("FailureBucket", "id", fb_id, max_hops=2)
+
+    assert result["found"] is True
+    assert result["documents"] == []
+    assert result["failure_buckets"] == []  # 이웃 0개 — isolated
+    assert result["anchor_node"] == {
+        "label": "FailureBucket",
+        "bucket_name": "isolated test bucket",
+        "evidence_reasons": {"resolved": 0, "external_artifact": 1, "legacy_missing": 0,
+                              "target_not_ingested": 0, "unresolved_reference": 0},
+    }
+    client.close()
+
+
+def test_explore_anchor_node_is_none_when_evidence_reasons_not_yet_computed():
+    """evidence_reasons_json이 아직 없는(이 라운드 코드로 재백필 전) bucket은
+    anchor_node.evidence_reasons가 None이어야 한다 — isolated만 보고 원인을
+    추정하지 않고 unknown으로 구분해야 한다는 요구."""
+    client = _client()
+    client.ensure_constraints()
+    fb_id = f"test-fb-unstamped-{uuid.uuid4()}"
+    client.merge_failure_bucket(
+        {"id": fb_id, "bucket_name": "unstamped bucket", "fb_domain": "network",
+         "protocol": None, "environment": None, "evidence_ref": None},
+        [],
+        evidence_reasons=None,
+    )
+
+    result = client.explore("FailureBucket", "id", fb_id, max_hops=2)
+
+    assert result["anchor_node"]["evidence_reasons"] is None
+    assert result["anchor_node"]["bucket_name"] == "unstamped bucket"
+    client.close()
+
+
+def test_explore_anchor_node_is_none_for_non_failure_bucket_anchor():
+    """Document/Component 앵커는 anchor_node가 None이어야 한다 — 이 필드는
+    failure_bucket 전용이다."""
+    from app.graph.extract import Edge
+
+    client = _client()
+    client.ensure_constraints()
+    doc_id = f"test-doc-anchor-node-{uuid.uuid4()}"
+    client.merge_document(
+        {"id": doc_id, "source_type": "tech_repo", "external_id": "x", "title": "t",
+         "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+
+    result = client.explore("Document", "id", doc_id, max_hops=2)
+
+    assert result["anchor_node"] is None
+    client.close()
