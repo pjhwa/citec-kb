@@ -53,6 +53,7 @@ def _paginate(items: list[dict], offset: int) -> tuple[list[dict], int, bool]:
 def shape_explore_result(
     raw: dict[str, Any], *, as_of: Optional[str], anchor: dict[str, Any],
     offsets: dict[str, int] | None = None, status: Optional[str] = None,
+    freshness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Neo4jClient.explore()의 raw 출력(found/documents/components/failure_buckets/
     excluded_hub_components) -> API 응답 모양(as_of/anchor/정렬/절단 포함).
@@ -77,6 +78,7 @@ def shape_explore_result(
             "documents_total": 0, "documents_truncated": False,
             "components_total": 0, "components_truncated": False,
             "failure_buckets_total": 0, "failure_buckets_truncated": False,
+            "freshness": freshness,
         }
 
     documents = sorted(raw.get("documents") or [], key=_sort_key)
@@ -99,6 +101,7 @@ def shape_explore_result(
         "documents_total": doc_total, "documents_truncated": doc_trunc,
         "components_total": comp_total, "components_truncated": comp_trunc,
         "failure_buckets_total": fb_total, "failure_buckets_truncated": fb_trunc,
+        "freshness": freshness,
     }
 
 

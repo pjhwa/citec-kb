@@ -1,0 +1,6 @@
+{
+  "id": "f04_mcp_freshness_live",
+  "tool": "kb_graph_explore",
+  "args": {"anchor_type": "component", "anchor_value": "NetApp"},
+  "note": "Live mcp__wiki-mcp__kb_graph_explore call against dev stack after the F04 freshness-summary addition. Response now includes a 'freshness: 마지막 완료된 전체 배치 2026-10-12T07:03:53.960301+00:00' line right after 'as_of:', distinguishing the per-document extraction freshness (as_of=MAX(synced_at)) from the last COMPLETED full batch's actual completion time -- per handoff F04 point 7/8 ('MAX(synced_at)만으로 freshness를 판정하지 말라', 'MCP에도 run/revision/freshness 요약을 전달하라')."
+}

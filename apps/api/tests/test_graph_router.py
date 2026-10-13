@@ -1065,3 +1065,40 @@ def test_graph_status_exposes_neo4j_store_identity_separately_from_generation():
     assert body["neo4j_store_identity"]["name"] == "neo4j"
     assert "contract_version" in body
     assert "api_build_sha" in body
+
+
+def test_explore_response_includes_freshness_summary_distinct_from_as_of():
+    """F04(2026-10-13 최종 핸드오프) §7/8 — as_of(MAX(synced_at))와 별개로,
+    마지막 '완료된' 전체 배치의 run_id/generation/완료시각/상태를 함께
+    돌려줘야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+    from app.graph.extract import Edge
+
+    comp_name = f"TestFreshness-{uuid.uuid4()}"
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g-fresh", scope="full",
+            status="completed",
+        ))
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": f"test-doc-{uuid.uuid4()}", "source_type": "tech_repo", "external_id": "x",
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp.status_code == 200
+    freshness = resp.json()["freshness"]
+    assert freshness["latest_full_completed_run_id"] == run_id
+    assert freshness["latest_full_completed_generation"] == "g-fresh"
+    assert freshness["latest_full_completed_status"] == "completed"
+    assert freshness["full_run_in_progress"] is False

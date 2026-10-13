@@ -235,3 +235,38 @@ def test_isolated_failure_bucket_anchor_shows_unknown_when_reasons_absent(monkey
     )
     out = asyncio.run(server.kb_graph_explore("failure_bucket", "fb-2"))
     assert "앵커 자신의 evidence_reasons=unknown" in out
+
+
+def test_renders_freshness_summary_line(monkeypatch):
+    """F04(2026-10-13 최종 핸드오프) §7/8 — as_of(MAX(synced_at))와 별개로
+    마지막 완료된 전체 배치 상태를 한 줄로 보여줘야 한다."""
+    payload = _page_payload(total=1, offset=0)
+    payload["freshness"] = {
+        "latest_full_completed_run_id": "r1", "latest_full_completed_generation": "g1",
+        "latest_full_completed_at": "2026-10-13T00:00:00+00:00",
+        "latest_full_completed_status": "completed", "full_run_in_progress": False,
+    }
+    out = _run(monkeypatch, payload)
+    assert "freshness: 마지막 완료된 전체 배치 2026-10-13T00:00:00+00:00" in out
+
+
+def test_renders_freshness_in_progress_warning(monkeypatch):
+    payload = _page_payload(total=1, offset=0)
+    payload["freshness"] = {
+        "latest_full_completed_run_id": None, "latest_full_completed_generation": None,
+        "latest_full_completed_at": None, "latest_full_completed_status": None,
+        "full_run_in_progress": True,
+    }
+    out = _run(monkeypatch, payload)
+    assert "지금 새 전체 배치가 진행 중" in out
+
+
+def test_renders_freshness_unknown_when_never_completed(monkeypatch):
+    payload = _page_payload(total=1, offset=0)
+    payload["freshness"] = {
+        "latest_full_completed_run_id": None, "latest_full_completed_generation": None,
+        "latest_full_completed_at": None, "latest_full_completed_status": None,
+        "full_run_in_progress": False,
+    }
+    out = _run(monkeypatch, payload)
+    assert "freshness: 완료된 전체 배치 기록 없음(unknown)" in out

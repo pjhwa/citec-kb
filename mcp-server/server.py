@@ -1077,6 +1077,17 @@ async def kb_graph_explore(
         )
 
     lines = [f"status: {data.get('status', '(unknown)')}", f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
+    # F04(2026-10-13 최종 핸드오프) §7/8 — as_of는 MAX(synced_at)일 뿐,
+    # "마지막 전체 배치가 언제·어떤 상태로 끝났는지"는 알려주지 않는다.
+    # 그 둘을 혼동하지 말라는 요구에 따라 한 줄 더 보여준다.
+    fr = data.get("freshness") or {}
+    if fr.get("full_run_in_progress"):
+        lines.append("freshness: 지금 새 전체 배치가 진행 중 — 이 응답은 혼합 상태일 수 있음")
+    elif fr.get("latest_full_completed_at"):
+        warn = " (일부 실패 포함)" if fr.get("latest_full_completed_status") == "completed_warn" else ""
+        lines.append(f"freshness: 마지막 완료된 전체 배치 {fr['latest_full_completed_at']}{warn}")
+    else:
+        lines.append("freshness: 완료된 전체 배치 기록 없음(unknown)")
     anchor = data.get("anchor") or {}
     if anchor.get("type") == "symptom_text":
         mc = anchor.get("matched_components") or []

@@ -176,10 +176,44 @@ def _fetch_ancestor_ids(document_ids: list[str]) -> dict[str, list[str]]:
     return {doc_id: list(ancestor_ids or []) for doc_id, ancestor_ids in rows}
 
 
+def _explore_freshness_summary() -> dict[str, Any]:
+    """F04(2026-10-13 최종 핸드오프) §7/8 — "앵커·근거 문서의 추출 상태와
+    전체 배치 상태를 구분하라. MAX(synced_at)만으로 freshness를 판정하지
+    말라"는 요구. as_of(호출자가 이미 MAX(synced_at)로 따로 계산)와 별개로,
+    마지막으로 '완료된' 전체 배치가 언제·어떤 상태로 끝났는지, 그리고 지금
+    새 전체 배치가 도는 중인지를 함께 보여준다. kb_graph_explore(MCP)가
+    매 호출마다 읽는 가벼운 요약이라 pg_locks 조회(비용이 더 드는 실시간
+    liveness 진단, GET /v1/graph/status가 제공)는 하지 않는다 — status
+    컬럼만 본다."""
+    with session_scope() as session:
+        latest_full_completed = session.scalar(
+            select(GraphRun)
+            .where(GraphRun.scope == "full", GraphRun.status.in_(["completed", "completed_warn"]))
+            .order_by(GraphRun.seq.desc())
+        )
+        latest_run = session.scalar(select(GraphRun).order_by(GraphRun.seq.desc()))
+        full_run_in_progress = (
+            latest_run is not None and latest_run.scope == "full" and latest_run.status == "running"
+        )
+        return {
+            "latest_full_completed_run_id": latest_full_completed.run_id if latest_full_completed else None,
+            "latest_full_completed_generation": (
+                latest_full_completed.generation if latest_full_completed else None
+            ),
+            "latest_full_completed_at": (
+                latest_full_completed.completed_at.isoformat()
+                if latest_full_completed and latest_full_completed.completed_at else None
+            ),
+            "latest_full_completed_status": latest_full_completed.status if latest_full_completed else None,
+            "full_run_in_progress": full_run_in_progress,
+        }
+
+
 @router.post("/graph/explore")
 def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     as_of = get_latest_synced_at()
     as_of_str = as_of.date().isoformat() if as_of else None
+    freshness = _explore_freshness_summary()
     lexicon_map = load_lexicon_map()
 
     # 이 함수는 더 이상 client.close()를 호출하지 않는다(Fix 2) — _build_client()가
@@ -208,6 +242,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     "matched_components": [],
                 },
                 status="no_match",
+                freshness=freshness,
             )
         # 중복 target_value 제거 — 같은 component로 두 번 explore() 안 부르게
         seen_values: set[str] = set()
@@ -241,6 +276,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                         "backend_error_reason": str(exc),
                     },
                     status="backend_error",
+                    freshness=freshness,
                 )
             if ci_match:
                 canonical = ci_match
@@ -277,6 +313,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                         "filter_reason": "page_or_subtree_excluded",
                     },
                     status="filtered",
+                    freshness=freshness,
                 )
             document_ids = [
                 doc_id for doc_id in document_ids
@@ -292,6 +329,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                         "filter_reason": "all_copies_source_excluded",
                     },
                     status="filtered",
+                    freshness=freshness,
                 )
         anchors = [("Document", "id", doc_id) for doc_id in document_ids]
     else:  # failure_bucket
@@ -367,6 +405,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             {"found": False, "documents": [], "components": [], "failure_buckets": [],
              "excluded_hub_components": []},
             as_of=as_of_str, anchor=anchor_info_err, status="backend_error",
+            freshness=freshness,
         )
 
     if not merged["found"] and body.anchor_type != "symptom_text":
@@ -441,6 +480,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             "components": body.components_offset,
             "failure_buckets": body.failure_buckets_offset,
         },
+        freshness=freshness,
     )
     # attach_document_access(원문 접근 경로 — kb_search/kb_get_document와 같은
     # 빌더 재사용, §2.6 "존재하지 않는 path를 합성하지 않는다")는 실제로 보여줄
