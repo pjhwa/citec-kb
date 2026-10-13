@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 # 실제로 다른 노드가 참조하고 있으면 지우면 안 됨).
 _GHOST_QUERY = """
 MATCH (d:Document)
-WHERE d.source_type IS NULL
+WHERE d.source_type IS NULL AND labels(d) = ['Document']
 OPTIONAL MATCH (d)-[r]-()
 WITH d, count(r) AS degree
 WHERE degree = 0
@@ -39,12 +39,25 @@ ORDER BY d.id
 
 _COUNT_QUERY = """
 MATCH (d:Document)
-WHERE d.source_type IS NULL
+WHERE d.source_type IS NULL AND labels(d) = ['Document']
 OPTIONAL MATCH (d)-[r]-()
 WITH d, count(r) AS degree
 RETURN count(d) AS total_null_source_type,
        count(CASE WHEN degree = 0 THEN 1 END) AS isolated_count
 """
+
+
+def _audit(driver) -> dict:
+    with driver.session() as session:
+        counts = session.run(_COUNT_QUERY).single()
+        rows = list(session.run(_GHOST_QUERY))
+    ghosts = [{"id": r["id"], "external_id": r["external_id"], "title": r["title"]} for r in rows]
+    return {
+        "total_null_source_type": counts["total_null_source_type"],
+        "isolated_count": counts["isolated_count"],
+        "would_delete_count": len(ghosts),
+        "would_delete": ghosts,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -67,21 +80,17 @@ def main(argv: list[str] | None = None) -> int:
 
     driver = GraphDatabase.driver(uri, auth=(user, password))
     try:
-        with driver.session() as session:
-            counts = session.run(_COUNT_QUERY).single()
-            rows = list(session.run(_GHOST_QUERY))
+        result = _audit(driver)
     finally:
         driver.close()
-
-    ghosts = [{"id": r["id"], "external_id": r["external_id"], "title": r["title"]} for r in rows]
 
     manifest = {
         "audited_at": datetime.now(timezone.utc).isoformat(),
         "uri": uri,
-        "total_null_source_type": counts["total_null_source_type"],
-        "isolated_count": counts["isolated_count"],
-        "would_delete_count": len(ghosts),
-        "would_delete": ghosts,
+        "total_null_source_type": result["total_null_source_type"],
+        "isolated_count": result["isolated_count"],
+        "would_delete_count": result["would_delete_count"],
+        "would_delete": result["would_delete"],
         "restore_plan": (
             "이 목록의 각 id로 MERGE (d:Document {id: $id}) RETURN d — "
             "유령 노드는 source_type/title 등 다른 속성이 전혀 없으므로(원래도 "
@@ -95,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
 
-    print(f"Document(source_type IS NULL) 총 {counts['total_null_source_type']}건")
-    print(f"그중 완전히 고립(관계 0개)된 유령: {counts['isolated_count']}건")
+    print(f"Document(source_type IS NULL) 총 {result['total_null_source_type']}건")
+    print(f"그중 완전히 고립(관계 0개)된 유령: {result['isolated_count']}건")
     print(f"백업 manifest 저장: {out_path}")
     print("이 스크립트는 삭제하지 않습니다 — 실제 삭제는 사람이 manifest를 검토한 뒤 별도로 승인·실행하세요.")
     return 0
