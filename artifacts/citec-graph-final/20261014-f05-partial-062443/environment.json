@@ -1,0 +1,50 @@
+{
+  "run_id": "20261014-f05-partial-062443",
+  "recorded_at_utc": "2026-10-13T21:24:43Z",
+  "recorded_at_kst": "2026-10-14T06:24:43+09:00",
+  "source": {
+    "repo": "dev checkout at /home/citec/dev/citec-kb",
+    "head_sha": "a57beda",
+    "head_subject": "fix(graph): F05 — anchor resolved_id vs exclusion consistency, archived status restore",
+    "prior_run_head_sha_deployed": "a8fadda",
+    "diff_a8fadda_to_head_files": [
+      "apps/api/app/ingest/pipeline.py",
+      "apps/api/app/routers/graph.py",
+      "apps/api/tests/test_confluence_sync_db.py",
+      "apps/api/tests/test_graph_router.py",
+      "apps/api/tests/test_lexicon_seed_db.py",
+      "mcp-server/server.py"
+    ],
+    "diff_note": "F05 partial fixes only, no migration, no DDL. Code-only change plus tests -- safe to deploy via plain git_pull_deploy.sh (no --force-image-diff needed, touches no Dockerfile/requirements/package-lock/docker-compose.yml). NOT YET DEPLOYED to production as of this writing.",
+    "deployed_sha": "a8fadda (F01-F04 round) -- this round (a57beda) not yet deployed"
+  },
+  "scope_of_this_run": "F05 (R04 dependency/lifecycle) -- partial. Two concrete, code-audited-and-verified defects fixed: (1) /v1/graph/explore anchor resolved_id vs exclude_source_types inconsistency when the representative copy is excluded, (2) ingest pipeline's content-hash-unchanged skip branch never restoring Document.status from archived to active (asymmetric with the adjacent hash-changed branch, which always restores). A third suspected defect (lexicon_version bumping on no-op seed re-runs) was investigated and empirically disproven -- a regression-guard test was added instead of a fix.",
+  "deliberately_not_started_this_run": [
+    "Dependency-revision + invalidation-queue mechanism for lexicon-revision / late-ingested-reference-target / representative-swap recompute triggers (handoff 2.5.1/2.5.2/2.5.7). Requires a new table + migration; per handoff section 3.4, any change needing a backfill must go to the user as a separate approval item with impact diff, backfill scope, abort criteria, and recovery plan. Not attempted without that gate.",
+    "Namespace partitioning of build_page_identity_index by identity domain (page vs ticket) instead of source_type (handoff 2.5.3/2.5.6). Code-audit-confirmed as still a gap (identity separation today is incidental, via a hardcoded source_type allowlist reimplemented in 3 places), but changing index partitioning changes which references resolve at all -- existing prod edges would go stale until a resync, which also needs the same separate-approval gate.",
+    "Default exposure policy for inactive/archived documents (opt-in audit flag) -- handoff 2.5.5. No code written this run.",
+    "Read-only classification query for production's 201 unresolved_references, to be run by the user against prod (dev has not been resynced since this feature existed, so a dev-side sample would not represent production -- user-confirmed constraint from earlier in this session)."
+  ],
+  "investigated_and_found_not_to_be_a_bug": {
+    "claim": "seed_lexicon()'s apply loop unconditionally reassigns row.variants/priority/metadata_ even when nothing changed (plan.action==noop), suspected to bump lexicon_terms.updated_at via onupdate=func.now() on every no-op seed re-run, which would break using lexicon_version as a stable per-doc invalidation signal.",
+    "finding": "Empirically false. SQLAlchemy's scalar attribute change-tracking does not mark the row dirty when the reassigned value equals the already-loaded value (confirmed for both plain scalars and a freshly-constructed-but-content-equal JSONB dict), so no UPDATE is issued and updated_at does not move. A regression-guard test (test_seed_lexicon_noop_does_not_bump_updated_at) was added to protect this going forward, since F05's planned lexicon-revision invalidation signal depends on it staying stable."
+  },
+  "document_status_writer_audit": {
+    "method": "Full-codebase grep + manual review via a dedicated exploration pass (not just the explore survey) -- see commit a57beda's description.",
+    "finding": "No manual, per-document, API-driven archive/unarchive endpoint exists anywhere in apps/api. Every Document.status write is either (a) fully automatic crawl-detected page removal (app/confluence/map_sync.py), (b) a CLI-only, space-level bulk archive with no HTTP route (app/confluence/map_space_setup.py --apply), or (c) the ingest pipeline setting/resetting status on insert/update. The 'superseded' and 'draft_insight' status values are documented in the model comment but never written or read anywhere in the app."
+  },
+  "test_environment": {
+    "scratch_postgres": "citec_graph_test (GRAPH_TEST_DATABASE_URL tests) and citec_kb_test (CONFLUENCE_SYNC_TEST_DATABASE_URL tests), both newly created this run on the existing dev postgres container (citec-kb-postgres-1, port 8574), migrated to head via alembic.",
+    "neo4j": "dev's own Neo4j instance (bolt://127.0.0.1:8579) reused as scratch, consistent with this session's established pattern -- Neo4j Community has no second logical database to isolate into.",
+    "python_env_used_for_tests": "/tmp/graph-ci-venv (pre-existing full venv with pytest+neo4j+sqlalchemy+fastapi installed; the project's own apps/api/../../.venv lacks neo4j/pytest, matching its CI-lean requirements-ci.txt design).",
+    "unrelated_pre_existing_failures_not_caused_by_this_round": [
+      "tests/test_confluence_sync_db.py::test_ingest_insert_skip_update_cycle_scoped_to_tmp_raw_dir -- ModuleNotFoundError: sentence_transformers not installed in this venv",
+      "tests/test_mock_idp_e2e.py::test_full_login_callback_rs256_flow -- tries to connect to a DB on port 5433, unrelated fixture/environment gap"
+    ]
+  },
+  "known_constraints_carried_from_prior_rounds": [
+    "R05/F06 ranking work requires a holdout question set with ground truth fixed BEFORE any ranking code -- user explicitly deferred this; now being started as this run's parallel item (see holdout proposal).",
+    "CI/F10: no new GitHub Actions workflow file without the user asking again (internal git host does not run GitHub Actions).",
+    "citec-mcp-workbench skill is not installed on this dev host -- F09 skill-package work remains partially BLOCKED for local install verification."
+  ]
+}

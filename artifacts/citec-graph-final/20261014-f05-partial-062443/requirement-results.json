@@ -1,0 +1,61 @@
+{
+  "run_id": "20261014-f05-partial-062443",
+  "prior_run_id": "20261013-f01f03-150920",
+  "scope_this_run": ["F05(partial)"],
+  "results": [
+    {
+      "requirement_id": "V08",
+      "final_tasks": ["F03", "F05"],
+      "implementation_status": "not_started_this_run",
+      "verification_status": "NOT_RUN",
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
+      "remaining": "Dependency-revision/invalidation-queue mechanism (worker/batch revision propagation, related-document reextraction, unrelated-document cost logging) not attempted this run -- requires a new table + migration, which per handoff 3.4 needs separate user approval (impact diff, backfill scope, abort criteria, recovery plan) before any code is written. Unchanged from prior round."
+    },
+    {
+      "requirement_id": "V09",
+      "final_tasks": ["F05"],
+      "implementation_status": "partially_fixed_this_run",
+      "verification_status": "PARTIAL",
+      "source_sha": "a57beda",
+      "deployed_sha": null,
+      "case_ids": [
+        "test_confluence_sync_db.py::test_reingest_with_unchanged_body_restores_archived_status",
+        "test_graph_router.py::test_explore_document_anchor_reports_representative_excluded_when_filtered",
+        "test_graph_router.py::test_explore_document_anchor_representative_excluded_is_false_when_nothing_excluded"
+      ],
+      "evidence_paths": [
+        "../20261014-f05-partial-062443 commit a57beda (this run has no separate live-capture responses/ files -- verified via the DB-integration test suite only, see environment.json test_environment)"
+      ],
+      "fixed_this_run": [
+        "archive/복원: Document.status now restores archived->active on the content-hash-unchanged re-crawl skip branch, matching the adjacent hash-changed branch's existing unconditional restore (was asymmetric -- archived docs with unchanged content stayed archived forever).",
+        "대표 교체 (representative swap) -- partial: /v1/graph/explore's anchor.resolved_id no longer silently points at a representative copy that exclude_source_types removed from the actual traversal; new anchor.traversal_start_ids + anchor.representative_excluded fields (also rendered in kb_graph_explore) let a caller detect the divergence instead of assuming resolved_id was what was actually explored."
+      ],
+      "remaining": "부모/티켓 후적재 (late-loaded parent/reference ticket recompute) not addressed -- this is the dependency-revision/invalidation-queue work deferred under V08. PG 누락 (pg_missing) and last_error retry were already correct from a prior round, not newly verified this run. The 'representative swap' fix only makes the divergence visible/queryable; it does not yet trigger an automatic recompute of the referencing document's graph edges when the representative changes across syncs -- that also depends on the deferred invalidation-queue mechanism."
+    },
+    {
+      "requirement_id": "V10",
+      "final_tasks": ["F05", "F08"],
+      "implementation_status": "not_started_this_run",
+      "verification_status": "NOT_RUN",
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
+      "remaining": "다른 namespace 같은 ID 분리 (namespace separation) still not addressed -- code-audit this run confirmed build_page_identity_index partitions by source_type (a page-vs-ticket domain is implied only incidentally, via a hardcoded collapsible-source-type allowlist reimplemented in 3 separate places: identity.py, pipeline.py, explore.py), not an explicit identity-domain field. Changing this changes which references resolve at all, so it needs the same separate-approval gate as V08's invalidation queue (existing prod edges would go stale until a resync). active→grade→source→ID 정책 (tie-break policy) was already correct from a prior round. 실제 route copy 유지 (not falsely reconnecting routes after a representative swap) is incidentally helped by this run's V09 fix (representative_excluded exposes the divergence) but V10 itself remains not started -- the underlying namespace-separation ask is untouched."
+    },
+    {
+      "requirement_id": "V21",
+      "final_tasks": ["F05", "F06", "F07", "F08", "F09", "F10"],
+      "implementation_status": "not_started_this_run",
+      "verification_status": "NOT_RUN",
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
+      "remaining": "Cross-cutting regression sweep (A-grade/copy/owned-edge/parent-direction/access-path) across F05-F10 not attempted this run. Unchanged from prior round."
+    }
+  ]
+}
