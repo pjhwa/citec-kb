@@ -311,6 +311,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     anchor={
                         "type": "document", "resolved_id": resolved_document_id, "resolved_name": None,
                         "filter_reason": "page_or_subtree_excluded",
+                        "traversal_start_ids": [], "representative_excluded": True,
                     },
                     status="filtered",
                     freshness=freshness,
@@ -327,6 +328,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     anchor={
                         "type": "document", "resolved_id": resolved_document_id, "resolved_name": None,
                         "filter_reason": "all_copies_source_excluded",
+                        "traversal_start_ids": [], "representative_excluded": True,
                     },
                     status="filtered",
                     freshness=freshness,
@@ -454,8 +456,18 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             "matched_components": [a[2] for a in anchors],
         }
     elif body.anchor_type == "document":
+        # F05(2026-10-13 최종 핸드오프) §2.5.4/§2.5.6 — resolved_id는 과거
+        # exclude_source_types 적용 "이전"의 전체 후보에서 고른 대표를 그대로
+        # 돌려줬다(실제 재현: confluence_docs가 대표인데 exclude_source_types=
+        # confluence_docs를 주면, 실제 탐색은 confluence_map 사본으로만 도는데
+        # 응답은 여전히 제외된 confluence_docs를 resolved_id로 표시). 대표
+        # 식별자(논리 문서)와 "실제로 이 탐색이 시작한 사본"을 분리해 둘 다
+        # 노출한다 — representative_excluded로 둘이 갈렸는지 기계가 바로
+        # 판별 가능하게 한다.
         anchor_info = {
             "type": body.anchor_type, "resolved_id": resolved_document_id, "resolved_name": resolved_name,
+            "traversal_start_ids": sorted(document_ids),
+            "representative_excluded": resolved_document_id not in document_ids,
         }
     else:
         anchor_info = {

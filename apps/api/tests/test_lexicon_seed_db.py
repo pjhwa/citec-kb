@@ -259,6 +259,51 @@ def test_seed_lexicon_dry_run_detects_metadata_only_change(monkeypatch):
             session.query(LexiconTerm).filter_by(canonical=canonical).delete()
 
 
+def test_seed_lexicon_noop_does_not_bump_updated_at(monkeypatch):
+    """F05(2026-10-13 최종 핸드오프) 사전 점검 — F05가 lexicon_version
+    (count:max(updated_at))을 "lexicon revision 변경" 재계산 신호로 쓰려면,
+    아무것도 안 바뀐 seed 재실행이 updated_at을 흔들면 안 된다. apply
+    루프가 plan["action"]=="noop"인 행도 row.variants/priority/metadata_를
+    무조건 재할당하길래(seed.py), onupdate=func.now()가 매번 갱신시키는
+    버그를 의심해 이 테스트를 작성했다 — 실측 결과 **버그가 아니었다**:
+    SQLAlchemy의 스칼라 속성 추적이 재할당 값이 이미 로드된 기존 값과
+    같으면 dirty로 표시하지 않아, UPDATE 자체가 발생하지 않는다(JSONB도
+    새 dict 객체라도 내용이 같으면 동일하게 처리됨). 이 회귀를 앞으로도
+    지키기 위한 가드 테스트로 남긴다."""
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    canonical = f"TestNoop-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(
+                canonical=canonical, variants=["v1"], priority=100, metadata_={"manual": True},
+            ))
+            session.flush()
+
+        with session_scope() as session:
+            before = session.query(LexiconTerm).filter_by(canonical=canonical).one().updated_at
+
+        monkeypatch.setattr(
+            seed_module, "load_lexicon_seed_file",
+            lambda: {"terms": [{"canonical": canonical, "variants": ["v1"], "priority": 100}],
+                     "_loaded_from": "test"},
+        )
+        # seed 쪽은 이 canonical에 변경할 게 전혀 없다(variants 동일, priority
+        # 동일, metadata는 seed에 키가 없으니 기존 값이 그대로 이김) — 즉
+        # _plan_term_change가 "noop"을 반환해야 하는 입력이다.
+        result = seed_module.seed_lexicon(replace=False)
+        assert result["upserted"] == 1  # 루프는 여전히 모든 canonical을 순회함
+
+        with session_scope() as session:
+            after = session.query(LexiconTerm).filter_by(canonical=canonical).one().updated_at
+        assert after == before, "변경이 전혀 없는데 updated_at이 갱신됨 — lexicon_version이 매 seed마다 흔들린다"
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
 def test_seed_lexicon_dry_run_matches_actual_apply_diff(monkeypatch):
     """F03 합격 기준 — "허용된 변경은 dry-run에 표시, apply 실제 diff와
     일치"를 직접 확인한다: 같은 입력에 dry_run=True로 예측한 add/change

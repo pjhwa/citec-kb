@@ -434,6 +434,62 @@ def test_reingest_with_unchanged_body_backfills_all_hash_excluded_fields(tmp_pat
         _cleanup_document(external_id, "confluence_docs")
 
 
+def test_reingest_with_unchanged_body_restores_archived_status(tmp_path):
+    """F05(2026-10-13 최종 핸드오프) §2.5.1/§2.5.6 — 조사 결과, 이 코드베이스
+    어디에도 "사람이 개별 문서를 수동 archive"하는 경로는 없다(archived는
+    전부 크롤 감지 자동 archive거나 map_space_setup.py의 공간 단위 bulk
+    archive뿐). 그런데 _upsert_document의 hash-불변 skip 분기는 status를
+    전혀 안 건드려서, archived된 문서가 본문 그대로 재크롤되면(흔한 경우)
+    영원히 archived로 고착됐다 — 바로 아래(hash가 바뀌거나 활성 chunk가
+    0인) 분기는 무조건 status="active"로 되살리는 것과 비대칭이었다. 같은
+    "원본이 다시 보였다" 신호에 두 분기가 다르게 반응하면 안 된다."""
+    from app.confluence.sync import build_frontmatter_confluence_docs
+    from app.ingest.pipeline import run_ingest
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    external_id = "9100002"
+    _cleanup_document(external_id, "confluence_docs")
+
+    raw_dir = tmp_path / "raw"
+    docs_dir = raw_dir / "confluence_docs"
+    docs_dir.mkdir(parents=True)
+    body = "archived 복원 테스트 — 본문은 두 패스 동안 그대로.\n"
+
+    front = build_frontmatter_confluence_docs(
+        space_key="LOOKIN", folder="CI-TEC 과제", page_id=external_id, title="test",
+        url="https://x/pages/viewpage.action?pageId=9100002", last_modified="2026-09-07",
+    )
+    target = docs_dir / f"confluence_{external_id}.md"
+    target.write_text(front + "\n" + body, encoding="utf-8")
+
+    try:
+        stats1 = run_ingest(raw_dir, sources=["confluence_docs"])
+        assert stats1["inserted"] == 1
+
+        # 공간 단위 bulk archive(map_space_setup.py)를 흉내낸다 — 이 코드베이스가
+        # 실제로 archived를 만드는 유일한 "의도적" 경로.
+        with session_scope() as session:
+            doc = session.query(Document).filter_by(
+                source_type="confluence_docs", external_id=external_id
+            ).one()
+            doc.status = "archived"
+
+        # 같은 본문으로 재크롤(content_hash 불변) — skip 분기를 탄다.
+        stats2 = run_ingest(raw_dir, sources=["confluence_docs"])
+        assert stats2.get("inserted", 0) == 0
+        assert stats2.get("updated", 0) == 1  # status 복원이 dirty를 만듦
+        assert stats2.get("skipped", 0) == 0
+
+        with session_scope() as session:
+            doc = session.query(Document).filter_by(
+                source_type="confluence_docs", external_id=external_id
+            ).one()
+            assert doc.status == "active"
+    finally:
+        _cleanup_document(external_id, "confluence_docs")
+
+
 def test_sync_ingest_failure_does_not_advance_cursor(tmp_path, monkeypatch):
     """P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
     §9, REVIEW.md item 8 "수집 cursor는 ingest/embed 전에 전진한다"): a crawl

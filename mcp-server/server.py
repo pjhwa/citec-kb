@@ -1097,6 +1097,17 @@ async def kb_graph_explore(
         )
     elif anchor.get("resolved_name") or anchor.get("resolved_id"):
         lines.append(f"해석된 앵커: {anchor.get('resolved_name') or anchor.get('resolved_id')}")
+    if anchor.get("type") == "document" and anchor.get("representative_excluded"):
+        # F05(2026-10-13 최종 핸드오프) §2.5.4/§2.5.6 — 대표 사본이
+        # exclude_source_types 등으로 제외됐는데도 resolved_id가 여전히 그
+        # 사본을 가리키는 경우, 실제 탐색이 시작된 사본(traversal_start_ids)
+        # 과 다르다는 걸 명시한다 — 안 그러면 응답의 resolved_id만 보고
+        # "그 문서로 탐색했다"고 오해하기 쉽다.
+        starts = anchor.get("traversal_start_ids") or []
+        lines.append(
+            f"주의: 대표 사본({anchor.get('resolved_id')})이 제외 조건에 걸려, "
+            f"실제 탐색은 다른 사본으로 시작함: {', '.join(starts) if starts else '(남은 사본 없음)'}"
+        )
     if anchor.get("type") == "failure_bucket":
         # F02(2026-10-13 최종 핸드오프) — 조회한 bucket 자신의 사유. 과거엔
         # 이웃 bucket(_render_failure_bucket_line) 줄에만 evidence_reasons가

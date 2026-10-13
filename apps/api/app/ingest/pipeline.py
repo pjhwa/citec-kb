@@ -120,6 +120,19 @@ def _upsert_document(session: Session, draft: DocumentDraft, source_id: str = "f
             if not existing.work_type and draft.work_type:
                 existing.work_type = draft.work_type
                 dirty = True
+            # F05(2026-10-13 최종 핸드오프) §2.5 — 이 분기(hash 불변) 바로
+            # 아래(해시가 바뀌었거나 활성 chunk가 0인 경로)는 status를 무조건
+            # "active"로 되살리는데, 이 분기는 과거 status를 전혀 안 건드렸다.
+            # 그래서 archived된 문서가(원인은 크롤 감지 자동 archive거나
+            # map_space_setup.py의 공간 단위 bulk archive뿐 — 코드 어디에도
+            # "사람이 개별 문서를 archive"하는 경로는 없음, 조사로 확인됨)
+            # 본문이 그대로인 채 재크롤되면 영원히 archived로 고착됐다. 두
+            # 분기가 "원본이 다시 보였다"는 같은 신호에 반응하므로 동작도
+            # 같아야 한다 — superseded/draft_insight처럼 코드가 쓰지 않는
+            # 값은 건드리지 않고 archived일 때만 복원한다.
+            if existing.status == "archived":
+                existing.status = "active"
+                dirty = True
             # 2026-10-02: every DocumentDraft._HASH_EXCLUDED_METADATA_KEYS
             # field (ancestor_ids, source_version, source_modified_at — see
             # finalize()'s comment) must be refreshed here, not just

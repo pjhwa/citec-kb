@@ -637,6 +637,106 @@ def test_explore_document_anchor_excludes_its_own_fanout_copies_from_documents()
     assert copy_b not in doc_ids
 
 
+def test_explore_document_anchor_reports_representative_excluded_when_filtered():
+    """F05(2026-10-13 최종 핸드오프) §2.5.4/§2.5.6 — 대표(tier 1, tech_repo)가
+    exclude_source_types로 빠지면, 응답의 resolved_id는 여전히 그 대표를
+    가리키되(논리 문서 식별자는 안 바뀜) traversal_start_ids는 실제로 남은
+    사본만, representative_excluded=True를 명시해야 한다. 과거엔 resolved_id가
+    제외된 대표를 계속 가리키면서도 이 사실을 알려줄 필드가 전혀 없어서,
+    "그 문서로 탐색했다"고 오해하기 쉬웠다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    shared_external_id = str(uuid_mod.uuid4())
+    representative_id = f"tech_repo:{shared_external_id}"   # tier 1 — 대표로 뽑힘
+    duplicate_id = f"confluence_map:{shared_external_id}"   # tier 3 — 대표 아님, exclude 안 됨
+    comp_name = f"RepExcl-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(representative_id, "tech_repo"), (duplicate_id, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+            extractor_version="2026-10-12.2", generation="gen-X",
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=representative_id, source_type="tech_repo", external_id=shared_external_id,
+            title="대표", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=duplicate_id, source_type="confluence_map", external_id=shared_external_id,
+            title="사본", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={
+        "anchor_type": "document", "anchor_value": duplicate_id,
+        "exclude_source_types": ["tech_repo"],
+    })
+    assert resp.status_code == 200
+    anchor = resp.json()["anchor"]
+    assert anchor["resolved_id"] == representative_id  # 논리 대표는 안 바뀜
+    assert anchor["representative_excluded"] is True
+    assert anchor["traversal_start_ids"] == [duplicate_id]  # 실제 탐색은 남은 사본에서만
+
+
+def test_explore_document_anchor_representative_excluded_is_false_when_nothing_excluded():
+    """위 테스트의 대조군 — 아무 것도 제외하지 않으면 representative_excluded는
+    False, traversal_start_ids는 대표를 포함한 전체 사본이어야 한다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    shared_external_id = str(uuid_mod.uuid4())
+    representative_id = f"tech_repo:{shared_external_id}"
+    duplicate_id = f"confluence_map:{shared_external_id}"
+    comp_name = f"RepOK-{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for copy_id, source in [(representative_id, "tech_repo"), (duplicate_id, "confluence_map")]:
+        nclient.merge_document(
+            {"id": copy_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+            extractor_version="2026-10-12.3", generation="gen-X",
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=representative_id, source_type="tech_repo", external_id=shared_external_id,
+            title="대표", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=duplicate_id, source_type="confluence_map", external_id=shared_external_id,
+            title="사본", body_md="x", content_hash="h2", status="active", evidence_grade="C",
+        ))
+
+    client = TestClient(app)
+    resp = client.post("/v1/graph/explore", json={"anchor_type": "document", "anchor_value": duplicate_id})
+    assert resp.status_code == 200
+    anchor = resp.json()["anchor"]
+    assert anchor["representative_excluded"] is False
+    assert anchor["traversal_start_ids"] == sorted([representative_id, duplicate_id])
+
+
 def test_explore_document_anchor_with_null_external_id_does_not_fanout_to_everything():
     """2차 리뷰에서 지적: external_id가 NULL이면 Document.external_id == None이
     SQL의 IS NULL로 해석돼, external_id가 없는 모든 문서로 fan-out할 뻔했다.
