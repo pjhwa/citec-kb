@@ -605,3 +605,11 @@ class GraphRun(Base):
     unresolved_references: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     hub_recompute_ok: Mapped[Optional[bool]] = mapped_column(Boolean)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="running")
+    # R02(2026-10-13 2차 핸드오프) — merge 성공과 상태 기록 성공을 구분한다.
+    # mark_synced 실패는 그래프 자체는 이미 반영됐지만 PG의 graph_sync_state가
+    # 못 갱신된 경우라, "synced"로 세지만 이 카운트에도 같이 올라간다
+    # (sync_cli가 0보다 크면 exit code를 non-zero로 만듦).
+    documents_state_write_failed: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # "full"(전체 문서 대상) | "partial"(--source-ids 디버그 실행) — latest_run을
+    # "방금 완료된 전체 그래프 스냅샷"으로 오인하지 않게 구분한다(R02.5).
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="full")

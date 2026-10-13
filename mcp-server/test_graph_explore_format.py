@@ -94,6 +94,56 @@ def test_zero_documents_renders_without_error(monkeypatch):
     assert "연관 문서 (0건" in out
 
 
+def _run_404(monkeypatch, anchor_value="nothingmatchxyz918273"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "not found"})
+
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(
+            base_url="http://t", transport=httpx.MockTransport(handler)
+        ),
+    )
+    return asyncio.run(server.kb_graph_explore("component", anchor_value))
+
+
+def test_unknown_anchor_404_includes_status_line_not_bare_sentence(monkeypatch):
+    # R07(2026-10-13 2차 핸드오프) §2.7 실제 재현 — 과거엔 이 분기만 status
+    # 라인 없는 문장 하나를 돌려줘 isError=false와 함께 보면 성공처럼 보였다.
+    out = _run_404(monkeypatch)
+    assert out.startswith("status: not_found\n")
+
+
+def test_invalid_anchor_type_returns_invalid_request_status():
+    out = asyncio.run(server.kb_graph_explore("not_a_real_type", "x"))
+    assert out.startswith("status: invalid_request\n")
+
+
+def test_empty_anchor_value_returns_invalid_request_status():
+    out = asyncio.run(server.kb_graph_explore("component", "   "))
+    assert out.startswith("status: invalid_request\n")
+
+
+def test_renders_extracted_inferred_tag_on_route(monkeypatch):
+    # R06(2026-10-13 2차 핸드오프) §1 — EXTRACTED/INFERRED는 API에 있었지만
+    # MCP 출력에서 사라져 있었다.
+    payload = {
+        "as_of": "2026-10-12", "anchor": {"type": "component", "resolved_id": "NetApp"},
+        "found": True,
+        "documents": [{
+            "id": "tech_repo:1", "title": "본문 추론", "source_type": "tech_repo",
+            "evidence_grade": "A", "hops": 1,
+            "route": [{"relation": "HAS_COMPONENT", "direction": "in", "tag": "INFERRED"}],
+        }],
+        "components": [], "failure_buckets": [], "excluded_hub_components": [],
+        "documents_total": 1, "documents_truncated": False,
+        "components_total": 0, "components_truncated": False,
+        "failure_buckets_total": 0, "failure_buckets_truncated": False,
+    }
+    out = _run(monkeypatch, payload)
+    assert "HAS_COMPONENT[INFERRED]" in out
+
+
 def test_renders_copies_archived_and_snapshot_tags(monkeypatch):
     payload = {
         "as_of": "2026-10-12", "anchor": {"type": "component", "resolved_id": "NetApp"},

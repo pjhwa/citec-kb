@@ -252,6 +252,18 @@ def test_enrich_with_document_metadata_missing_doc_defaults():
     assert enriched[0]["archived"] is False
 
 
+def test_enrich_with_document_metadata_distinguishes_pg_missing_from_active():
+    # R04(2026-10-13 2차 핸드오프) §4 — PG에서 못 찾은 문서(예: 삭제됨)를
+    # "archived=False인 정상 문서"로 보이게 하면 안 된다. pg_missing=True로
+    # 구분한다.
+    docs = [{"id": "gone"}, {"id": "d2"}]
+    enrichment = {"d2": {"evidence_grade": "C", "status": "active"}}
+    enriched = enrich_with_document_metadata(docs, enrichment)
+    assert enriched[0]["pg_missing"] is True
+    assert enriched[0]["archived"] is False  # 누락과는 별개 필드로 분리
+    assert enriched[1]["pg_missing"] is False
+
+
 def test_collapse_duplicate_copies_picks_representative_and_lists_others():
     docs = [
         {"id": "confluence_map:X", "title": "사본"},

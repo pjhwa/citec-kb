@@ -937,10 +937,17 @@ async def kb_graph_explore(
     쓰임새: kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은 다음,
     그 주변을 더 깊이 파는 용도. 검색의 대체재가 아니다.
     """
+    # R07(2026-10-13 2차 핸드오프) §2.7 — found/not_found/no_match/filtered/
+    # isolated/backend_error뿐 아니라 invalid_request도 기계가 읽는 status로
+    # 노출한다. 과거엔 이 두 분기가 "오류: ..." 문장만 돌려줘 isError=false와
+    # 구조화된 status 라인이 전혀 없었다(V17 요구 위반).
     if anchor_type not in ("failure_bucket", "document", "component", "symptom_text"):
-        return f"오류: anchor_type은 failure_bucket|document|component|symptom_text 중 하나여야 합니다 (받음: {anchor_type})"
+        return (
+            "status: invalid_request\n"
+            f"오류: anchor_type은 failure_bucket|document|component|symptom_text 중 하나여야 합니다 (받음: {anchor_type})"
+        )
     if not (anchor_value or "").strip():
-        return "오류: anchor_value가 비어 있습니다."
+        return "status: invalid_request\n오류: anchor_value가 비어 있습니다."
 
     def _split(s: str) -> list[str]:
         return [t.strip() for t in (s or "").split(",") if t.strip()]
@@ -960,7 +967,15 @@ async def kb_graph_explore(
                 },
             )
             if resp.status_code == 404:
-                return f"그래프에서 '{anchor_value}'를 찾을 수 없습니다 (as-of 데이터 기준)."
+                # R07(2026-10-13 2차 핸드오프) §2.7 실제 재현 — 이 분기만 status
+                # 라인이 없는 문장 하나를 돌려줘서 isError=false와 함께 보면
+                # "성공"처럼 보였다(unknown_component 케이스, raw evidence로
+                # 재현됨). no_match(symptom_text)는 이미 status를 포함하므로
+                # 여기도 같은 포맷으로 맞춘다.
+                return (
+                    "status: not_found\n"
+                    f"그래프에서 '{anchor_value}'를 찾을 수 없습니다 (as-of 데이터 기준)."
+                )
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
@@ -991,7 +1006,12 @@ async def kb_graph_explore(
             relation = step.get("relation")
             is_out = step.get("direction") == "out"
             marker = ("↓" if is_out else "↑") if relation == "PARENT_OF" else ("→" if is_out else "←")
-            parts.append(f"{marker}{relation}")
+            tag = step.get("tag")
+            # R06(2026-10-13 2차 핸드오프) §1 — API에는 tag(EXTRACTED/INFERRED)
+            # 가 있지만 MCP formatter가 그동안 관계명/방향만 찍어 사용자가
+            # "명시 추출"과 "본문 추론"을 구분할 수 없었다.
+            tag_suffix = f"[{tag}]" if tag else ""
+            parts.append(f"{marker}{relation}{tag_suffix}")
             via = step.get("via")
             if via:
                 name = via.get("id") or via.get("canonical_name") or via.get("bucket_name") or via.get("external_id") or "?"
@@ -1024,6 +1044,10 @@ async def kb_graph_explore(
             tags.append(f"copies={len(copies)}")
         if d.get("archived"):
             tags.append("archived")
+        if d.get("pg_missing"):
+            # R04(2026-10-13 2차 핸드오프) §4 — PG에서 못 찾은 문서(삭제됨 등)를
+            # 조용히 "활성 상태 정상 문서"로 보이게 하지 않는다.
+            tags.append("pg_missing")
         if access.get("body_kind") == "snapshot":
             tags.append("snapshot")
         tag_str = f" [{', '.join(tags)}]" if tags else ""
@@ -1046,11 +1070,21 @@ async def kb_graph_explore(
         lambda c: f"  - [{c.get('hops')}hop {_render_route(c.get('route'))}] {c.get('canonical_name')}",
     )
 
+    def _render_failure_bucket_line(b: dict) -> str:
+        # R06(2026-10-13 2차 핸드오프) §7 — evidence_ref/본문 URL의
+        # resolved/external_artifact/legacy_missing/target_not_ingested/
+        # unresolved_reference 사유를 MCP에서도 확인할 수 있게 한다.
+        reasons = b.get("evidence_reasons")
+        reasons_str = f" evidence_reasons={reasons}" if reasons else ""
+        return (
+            f"  - [{b.get('hops')}hop {_render_route(b.get('route'))}] "
+            f"{b.get('bucket_name')} id={b.get('id')}{reasons_str}"
+        )
+
     fbs = data.get("failure_buckets") or []
     _render_category(
         "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
-        "failure_buckets_offset",
-        lambda b: f"  - [{b.get('hops')}hop {_render_route(b.get('route'))}] {b.get('bucket_name')} id={b.get('id')}",
+        "failure_buckets_offset", _render_failure_bucket_line,
     )
 
     return "\n".join(lines)

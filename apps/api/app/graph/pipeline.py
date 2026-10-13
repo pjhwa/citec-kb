@@ -233,7 +233,14 @@ def sync_document(
             and state["input_hash"] == input_hash
             and state["graph_extractor_version"] == EXTRACTOR_VERSION
             and state.get("graph_generation") == generation
+            and not state.get("last_error")
         ):
+            # R04(2026-10-13 2차 핸드오프) §9 — last_error가 남아 있으면 해시가
+            # 같아도 재시도한다. mark_failed()는 input_hash/version/generation을
+            # 안 건드리므로, "그 전 성공한 동기화의 해시"와 "이후 내용이 안 바뀐
+            # 채로 실패한 시도"가 우연히 같아지면(예: 실패가 해시 계산 전 단계
+            # — Document row 조회 등 — 에서 났을 때) last_error 체크 없이는
+            # 영원히 skip된다(실제 재현 가능 — 코드 경로로 확인).
             return "skipped"
 
         lexicon_map = load_lexicon_map()
@@ -266,8 +273,13 @@ def sync_document(
                 generation=generation,
             )
         except Exception:  # noqa: BLE001 — 그래프엔 이미 반영됐는데 상태 기록만 실패한 경우도
-            # 배치를 죽이면 안 된다(§4.4와 같은 이유). 다음 실행에서 해시 불일치로 재시도된다.
+            # 배치를 죽이면 안 된다(§4.4와 같은 이유) — 하지만 R02(2026-10-13
+            # 2차 핸드오프)는 이 실패를 "synced"로 조용히 숨기지 말라고 명시한다.
+            # counters로 따로 집계해 sync_cli가 exit code/graph_runs에 반영한다 —
+            # 반환값 자체는 그래프 쓰기가 실제로 성공했으므로 여전히 "synced".
             logger.exception("failed to record graph_sync_state for document_id=%s (merge itself succeeded)", document_id)
+            if counters is not None:
+                counters["state_write_failed"] = counters.get("state_write_failed", 0) + 1
         return "synced"
     except Exception as exc:  # noqa: BLE001 — §4.4: 문서 단위 격리, 배치 안 죽인다
         logger.exception("graph sync failed for document_id=%s", document_id)
@@ -316,7 +328,16 @@ def sync_failure_bucket(
             + extract_similar_to(bucket_dict, other_buckets=all_buckets)
             + extract_mentioned_references(bucket_dict, page_identity_index=page_identity_index)
         )
-        client.merge_failure_bucket(bucket_dict, edges, extractor_version=EXTRACTOR_VERSION, generation=generation)
+        # R06(2026-10-13 2차 핸드오프) §7 — resolved/external_artifact/
+        # legacy_missing/target_not_ingested/unresolved_reference 사유를
+        # sync_cli의 배치 집계뿐 아니라 이 bucket 자신에도 남겨서, MCP가 라이브
+        # 재계산 없이(= 전체 page_identity_index를 요청마다 다시 안 만들어도)
+        # kb_graph_explore 결과에서 바로 보여줄 수 있게 한다.
+        bucket_reasons = classify_evidence(bucket_dict, external_id_index=richer_index, page_identity_index=page_identity_index)
+        client.merge_failure_bucket(
+            bucket_dict, edges, extractor_version=EXTRACTOR_VERSION, generation=generation,
+            evidence_reasons=bucket_reasons,
+        )
         return "synced"
     except Exception:  # noqa: BLE001
         logger.exception("graph sync failed for failure_bucket_id=%s", bucket_id)

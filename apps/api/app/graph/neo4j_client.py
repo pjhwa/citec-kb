@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Iterable, Optional
 
@@ -205,7 +206,7 @@ class Neo4jClient:
         WHERE n1 <> a
         WITH a, n1, r1
         ORDER BY coalesce($rel_priority[type(r1)], 99), coalesce(n1.id, n1.canonical_name, n1.external_id),
-            elementId(r1)
+            startNode(r1) = a
         WITH a, n1, head(collect(r1)) AS best_r1
         WITH a, collect(DISTINCT {{
             node: n1, relation: type(best_r1), tag: best_r1.tag, hops: 1,
@@ -223,7 +224,7 @@ class Neo4jClient:
                 coalesce($rel_priority[type(r1b)], 99) + coalesce($rel_priority[type(r2)], 99),
                 coalesce($rel_priority[type(r1b)], 99),
                 coalesce(p.id, p.canonical_name, p.external_id),
-                elementId(r1b), elementId(r2)
+                startNode(r1b) = a, startNode(r2) = p
             WITH a, n2, head(collect({{p: p, r1b: r1b, r2: r2}})) AS best
             RETURN collect(DISTINCT {{
                 node: n2, relation: type(best.r2), tag: best.r2.tag, hops: 2,
@@ -281,9 +282,15 @@ class Neo4jClient:
                     "relation": entry["relation"], "hops": entry["hops"], "route": path,
                 })
             elif "FailureBucket" in labels:
+                reasons_json = node.get("evidence_reasons_json")
                 failure_buckets.append({
                     "id": node["id"], "bucket_name": node.get("bucket_name"),
                     "relation": entry["relation"], "hops": entry["hops"], "route": path,
+                    # R06 §7 — sync 시점에 이미 계산해 올려둔 사유별 집계
+                    # (resolved/external_artifact/legacy_missing/
+                    # target_not_ingested/unresolved_reference). 아직 한 번도
+                    # 이 라운드 코드로 재백필 안 된 버킷은 None(미확인).
+                    "evidence_reasons": json.loads(reasons_json) if reasons_json else None,
                 })
 
         return {
@@ -325,9 +332,12 @@ class Neo4jClient:
     def merge_failure_bucket(
         self, bucket: dict, edges: Iterable[Edge], *,
         extractor_version: str = "unstamped", generation: str = "unstamped",
+        evidence_reasons: dict[str, int] | None = None,
     ) -> None:
         with self._driver.session() as session:
-            session.execute_write(_merge_failure_bucket_tx, bucket, list(edges), extractor_version, generation)
+            session.execute_write(
+                _merge_failure_bucket_tx, bucket, list(edges), extractor_version, generation, evidence_reasons,
+            )
 
 
 _singleton_client: Optional["Neo4jClient"] = None
@@ -449,7 +459,11 @@ def _merge_document_tx(tx, doc: dict, edges: list[Edge], extractor_version: str,
 
 def _merge_failure_bucket_tx(
     tx, bucket: dict, edges: list[Edge], extractor_version: str, generation: str,
+    evidence_reasons: dict[str, int] | None = None,
 ) -> None:
+    # R06(2026-10-13 2차 핸드오프) §7 — resolved/external_artifact/
+    # legacy_missing/target_not_ingested/unresolved_reference 사유를 bucket
+    # 노드 자신에 올려서, MCP가 라이브 재계산 없이 그대로 보여줄 수 있게 한다.
     tx.run(
         """
         MERGE (b:FailureBucket {id: $id})
@@ -457,8 +471,10 @@ def _merge_failure_bucket_tx(
             b.fb_domain = $fb_domain,
             b.protocol = $protocol,
             b.environment = $environment,
-            b.evidence_ref = $evidence_ref
+            b.evidence_ref = $evidence_ref,
+            b.evidence_reasons_json = $evidence_reasons_json
         """,
+        evidence_reasons_json=json.dumps(evidence_reasons) if evidence_reasons is not None else None,
         **bucket,
     )
     _replace_owned_edges_tx(

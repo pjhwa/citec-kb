@@ -43,6 +43,96 @@ def _clear_engine_cache():
     seed_module._lexicon_cache["map"] = None
 
 
+def test_seed_lexicon_default_preserves_manually_added_variant(monkeypatch):
+    """R03(2026-10-13 2차 핸드오프) §1/3 실제 재현 — 과거엔 replace=False라도
+    seed에 '있는' canonical의 variants를 통째로 덮어써서, 수동으로 추가한
+    별칭이 사라졌다. 이제는 union 병합이라 보존돼야 한다."""
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    canonical = f"TestCan-{uuid.uuid4().hex[:8]}"
+    manual_variant = f"manual-{uuid.uuid4().hex[:8]}"
+    seed_variant = f"seed-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(canonical=canonical, variants=[manual_variant], priority=100))
+
+        monkeypatch.setattr(
+            seed_module, "load_lexicon_seed_file",
+            lambda: {"terms": [{"canonical": canonical, "variants": [seed_variant], "priority": 100}],
+                     "_loaded_from": "test"},
+        )
+        result = seed_module.seed_lexicon(replace=False)
+        assert result["upserted"] == 1
+
+        with session_scope() as session:
+            row = session.query(LexiconTerm).filter_by(canonical=canonical).one()
+            assert manual_variant in row.variants  # 보존됨
+            assert seed_variant in row.variants  # seed 값도 더해짐
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
+def test_seed_lexicon_dry_run_writes_nothing(monkeypatch):
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    canonical = f"TestCanNew-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(
+        seed_module, "load_lexicon_seed_file",
+        lambda: {"terms": [{"canonical": canonical, "variants": ["v1"], "priority": 100}], "_loaded_from": "test"},
+    )
+    result = seed_module.seed_lexicon(replace=False, dry_run=True)
+    assert result["dry_run"] is True
+    assert canonical in result["would_add"]
+    with session_scope() as session:
+        assert session.query(LexiconTerm).filter_by(canonical=canonical).first() is None
+
+
+def test_seed_lexicon_replace_removes_canonical_not_in_seed(monkeypatch):
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    stays = f"TestStays-{uuid.uuid4().hex[:8]}"
+    goes = f"TestGoes-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(canonical=goes, variants=["x"], priority=100))
+
+        monkeypatch.setattr(
+            seed_module, "load_lexicon_seed_file",
+            lambda: {"terms": [{"canonical": stays, "variants": ["y"], "priority": 100}], "_loaded_from": "test"},
+        )
+        seed_module.seed_lexicon(replace=True)
+        with session_scope() as session:
+            assert session.query(LexiconTerm).filter_by(canonical=goes).first() is None
+            assert session.query(LexiconTerm).filter_by(canonical=stays).first() is not None
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=stays).delete()
+            session.query(LexiconTerm).filter_by(canonical=goes).delete()
+
+
+def test_build_lexicon_map_logs_alias_collision_across_canonicals(caplog):
+    # R03 §5 — 같은 variant가 두 canonical에 걸치면 조용히 넘어가지 않고
+    # 경고 로그를 남긴다.
+    import logging
+    from app.lexicon.seed import build_lexicon_map
+
+    shared = f"shared-{uuid.uuid4().hex[:6]}"
+    terms = [
+        {"canonical": "A", "variants": [shared]},
+        {"canonical": "B", "variants": [shared]},
+    ]
+    with caplog.at_level(logging.WARNING, logger="citec.lexicon"):
+        build_lexicon_map(terms)
+    assert any("collision" in r.message for r in caplog.records)
+
+
 def test_load_lexicon_map_picks_up_db_change_without_cache_clear():
     """다른 프로세스가 seed_lexicon()을 돌린 것처럼, cache_clear()를 전혀
     호출하지 않고 DB 행을 직접 바꾼 뒤 load_lexicon_map()을 다시 불러도

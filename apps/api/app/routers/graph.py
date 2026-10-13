@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -29,6 +30,18 @@ from app.graph.sync_state import get_latest_synced_at
 from app.lexicon.seed import load_lexicon_map
 
 router = APIRouter(prefix="/v1", tags=["graph"])
+logger = logging.getLogger("citec.graph.router")
+
+
+def _is_backend_error(exc: Exception) -> bool:
+    """advisor(2026-10-13 2차 핸드오프) 지적 — backend_error는 Neo4j 드라이버
+    장애만 뜻해야 한다. 과거엔 bare except Exception이라 이 코드 자체의 버그도
+    "그래프 저장소 장애"로 둔갑해 로그도 안 남고 조용히 숨었다. neo4j 패키지를
+    여기서 직접 import하면(모듈 최상단에서) requirements-ci.txt가 neo4j를
+    빼는 CI에서 app.main import 전체가 깨진다(이미 한 번 겪은 사고,
+    neo4j_client.py의 지연 import와 같은 이유) — 그래서 예외 타입의 모듈
+    이름만으로 판정한다(패키지 설치 여부와 무관하게 동작)."""
+    return type(exc).__module__.split(".")[0] == "neo4j"
 
 
 def _build_client() -> Neo4jClient:
@@ -200,14 +213,24 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             # lexicon이 못 알아들었다 — 대소문자만 다른 그래프 노드가 있는지 확인
             try:
                 ci_match = client.resolve_component_case_insensitive(canonical)
-            except Exception:  # noqa: BLE001 — G08: Neo4j 장애를 503이 아니라
-                # 기계가 구분 가능한 status로 돌려준다(연결 자체가 아예 안 되는
-                # 경우도 "찾을 수 없음"(404)과는 다른 신호가 필요하다).
+            except Exception as exc:  # noqa: BLE001
+                if not _is_backend_error(exc):
+                    raise
+                # G08: Neo4j 장애를 503이 아니라 기계가 구분 가능한 status로
+                # 돌려준다(연결 자체가 아예 안 되는 경우도 "찾을 수
+                # 없음"(404)과는 다른 신호가 필요하다). 코드 버그는 위에서
+                # re-raise되어 500으로 보여 숨지 않는다.
+                logger.exception(
+                    "graph explore backend error (anchor_type=component, anchor_value=%s)", canonical,
+                )
                 return shape_explore_result(
                     {"found": False, "documents": [], "components": [], "failure_buckets": [],
                      "excluded_hub_components": []},
                     as_of=as_of_str,
-                    anchor={"type": "component", "resolved_id": None, "resolved_name": canonical},
+                    anchor={
+                        "type": "component", "resolved_id": None, "resolved_name": canonical,
+                        "backend_error_reason": str(exc),
+                    },
                     status="backend_error",
                 )
             if ci_match:
@@ -216,29 +239,52 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         resolved_name = canonical
     elif body.anchor_type == "document":
         resolved_document_id, document_ids = _resolve_document_anchor_ids(body.anchor_value)
-        anchors = [("Document", "id", doc_id) for doc_id in document_ids]
         if exclude_external_ids or exclude_subtree_ids or exclude_source_types:
-            # G04/G08 — anchor 자신이 제외 대상이면 그래프를 돌 필요 없이
-            # "filtered"로 즉시 답한다(found와는 다른 신호: 그래프엔 있지만
-            # 이 호출에서는 보여주지 않기로 한 것).
+            # R01.3/R01.4(2026-10-13 2차 핸드오프) — page_id/subtree 제외는
+            # "같은 Confluence page의 모든 수집본"에 적용되는 페이지 단위
+            # 판정이라 하나라도 걸리면 전체를 filtered로 답한다. source_type
+            # 제외는 그 수집본 하나만 fan-out에서 빼고, 다른 허용된 수집본이
+            # 남아 있으면 그걸로 계속 탐색한다 — 과거엔 수집본 하나만
+            # 걸려도 전체를 filtered로 끝내 "confluence_docs만 빼고 같은
+            # 페이지의 confluence_map 사본으로는 보고 싶다"는 요청을 못
+            # 받았다(실제 재현: confluence_docs:1000706325 앵커 +
+            # exclude_source_types=confluence_docs → confluence_map:1000706325
+            # 사본이 있어도 무조건 filtered였음).
             anchor_enrichment = _fetch_document_enrichment(document_ids)
             anchor_ancestor_ids = _fetch_ancestor_ids(document_ids)
-            if any(
-                is_document_excluded(
-                    e, exclude_page_ids=exclude_external_ids,
-                    exclude_subtree_ids=exclude_subtree_ids,
-                    exclude_source_types=exclude_source_types,
-                    ancestors=set(anchor_ancestor_ids.get(doc_id) or []),
-                )
+            page_level_excluded = any(
+                (e.get("external_id") in exclude_external_ids)
+                or (e.get("external_id") in exclude_subtree_ids)
+                or bool(set(anchor_ancestor_ids.get(doc_id) or []) & exclude_subtree_ids)
                 for doc_id, e in anchor_enrichment.items()
-            ):
+            )
+            if page_level_excluded:
                 return shape_explore_result(
                     {"found": True, "documents": [], "components": [], "failure_buckets": [],
                      "excluded_hub_components": []},
                     as_of=as_of_str,
-                    anchor={"type": "document", "resolved_id": resolved_document_id, "resolved_name": None},
+                    anchor={
+                        "type": "document", "resolved_id": resolved_document_id, "resolved_name": None,
+                        "filter_reason": "page_or_subtree_excluded",
+                    },
                     status="filtered",
                 )
+            document_ids = [
+                doc_id for doc_id in document_ids
+                if anchor_enrichment.get(doc_id, {}).get("source_type") not in exclude_source_types
+            ]
+            if not document_ids:
+                return shape_explore_result(
+                    {"found": True, "documents": [], "components": [], "failure_buckets": [],
+                     "excluded_hub_components": []},
+                    as_of=as_of_str,
+                    anchor={
+                        "type": "document", "resolved_id": resolved_document_id, "resolved_name": None,
+                        "filter_reason": "all_copies_source_excluded",
+                    },
+                    status="filtered",
+                )
+        anchors = [("Document", "id", doc_id) for doc_id in document_ids]
     else:  # failure_bucket
         anchors = [("FailureBucket", "id", body.anchor_value)]
 
@@ -247,6 +293,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         "excluded_hub_components": [],
     }
     backend_error = False
+    backend_error_reason: str | None = None
     try:
         for label, key, value in anchors:
             # Fix 1 (스펙 §2): 앵커 자신이 허브 Component면 2hop 순회를 생략하고
@@ -275,10 +322,19 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             merged["components"].extend(raw["components"])
             merged["failure_buckets"].extend(raw["failure_buckets"])
             merged["excluded_hub_components"].extend(raw["excluded_hub_components"])
-    except Exception:  # noqa: BLE001 — G08: Neo4j 장애가 기존 검색/API에 안 퍼지도록
-        # 격리하되, 503 대신 기계가 구분 가능한 status로 돌려준다(MCP는 응답
-        # body의 status 필드를 본다 — HTTP 에러는 "오류: ..."로만 뭉개져 보임).
+    except Exception as exc:  # noqa: BLE001
+        if not _is_backend_error(exc):
+            raise
+        # G08: Neo4j 장애가 기존 검색/API에 안 퍼지도록 격리하되, 503 대신
+        # 기계가 구분 가능한 status로 돌려준다(MCP는 응답 body의 status 필드를
+        # 본다 — HTTP 에러는 "오류: ..."로만 뭉개져 보임). 코드 버그는 위에서
+        # re-raise되어 500으로 남아 "backend_error"로 숨지 않는다.
+        logger.exception(
+            "graph explore backend error (anchor_type=%s anchor_value=%s)",
+            body.anchor_type, body.anchor_value,
+        )
         backend_error = True
+        backend_error_reason = str(exc)
 
     if backend_error:
         anchor_info_err: dict[str, Any] = {
@@ -287,6 +343,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                 anchors[0][2] if anchors and body.anchor_type != "symptom_text" else None
             ),
             "resolved_name": resolved_name,
+            "backend_error_reason": backend_error_reason,
         }
         if body.anchor_type == "symptom_text":
             anchor_info_err["matched_components"] = [a[2] for a in anchors]
@@ -376,41 +433,62 @@ def graph_status() -> dict[str, Any]:
     Neo4j로 바뀌었거나 그 뒤로 새 배치가 전혀 안 돈 상태)."""
     as_of = get_latest_synced_at()
     run_info: dict[str, Any] | None = None
+    def _run_dict(row: GraphRun) -> dict[str, Any]:
+        return {
+            "run_id": row.run_id,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+            "status": row.status,
+            "scope": row.scope,
+            "extractor_version": row.extractor_version,
+            "generation": row.generation,
+            "lexicon_version": row.lexicon_version,
+            "documents_synced": row.documents_synced,
+            "documents_skipped": row.documents_skipped,
+            "documents_failed": row.documents_failed,
+            "documents_state_write_failed": row.documents_state_write_failed,
+            "buckets_synced": row.buckets_synced,
+            "buckets_failed": row.buckets_failed,
+            "unresolved_references": row.unresolved_references,
+            "hub_recompute_ok": row.hub_recompute_ok,
+        }
+
+    full_completed_info: dict[str, Any] | None = None
     with session_scope() as session:
         latest_run = session.scalar(select(GraphRun).order_by(GraphRun.started_at.desc()))
         # dict는 session_scope() 블록 "안에서" 만들어야 한다 — 밖에서 ORM
         # 속성에 접근하면 세션이 이미 닫혀 DetachedInstanceError가 난다(실제
         # 테스트로 재현됨).
         if latest_run is not None:
-            run_info = {
-                "run_id": latest_run.run_id,
-                "started_at": latest_run.started_at.isoformat() if latest_run.started_at else None,
-                "completed_at": latest_run.completed_at.isoformat() if latest_run.completed_at else None,
-                "status": latest_run.status,
-                "extractor_version": latest_run.extractor_version,
-                "generation": latest_run.generation,
-                "documents_synced": latest_run.documents_synced,
-                "documents_skipped": latest_run.documents_skipped,
-                "documents_failed": latest_run.documents_failed,
-                "buckets_synced": latest_run.buckets_synced,
-                "buckets_failed": latest_run.buckets_failed,
-                "unresolved_references": latest_run.unresolved_references,
-                "hub_recompute_ok": latest_run.hub_recompute_ok,
-            }
+            run_info = _run_dict(latest_run)
+        # R02(2026-10-13 2차 핸드오프) §5/6 — latest_run은 --source-ids
+        # 디버그 실행이나 하드킬로 영원히 "running"에 남은 행도 그대로
+        # 돌려준다. "마지막으로 완료된 전체 그래프 스냅샷"이 필요한 호출자는
+        # 이 필드를 따로 봐야 한다(scope=full AND status가 completed류).
+        latest_full_completed = session.scalar(
+            select(GraphRun)
+            .where(GraphRun.scope == "full", GraphRun.status.in_(["completed", "completed_warn"]))
+            .order_by(GraphRun.started_at.desc())
+        )
+        if latest_full_completed is not None:
+            full_completed_info = _run_dict(latest_full_completed)
 
     try:
         neo4j_generation = _build_client().read_generation_marker()
     except Exception:  # noqa: BLE001 — 상태 조회 자체가 그래프 저장소 장애로
-        # 500이 되면 안 된다(§4.4와 같은 이유) — 모르면 null로 둔다.
+        # 500이 되면 안 된다(§4.4와 같은 이유) — 모르면 null로 둔다. 다만
+        # 조용히 삼키지 않고 로그는 남긴다(advisor 지적 — 원인 추적 가능해야).
+        logger.exception("graph status: failed to read neo4j generation marker")
         neo4j_generation = None
 
     return {
         "as_of": as_of.date().isoformat() if as_of else None,
         "latest_run": run_info,
+        "latest_full_completed_run": full_completed_info,
         "neo4j_generation": neo4j_generation,
         "generation_matches": (
-            run_info is not None
+            full_completed_info is not None
             and neo4j_generation is not None
-            and run_info["generation"] == neo4j_generation
+            and full_completed_info["generation"] == neo4j_generation
         ),
     }

@@ -36,6 +36,7 @@ INTEGRATION_FILES=(
   tests/test_graph_sync_state_db.py
   tests/test_graph_router.py
   tests/test_lexicon_seed_db.py
+  tests/test_graph_sync_cli_db.py
 )
 
 failed=0

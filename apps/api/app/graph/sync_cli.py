@@ -28,13 +28,40 @@ from app.graph.pipeline import (
 logger = logging.getLogger("citec.graph.sync_cli")
 
 
-def _start_run(*, generation: str) -> str:
+_ADVISORY_LOCK_KEY = 0x63697465635F6772  # "citec_gr"(앞 8바이트)의 임의 고정값 — pg_advisory_lock은 bigint 1개만 받는다
+
+def _start_run(*, generation: str, scope: str, lexicon_version: str | None) -> str:
     run_id = str(uuid4())
     with session_scope() as session:
         session.add(GraphRun(
             run_id=run_id, extractor_version=EXTRACTOR_VERSION, generation=generation,
+            scope=scope, lexicon_version=lexicon_version,
         ))
     return run_id
+
+
+def _release_lock(lock_conn) -> None:
+    try:
+        lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+    finally:
+        lock_conn.close()
+
+
+def _lexicon_version() -> str | None:
+    """R02(2026-10-13 2차 핸드오프) §10 — graph_runs.lexicon_version이 한 번도
+    채워진 적이 없었다. app.lexicon.seed의 캐시 지문과 같은 (count, max(updated_at))
+    문자열을 재사용해 "이 run이 어느 lexicon 상태로 돌았는지"를 남긴다."""
+    try:
+        from sqlalchemy import func as sa_func
+        from app.db.models import LexiconTerm
+        with session_scope() as session:
+            count, max_updated = session.execute(
+                select(sa_func.count(), sa_func.max(LexiconTerm.updated_at))
+            ).one()
+        return f"{count}:{max_updated}"
+    except Exception:  # noqa: BLE001 — lexicon_version은 참고 정보, 못 구해도 배치는 계속
+        logger.exception("failed to compute lexicon_version")
+        return None
 
 
 def _finish_run(run_id: str, *, status: str, **counts) -> None:
@@ -87,6 +114,25 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"documents": len(doc_ids), "failure_buckets": len(bucket_ids)}))
         return 0
 
+    # R02(2026-10-13 2차 핸드오프) §7 — 동시 writer를 막는 최소 장치. 세션
+    # 수준 advisory lock은 "어느 커넥션이 쥐고 있는지"가 중요한데, ORM의
+    # session_scope()는 풀링된 커넥션을 반환/재사용하므로 거기서 잡으면
+    # 커넥션이 풀로 돌아간 뒤에도 잠금이 남을 수 있다 — 그래서 이 run이
+    # 끝날 때까지 쥐고 있을 전용 커넥션을 직접 열고, 끝날 때 같은 커넥션에서
+    # 명시적으로 푼다. 프로세스가 kill -9로 죽어도 Postgres가 그 커넥션
+    # 종료를 감지해 자동으로 풀어준다(stale 상태가 안 남음).
+    from app.db.session import get_engine
+
+    lock_conn = get_engine().connect()
+    got_lock = lock_conn.exec_driver_sql(
+        "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+    ).scalar()
+    if not got_lock:
+        lock_conn.close()
+        logger.error("another sync_cli run already holds the graph sync lock — aborting")
+        print(json.dumps({"error": "lock_held_by_another_run"}), file=sys.stderr)
+        return 1
+
     client = build_neo4j_client()
     if args.generation:
         generation = args.generation
@@ -102,7 +148,8 @@ def main(argv: list[str] | None = None) -> int:
         client.write_generation_marker(generation)
     args.generation = generation  # 아래에서 그대로 참조되는 모든 곳에 일관되게 반영
 
-    run_id = _start_run(generation=args.generation)
+    scope = "partial" if args.source_ids else "full"
+    run_id = _start_run(generation=args.generation, scope=scope, lexicon_version=_lexicon_version())
     stats = {"synced": 0, "skipped": 0, "failed": 0}
     fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None
@@ -165,10 +212,19 @@ def main(argv: list[str] | None = None) -> int:
             documents_failed=stats["failed"], buckets_synced=fb_stats["synced"],
             buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
             unresolved_references=counters.get("unresolved_references", 0),
+            documents_state_write_failed=counters.get("state_write_failed", 0),
         )
+        _release_lock(lock_conn)
         raise
 
-    ok = stats["failed"] == 0 and fb_stats["failed"] == 0 and hub_recompute_ok is not False
+    state_write_failed = counters.get("state_write_failed", 0)
+    # R02(2026-10-13 2차 핸드오프) §1 — mark_synced 실패(그래프 쓰기는 됐지만
+    # PG 상태 기록만 실패)를 더 이상 "completed"로 숨기지 않는다. exit code도
+    # non-zero가 된다.
+    ok = (
+        stats["failed"] == 0 and fb_stats["failed"] == 0
+        and hub_recompute_ok is not False and state_write_failed == 0
+    )
     status = "completed" if ok else "completed_warn"  # status 컬럼 String(16) 한도
     _finish_run(
         run_id, status=status,
@@ -176,13 +232,16 @@ def main(argv: list[str] | None = None) -> int:
         documents_failed=stats["failed"], buckets_synced=fb_stats["synced"],
         buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
         unresolved_references=counters.get("unresolved_references", 0),
+        documents_state_write_failed=state_write_failed,
     )
     print(json.dumps(
         {"run_id": run_id, "generation": args.generation, "documents": stats, "failure_buckets": fb_stats,
          "hub_recompute_ok": hub_recompute_ok, "evidence_reasons": evidence_reasons,
-         "unresolved_references": counters.get("unresolved_references", 0)},
+         "unresolved_references": counters.get("unresolved_references", 0),
+         "documents_state_write_failed": state_write_failed},
         ensure_ascii=False,
     ))
+    _release_lock(lock_conn)
     return 0 if ok else 1
 
 

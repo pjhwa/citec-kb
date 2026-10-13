@@ -193,10 +193,15 @@ def enrich_with_document_metadata(documents: list[dict], enrichment_by_id: dict[
     collapse_duplicate_copies에 같이 넘긴다."""
     out = []
     for doc in documents:
-        meta = enrichment_by_id.get(doc["id"]) or {}
+        meta = enrichment_by_id.get(doc["id"])
+        # R04(2026-10-13 2차 핸드오프) §4 — PG에 행이 없으면(삭제됨 등) meta가
+        # 없다. 과거엔 이 경우도 meta.get("status")=="archived" 비교가
+        # False를 내서 "활성 상태의 정상 문서"처럼 보였다 — 누락과 active를
+        # 구분해야 한다.
         out.append({
-            **doc, "evidence_grade": meta.get("evidence_grade"),
-            "archived": meta.get("status") == "archived",
+            **doc, "evidence_grade": (meta or {}).get("evidence_grade"),
+            "archived": (meta or {}).get("status") == "archived",
+            "pg_missing": meta is None,
         })
     return out
 

@@ -70,8 +70,44 @@ def test_graph_status_reports_latest_run_and_generation_match():
     assert body["latest_run"]["run_id"] == run_id
     assert body["latest_run"]["generation"] == generation
     assert body["latest_run"]["unresolved_references"] == 2
+    assert body["latest_run"]["scope"] == "full"
     assert body["neo4j_generation"] == generation
+    # R02(2026-10-13 2차 핸드오프) §5/6 — generation_matches는 latest_run이
+    # 아니라 "scope=full이고 완료된" run 기준이어야 한다.
+    assert body["latest_full_completed_run"]["run_id"] == run_id
     assert body["generation_matches"] is True
+
+
+def test_graph_status_ignores_partial_run_for_generation_matches():
+    """R02 §5/6 실제 재현 — --source-ids 디버그 실행(scope=partial)이 가장
+    최근 행이어도, generation_matches는 그 run의 generation을 보면 안 된다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    full_generation = f"test-full-gen-{uuid.uuid4()}"
+    partial_generation = f"test-partial-gen-{uuid.uuid4()}"
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=str(uuid.uuid4()), extractor_version="v", generation=full_generation,
+            scope="full", status="completed",
+        ))
+        session.add(GraphRun(
+            run_id=str(uuid.uuid4()), extractor_version="v", generation=partial_generation,
+            scope="partial", status="completed",
+        ))
+    nclient = _neo4j_test_client()
+    nclient.write_generation_marker(partial_generation)  # Neo4j는 partial run과 "우연히" 같은 값
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    body = resp.json()
+    assert body["latest_run"]["scope"] == "partial"  # 가장 최근 행은 partial
+    assert body["latest_full_completed_run"]["generation"] == full_generation
+    # partial과는 마커가 같아도, full-completed 기준으로는 다르므로 False
+    assert body["generation_matches"] is False
 
 
 def test_explore_unknown_failure_bucket_returns_404():
@@ -455,16 +491,17 @@ def test_explore_bridge_block_hides_path_through_excluded_subtree():
     assert comp_name not in {c["canonical_name"] for c in resp_excl.json()["components"]}
 
 
-def test_explore_neo4j_failure_returns_backend_error_status_not_503(monkeypatch):
-    """G08 — Neo4j 조회 실패는 503로 요청 전체를 죽이는 대신, 기계가 구분
-    가능한 status="backend_error"로 200 응답을 돌려줘야 한다(MCP가 body의
-    status 필드로 판단하므로)."""
+def test_explore_neo4j_driver_failure_returns_backend_error_status_not_503(monkeypatch):
+    """G08 — Neo4j 드라이버 장애는 503로 요청 전체를 죽이는 대신, 기계가
+    구분 가능한 status="backend_error"로 200 응답을 돌려줘야 한다(MCP가
+    body의 status 필드로 판단하므로)."""
     from fastapi.testclient import TestClient
+    from neo4j.exceptions import ServiceUnavailable
     from app.main import app
     import app.graph.neo4j_client as neo4j_client_module
 
     def boom(self, *args, **kwargs):
-        raise RuntimeError("simulated neo4j outage (test)")
+        raise ServiceUnavailable("simulated neo4j outage (test)")
 
     monkeypatch.setattr(neo4j_client_module.Neo4jClient, "explore", boom)
     client = TestClient(app)
@@ -473,7 +510,32 @@ def test_explore_neo4j_failure_returns_backend_error_status_not_503(monkeypatch)
         json={"anchor_type": "failure_bucket", "anchor_value": f"whatever-{uuid.uuid4()}"},
     )
     assert resp.status_code == 200
-    assert resp.json()["status"] == "backend_error"
+    body = resp.json()
+    assert body["status"] == "backend_error"
+    assert "simulated neo4j outage" in body["anchor"]["backend_error_reason"]
+
+
+def test_explore_non_neo4j_exception_is_not_reported_as_backend_error(monkeypatch):
+    """advisor(2026-10-13 2차 핸드오프) 지적 — backend_error는 Neo4j 드라이버
+    장애만 뜻해야 한다. 이 라우터 자체의 버그(TypeError 등)를 "그래프 저장소
+    장애"로 둔갑시켜 조용히 숨기면 안 된다 — 500으로 드러나야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    import app.graph.neo4j_client as neo4j_client_module
+
+    def boom(self, *args, **kwargs):
+        raise TypeError("simulated ordinary bug (test), not a neo4j outage")
+
+    monkeypatch.setattr(neo4j_client_module.Neo4jClient, "explore", boom)
+    # raise_server_exceptions=False — 기본값(True)은 핸들러가 못 잡은 예외를
+    # TestClient가 테스트 쪽으로 다시 던진다(실제 서버라면 500). 여기서는
+    # "500으로 드러난다"는 사실 자체를 응답으로 확인하려는 것이라 끈다.
+    client = TestClient(app, raise_server_exceptions=False)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": f"whatever-{uuid.uuid4()}"},
+    )
+    assert resp.status_code == 500
 
 
 def test_explore_document_anchor_fans_out_across_duplicate_external_id_copies():
