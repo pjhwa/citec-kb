@@ -2,17 +2,34 @@
 """R04.10(2026-10-13 2차 핸드오프) — 고립 유령 Document 노드(source_type IS
 NULL, edge 0개 — G01 수정 전 raw-id 유령의 잔존, 전체 재백필 후 827개 확인됨)
 삭제는 "diff·백업·복구안을 만든 뒤 별도 승인 대상으로 남겨라"는 요구에 따라
-이 스크립트는 **읽기 전용 dry-run만** 한다. 삭제 기능 자체가 없다 — 실제
-삭제가 필요하면 이 스크립트의 출력(백업 manifest)을 사람이 검토한 뒤 별도
-승인을 받고 손으로 실행한다.
+설계했다.
+
+기본 동작(플래그 없음)은 **읽기 전용 dry-run**이다 — 쓰기 없음, 운영/dev
+어느 Neo4j를 봐도 안전하다. 결과를 커밋하거나 외부에 공유하기 전에
+민감정보가 없는지 확인한다(이 노드들은 어차피 source_type/title이 NULL이라
+민감정보가 거의 없음).
+
+`--execute`를 주면 실제로 삭제한다. 안전장치: (1) app.graph.sync_cli와
+같은 Postgres advisory lock을 먼저 잡아 전체 재백필(sync_cli)과 동시에
+돌지 못하게 막고, (2) 과거 dry-run manifest를 신뢰하지 않고 이 호출
+시점에 판정 쿼리를 다시 실행하며, (3) 터미널에 "delete"를 정확히
+입력해야 진행되는 확인 게이트가 있고, (4) 삭제 전에 대상 id 목록을
+manifest 파일로 먼저 남긴 뒤 배치 단위로 지운다(배치 중간 실패 후
+재시도해도 안전 — 이미 지워진 id는 재매치되지 않음).
+
+`--execute`는 app.db.session / app.graph.sync_cli를 import하므로
+apps/api 패키지가 보여야 한다 — repo 루트에서 실행한다면 먼저
+`cd apps/api && PYTHONPATH=. python ../../scripts/verify/ghost_node_audit.py --execute`
+처럼 PYTHONPATH를 apps/api로 잡아주거나 apps/api 안에서 실행해야 한다
+(아니면 `ModuleNotFoundError: No module named 'app'`). 플래그 없는
+dry-run 모드는 이 import를 하지 않으므로 이 제약이 없다.
 
 사용법:
     GRAPH_NEO4J_TEST_URI=... GRAPH_NEO4J_TEST_PASSWORD=... \\
         python scripts/verify/ghost_node_audit.py [--out backup.json]
-
-운영/dev 어느 Neo4j를 봐도 안전하다(쓰기 없음) — 단, 결과를 커밋하거나
-외부에 공유하기 전에 민감정보가 없는지 확인한다(이 노드들은 어차피
-source_type/title이 NULL이라 민감정보가 거의 없음).
+    # 실제 삭제(사람이 'delete' 확인 입력 필요):
+    cd apps/api && PYTHONPATH=. GRAPH_NEO4J_TEST_URI=... GRAPH_NEO4J_TEST_PASSWORD=... \\
+        DATABASE_URL=... python ../../scripts/verify/ghost_node_audit.py --execute
 """
 
 from __future__ import annotations
@@ -68,9 +85,13 @@ _DELETE_BATCH_SIZE = 5000
 
 
 def _delete_batch(session, ids: list[str]) -> int:
+    # 삭제 대상 정의 전체(source_type NULL + 단일 Document label + 관계
+    # 0개)를 삭제 쿼리 자체에도 다시 걸어둔다 — live re-audit과 이 배치
+    # 실행 사이에 다른 writer가 이 노드에 관계를 붙였을 가능성까지
+    # 막는다(advisory lock은 sync_cli만 막지, 다른 writer는 못 막음).
     result = session.run(
         "UNWIND $ids AS id MATCH (d:Document {id: id}) "
-        "WHERE d.source_type IS NULL AND labels(d) = ['Document'] "
+        "WHERE d.source_type IS NULL AND labels(d) = ['Document'] AND NOT (d)--() "
         "DETACH DELETE d RETURN count(d) AS deleted",
         ids=ids,
     )
@@ -109,6 +130,15 @@ def _execute_deletion(driver, *, confirm) -> dict:
     return {"requested": len(ids), "deleted": deleted_total, "manifest": manifest_path}
 
 
+def _confirm_delete(prompt: str) -> bool:
+    try:
+        return input(prompt).strip() == "delete"
+    except EOFError:
+        # 비대화형 환경(cron, 파이프 등)에서 stdin이 닫혀 있으면 input()이
+        # EOFError를 던진다 — raw traceback 대신 깔끔하게 취소로 처리한다.
+        return False
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--out", default=None, help="백업 manifest(JSON) 저장 경로 — 기본: artifacts/ghost_node_audit_<timestamp>.json")
@@ -136,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.execute:
         from app.db.session import get_engine
-        from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+        from app.graph.sync_cli import _ADVISORY_LOCK_KEY, _release_lock
 
         lock_conn = get_engine().connect()
         got_lock = lock_conn.exec_driver_sql(
@@ -149,13 +179,16 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"error": "lock_held_by_another_run"}), file=sys.stderr)
             return 1
         try:
-            outcome = _execute_deletion(
-                driver, confirm=lambda prompt: input(prompt).strip() == "delete"
-            )
+            outcome = _execute_deletion(driver, confirm=_confirm_delete)
         finally:
-            lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
-            lock_conn.close()
-            driver.close()
+            # _release_lock 내부가 unlock 실행 자체에서 예외를 던져도
+            # lock_conn은 그 안의 try/finally로 반드시 close되고, driver는
+            # 이 바깥 finally로 반드시 close된다 — 어느 한쪽이 실패해도
+            # 두 커넥션 다 누수되지 않게 한다.
+            try:
+                _release_lock(lock_conn)
+            finally:
+                driver.close()
         print(json.dumps(outcome, ensure_ascii=False))
         if outcome.get("cancelled"):
             print("삭제를 취소했습니다.")
