@@ -346,10 +346,15 @@ See §6.3 for the full taxonomy and when to use each:
 - `exclude_page_ids`/`exclude_subtree_ids`/`exclude_source_types`(쉼표구분)로 평가·검증
   보고서 등 결과에서 빼야 할 페이지/하위트리/source_type을 걸러낼 수 있다(일반 업무
   질문에는 보통 비워 둔다).
-- 응답 맨 첫 줄 `status:`를 가장 먼저 본다 — `found`(결과 있음)/`not_found`(앵커 자체가
-  그래프에 없음)/`no_match`(symptom_text에서 알려진 컴포넌트를 못 찾음)/`isolated`
-  (앵커는 있는데 연관 항목이 0건). 문장을 해석해서 성공/실패를 추측하지 말고 이 값으로
-  판단한다.
+- 응답 맨 첫 줄 `status:`를 가장 먼저 본다(모든 분기가 이 줄로 시작한다 —
+  2026-10-13 이전에는 앵커를 못 찾았을 때만 예외적으로 이 줄 없이 문장만
+  돌아왔는데, 지금은 그 분기도 고쳐졌다) — `found`(결과 있음)/`not_found`
+  (앵커 자체가 그래프에 없음)/`no_match`(symptom_text에서
+  알려진 컴포넌트를 못 찾음)/`isolated`(앵커는 있는데 연관 항목이 0건)/`filtered`
+  (앵커 자신 또는 그 모든 수집본이 exclude_* 조건에 걸려 의도적으로 안 보여줌)/
+  `backend_error`(그래프 저장소 장애 — 나중에 다시 시도)/`invalid_request`
+  (anchor_type/anchor_value 자체가 잘못됨). 문장을 해석해서 성공/실패를 추측하지 말고
+  이 값으로 판단한다.
 - 결과 줄의 `[Nhop 경로]`는 anchor부터 그 노드까지의 **전체 경로**다(마지막 관계 하나가
   아니다). `PARENT_OF`는 계층 의미가 있어 `↑`(anchor가 그 쪽의 자식 — 즉 위로 올라가는
   방향)/`↓`(anchor가 그 쪽의 부모 — 아래로 내려가는 방향)로, 나머지 관계(`REFERENCES`/
