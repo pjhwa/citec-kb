@@ -191,3 +191,122 @@ def test_load_lexicon_map_reuses_cache_when_fingerprint_unchanged():
     finally:
         with session_scope() as session:
             session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
+def test_seed_lexicon_preserves_manual_metadata_default_replace_false(monkeypatch):
+    """F03(2026-10-13 최종 핸드오프) 실제 재현 — 기존 metadata={"manual": True}
+    인 canonical에 seed를 (replace=False, 기본값) 돌려도 metadata가 지워지면
+    안 된다. 과거엔 seed에 metadata 키가 없으면(실제로 늘 그렇다)
+    `row.metadata_ = dict(t.get("metadata") or {})`가 매번 빈 dict로
+    덮어썼다."""
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    canonical = f"TestMeta-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(
+                canonical=canonical, variants=["v1"], priority=100, metadata_={"manual": True},
+            ))
+
+        monkeypatch.setattr(
+            seed_module, "load_lexicon_seed_file",
+            lambda: {"terms": [{"canonical": canonical, "variants": ["v1"], "priority": 100}],
+                     "_loaded_from": "test"},
+        )
+        result = seed_module.seed_lexicon(replace=False)
+        assert result["upserted"] == 1
+
+        with session_scope() as session:
+            row = session.query(LexiconTerm).filter_by(canonical=canonical).one()
+            assert row.metadata_ == {"manual": True}  # 보존됨
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
+def test_seed_lexicon_dry_run_detects_metadata_only_change(monkeypatch):
+    """F03.4 — metadata-only 변경(variants/priority는 동일)도 dry-run의
+    would_change와 change_fields에 드러나야 한다. 과거엔 dry-run이
+    variants/priority만 비교해서, 이 경우 would_change가 비어 있었다."""
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    canonical = f"TestMetaDiff-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(
+                canonical=canonical, variants=["v1"], priority=100, metadata_={"old": 1},
+            ))
+
+        monkeypatch.setattr(
+            seed_module, "load_lexicon_seed_file",
+            lambda: {"terms": [{"canonical": canonical, "variants": ["v1"], "priority": 100,
+                                 "metadata": {"new": 2}}],
+                     "_loaded_from": "test"},
+        )
+        result = seed_module.seed_lexicon(replace=False, dry_run=True)
+        assert canonical in result["would_change"]
+        assert result["change_fields"][canonical] == ["metadata"]
+
+        with session_scope() as session:
+            row = session.query(LexiconTerm).filter_by(canonical=canonical).one()
+            assert row.metadata_ == {"old": 1}  # dry-run이라 안 바뀜
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
+def test_seed_lexicon_dry_run_matches_actual_apply_diff(monkeypatch):
+    """F03 합격 기준 — "허용된 변경은 dry-run에 표시, apply 실제 diff와
+    일치"를 직접 확인한다: 같은 입력에 dry_run=True로 예측한 add/change
+    집합이, 그 다음 실제 apply(dry_run=False) 실행 결과와 정확히 같아야
+    한다(둘이 _plan_term_change()를 공유하므로)."""
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    unchanged = f"TestUnchanged-{uuid.uuid4().hex[:8]}"
+    changing = f"TestChanging-{uuid.uuid4().hex[:8]}"
+    new_one = f"TestNew-{uuid.uuid4().hex[:8]}"
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(canonical=unchanged, variants=["v1"], priority=100, metadata_={"m": 1}))
+            session.add(LexiconTerm(canonical=changing, variants=["v1"], priority=100, metadata_={"old": 1}))
+
+        seed_terms = {
+            "terms": [
+                {"canonical": unchanged, "variants": ["v1"], "priority": 100, "metadata": {"m": 1}},
+                {"canonical": changing, "variants": ["v1", "v2"], "priority": 100},
+                {"canonical": new_one, "variants": ["v1"], "priority": 100},
+            ],
+            "_loaded_from": "test",
+        }
+        monkeypatch.setattr(seed_module, "load_lexicon_seed_file", lambda: seed_terms)
+
+        dry = seed_module.seed_lexicon(replace=False, dry_run=True)
+        assert dry["would_add"] == [new_one]
+        assert dry["would_change"] == [changing]  # variants union만 바뀜; unchanged는 진짜 무변화
+        assert unchanged not in dry["would_change"]
+
+        apply_result = seed_module.seed_lexicon(replace=False, dry_run=False)
+        assert apply_result["upserted"] == 3  # 3개 canonical 모두 upsert 대상이지만
+
+        with session_scope() as session:
+            row_unchanged = session.query(LexiconTerm).filter_by(canonical=unchanged).one()
+            row_changing = session.query(LexiconTerm).filter_by(canonical=changing).one()
+            assert row_unchanged.metadata_ == {"m": 1}  # 정말 안 바뀜
+            assert set(row_changing.variants) == {"v1", "v2"}  # dry-run이 예측한 그대로
+            assert session.query(LexiconTerm).filter_by(canonical=new_one).one() is not None
+
+        # 재실행 — 멱등성(F03.6): 이제 더 바꿀 게 없어야 한다.
+        dry_again = seed_module.seed_lexicon(replace=False, dry_run=True)
+        assert dry_again["would_add"] == []
+        assert dry_again["would_change"] == []
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=unchanged).delete()
+            session.query(LexiconTerm).filter_by(canonical=changing).delete()
+            session.query(LexiconTerm).filter_by(canonical=new_one).delete()

@@ -1,0 +1,31 @@
+{
+  "id": "f03_isolated_cli_api_run",
+  "env": "isolated scratch Postgres (citec_graph_test), real app.lexicon.seed CLI + real /v1/lexicon/seed REST endpoint via FastAPI TestClient -- not a fake-object probe, not the live citec_knowledge DB",
+  "steps": [
+    {
+      "step": "manually insert a row matching real seed term GRO with manual metadata + manual alias",
+      "row": {"canonical": "GRO", "variants": ["rx-gro-hw", "generic receive offload", "hardware offload", "manual-alias-xyz"], "priority": 10, "metadata_": {"manual": true}}
+    },
+    {
+      "step": "dry-run (python -m app.lexicon.seed --dry-run) before any apply",
+      "result": {"would_change": ["GRO"], "change_fields": {"GRO": ["variants"]}, "would_add_count": 70}
+    },
+    {
+      "step": "apply (python -m app.lexicon.seed, replace=False default)",
+      "result": {"upserted": 75, "total": 75}
+    },
+    {
+      "step": "verify row after apply",
+      "row_after": {"metadata_": {"manual": true}, "manual_alias_preserved": true, "variants_includes_new_seed_variant": "GRO offload"}
+    },
+    {
+      "step": "idempotency: dry-run again after apply",
+      "result": {"would_add": [], "would_change": [], "would_remove": [], "change_fields": {}}
+    },
+    {
+      "step": "REST endpoint check (POST /v1/lexicon/seed?dry_run=true via FastAPI TestClient against same isolated DB)",
+      "result": {"status_code": 200, "body_matches_cli_dry_run": true}
+    }
+  ],
+  "conclusion": "F03 pass bar met: manual metadata preserved, allowed variant change surfaced in dry-run (including change_fields distinguishing which field changed), apply's actual diff matches what dry-run predicted, re-run is idempotent, REST and CLI both share the same seed_lexicon()/_plan_term_change() code path and agree."
+}

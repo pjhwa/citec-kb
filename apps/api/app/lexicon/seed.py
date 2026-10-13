@@ -65,22 +65,74 @@ def _merge_variants(existing: list[str], seed: list[str]) -> list[str]:
     return merged
 
 
+def _plan_term_change(row: "LexiconTerm | None", seed_term: dict[str, Any], *, replace: bool) -> dict[str, Any]:
+    """F03(2026-10-13 최종 핸드오프) — dry-run과 실제 apply가 반드시 같은
+    답을 내도록, "이 행이 어떤 상태가 돼야 하는가"를 한 곳에서만 계산한다.
+    과거엔 이 로직이 두 군데(dry-run 비교 블록과 apply 쓰기 블록)에 따로
+    있어서 서로 어긋났다 — 특히 dry-run은 variants/priority만 비교해
+    metadata 변경을 전혀 못 봤는데, apply는 매번
+    `row.metadata_ = dict(t.get("metadata") or {})`로 **항상** 덮어써서,
+    seed 파일에 metadata 키가 없는(실제로 늘 이렇다) canonical은 매 실행마다
+    수동 metadata가 조용히 빈 dict로 지워지는 실제 버그였다(실제 재현:
+    comparison/raw/local_source_probes.json).
+
+    "소유권이 불명확한 기존 필드는 기본 보존하라"는 요구에 따라, metadata는
+    variants와 같은 철학으로 다룬다 — seed가 명시한 키는 기본값으로
+    제공하되, 이미 DB에 있는(수동으로 설정됐을 수 있는) 키가 있으면 그
+    값이 이긴다. replace=True(명시적 파괴 옵션)일 때만 seed 쪽이 전부
+    이긴다 — variants/삭제가 이미 그렇게 동작하는 것과 동일한 정책."""
+    seed_variants = list(seed_term.get("variants") or [])
+    seed_priority = int(seed_term.get("priority") or 100)
+    seed_metadata = dict(seed_term.get("metadata") or {})
+
+    if row is None:
+        return {
+            "action": "add",
+            "target_variants": seed_variants, "target_priority": seed_priority,
+            "target_metadata": seed_metadata, "changed_fields": [],
+        }
+
+    existing_variants = list(row.variants or [])
+    existing_metadata = dict(row.metadata_ or {})
+
+    target_variants = seed_variants if replace else _merge_variants(existing_variants, seed_variants)
+    target_priority = seed_priority
+    target_metadata = seed_metadata if replace else {**seed_metadata, **existing_metadata}
+
+    changed_fields: list[str] = []
+    if set(target_variants) != set(existing_variants):
+        changed_fields.append("variants")
+    if target_priority != row.priority:
+        changed_fields.append("priority")
+    if target_metadata != existing_metadata:
+        changed_fields.append("metadata")
+
+    return {
+        "action": "change" if changed_fields else "noop",
+        "target_variants": target_variants, "target_priority": target_priority,
+        "target_metadata": target_metadata, "changed_fields": changed_fields,
+    }
+
+
 def seed_lexicon(*, replace: bool = False, dry_run: bool = False) -> dict[str, Any]:
     """replace=True는 seed 파일에 없는 기존 항목(공용 DB에 수동 추가된 별칭 등)을
     먼저 전부 지운다 — G06: 공용 DB에서 무심코 실행하면 안 되므로 기본값을 False로
     바꿨다(과거 기본값 True 때문에 운영에서 10건이 삭제된 사고가 있었다).
 
-    replace=False(기본)는 두 단계로 보존한다(R03 — 과거엔 "False도 같은
-    canonical의 variants를 seed로 통째로 덮어씀"이 실제 버그였다):
+    replace=False(기본)는 세 필드 모두 보존형이다(R03/F03 — 과거엔 "False도
+    같은 canonical의 variants를 seed로 통째로 덮어씀", 그리고 "metadata는
+    항상 덮어씀"이 실제 버그였다):
     1. seed에 없는 canonical 자체는 건드리지 않는다(기존 동작).
-    2. seed에 '있는' canonical이어도, 그 행의 variants는 겹쳐쓰지 않고
-       기존 값과 union 병합한다 — 수동으로 추가된 별칭이 유지된다.
-    priority/metadata는 seed 값으로 갱신한다(이 두 필드는 보통 seed가
-    관리하는 설정값이라 수동 편집 대상이 아니라고 보기 때문— variants만
-    "수동 추가 가능한 목록"으로 취급).
+    2. seed에 '있는' canonical이어도, variants는 겹쳐쓰지 않고 기존 값과
+       union 병합한다 — 수동으로 추가된 별칭이 유지된다.
+    3. metadata도 같은 철학 — seed가 명시한 키는 기본값, 이미 DB에 있는
+       키는 그 값이 이긴다(소유권 불명확한 필드는 보존). priority는 여전히
+       seed가 관리하는 설정값으로 본다(수동 편집 대상이 아니라고 가정).
 
-    dry_run=True면 아무것도 쓰지 않고 추가/변경/삭제(= replace일 때만) 예상
-    canonical 목록만 돌려준다(R03.4)."""
+    dry_run과 apply는 _plan_term_change() 하나를 공유한다(F03.4) — 둘이
+    서로 다른 답을 낼 수 없다. dry_run=True면 아무것도 쓰지 않고 추가/
+    변경(필드별 diff 포함)/삭제(= replace일 때만) 예상 canonical 목록만
+    돌려준다."""
     data = load_lexicon_seed_file()
     terms = [t for t in (data.get("terms") or []) if str(t.get("canonical") or "").strip()]
     seed_canonicals = {str(t["canonical"]).strip() for t in terms}
@@ -90,17 +142,16 @@ def seed_lexicon(*, replace: bool = False, dry_run: bool = False) -> dict[str, A
 
         would_add: list[str] = []
         would_change: list[str] = []
+        change_fields: dict[str, list[str]] = {}
         for t in terms:
             can = str(t["canonical"]).strip()
-            seed_variants = list(t.get("variants") or [])
-            seed_priority = int(t.get("priority") or 100)
             row = existing_rows.get(can)
-            if row is None:
+            plan = _plan_term_change(row, t, replace=replace)
+            if plan["action"] == "add":
                 would_add.append(can)
-                continue
-            target_variants = seed_variants if replace else _merge_variants(list(row.variants or []), seed_variants)
-            if set(target_variants) != set(row.variants or []) or seed_priority != row.priority:
+            elif plan["action"] == "change":
                 would_change.append(can)
+                change_fields[can] = plan["changed_fields"]
         would_remove = sorted(set(existing_rows) - seed_canonicals) if replace else []
 
         if dry_run:
@@ -108,6 +159,9 @@ def seed_lexicon(*, replace: bool = False, dry_run: bool = False) -> dict[str, A
                 "dry_run": True,
                 "would_add": sorted(would_add), "would_change": sorted(would_change),
                 "would_remove": would_remove, "loaded_from": data.get("_loaded_from"),
+                # F03.4 — metadata-only 변경도 이 필드별 diff로 드러난다
+                # (would_change에만 있으면 "뭐가 바뀌는지"가 안 보였다).
+                "change_fields": change_fields,
             }
 
         if replace:
@@ -117,16 +171,14 @@ def seed_lexicon(*, replace: bool = False, dry_run: bool = False) -> dict[str, A
         n = 0
         for t in terms:
             can = str(t["canonical"]).strip()
-            seed_variants = list(t.get("variants") or [])
             row = existing_rows.get(can)
+            plan = _plan_term_change(row, t, replace=replace)
             if row is None:
                 row = LexiconTerm(canonical=can)
                 session.add(row)
-                row.variants = seed_variants
-            else:
-                row.variants = seed_variants if replace else _merge_variants(list(row.variants or []), seed_variants)
-            row.priority = int(t.get("priority") or 100)
-            row.metadata_ = dict(t.get("metadata") or {})
+            row.variants = plan["target_variants"]
+            row.priority = plan["target_priority"]
+            row.metadata_ = plan["target_metadata"]
             n += 1
         session.flush()
         total = session.scalar(select(func.count()).select_from(LexiconTerm)) or 0
