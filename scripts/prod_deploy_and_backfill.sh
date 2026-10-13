@@ -159,8 +159,24 @@ if $STASHED_GITIGNORE; then
 fi
 
 # ── 6. 마이그레이션 버전 확인 ────────────────────────────────────────────
+# 실제 운영에서 재현된 사고: git_pull_deploy.sh가 재시작은 했지만 entrypoint의
+# `alembic upgrade head`가 어떤 이유로든 반영되지 않아, graph_runs에 새 컬럼
+# (scope 등)이 없는 채로 sync_cli가 돌다가 run 시작 INSERT에서 죽었다(문서/
+# 관계 쓰기 전이라 데이터 손상은 없었음). 이제 head와 다르면 여기서 바로
+# 중단하고 재백필을 시작하지 않는다.
 banner "6. 마이그레이션 확인"
-docker compose exec -T api alembic current
+ALEMBIC_CURRENT="$(docker compose exec -T api alembic current 2>&1)"
+echo "$ALEMBIC_CURRENT"
+ALEMBIC_HEADS="$(docker compose exec -T api alembic heads 2>&1)"
+CURRENT_REV="$(echo "$ALEMBIC_CURRENT" | grep -oE '^[0-9a-zA-Z_]+' | head -1)"
+HEAD_REV="$(echo "$ALEMBIC_HEADS" | grep -oE '^[0-9a-zA-Z_]+' | head -1)"
+if [[ -z "$CURRENT_REV" || "$CURRENT_REV" != "$HEAD_REV" ]]; then
+  err "마이그레이션이 head까지 안 올라갔습니다 (current=${CURRENT_REV:-없음}, head=$HEAD_REV)"
+  err "원인 확인: docker compose logs api --tail 100 | grep -i alembic"
+  err "수동 적용: docker compose exec -T api alembic upgrade head"
+  die "마이그레이션 확인 실패 — 재백필을 시작하지 않습니다"
+fi
+log "✅ 마이그레이션 head 확인: $CURRENT_REV"
 
 # ── 7. cron 확인(건드리지 않음 — 경고만) ────────────────────────────────
 banner "7. cron 확인"
@@ -191,8 +207,12 @@ fi
 confirm "운영 전체 문서(수십만 건 규모)에 대한 전체 재백필을 지금 시작할까요? (dev 기준 약 2시간, 운영은 더 걸릴 수 있음)" \
   || die "취소 — 준비되면 다시 실행하세요"
 
+# set -o pipefail + ${PIPESTATUS[0]} 필요 — "cmd | tee log; echo \$?"는
+# 파이프의 마지막 명령(tee)의 종료코드를 가리켜 항상 0을 찍는다(실제 사고
+# 재현: sync_cli가 마이그레이션 누락으로 즉시 죽었는데도 BACKFILL_DONE_EXIT=0
+# 이 찍혀 "성공"으로 오인하게 만들었다). PIPESTATUS[0]이 진짜 sync_cli 종료코드.
 screen -dmS "$SCREEN_SESSION" bash -c \
-  "docker compose exec -T api python -m app.graph.sync_cli 2>&1 | tee '$BACKFILL_LOG'; echo BACKFILL_DONE_EXIT=\$? >> '$BACKFILL_LOG'"
+  "set -o pipefail; docker compose exec -T api python -m app.graph.sync_cli 2>&1 | tee '$BACKFILL_LOG'; echo BACKFILL_DONE_EXIT=\${PIPESTATUS[0]} >> '$BACKFILL_LOG'"
 
 log "✅ screen 세션 '${SCREEN_SESSION}'에서 재백필 시작됨 (로그: $BACKFILL_LOG)"
 
