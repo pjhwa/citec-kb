@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -32,6 +33,13 @@ from app.lexicon.seed import load_lexicon_map
 
 router = APIRouter(prefix="/v1", tags=["graph"])
 logger = logging.getLogger("citec.graph.router")
+
+# F04(2026-10-13 최종 핸드오프) §9 — /v1/graph/status 응답 "모양" 자체의
+# 버전. 필드를 추가/제거/의미 변경할 때 올린다. API_BUILD_SHA는 배포
+# 파이프라인이 채워줘야 하는 값인데, 아직 그 배선이 없다 — 지어내지
+# 않고 정직하게 "unknown"으로 보고한다(scripts/git_pull_deploy.sh를
+# 사용자 승인 없이 고치지 않는다는 범위 제약).
+GRAPH_STATUS_CONTRACT_VERSION = "2026-10-13.1"
 
 
 def _is_backend_error(exc: Exception) -> bool:
@@ -568,12 +576,15 @@ def graph_status() -> dict[str, Any]:
             full_completed_info = _run_dict(latest_full_completed, session)
 
     try:
-        neo4j_generation = _build_client().read_generation_marker()
+        _client_for_status = _build_client()
+        neo4j_generation = _client_for_status.read_generation_marker()
+        neo4j_store_identity = _client_for_status.read_store_identity()
     except Exception:  # noqa: BLE001 — 상태 조회 자체가 그래프 저장소 장애로
         # 500이 되면 안 된다(§4.4와 같은 이유) — 모르면 null로 둔다. 다만
         # 조용히 삼키지 않고 로그는 남긴다(advisor 지적 — 원인 추적 가능해야).
         logger.exception("graph status: failed to read neo4j generation marker")
         neo4j_generation = None
+        neo4j_store_identity = None
 
     # F04(2026-10-13 최종 핸드오프) §6 — "혼합 결과를 완료 snapshot으로
     # 표현하지 말라"는 요구. mixed = 지금 full run이 실제로 진행 중이거나
@@ -604,4 +615,9 @@ def graph_status() -> dict[str, Any]:
             and full_completed_info["generation"] == neo4j_generation
         ),
         "read_state": read_state,
+        # F04 §1/9 — store identity(Neo4j 자신의 db.info())와 write
+        # generation(우리가 쓴 마커)은 서로 다른 의미이므로 분리해서 노출한다.
+        "neo4j_store_identity": neo4j_store_identity,
+        "api_build_sha": os.environ.get("API_BUILD_SHA", "unknown"),
+        "contract_version": GRAPH_STATUS_CONTRACT_VERSION,
     }

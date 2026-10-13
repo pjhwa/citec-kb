@@ -558,3 +558,15 @@ def test_explore_anchor_node_is_none_for_non_failure_bucket_anchor():
 
     assert result["anchor_node"] is None
     client.close()
+
+
+def test_read_store_identity_returns_stable_db_info():
+    """F04(2026-10-13 최종 핸드오프) §1/9 — generation 마커(우리가 쓴 값)와
+    달리, store identity는 Neo4j 자신의 db.info()에서 온다."""
+    client = _client()
+    identity = client.read_store_identity()
+    assert identity is not None
+    assert identity["id"]
+    assert identity["name"] == "neo4j"
+    assert identity["creation_date"]
+    client.close()

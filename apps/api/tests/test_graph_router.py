@@ -1046,3 +1046,22 @@ def test_graph_status_read_state_unknown_when_no_full_run_ever_completed():
     client = TestClient(app)
     resp = client.get("/v1/graph/status")
     assert resp.json()["read_state"] == "unknown"
+
+
+def test_graph_status_exposes_neo4j_store_identity_separately_from_generation():
+    """F04(2026-10-13 최종 핸드오프) §1/9 — store identity(Neo4j 자신의
+    db.info() id)와 write generation(우리가 쓴 마커)은 의미가 다르므로
+    분리해서 노출해야 한다. 둘이 우연히 같은 문자열일 리 없으므로, 둘 다
+    채워져 있고 서로 다른 필드임을 확인한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["neo4j_store_identity"] is not None
+    assert body["neo4j_store_identity"]["id"]  # non-empty
+    assert body["neo4j_store_identity"]["name"] == "neo4j"
+    assert "contract_version" in body
+    assert "api_build_sha" in body

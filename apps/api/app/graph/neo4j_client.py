@@ -163,6 +163,25 @@ class Neo4jClient:
             record = session.run("MATCH (m:GraphMeta {key: 'generation'}) RETURN m.value AS v").single()
         return record["v"] if record else None
 
+    def read_store_identity(self) -> Optional[dict]:
+        """F04(2026-10-13 최종 핸드오프) §1/9 — generation 마커는 우리가 쓴
+        "값"일 뿐 "이 물리적 저장소가 그 저장소가 맞는지"는 증명하지 않는다
+        (예: 과거 generation 문자열이 우연히 같은 백업/복원본으로 바뀌어도
+        마커만 보면 똑같아 보인다). Neo4j 자신의 store id(db.info())는
+        데이터베이스 생성 시점에 정해지는 진짜 신원이라 구분해서 노출한다."""
+        with self._driver.session() as session:
+            record = session.run(
+                "CALL db.info() YIELD id, name, creationDate RETURN id, name, creationDate"
+            ).single()
+        if record is None:
+            return None
+        # creationDate는 neo4j 드라이버의 temporal 타입(DateTime)으로 와서
+        # FastAPI 기본 JSON 인코더가 그대로 못 먹는다 — 문자열로 바꿔 보낸다.
+        return {
+            "id": record["id"], "name": record["name"],
+            "creation_date": str(record["creationDate"]) if record["creationDate"] is not None else None,
+        }
+
     def write_generation_marker(self, generation: str) -> None:
         with self._driver.session() as session:
             session.run(
