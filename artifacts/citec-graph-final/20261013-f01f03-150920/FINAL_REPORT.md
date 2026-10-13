@@ -34,13 +34,13 @@
 - **실환경 검증**: 가짜 객체가 아니라 **격리 Postgres + 실제 운영 seed 파일(`data/seeds/lexicon/core.json`, 75개 항목) + 실제 CLI(`python -m app.lexicon.seed`) + 실제 REST(`POST /v1/lexicon/seed`)**로 재현: `GRO`에 수동 metadata(`{"manual": true}`)와 수동 alias를 넣고 dry-run(예측: `GRO` variants만 변경) → apply(수동 metadata/alias 보존 확인 + seed의 새 variant 추가 확인) → 재실행 dry-run(변경 0건, 멱등성 확인) → REST 경로도 CLI와 동일 결과(`responses/f03_isolated_cli_api_run.json`).
 - 테스트: `test_lexicon_seed_db.py` 신규 3건, 기존 6건 포함 전체 9건 통과. 전체 apps/api 유닛 스위트 474 passed, 회귀 없음.
 
-## 이번에 새로 발견한, 수정하지 않은 결함 (F04/R02 범위)
+## 이번에 새로 발견한 결함 — 수정 완료 (F04/R02 범위, 커밋 `05e23b1`)
 
-`tests/test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches`가 **실제 DB에 대해 재현 가능하게(3회 연속) 실패**한다.
+`tests/test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches`가 **실제 DB에 대해 재현 가능하게(3회 연속) 실패**했다.
 
 - 원인: `GraphRun.started_at`이 `server_default=func.now()`를 쓰는데, Postgres의 `now()`는 **한 트랜잭션 안에서는 항상 같은 값**을 반환한다(`clock_timestamp()`와 다름). 같은 `session_scope()` 안에서 추가된 두 `GraphRun` 행은 `started_at`이 동일해져서, `ORDER BY started_at DESC`로는 "더 최근" 행을 안정적으로 고를 수 없다.
 - 이 테스트는 `GRAPH_TEST_DATABASE_URL`/`GRAPH_NEO4J_TEST_URI`가 있어야 실행되는데, CI는 이 둘을 설정한 적이 없다 — 즉 **이 테스트가 실제 DB에 대해 돌아간 적이 이번이 처음**일 가능성이 높다.
-- 이번엔 F01~F03 범위 밖이라 고치지 않았다. F04 라운드에서 다룰 것 — 수정 방향은 보통 두 번째 정렬 키(예: 단조 증가 시퀀스 컬럼)를 추가하거나 `clock_timestamp()`로 바꾸는 것.
+- **사용자 지시로 즉시 수정함**: 추가 마이그레이션(`20261013_0014`)으로 `graph_runs.seq`(BIGSERIAL, 삽입마다 항상 다른 값)를 추가하고, "최신 run" 조회 두 곳을 `started_at` 대신 `seq`로 정렬하도록 변경. 회귀 테스트 3/3 통과(수정 전엔 3/3 실패), 관련 DB 테스트 33건 + 전체 유닛 스위트 474건 통과. dev 실제 DB에도 마이그레이션 적용·재시작·`/v1/graph/status` 실호출로 확인함. 상세: `responses/f04_bonus_seq_fix.json`.
 
 ## 다음 단계 (사용자 확인 필요)
 

@@ -1,15 +1,25 @@
 {
   "run_id": "20261013-f01f03-150920",
-  "scope_this_run": ["F01", "F02", "F03"],
+  "scope_this_run": [
+    "F01",
+    "F02",
+    "F03",
+    "F04(partial-fix-only)"
+  ],
   "results": [
     {
       "requirement_id": "V17",
-      "final_tasks": ["F01"],
+      "final_tasks": [
+        "F01"
+      ],
       "implementation_status": "fixed",
       "verification_status": "PASS",
       "source_sha": "cf1882f",
       "deployed_sha": null,
-      "case_ids": ["f01_live_dev_mcp", "mcp-server/test_graph_explore_error_envelope.py (5 tests)"],
+      "case_ids": [
+        "f01_live_dev_mcp",
+        "mcp-server/test_graph_explore_error_envelope.py (5 tests)"
+      ],
       "evidence_paths": [
         "responses/f01_after_fix.json",
         "mcp-server/test_graph_explore_error_envelope.py"
@@ -18,7 +28,9 @@
     },
     {
       "requirement_id": "V16",
-      "final_tasks": ["F02"],
+      "final_tasks": [
+        "F02"
+      ],
       "implementation_status": "fixed",
       "verification_status": "PASS",
       "source_sha": "5d3ebcc",
@@ -33,12 +45,16 @@
         "test_graph_router.py::test_explore_component_anchor_has_no_evidence_reasons_field_pollution",
         "mcp-server/test_graph_explore_format.py (2 new tests)"
       ],
-      "evidence_paths": ["responses/f02_after_fix.json"],
+      "evidence_paths": [
+        "responses/f02_after_fix.json"
+      ],
       "remaining": "Live dev verification shows 'evidence_reasons=unknown' rather than real computed values, because dev's Neo4j has not been through a full resync since evidence_reasons_json was introduced (user-confirmed expected state, all 8 buckets show evidence_reasons_json=NULL on dev). Isolated-DB tests cover the real-reasons-present case; a live demonstration of real (non-unknown) anchor evidence_reasons requires either a dev full resync or running this against the already-resynced production stack."
     },
     {
       "requirement_id": "V06",
-      "final_tasks": ["F03"],
+      "final_tasks": [
+        "F03"
+      ],
       "implementation_status": "fixed",
       "verification_status": "PASS",
       "source_sha": "a134e78",
@@ -49,23 +65,33 @@
         "test_lexicon_seed_db.py::test_seed_lexicon_dry_run_matches_actual_apply_diff",
         "f03_isolated_cli_api_run"
       ],
-      "evidence_paths": ["responses/f03_isolated_cli_api_run.json"],
+      "evidence_paths": [
+        "responses/f03_isolated_cli_api_run.json"
+      ],
       "remaining": "NOT_RUN: revision-based conflict detection for concurrent/multi-worker seed runs (F03.5), explicit failure-mode/atomicity testing beyond session_scope()'s existing transaction boundary (F03.6, beyond the idempotent-retry case already covered)."
     },
     {
       "requirement_id": "V07",
-      "final_tasks": ["F03"],
+      "final_tasks": [
+        "F03"
+      ],
       "implementation_status": "fixed",
       "verification_status": "PASS",
       "source_sha": "a134e78",
       "deployed_sha": null,
-      "case_ids": ["test_lexicon_seed_db.py::test_seed_lexicon_dry_run_matches_actual_apply_diff"],
-      "evidence_paths": ["responses/f03_isolated_cli_api_run.json"],
+      "case_ids": [
+        "test_lexicon_seed_db.py::test_seed_lexicon_dry_run_matches_actual_apply_diff"
+      ],
+      "evidence_paths": [
+        "responses/f03_isolated_cli_api_run.json"
+      ],
       "remaining": "Shared plan function (_plan_term_change) implemented and verified to produce identical dry-run/apply diffs. Explicit replace/delete fixture already existed pre-this-round (test_seed_lexicon_replace_removes_canonical_not_in_seed) and was re-verified passing, unchanged."
     },
     {
       "requirement_id": "V01",
-      "final_tasks": ["F08"],
+      "final_tasks": [
+        "F08"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
       "source_sha": null,
@@ -76,138 +102,238 @@
     },
     {
       "requirement_id": "V02",
-      "final_tasks": ["F08"],
+      "final_tasks": [
+        "F08"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred, same as V01."
     },
     {
       "requirement_id": "V03",
-      "final_tasks": ["F04"],
-      "implementation_status": "not_started_this_run",
-      "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
-      "remaining": "Deferred. NOTE: while verifying F02, this run incidentally discovered and confirmed (reproducibly, 3x) a real pre-existing bug directly relevant to F04/R02 scope: test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches fails deterministically against a real DB. Root cause: GraphRun.started_at uses server_default=func.now(), which returns the SAME value for every statement inside one Postgres transaction -- two GraphRun rows inserted in the same session_scope() tie on started_at, so ORDER BY started_at DESC cannot reliably pick the later one. This test requires GRAPH_TEST_DATABASE_URL/GRAPH_NEO4J_TEST_URI, which CI never sets, so it appears to have never actually run against a real DB before this session. NOT fixed this run (out of scope for F01-F03) -- flagged for the F04 round."
+      "final_tasks": [
+        "F04"
+      ],
+      "implementation_status": "fixed",
+      "verification_status": "PASS",
+      "source_sha": "05e23b1",
+      "deployed_sha": null,
+      "case_ids": [
+        "test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches"
+      ],
+      "evidence_paths": [
+        "responses/f04_bonus_seq_fix.json"
+      ],
+      "remaining": "Fixed per explicit user instruction ('덤으로 발견한 버그부터 고쳐') after the F01-F03 checkpoint. Full F04 scope (heartbeat/lease, hard-kill/concurrent-writer injection, read-snapshot policy, etc.) beyond this specific tie-break bug remains NOT_RUN."
     },
     {
       "requirement_id": "V04",
-      "final_tasks": ["F04"],
+      "final_tasks": [
+        "F04"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred, same as V03."
     },
     {
       "requirement_id": "V05",
-      "final_tasks": ["F04", "F06"],
+      "final_tasks": [
+        "F04",
+        "F06"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V08",
-      "final_tasks": ["F03", "F05"],
+      "final_tasks": [
+        "F03",
+        "F05"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Multi-worker/batch revision propagation not tested this run. Deferred."
     },
     {
       "requirement_id": "V09",
-      "final_tasks": ["F05"],
+      "final_tasks": [
+        "F05"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V10",
-      "final_tasks": ["F05", "F08"],
+      "final_tasks": [
+        "F05",
+        "F08"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V11",
-      "final_tasks": ["F06"],
+      "final_tasks": [
+        "F06"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Ranking/relevance feature (R05). Per the session's own prior standing decision, this requires a holdout question set with ground truth fixed BEFORE any ranking code is written -- the handoff's F06 section (§2.6) independently requires the same holdout-first discipline, so there is no conflict, but no ranking code has been written. Needs the user to supply or approve a holdout question set before this can start."
     },
     {
       "requirement_id": "V12",
-      "final_tasks": ["F06"],
+      "final_tasks": [
+        "F06"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred, same as V11."
     },
     {
       "requirement_id": "V13",
-      "final_tasks": ["F03", "F06"],
+      "final_tasks": [
+        "F03",
+        "F06"
+      ],
       "implementation_status": "partially_addressed_in_prior_round",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Existing compound-word/separate-mention regressions already covered by prior-round fixtures (netapp_cluster.json/netapp_separate.json in the handoff's own comparison evidence); no new fixture added this run."
     },
     {
       "requirement_id": "V14",
-      "final_tasks": ["F06"],
+      "final_tasks": [
+        "F06"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Cost/budget benchmarking not run this round. Deferred."
     },
     {
       "requirement_id": "V15",
-      "final_tasks": ["F07"],
+      "final_tasks": [
+        "F07"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V18",
-      "final_tasks": ["F09"],
+      "final_tasks": [
+        "F09"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred. Also: citec-mcp-workbench skill is not installed anywhere on this dev host (confirmed in an earlier round of this same session, recorded in docs/features/graph-evidence.md) -- any future work here can produce installable package artifacts but cannot verify a real install/load on this host. Likely BLOCKED for the local-install-verification sub-task regardless of when attempted."
     },
     {
       "requirement_id": "V19",
-      "final_tasks": ["F09"],
+      "final_tasks": [
+        "F09"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred. Claude independent-session trace was done for F01/F02 this run (live mcp__wiki-mcp__kb_graph_explore calls), but a full search->graph->exclude->page->body trace covering all V19 sub-requirements was not executed."
     },
     {
       "requirement_id": "V20",
-      "final_tasks": ["F10"],
+      "final_tasks": [
+        "F10"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V21",
-      "final_tasks": ["F05", "F06", "F07", "F08", "F09", "F10"],
+      "final_tasks": [
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     },
     {
       "requirement_id": "V22",
-      "final_tasks": ["F06", "F08", "F10"],
+      "final_tasks": [
+        "F06",
+        "F08",
+        "F10"
+      ],
       "implementation_status": "not_started_this_run",
       "verification_status": "NOT_RUN",
-      "source_sha": null, "deployed_sha": null, "case_ids": [], "evidence_paths": [],
+      "source_sha": null,
+      "deployed_sha": null,
+      "case_ids": [],
+      "evidence_paths": [],
       "remaining": "Deferred."
     }
   ]

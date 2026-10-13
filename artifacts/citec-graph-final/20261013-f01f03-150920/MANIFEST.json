@@ -1,8 +1,9 @@
 {
-  "requirement-results.json": "0e2b7d6c2c0874bcd8d17a0add6fd4dde9c27f3c11bcc92717c68345cecb779e",
+  "requirement-results.json": "201f08069cb1d13746dc1d70abe39fadb04157ac930f38397c9037e816b931d2",
   "environment.json": "f78af310556140d768900ec1d24de7c212192ce4ef44abd922b081ab733ea17a",
-  "FINAL_REPORT.md": "8bf3efcef4638a017836e78deaa4db96f5af863033501e68eb9c121b1a73b1b5",
+  "FINAL_REPORT.md": "f10139c941b59d1e72575abd1c8c824330fce47ad4be39d38f2ab0beef658b75",
   "responses/f03_isolated_cli_api_run.json": "a670e79540e81f412d4d263d2e0a1b767476a4126775354dabbc5d3429a66da3",
   "responses/f02_after_fix.json": "8d31eaddfa6dc21ba09a93334fc81eb4b7f6d426ee5a63f0ec1d5849dcc04ece",
-  "responses/f01_after_fix.json": "5d943f798eea05978bce0d7a443c136c226d1022dbcba407d3a46bd59188c419"
+  "responses/f01_after_fix.json": "5d943f798eea05978bce0d7a443c136c226d1022dbcba407d3a46bd59188c419",
+  "responses/f04_bonus_seq_fix.json": "c27ca68a8e15307bc4b1b22e81dee980499684eb20e397f56936a9e22bdc008f"
 }
