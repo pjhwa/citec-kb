@@ -1,0 +1,8 @@
+{
+  "id": "f01_after_fix",
+  "tool": "kb_graph_explore",
+  "args": {"anchor_type": "component", "anchor_value": "NetApp", "documents_offset": -1},
+  "response_text": "status: invalid_request\n오류: [{'type': 'greater_than_equal', 'loc': ['body', 'documents_offset'], 'msg': 'Input should be greater than or equal to 0', 'input': -1, 'ctx': {'ge': 0}}] (HTTP 422)",
+  "isError": true,
+  "note": "Live mcp__wiki-mcp__kb_graph_explore call against dev stack after fix (mcp container restarted at 20261013 06:1x UTC). Compare with before-fix raw at comparison/raw/invalid_offset.json (isError=false, '연결할 수 없습니다', no status line)."
+}

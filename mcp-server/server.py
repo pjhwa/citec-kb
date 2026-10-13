@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.types import CallToolResult, TextContent
 
 from ask_fold import KbAskError, fold_ask_events
 
@@ -47,10 +48,6 @@ def _client(timeout: float = 30.0) -> httpx.AsyncClient:
     )
 
 
-def _err(e: Exception) -> str:
-    return f"오류: citec-kb API에 연결할 수 없습니다 ({e})"
-
-
 def _api_error_detail(resp: httpx.Response) -> str:
     """citec-kb API의 오류 응답에서 detail 메시지를 추출한다.
     resp.raise_for_status()만 쓰면 이 detail이 사라지고 일반 HTTP 문구만 남는다."""
@@ -61,6 +58,74 @@ def _api_error_detail(resp: httpx.Response) -> str:
     except Exception:
         pass
     return (resp.text or f"HTTP {resp.status_code}")[:300]
+
+
+def _classify_http_error(e: Exception) -> dict[str, Any]:
+    """F01(2026-10-13 최종 핸드오프) — httpx 예외를 기계가 판별 가능한 범주로
+    분류한다. 과거엔 모든 httpx.HTTPError(요청 검증 4xx 포함)를 "연결할 수
+    없습니다"로 뭉개서, offset=-1 같은 순수 입력 오류를 연결 장애로 잘못
+    안내했다(실제 재현: comparison/raw/invalid_offset.json, 2026-10-13 최종
+    핸드오프). retryable은 호출자가 재시도해볼 가치가 있는지의 대략적 신호다
+    — 내부 endpoint URL/stack/자격증명은 절대 포함하지 않는다(httpx의 기본
+    HTTPStatusError 문자열에는 요청 URL이 들어있어 그대로 쓰면 그게 샌다)."""
+    if isinstance(e, httpx.TimeoutException):
+        return {
+            "status": "backend_error", "error_code": "timeout", "retryable": True,
+            "http_status": None, "detail": "요청 시간이 초과됐습니다", "field_errors": None,
+        }
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        detail = _api_error_detail(e.response)
+        field_errors = None
+        try:
+            body = e.response.json()
+            if isinstance(body, dict) and isinstance(body.get("detail"), list):
+                field_errors = body["detail"]
+        except Exception:
+            pass
+        if code in (400, 422):
+            return {
+                "status": "invalid_request", "error_code": "validation_error", "retryable": False,
+                "http_status": code, "detail": detail, "field_errors": field_errors,
+            }
+        if code == 404:
+            return {
+                "status": "not_found", "error_code": "not_found", "retryable": False,
+                "http_status": code, "detail": detail, "field_errors": None,
+            }
+        if code in (401, 403):
+            return {
+                "status": "invalid_request", "error_code": "unauthorized", "retryable": False,
+                "http_status": code, "detail": detail, "field_errors": None,
+            }
+        if 500 <= code < 600:
+            return {
+                "status": "backend_error", "error_code": "server_error", "retryable": True,
+                "http_status": code, "detail": detail, "field_errors": None,
+            }
+        return {
+            "status": "backend_error", "error_code": "http_error", "retryable": False,
+            "http_status": code, "detail": detail, "field_errors": None,
+        }
+    # httpx.ConnectError/NetworkError 등 — 실제로 API에 연결 자체가 안 된 경우만 여기로 온다.
+    return {
+        "status": "backend_error", "error_code": "connection_error", "retryable": True,
+        "http_status": None, "detail": "citec-kb API에 연결할 수 없습니다", "field_errors": None,
+    }
+
+
+def _err(e: Exception) -> str:
+    """기존 ~30개 도구가 공유하는 범용 오류 문자열 — F01: 4xx 요청 오류를
+    더 이상 "연결 장애"로 뭉뚱그리지 않는다. 구조화된 isError/structuredContent
+    전체 계약은 kb_graph_explore에만 적용한다(나머지 도구까지 전부 바꾸는 건
+    이번 범위 밖) — 이 함수는 그 외 도구들에 최소 침습으로 상태 구분만
+    더한다."""
+    info = _classify_http_error(e)
+    if info["status"] == "invalid_request":
+        return f"status: invalid_request\n오류: 요청 값이 올바르지 않습니다 (HTTP {info['http_status']}): {info['detail']}"
+    if info["status"] == "not_found":
+        return f"status: not_found\n오류: 대상을 찾을 수 없습니다: {info['detail']}"
+    return f"status: backend_error\n오류: {info['detail']} ({info['error_code']})"
 
 
 def _access_lines(d: dict[str, Any], *, indent: str = "  ") -> str:
@@ -979,7 +1044,37 @@ async def kb_graph_explore(
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
-        return _err(e)
+        # F01(2026-10-13 최종 핸드오프) — kb_graph_explore만 전체 구조화 계약을
+        # 쓴다(§2.1.2-4). mcp.types.CallToolResult를 직접 반환하면 FastMCP가
+        # 함수 반환형 애너테이션(-> str)으로 만든 output_schema 변환을 건너뛰고
+        # 이 값을 그대로 쓴다(FuncMetadata.convert_result가 CallToolResult
+        # instance를 최우선으로 통과시킴, mcp SDK 1.29.0 확인) — 기존 텍스트만
+        # 읽는 클라이언트와의 호환은 content[0].text로 유지되고, 기계가 읽는
+        # 클라이언트는 structuredContent로 status/error_code/retryable/
+        # field_errors를 문자열 정규식 없이 판별할 수 있다.
+        info = _classify_http_error(e)
+        text = (
+            f"status: {info['status']}\n"
+            f"오류: {info['detail']}"
+            + (f" (HTTP {info['http_status']})" if info["http_status"] else "")
+        )
+        return CallToolResult(
+            content=[TextContent(type="text", text=text)],
+            structuredContent={
+                # "result"는 기존(-> str) 도구 계약이 advertise한 outputSchema가
+                # 요구하는 필드다 — 이미 그 스키마를 캐시해둔 클라이언트가
+                # 재연결 전에도 깨지지 않도록 그대로 유지하고, F01이 요구하는
+                # 기계 판별 필드들을 같이 추가한다(모델이 extra 필드를 막지
+                # 않는 한 두 계약이 공존한다).
+                "result": text,
+                "status": info["status"],
+                "error_code": info["error_code"],
+                "retryable": info["retryable"],
+                "http_status": info["http_status"],
+                "field_errors": info["field_errors"],
+            },
+            isError=True,
+        )
 
     lines = [f"status: {data.get('status', '(unknown)')}", f"as_of: {data.get('as_of') or '(아직 백필 안 됨)'}"]
     anchor = data.get("anchor") or {}
