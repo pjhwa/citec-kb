@@ -1,0 +1,15 @@
+{
+  "id": "f04_bonus_seq_fix",
+  "summary": "Fixed the GraphRun.started_at tie-break bug noted (not fixed) in FINAL_REPORT.md.",
+  "root_cause": "Postgres now()/CURRENT_TIMESTAMP returns the same value for every statement inside one transaction (unlike clock_timestamp()). Two GraphRun rows inserted in the same session_scope() got identical started_at, so ORDER BY started_at DESC could not reliably pick the later one.",
+  "fix": "Added graph_runs.seq (BIGSERIAL, additive migration 20261013_0014), server_default=nextval('graph_runs_seq_seq') so the ORM omits it from INSERT and lets Postgres assign a distinct monotonically-increasing value per row regardless of transaction timing. Both 'latest run' queries in routers/graph.py now ORDER BY seq DESC instead of started_at DESC.",
+  "verification": {
+    "repro_test": "tests/test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches",
+    "before_fix": "failed deterministically, 3/3 runs",
+    "after_fix": "passed, 3/3 runs",
+    "regression_check": "tests/test_graph_router.py + test_graph_sync_cli_db.py + test_graph_sync_state_db.py + test_graph_hub_flags.py: 33 passed. Full apps/api unit suite: 474 passed, no regressions.",
+    "dev_db_applied": true,
+    "dev_live_check": "docker compose exec api alembic upgrade head (20261013_0013 -> 20261013_0014) + api restart + GET /v1/graph/status returns 200 with the expected shape against dev's real DB"
+  },
+  "note": "A caveat SQLAlchemy quirk was hit and fixed during this work: without an explicit server_default= hint on the mapped_column, SQLAlchemy's insertmanyvalues batching sends an explicit NULL for the column instead of omitting it, which violates the NOT NULL constraint even though the DB column itself has a working DEFAULT (BIGSERIAL's nextval). Fixed by adding server_default=text(\"nextval('graph_runs_seq_seq')\") to the ORM mapping, mirroring the real DB default exactly."
+}

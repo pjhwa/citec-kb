@@ -473,7 +473,12 @@ def graph_status() -> dict[str, Any]:
 
     full_completed_info: dict[str, Any] | None = None
     with session_scope() as session:
-        latest_run = session.scalar(select(GraphRun).order_by(GraphRun.started_at.desc()))
+        # F04(2026-10-13 최종 핸드오프) — started_at이 아니라 seq로 정렬한다.
+        # Postgres now()는 한 트랜잭션 안에서 항상 같은 값이라, 같은
+        # session_scope()에서 두 행이 추가되면 started_at이 같아져 "최신"을
+        # 결정할 수 없었다(실제 재현됨). seq(BIGSERIAL)는 삽입마다 항상
+        # 다른 값이라 안전하다.
+        latest_run = session.scalar(select(GraphRun).order_by(GraphRun.seq.desc()))
         # dict는 session_scope() 블록 "안에서" 만들어야 한다 — 밖에서 ORM
         # 속성에 접근하면 세션이 이미 닫혀 DetachedInstanceError가 난다(실제
         # 테스트로 재현됨).
@@ -486,7 +491,7 @@ def graph_status() -> dict[str, Any]:
         latest_full_completed = session.scalar(
             select(GraphRun)
             .where(GraphRun.scope == "full", GraphRun.status.in_(["completed", "completed_warn"]))
-            .order_by(GraphRun.started_at.desc())
+            .order_by(GraphRun.seq.desc())
         )
         if latest_full_completed is not None:
             full_completed_info = _run_dict(latest_full_completed)

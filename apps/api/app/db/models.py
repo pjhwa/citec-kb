@@ -590,6 +590,18 @@ class GraphRun(Base):
     __tablename__ = "graph_runs"
 
     run_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    # F04(2026-10-13 최종 핸드오프) 선반영 — Postgres의 now()/CURRENT_TIMESTAMP는
+    # 같은 트랜잭션 안에서는 항상 같은 값을 돌려준다(clock_timestamp()와 다름).
+    # 한 session_scope() 블록에서 GraphRun을 두 번 add하면(테스트가 실제로
+    # 이렇게 함) started_at이 같아져서 "최신 run"을 started_at만으로는
+    # 안정적으로 못 고른다(실제 재현: test_graph_status_ignores_partial_run_
+    # for_generation_matches가 3회 연속 실패). seq는 BIGSERIAL이라 삽입마다
+    # 항상 다른, 단조 증가하는 값을 받으므로 "진짜 최신 행"을 결정적으로
+    # 가려낸다 — "최신 run" 조회는 이제 started_at이 아니라 seq로 정렬한다.
+    seq: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, unique=True,
+        server_default=text("nextval('graph_runs_seq_seq')"),
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
