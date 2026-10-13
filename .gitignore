@@ -48,3 +48,6 @@ data/reports/pilot_signoff_20*.json
 # titles/excerpts, must never be committed (ends up in artifacts/*/analysis
 # summaries instead, with content aggregated/anonymized as needed)
 diagnostics_*.txt
+
+# superpowers:using-git-worktrees — isolated per-feature worktrees
+.worktrees/
