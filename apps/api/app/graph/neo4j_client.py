@@ -168,10 +168,21 @@ class Neo4jClient:
                 v=generation,
             )
 
-    def explore(self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2) -> dict:
+    def explore(
+        self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2,
+        exclude_external_ids: set[str] | None = None, exclude_source_types: set[str] | None = None,
+    ) -> dict:
         """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
         f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제).
         max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음).
+
+        exclude_external_ids/exclude_source_types(G04 "중간 경로 bridge 차단"):
+        2hop 중간 노드(p)가 이 조건에 걸리면 그 경로 전체를 평가에서 뺀다 —
+        그 경로로만 도달 가능한 노드가 "제외된 페이지를 거쳐서만 보인다"는 걸
+        숨긴 채 결과에 남는 사고를 막는다(post-filter로는 못 막음 — 이미 한
+        후보로 수집된 뒤에는 "어느 경로로 왔는지"가 없어져서). exclude_subtree_ids
+        (조상 트리)는 범위 밖 — ancestor_ids는 Postgres 메타데이터라 Neo4j
+        노드 속성에 없다(docs/features/graph-evidence.md G04 잔여).
 
         G08(2차 리뷰): 과거엔 `collect(DISTINCT {...})`가 같은 노드로 가는 서로
         다른 경로를 전부 별도 항목으로 남겨(NetApp처럼 1hop 문서가 7천 건대면
@@ -189,7 +200,8 @@ class Neo4jClient:
         OPTIONAL MATCH (a)-[r1]-(n1)
         WHERE n1 <> a
         WITH a, n1, r1
-        ORDER BY coalesce($rel_priority[type(r1)], 99), coalesce(n1.id, n1.canonical_name, n1.external_id)
+        ORDER BY coalesce($rel_priority[type(r1)], 99), coalesce(n1.id, n1.canonical_name, n1.external_id),
+            elementId(r1)
         WITH a, n1, head(collect(r1)) AS best_r1
         WITH a, collect(DISTINCT {{
             node: n1, relation: type(best_r1), tag: best_r1.tag, hops: 1,
@@ -198,11 +210,14 @@ class Neo4jClient:
         CALL (a) {{
             OPTIONAL MATCH (a)-[r1b]-(p)-[r2]-(n2)
             WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
+              AND NOT coalesce(p.external_id, '') IN $exclude_external_ids
+              AND NOT coalesce(p.source_type, '') IN $exclude_source_types
             WITH a, n2, p, r1b, r2
             ORDER BY
                 coalesce($rel_priority[type(r1b)], 99) + coalesce($rel_priority[type(r2)], 99),
                 coalesce($rel_priority[type(r1b)], 99),
-                coalesce(p.id, p.canonical_name, p.external_id)
+                coalesce(p.id, p.canonical_name, p.external_id),
+                elementId(r1b), elementId(r2)
             WITH a, n2, head(collect({{p: p, r1b: r1b, r2: r2}})) AS best
             RETURN collect(DISTINCT {{
                 node: n2, relation: type(best.r2), tag: best.r2.tag, hops: 2,
@@ -214,7 +229,11 @@ class Neo4jClient:
         RETURN a AS anchor, hop1 + hop2 AS neighbors
         """
         with self._driver.session() as session:
-            record = session.run(query, value=anchor_value, rel_priority=_REL_TYPE_PRIORITY).single()
+            record = session.run(
+                query, value=anchor_value, rel_priority=_REL_TYPE_PRIORITY,
+                exclude_external_ids=sorted(exclude_external_ids or set()),
+                exclude_source_types=sorted(exclude_source_types or set()),
+            ).single()
         if record is None or record["anchor"] is None:
             return {
                 "found": False, "documents": [], "components": [], "failure_buckets": [],

@@ -269,6 +269,27 @@ def test_collapse_duplicate_copies_picks_representative_and_lists_others():
     assert collapsed[0]["copies"] == ["confluence_map:X"]
 
 
+def test_collapse_duplicate_copies_uses_min_hops_and_route_across_group():
+    # G08 잔여 — 대표(tech_repo:X, tier 1)가 2hop으로 도달했어도, 같은 그룹의
+    # confluence_map:X가 1hop으로 더 가깝게 도달했으면 묶인 결과는 그 1hop을
+    # 보여줘야 한다(대표 선택과 "얼마나 가까운지"는 별개 축).
+    docs = [
+        {"id": "confluence_map:X", "title": "사본", "hops": 1, "route": ["near"]},
+        {"id": "tech_repo:X", "title": "원본", "hops": 2, "route": ["far"]},
+    ]
+    enrichment = {
+        "confluence_map:X": {"source_type": "confluence_map", "external_id": "123",
+                              "evidence_grade": "C", "status": "active"},
+        "tech_repo:X": {"source_type": "tech_repo", "external_id": "123",
+                         "evidence_grade": "A", "status": "active"},
+    }
+    collapsed = collapse_duplicate_copies(docs, enrichment_by_id=enrichment)
+    assert len(collapsed) == 1
+    assert collapsed[0]["id"] == "tech_repo:X"  # 대표는 여전히 tier 1 소스
+    assert collapsed[0]["hops"] == 1
+    assert collapsed[0]["route"] == ["near"]
+
+
 def test_collapse_duplicate_copies_never_merges_checkitem_en_suffix():
     docs = [
         {"id": "checkitem:FOO", "title": "원본"},

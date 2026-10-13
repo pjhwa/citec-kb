@@ -42,6 +42,38 @@ def _clear_settings_cache():
     close_shared_client()
 
 
+def test_graph_status_reports_latest_run_and_generation_match():
+    """G05 — GET /v1/graph/status가 가장 최근 graph_runs 행과 이 Neo4j의 실제
+    generation 마커를 함께 보여주고, 둘이 같으면 generation_matches=True."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    generation = f"test-gen-{uuid.uuid4()}"
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="test-version", generation=generation,
+            documents_synced=5, documents_skipped=1, documents_failed=0,
+            buckets_synced=1, buckets_failed=0, unresolved_references=2,
+            hub_recompute_ok=True, status="completed",
+        ))
+    nclient = _neo4j_test_client()
+    nclient.write_generation_marker(generation)
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["latest_run"]["run_id"] == run_id
+    assert body["latest_run"]["generation"] == generation
+    assert body["latest_run"]["unresolved_references"] == 2
+    assert body["neo4j_generation"] == generation
+    assert body["generation_matches"] is True
+
+
 def test_explore_unknown_failure_bucket_returns_404():
     from fastapi.testclient import TestClient
     from app.main import app
@@ -282,6 +314,122 @@ def test_explore_excludes_document_by_page_id():
     doc_ids = {d["id"] for d in resp.json()["documents"]}
     assert excluded_doc_id not in doc_ids
     assert kept_doc_id in doc_ids
+
+
+def test_explore_document_anchor_itself_excluded_returns_filtered_status():
+    """G04/G08 — anchor 문서 자신이 exclude_page_ids에 걸리면 그래프를 돌지
+    않고 status="filtered"로 즉시 답해야 한다(found/not_found와 다른 신호)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    anchor_external_id = str(uuid.uuid4())
+    anchor_doc_id = f"test-filtered-{uuid.uuid4()}"
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": anchor_doc_id, "source_type": "confluence_map", "external_id": anchor_external_id,
+         "title": "t", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [],
+    )
+    nclient.close()
+    with session_scope() as session:
+        session.add(Document(
+            id=anchor_doc_id, source_type="confluence_map", external_id=anchor_external_id,
+            title="t", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "document", "anchor_value": anchor_doc_id,
+              "exclude_page_ids": [anchor_external_id]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "filtered"
+    assert body["documents"] == []
+
+
+def test_explore_bridge_block_hides_path_through_excluded_intermediate_page():
+    """G04 — 2hop 경로가 exclude_page_ids에 걸린 중간 페이지를 거쳐야만
+    나오는 후보는 결과에서 빠져야 한다(post-filter로는 못 잡는 케이스:
+    중간 노드가 Document가 아니라 최종 후보 자체가 아니므로)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"BridgeComp-{uuid.uuid4()}"
+    bridge_page_id = str(uuid.uuid4())
+    bridge_doc_id = f"test-bridge-{uuid.uuid4()}"
+    anchor_bucket_id = f"test-anchor-fb-{uuid.uuid4()}"
+    far_doc_id = f"test-far-{uuid.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    # anchor(FailureBucket) -[:HAS_EVIDENCE]- bridge_doc -[:HAS_COMPONENT]- comp
+    # far_doc도 같은 comp를 거쳐 2hop에 나오지만, 이 테스트의 관심사는
+    # "bridge_doc을 거친 경로 자체가 제외되는지"다 — far_doc(다른 경로로도
+    # 도달 가능한 노드)는 그대로 보여야 한다는 대조군으로 둔다.
+    nclient.merge_document(
+        {"id": bridge_doc_id, "source_type": "confluence_map", "external_id": bridge_page_id,
+         "title": "bridge", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_document(
+        {"id": far_doc_id, "source_type": "confluence_map", "external_id": "far",
+         "title": "far", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_failure_bucket(
+        {"id": anchor_bucket_id, "bucket_name": "b", "fb_domain": None, "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+              target_value=bridge_doc_id, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    # 제외 없이: bridge_doc을 거친 2hop으로 far_doc(Component를 공유)도 보여야 함
+    resp_all = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id})
+    assert resp_all.status_code == 200
+    comps_all = {c["canonical_name"] for c in resp_all.json()["components"]}
+    assert comp_name in comps_all
+
+    # bridge_page_id를 제외하면, bridge_doc을 "경로의 중간 노드"로 거쳐야만
+    # 나오는 comp(2hop)가 더 이상 나오면 안 된다.
+    resp_excl = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id,
+              "exclude_page_ids": [bridge_page_id]},
+    )
+    assert resp_excl.status_code == 200
+    comps_excl = {c["canonical_name"] for c in resp_excl.json()["components"]}
+    assert comp_name not in comps_excl
+
+
+def test_explore_neo4j_failure_returns_backend_error_status_not_503(monkeypatch):
+    """G08 — Neo4j 조회 실패는 503로 요청 전체를 죽이는 대신, 기계가 구분
+    가능한 status="backend_error"로 200 응답을 돌려줘야 한다(MCP가 body의
+    status 필드로 판단하므로)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    import app.graph.neo4j_client as neo4j_client_module
+
+    def boom(self, *args, **kwargs):
+        raise RuntimeError("simulated neo4j outage (test)")
+
+    monkeypatch.setattr(neo4j_client_module.Neo4jClient, "explore", boom)
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": f"whatever-{uuid.uuid4()}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "backend_error"
 
 
 def test_explore_document_anchor_fans_out_across_duplicate_external_id_copies():

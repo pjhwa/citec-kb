@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +81,11 @@ def seed_lexicon(*, replace: bool = False) -> dict[str, Any]:
             n += 1
         session.flush()
         total = session.scalar(select(func.count()).select_from(LexiconTerm)) or 0
-    load_lexicon_map.cache_clear()
+    # cache_clear() 호출이 더 이상 필요 없다 — load_lexicon_map()이 이제
+    # DB 자체의 (count, max(updated_at)) 지문으로 캐시를 무효화한다(G06 잔여,
+    # 아래 참고). 이 프로세스뿐 아니라 다른 API 워커 프로세스도 다음 호출에서
+    # 자동으로 새 lexicon을 본다 — 과거엔 cache_clear()가 "이 프로세스"에만
+    # 적용돼 여러 워커 간 동기화가 안 됐다.
     return {
         "upserted": n,
         "total": int(total),
@@ -110,17 +113,43 @@ def build_lexicon_map(terms: list[dict[str, Any]]) -> dict[str, list[str]]:
     return mapping
 
 
-@lru_cache(maxsize=1)
+_lexicon_cache: dict[str, Any] = {"fingerprint": None, "map": None}
+
+
+def _lexicon_fingerprint(session) -> str:
+    count, max_updated = session.execute(
+        select(func.count(), func.max(LexiconTerm.updated_at))
+    ).one()
+    return f"{count}:{max_updated}"
+
+
 def load_lexicon_map() -> dict[str, list[str]]:
-    """Map lowercased token -> variants (includes canonical)."""
+    """Map lowercased token -> variants (includes canonical).
+
+    G06(이번 라운드 잔여) — 과거 @lru_cache(maxsize=1)는 프로세스 전역이라,
+    API 워커가 여러 개면 한 워커에서 seed_lexicon()을 돌려도 다른 워커는
+    재시작 전까지 옛 lexicon을 계속 쓴다(cache_clear()가 그 프로세스에만
+    적용됨). 이제 매 호출마다 DB의 (count, max(updated_at)) 지문을 싼 쿼리로
+    확인하고, 지문이 바뀌었을 때만 실제 맵을 다시 만든다 — 모든 워커가
+    자기 프로세스 캐시를 각자 자동으로 무효화한다(명시적 cache_clear() 호출
+    없이도 동작)."""
     try:
         with session_scope() as session:
+            fingerprint = _lexicon_fingerprint(session)
+            if (
+                _lexicon_cache["map"] is not None
+                and _lexicon_cache["fingerprint"] == fingerprint
+            ):
+                return _lexicon_cache["map"]
             rows = list(session.scalars(select(LexiconTerm)).all())
             if rows:
-                return build_lexicon_map(
+                mapping = build_lexicon_map(
                     [{"canonical": r.canonical, "variants": list(r.variants or [])} for r in rows]
                 )
-    except Exception:  # noqa: BLE001
+                _lexicon_cache["fingerprint"] = fingerprint
+                _lexicon_cache["map"] = mapping
+                return mapping
+    except Exception:  # noqa: BLE001 — DB 없이도(CI 등) seed 파일로 degrade
         pass
     return build_lexicon_map(load_lexicon_seed_file().get("terms") or [])
 

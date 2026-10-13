@@ -125,6 +125,28 @@ def dedup_by_key(items: list[dict], key: str) -> list[dict]:
     return list(best.values())
 
 
+def is_document_excluded(
+    identity: dict,
+    *,
+    exclude_page_ids: set[str],
+    exclude_subtree_ids: set[str],
+    exclude_source_types: set[str],
+    ancestors: set[str] | None = None,
+) -> bool:
+    """G04/G08 공용 판정 — identity는 최소 external_id/source_type을 담은 dict
+    (raw Neo4j document dict든 _fetch_document_enrichment() 출력이든 둘 다 맞음).
+    filter_excluded_documents(후보 목록)와 라우터의 anchor 자체 제외 판정
+    (G08 "filtered" status)이 이 함수 하나로 같은 정책을 공유한다."""
+    external_id = identity.get("external_id")
+    if external_id in exclude_page_ids or external_id in exclude_subtree_ids:
+        return True
+    if identity.get("source_type") in exclude_source_types:
+        return True
+    if ancestors and ancestors & exclude_subtree_ids:
+        return True
+    return False
+
+
 def filter_excluded_documents(
     documents: list[dict],
     *,
@@ -144,19 +166,16 @@ def filter_excluded_documents(
     if not (exclude_page_ids or exclude_subtree_ids or exclude_source_types):
         return documents
 
-    kept = []
-    for doc in documents:
-        if doc.get("external_id") in exclude_page_ids:
-            continue
-        if doc.get("source_type") in exclude_source_types:
-            continue
-        ancestors = set(ancestor_ids_by_doc_id.get(doc["id"]) or [])
-        if doc.get("external_id") in exclude_subtree_ids:
-            continue
-        if ancestors & exclude_subtree_ids:
-            continue
-        kept.append(doc)
-    return kept
+    return [
+        doc for doc in documents
+        if not is_document_excluded(
+            doc,
+            exclude_page_ids=exclude_page_ids,
+            exclude_subtree_ids=exclude_subtree_ids,
+            exclude_source_types=exclude_source_types,
+            ancestors=set(ancestor_ids_by_doc_id.get(doc["id"]) or []),
+        )
+    ]
 
 
 def enrich_with_evidence_grade(documents: list[dict], grade_by_id: dict[str, str]) -> list[dict]:
@@ -215,5 +234,12 @@ def collapse_duplicate_copies(documents: list[dict], *, enrichment_by_id: dict[s
         rep_id = best["document_id"] if best else group[0]["id"]
         rep_doc = dict(next(d for d in group if d["id"] == rep_id))
         rep_doc["copies"] = sorted(d["id"] for d in group if d["id"] != rep_id)
+        # G08 잔여(graph-evidence.md) — 대표가 아닌 수집본이 더 적은 hop으로
+        # 도달했어도 과거엔 대표 자신의 hops/route만 보여줘 그 정보가 사라졌다.
+        # 묶인 그룹 전체에서 가장 가까운(hops 최소) 쪽의 hops/route를 쓴다 —
+        # "같은 논리 문서가 실제로 얼마나 가까운지"를 대표 선택과 별개로 보여준다.
+        closest = min(group, key=lambda d: d.get("hops", 99))
+        rep_doc["hops"] = closest.get("hops", rep_doc.get("hops"))
+        rep_doc["route"] = closest.get("route", rep_doc.get("route"))
         collapsed.append(rep_doc)
     return collapsed + passthrough

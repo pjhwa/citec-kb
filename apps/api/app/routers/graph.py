@@ -1,5 +1,6 @@
-"""POST /v1/graph/explore — 지식그래프 조회(읽기 전용). 쓰기 경로는 scripts/graph_sync.sh
-배치뿐이고 이 라우터는 전혀 건드리지 않는다(1단계 설계 §0 원칙 유지)."""
+"""POST /v1/graph/explore, GET /v1/graph/status — 지식그래프 조회(읽기 전용).
+쓰기 경로는 scripts/graph_sync.sh 배치뿐이고 이 라우터는 전혀 건드리지
+않는다(1단계 설계 §0 원칙 유지)."""
 
 from __future__ import annotations
 
@@ -9,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.db.models import Document
+from app.db.models import Document, GraphRun
 from app.db.session import session_scope
 from app.doc_access import attach_document_access
 from app.graph.explore import (
@@ -17,6 +18,7 @@ from app.graph.explore import (
     dedup_by_key,
     enrich_with_document_metadata,
     filter_excluded_documents,
+    is_document_excluded,
     resolve_component_anchor,
     shape_explore_result,
 )
@@ -40,8 +42,11 @@ class GraphExploreBody(BaseModel):
     anchor_type: Literal["failure_bucket", "document", "component", "symptom_text"]
     anchor_value: str = Field(..., min_length=1, max_length=2000)
     # G04 — app.retrieval.search.SearchFilters와 동일한 의미. candidate 생성
-    # 이후, dedup/정렬/cap 이전에 적용한다(최소 구현 — 중간 경로 bridge 차단,
-    # anchor 자체 제외는 이번 범위 밖, docs/features/graph-evidence.md 참고).
+    # 이후, dedup/정렬/cap 이전에 적용한다. anchor 자체가 제외 대상이면 status=
+    # "filtered"(§G08)로 즉시 답한다. 2hop 중간 경로 bridge 차단은
+    # exclude_page_ids/exclude_source_types만 적용(Neo4j 노드 속성으로 판정
+    # 가능한 것들) — exclude_subtree_ids로의 bridge 차단은 범위 밖(ancestor_ids는
+    # PG 메타데이터뿐이라 Neo4j 쿼리 중엔 못 봄, docs/features/graph-evidence.md).
     exclude_page_ids: list[str] = Field(default_factory=list)
     exclude_subtree_ids: list[str] = Field(default_factory=list)
     exclude_source_types: list[str] = Field(default_factory=list)
@@ -148,6 +153,9 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     resolved_name: str | None = None
     resolved_document_id: str | None = None
     anchors: list[tuple[str, str, str]] = []
+    exclude_external_ids = set(body.exclude_page_ids)
+    exclude_source_types = set(body.exclude_source_types)
+    exclude_subtree_ids = set(body.exclude_subtree_ids)
     if body.anchor_type == "symptom_text":
         fake_doc = {"body_md": body.anchor_value}
         edges = extract_lexicon_components(fake_doc, lexicon_map=lexicon_map)
@@ -175,10 +183,16 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             # lexicon이 못 알아들었다 — 대소문자만 다른 그래프 노드가 있는지 확인
             try:
                 ci_match = client.resolve_component_case_insensitive(canonical)
-            except Exception as exc:  # noqa: BLE001 — Neo4j 장애 격리
-                raise HTTPException(
-                    status_code=503, detail=f"그래프 저장소 연결 실패: {exc}"
-                ) from exc
+            except Exception:  # noqa: BLE001 — G08: Neo4j 장애를 503이 아니라
+                # 기계가 구분 가능한 status로 돌려준다(연결 자체가 아예 안 되는
+                # 경우도 "찾을 수 없음"(404)과는 다른 신호가 필요하다).
+                return shape_explore_result(
+                    {"found": False, "documents": [], "components": [], "failure_buckets": [],
+                     "excluded_hub_components": []},
+                    as_of=as_of_str,
+                    anchor={"type": "component", "resolved_id": None, "resolved_name": canonical},
+                    status="backend_error",
+                )
             if ci_match:
                 canonical = ci_match
         anchors = [("Component", "canonical_name", canonical)]
@@ -186,6 +200,27 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     elif body.anchor_type == "document":
         resolved_document_id, document_ids = _resolve_document_anchor_ids(body.anchor_value)
         anchors = [("Document", "id", doc_id) for doc_id in document_ids]
+        if exclude_external_ids or exclude_subtree_ids or exclude_source_types:
+            # G04/G08 — anchor 자신이 제외 대상이면 그래프를 돌 필요 없이
+            # "filtered"로 즉시 답한다(found와는 다른 신호: 그래프엔 있지만
+            # 이 호출에서는 보여주지 않기로 한 것).
+            anchor_enrichment = _fetch_document_enrichment(document_ids)
+            if any(
+                is_document_excluded(
+                    e, exclude_page_ids=exclude_external_ids,
+                    exclude_subtree_ids=exclude_subtree_ids,
+                    exclude_source_types=exclude_source_types,
+                    ancestors=set(e.get("ancestor_ids") or []),
+                )
+                for e in anchor_enrichment.values()
+            ):
+                return shape_explore_result(
+                    {"found": True, "documents": [], "components": [], "failure_buckets": [],
+                     "excluded_hub_components": []},
+                    as_of=as_of_str,
+                    anchor={"type": "document", "resolved_id": resolved_document_id, "resolved_name": None},
+                    status="filtered",
+                )
     else:  # failure_bucket
         anchors = [("FailureBucket", "id", body.anchor_value)]
 
@@ -193,6 +228,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         "found": False, "documents": [], "components": [], "failure_buckets": [],
         "excluded_hub_components": [],
     }
+    backend_error = False
     try:
         for label, key, value in anchors:
             # Fix 1 (스펙 §2): 앵커 자신이 허브 Component면 2hop 순회를 생략하고
@@ -205,7 +241,12 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     merged["found"] = True
                     merged["excluded_hub_components"].append(value)
                     continue
-            raw = client.explore(label, key, value, max_hops=2)
+            # G04 — 중간 경로 bridge 차단: exclude_subtree_ids는 Neo4j 노드
+            # 속성이 아니라 PG 메타데이터라 여기서는 못 넘긴다(잔여, graph-evidence.md).
+            raw = client.explore(
+                label, key, value, max_hops=2,
+                exclude_external_ids=exclude_external_ids, exclude_source_types=exclude_source_types,
+            )
             if not raw.get("found"):
                 continue
             merged["found"] = True
@@ -213,8 +254,26 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             merged["components"].extend(raw["components"])
             merged["failure_buckets"].extend(raw["failure_buckets"])
             merged["excluded_hub_components"].extend(raw["excluded_hub_components"])
-    except Exception as exc:  # noqa: BLE001 — Neo4j 장애가 기존 검색/API에 안 퍼지게 격리
-        raise HTTPException(status_code=503, detail=f"그래프 저장소 연결 실패: {exc}") from exc
+    except Exception:  # noqa: BLE001 — G08: Neo4j 장애가 기존 검색/API에 안 퍼지도록
+        # 격리하되, 503 대신 기계가 구분 가능한 status로 돌려준다(MCP는 응답
+        # body의 status 필드를 본다 — HTTP 에러는 "오류: ..."로만 뭉개져 보임).
+        backend_error = True
+
+    if backend_error:
+        anchor_info_err: dict[str, Any] = {
+            "type": body.anchor_type,
+            "resolved_id": resolved_document_id if body.anchor_type == "document" else (
+                anchors[0][2] if anchors and body.anchor_type != "symptom_text" else None
+            ),
+            "resolved_name": resolved_name,
+        }
+        if body.anchor_type == "symptom_text":
+            anchor_info_err["matched_components"] = [a[2] for a in anchors]
+        return shape_explore_result(
+            {"found": False, "documents": [], "components": [], "failure_buckets": [],
+             "excluded_hub_components": []},
+            as_of=as_of_str, anchor=anchor_info_err, status="backend_error",
+        )
 
     if not merged["found"] and body.anchor_type != "symptom_text":
         raise HTTPException(status_code=404, detail="anchor_value를 그래프에서 찾을 수 없습니다")
@@ -281,3 +340,53 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     # 전부에 대해 만들 필요가 없다.
     shaped["documents"] = [attach_document_access(dict(d)) for d in shaped["documents"]]
     return shaped
+
+
+@router.get("/graph/status")
+def graph_status() -> dict[str, Any]:
+    """G05 §잔여 — graph_sync_state.max(synced_at)만으로는 "마지막 완료 배치가
+    언제/어떻게 끝났는지"를 알 수 없다(부분 실패/진행 중과 구분 불가). 가장
+    최근 graph_runs 행과, 이 Neo4j가 실제로 들고 있는 generation 마커를 함께
+    보여줘 "PG의 마지막 run 기록"과 "Neo4j가 실제로 그 generation인지"를
+    사람이 한 번에 비교할 수 있게 한다(마커가 run.generation과 다르면 다른
+    Neo4j로 바뀌었거나 그 뒤로 새 배치가 전혀 안 돈 상태)."""
+    as_of = get_latest_synced_at()
+    run_info: dict[str, Any] | None = None
+    with session_scope() as session:
+        latest_run = session.scalar(select(GraphRun).order_by(GraphRun.started_at.desc()))
+        # dict는 session_scope() 블록 "안에서" 만들어야 한다 — 밖에서 ORM
+        # 속성에 접근하면 세션이 이미 닫혀 DetachedInstanceError가 난다(실제
+        # 테스트로 재현됨).
+        if latest_run is not None:
+            run_info = {
+                "run_id": latest_run.run_id,
+                "started_at": latest_run.started_at.isoformat() if latest_run.started_at else None,
+                "completed_at": latest_run.completed_at.isoformat() if latest_run.completed_at else None,
+                "status": latest_run.status,
+                "extractor_version": latest_run.extractor_version,
+                "generation": latest_run.generation,
+                "documents_synced": latest_run.documents_synced,
+                "documents_skipped": latest_run.documents_skipped,
+                "documents_failed": latest_run.documents_failed,
+                "buckets_synced": latest_run.buckets_synced,
+                "buckets_failed": latest_run.buckets_failed,
+                "unresolved_references": latest_run.unresolved_references,
+                "hub_recompute_ok": latest_run.hub_recompute_ok,
+            }
+
+    try:
+        neo4j_generation = _build_client().read_generation_marker()
+    except Exception:  # noqa: BLE001 — 상태 조회 자체가 그래프 저장소 장애로
+        # 500이 되면 안 된다(§4.4와 같은 이유) — 모르면 null로 둔다.
+        neo4j_generation = None
+
+    return {
+        "as_of": as_of.date().isoformat() if as_of else None,
+        "latest_run": run_info,
+        "neo4j_generation": neo4j_generation,
+        "generation_matches": (
+            run_info is not None
+            and neo4j_generation is not None
+            and run_info["generation"] == neo4j_generation
+        ),
+    }
