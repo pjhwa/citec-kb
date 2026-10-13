@@ -270,3 +270,47 @@ def test_renders_freshness_unknown_when_never_completed(monkeypatch):
     }
     out = _run(monkeypatch, payload)
     assert "freshness: 완료된 전체 배치 기록 없음(unknown)" in out
+
+
+def test_kb_graph_status_renders_read_state_and_liveness(monkeypatch):
+    """F04(2026-10-13 최종 핸드오프) §8 — kb_graph_status가 REST
+    GET /v1/graph/status와 같은 근거(run/revision/freshness)를 MCP에서도
+    보여줘야 한다."""
+    payload = {
+        "as_of": "2026-10-13",
+        "latest_run": {
+            "run_id": "r1", "started_at": "2026-10-13T00:00:00+00:00", "completed_at": None,
+            "status": "running", "scope": "full", "extractor_version": "v1", "generation": "g1",
+            "lexicon_version": None, "documents_synced": 10, "documents_skipped": 0,
+            "documents_failed": 0, "documents_state_write_failed": 0, "buckets_synced": 0,
+            "buckets_failed": 0, "unresolved_references": 0, "hub_recompute_ok": None,
+            "liveness": {"state": "likely_dead", "lock_holder_pid": 123, "lock_currently_held": False,
+                         "heartbeat_at": None, "seconds_since_heartbeat": None},
+        },
+        "latest_full_completed_run": {
+            "run_id": "r0", "started_at": "2026-10-12T00:00:00+00:00",
+            "completed_at": "2026-10-12T01:00:00+00:00",
+            "status": "completed", "scope": "full", "extractor_version": "v0", "generation": "g0",
+            "lexicon_version": None, "documents_synced": 100, "documents_skipped": 0,
+            "documents_failed": 0, "documents_state_write_failed": 0, "buckets_synced": 1,
+            "buckets_failed": 0, "unresolved_references": 0, "hub_recompute_ok": True,
+            "liveness": None,
+        },
+        "neo4j_generation": "g0", "generation_matches": False, "read_state": "mixed",
+        "neo4j_store_identity": {"id": "store-abc", "name": "neo4j", "creation_date": "2026-01-01T00:00:00Z"},
+        "api_build_sha": "unknown", "contract_version": "2026-10-13.1",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(base_url="http://t", transport=httpx.MockTransport(handler)),
+    )
+    out = asyncio.run(server.kb_graph_status())
+    assert "read_state: mixed" in out
+    assert "liveness=likely_dead" in out
+    assert "neo4j_store_identity(store id): store-abc" in out
+    assert "contract_version: 2026-10-13.1" in out
+    assert "latest_full_completed_run: run_id=r0" in out

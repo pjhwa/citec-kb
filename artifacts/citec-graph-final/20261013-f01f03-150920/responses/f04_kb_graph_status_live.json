@@ -1,0 +1,7 @@
+{
+  "id": "f04_kb_graph_status_live",
+  "tool": "kb_graph_status",
+  "args": {},
+  "note": "Live mcp__wiki-mcp__kb_graph_status call against dev stack, right after adding this new MCP tool and restarting the mcp container. Per the handoff's own caution that this session's tools/list might be cached stale (advisor flagged this risk explicitly), this was actually re-verified: the tool loaded fresh via ToolSearch after the mcp restart and the live call succeeded on the first try, returning the correct dev state (read_state=consistent, matching neo4j_store_identity/generation_matches/latest_run details already cross-checked via curl against GET /v1/graph/status earlier in this run). No separate raw-MCP-client script was needed.",
+  "response_text": "read_state: consistent\nas_of: 2026-10-12\ngeneration_matches: True\nneo4j_generation(write marker): 2026-10-12.3.d2f3f9ca\nneo4j_store_identity(store id): E37C297137C98CF2B57097F927481BA58732C703CD1A98973F96023597F37742 created=2026-10-08T06:07:53.748Z\ncontract_version: 2026-10-13.1  api_build_sha: unknown\nlatest_run: run_id=c88e8391-33c1-4b6a-ab0a-41ab6f88e7da scope=full status=completed ...\nlatest_full_completed_run: run_id=c88e8391-33c1-4b6a-ab0a-41ab6f88e7da scope=full status=completed ..."
+}

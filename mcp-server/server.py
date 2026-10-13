@@ -1830,6 +1830,55 @@ async def kb_health() -> str:
 
 
 @mcp.tool()
+async def kb_graph_status() -> str:
+    """F04(2026-10-13 최종 핸드오프) §8 — 그래프 동기화 run/revision/
+    freshness 상세를 MCP에서도 조회한다(REST GET /v1/graph/status와 같은
+    근거). kb_graph_explore의 freshness 한 줄 요약보다 자세한 정보가
+    필요할 때(예: 지금 진행 중인 배치가 정말 살아있는지, Neo4j store
+    identity가 맞는지) 이 도구를 먼저 부른다.
+
+    읽는 법: latest_run이 전체(full) 배치이고 status=running인데
+    liveness.state가 likely_dead/stalled면, 그 run은 실제로는 끝났거나
+    멈춘 것이다(advisory lock을 pg_locks로 직접 확인한 결과) — "진행 중"
+    문구만 보고 기다리지 말 것. read_state=mixed면 지금 보이는 그래프
+    데이터가 완료된 단일 스냅샷이 아닐 수 있다는 뜻이다.
+    """
+    try:
+        async with _client(timeout=15.0) as client:
+            resp = await client.get("/v1/graph/status")
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+
+    def _run_line(label: str, run: dict[str, Any] | None) -> str:
+        if run is None:
+            return f"{label}: 없음"
+        liveness = run.get("liveness")
+        liveness_str = f" liveness={liveness['state']}" if liveness else ""
+        return (
+            f"{label}: run_id={run['run_id']} scope={run['scope']} status={run['status']}"
+            f"{liveness_str} started_at={run['started_at']} completed_at={run['completed_at']} "
+            f"generation={run['generation']} documents_synced={run['documents_synced']} "
+            f"documents_failed={run['documents_failed']} "
+            f"documents_state_write_failed={run['documents_state_write_failed']}"
+        )
+
+    store = data.get("neo4j_store_identity") or {}
+    lines = [
+        f"read_state: {data.get('read_state')}",
+        f"as_of: {data.get('as_of')}",
+        f"generation_matches: {data.get('generation_matches')}",
+        f"neo4j_generation(write marker): {data.get('neo4j_generation')}",
+        f"neo4j_store_identity(store id): {store.get('id')} created={store.get('creation_date')}",
+        f"contract_version: {data.get('contract_version')}  api_build_sha: {data.get('api_build_sha')}",
+        _run_line("latest_run", data.get("latest_run")),
+        _run_line("latest_full_completed_run", data.get("latest_full_completed_run")),
+    ]
+    return "\n".join(lines)
+
+
+@mcp.tool()
 async def kb_stats() -> str:
     """코퍼스 통계 (소스 타입별 문서 수). as_of 는 조회 시각(UTC)이다."""
     try:
