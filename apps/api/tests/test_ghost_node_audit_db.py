@@ -104,7 +104,7 @@ def test_execute_deletion_cancelled_without_exact_confirmation():
         with driver.session() as session:
             session.run("CREATE (:Document {id: $id})", id=node_id)
 
-        result = mod._execute_deletion(driver, confirm=lambda _prompt: False)
+        result = mod._execute_deletion(driver, uri="bolt://test", confirm=lambda _prompt: False)
         # requested는 공유 스크래치 Neo4j에 다른 테스트 파일이 남긴 고립
         # 노드가 섞여 있으면 1보다 커질 수 있다(이 테스트가 심은 노드 외에
         # 다른 진짜 유령도 같이 집계되므로) — 그래도 >=1이어야 하고, 취소
@@ -142,7 +142,7 @@ def test_execute_deletion_deletes_only_true_ghosts_and_writes_manifest(tmp_path,
             )
             session.run("CREATE (:Document {id: $id, source_type: 'confluence_docs'})", id=other_id)
 
-        result = mod._execute_deletion(driver, confirm=lambda _prompt: True)
+        result = mod._execute_deletion(driver, uri="bolt://test", confirm=lambda _prompt: True)
         # requested/deleted는 공유 스크래치 Neo4j에 다른 테스트 파일이 남긴
         # 고립 노드가 섞여 있으면 1보다 커질 수 있다 — 핵심 보장(유령만
         # 지우고 정상 노드는 남긴다)은 아래 manifest 내용과 remaining 조회로
@@ -174,7 +174,8 @@ def test_execute_deletion_deletes_only_true_ghosts_and_writes_manifest(tmp_path,
                 g=ghost_id, l=linked_id, o=other_id,
             )
             session.run(
-                f"MATCH (c:Component {{canonical_name: 'comp-{linked_id}'}}) DETACH DELETE c"
+                "MATCH (c:Component {canonical_name: $c}) DETACH DELETE c",
+                c=f"comp-{linked_id}",
             )
         driver.close()
 
@@ -218,7 +219,7 @@ def test_execute_deletion_batch_failure_is_retry_safe(tmp_path, monkeypatch):
 
         monkeypatch.setattr(mod, "_delete_batch", flaky)
         with pytest.raises(RuntimeError):
-            mod._execute_deletion(driver, confirm=lambda _prompt: True)
+            mod._execute_deletion(driver, uri="bolt://test", confirm=lambda _prompt: True)
 
         with driver.session() as session:
             remaining = {
@@ -230,12 +231,32 @@ def test_execute_deletion_batch_failure_is_retry_safe(tmp_path, monkeypatch):
         assert remaining == set(ids[2:])  # first batch (ids[0:2]) already deleted
 
         monkeypatch.setattr(mod, "_delete_batch", orig_delete_batch)
-        result = mod._execute_deletion(driver, confirm=lambda _prompt: True)
+        result = mod._execute_deletion(driver, uri="bolt://test", confirm=lambda _prompt: True)
         assert result["deleted"] == 2  # only the remaining batch
     finally:
         with driver.session() as session:
             session.run("MATCH (d:Document) WHERE d.id IN $ids DETACH DELETE d", ids=ids)
         driver.close()
+
+
+def test_confirm_delete_requires_exact_delete_string(monkeypatch):
+    """_confirm_delete — 실제 삭제를 막는 마지막 human safety gate. 다른
+    모든 테스트는 confirm을 주입한 lambda로 우회하므로, 정확히 'delete'만
+    통과시키고 다른 입력/대소문자 차이/EOFError는 전부 취소로 처리하는지
+    여기서 직접 검증한다."""
+    mod = _load_ghost_audit_module()
+    monkeypatch.setattr("builtins.input", lambda _prompt: "delete")
+    assert mod._confirm_delete("prompt: ") is True
+    monkeypatch.setattr("builtins.input", lambda _prompt: "yes")
+    assert mod._confirm_delete("prompt: ") is False
+    monkeypatch.setattr("builtins.input", lambda _prompt: "Delete")
+    assert mod._confirm_delete("prompt: ") is False
+
+    def _raise_eof(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", _raise_eof)
+    assert mod._confirm_delete("prompt: ") is False
 
 
 def test_main_execute_blocked_when_sync_cli_lock_is_held(capsys, monkeypatch):

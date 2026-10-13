@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """R04.10(2026-10-13 2차 핸드오프) — 고립 유령 Document 노드(source_type IS
-NULL, edge 0개 — G01 수정 전 raw-id 유령의 잔존, 전체 재백필 후 827개 확인됨)
-삭제는 "diff·백업·복구안을 만든 뒤 별도 승인 대상으로 남겨라"는 요구에 따라
-설계했다.
+NULL, edge 0개 — G01 수정 전 raw-id 유령의 잔존, 전체 재백필 후 다수 확인됨
+— 환경마다 다름, dry-run으로 먼저 실제 건수를 확인하라) 삭제는 "diff·백업·
+복구안을 만든 뒤 별도 승인 대상으로 남겨라"는 요구에 따라 설계했다.
 
 기본 동작(플래그 없음)은 **읽기 전용 dry-run**이다 — 쓰기 없음, 운영/dev
 어느 Neo4j를 봐도 안전하다. 결과를 커밋하거나 외부에 공유하기 전에
@@ -98,7 +98,7 @@ def _delete_batch(session, ids: list[str]) -> int:
     return result.single()["deleted"]
 
 
-def _execute_deletion(driver, *, confirm) -> dict:
+def _execute_deletion(driver, *, uri, confirm) -> dict:
     """락은 호출자(main())가 미리 잡아둔 상태에서 불린다. 과거 dry-run
     manifest는 신뢰하지 않고, 이 호출 시점에 판정 쿼리를 다시 실행해
     삭제 대상을 확정한다(TOCTOU 방지)."""
@@ -107,7 +107,7 @@ def _execute_deletion(driver, *, confirm) -> dict:
     if not ids:
         return {"requested": 0, "deleted": 0}
 
-    prompt = f"{len(ids)}건을 삭제하시겠습니까? 되돌릴 수 없습니다. 'delete' 입력: "
+    prompt = f"{uri}에서 {len(ids)}건을 삭제하시겠습니까? 되돌릴 수 없습니다. 'delete' 입력: "
     if not confirm(prompt):
         return {"requested": len(ids), "deleted": 0, "cancelled": True}
 
@@ -115,9 +115,10 @@ def _execute_deletion(driver, *, confirm) -> dict:
         f"artifacts/ghost_node_deletion_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
     )
     os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
+    abs_manifest_path = os.path.abspath(manifest_path)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"deleted_at": datetime.now(timezone.utc).isoformat(), "ids": ids},
+            {"deleted_at": datetime.now(timezone.utc).isoformat(), "uri": uri, "ids": ids},
             f, ensure_ascii=False, indent=2,
         )
 
@@ -125,9 +126,23 @@ def _execute_deletion(driver, *, confirm) -> dict:
     with driver.session() as session:
         for i in range(0, len(ids), _DELETE_BATCH_SIZE):
             batch = ids[i : i + _DELETE_BATCH_SIZE]
-            deleted_total += _delete_batch(session, batch)
+            try:
+                deleted_total += _delete_batch(session, batch)
+            except Exception:
+                remaining = ids[i:]
+                print(
+                    f"✗ 배치 삭제 중 실패 — 지금까지 {deleted_total}건 삭제됨, "
+                    f"{len(remaining)}건 남음(재시도 시 이미 지워진 건 자동으로 건너뜀, idempotent). "
+                    f"manifest: {manifest_path}",
+                    file=sys.stderr,
+                )
+                raise
 
-    return {"requested": len(ids), "deleted": deleted_total, "manifest": manifest_path}
+    return {
+        "requested": len(ids), "deleted": deleted_total,
+        "failed": len(ids) - deleted_total,
+        "uri": uri, "manifest": manifest_path, "manifest_abs": abs_manifest_path,
+    }
 
 
 def _confirm_delete(prompt: str) -> bool:
@@ -179,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps({"error": "lock_held_by_another_run"}), file=sys.stderr)
             return 1
         try:
-            outcome = _execute_deletion(driver, confirm=_confirm_delete)
+            outcome = _execute_deletion(driver, uri=uri, confirm=_confirm_delete)
         finally:
             # _release_lock 내부가 unlock 실행 자체에서 예외를 던져도
             # lock_conn은 그 안의 try/finally로 반드시 close되고, driver는
@@ -193,7 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         if outcome.get("cancelled"):
             print("삭제를 취소했습니다.")
             return 0
-        print(f"요청 {outcome['requested']}건 중 {outcome['deleted']}건 삭제 완료.")
+        print(f"요청 {outcome['requested']}건 중 {outcome['deleted']}건 삭제 완료"
+              + (f", {outcome['failed']}건 실패" if outcome.get('failed') else "") + ".")
+        if outcome.get("manifest_abs") or outcome.get("manifest"):
+            print(f"manifest 절대경로: {outcome.get('manifest_abs', outcome.get('manifest'))} — 컨테이너를 재생성하기 전에 반드시 복사해두세요.")
         return 0
 
     try:
@@ -211,8 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         "restore_plan": (
             "이 목록의 각 id로 MERGE (d:Document {id: $id}) RETURN d — "
             "유령 노드는 source_type/title 등 다른 속성이 전혀 없으므로(원래도 "
-            "비어 있었음) 복구는 빈 노드 재생성뿐이다. 실제 삭제는 이 스크립트가 "
-            "하지 않으며, 사람이 별도로 승인·실행해야 한다."
+            "비어 있었음) 복구는 빈 노드 재생성뿐이다. 이 dry-run manifest "
+            "자체는 삭제를 일으키지 않는다 — 실제 삭제는 별도 경로인 "
+            "--execute(자체 안전 manifest를 따로 남김)로 수행하며, 사람이 "
+            "'delete'를 정확히 입력해 승인해야 진행된다."
         ),
     }
 
@@ -224,7 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Document(source_type IS NULL) 총 {result['total_null_source_type']}건")
     print(f"그중 완전히 고립(관계 0개)된 유령: {result['isolated_count']}건")
     print(f"백업 manifest 저장: {out_path}")
-    print("이 스크립트는 삭제하지 않습니다 — 실제 삭제는 사람이 manifest를 검토한 뒤 별도로 승인·실행하세요.")
+    print("플래그 없이 실행하면(dry-run) 삭제하지 않습니다 — 실제 삭제는 --execute로 수행합니다(사람이 manifest를 검토한 뒤 'delete' 입력으로 승인).")
     return 0
 
 
