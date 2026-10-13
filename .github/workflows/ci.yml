@@ -42,6 +42,28 @@ jobs:
         # mock IdP e2e imports full FastAPI app stack with heavy routers;
         # auth/oidc/fusion/planner unit tests still cover core logic.
 
+  mcp-server-tests:
+    name: mcp-server-tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: mcp-server/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+      - name: Run mcp-server contract/formatter tests
+        run: python -m pytest -q
+        # 전부 httpx.MockTransport로 REST를 모킹한다 — 권한/secret/실제 배포
+        # 호출은 없다(R08 §2 CI 범위 제한: "권한·secret·배포 job은 제외").
+
   signoff-script-syntax:
     name: signoff-script-syntax
     runs-on: ubuntu-latest
