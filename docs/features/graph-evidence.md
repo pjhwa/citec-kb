@@ -306,3 +306,174 @@ skills/packet-capture-rca/references/citec-kb-integration.md`. 이 문서는
   bridge 차단**(`Document.ancestor_ids`를 Neo4j 노드 속성에도 쓰기 시작 —
   재백필 전까지는 기존 Document 노드에 이 속성이 없어 subtree bridge
   차단이 조용히 무효화됨, 틀린 결과를 주진 않지만 효과가 없음에 주의).
+
+## 2026-10-13 2차 핸드오프 대응 (R01~R08)
+
+`/tmp/CLAUDE_CODE_PROMPT.md` + `ANALYSIS.md`(이번엔 `evidence/`가
+`/tmp/citec-graph-handoff-20261013.zip`로 함께 전달됨, 분석 커밋
+`2bb1d7f` — 바로 위 2026-10-13(1차) 라운드 머지 **직전** 커밋이다) 대응.
+먼저 dev 컨테이너를 재시작해 1차 라운드 코드가 실제로 돌고 있는지
+확인하고, R01의 4개 재현 입력을 실제 dev MCP로 다시 쳐본 결과 — **R01의
+핵심 버그(중간 경로 bridge 미차단)는 이미 1차 라운드의 G04 작업으로
+고쳐져 있었다**(`604365026` 제외 시 78→73건, `604365046`이 더 이상
+안 보임 — 핸드오프의 정확한 재현 입력으로 실측 확인). 그래서 이번
+라운드는 "R01을 처음부터 구현"이 아니라 advisor 리뷰로 찾은 **그
+G04 구현 자체의 결함**(아래)과, 아직 안 건드린 R02/R03/R04/R06/R07/R08
+항목에 집중했다.
+
+### R01 — 이번 라운드에서 찾은 자체 결함 교정
+
+- **source_type 제외가 사본 fan-out 전체를 filtered로 끝냄(과도함)**:
+  `exclude_source_types`에 걸리는 수집본이 "같은 external_id"의 여러
+  수집본 중 하나뿐이어도, 과거 코드는 전체를 filtered로 끝내 허용된
+  다른 수집본(예: 같은 페이지의 confluence_map 사본)을 탐색할 기회를
+  잃었다. **실제 재현**: `confluence_docs:1000706325` 앵커 +
+  `exclude_source_types=confluence_docs` → 같은 external_id의
+  `confluence_map:1000706325` 사본이 있었는데도 무조건 filtered였음.
+  이제 source_type 제외는 "그 수집본만 fan-out에서 제외"하고 남은
+  수집본으로 계속 탐색한다 — 전부 제외됐을 때만 filtered(reason=
+  `all_copies_source_excluded`). page_id/subtree 제외는 여전히
+  페이지 전체 단위(reason=`page_or_subtree_excluded`) — 같은 물리
+  페이지라 수집본을 가려도 의미가 없다.
+- **`elementId(r)` tie-break가 과거 결정을 되돌림**: explore() Cypher의
+  ORDER BY에 추가했던 `elementId(r1)`/`elementId(r1b)`/`elementId(r2)`는
+  "elementId는 DB 인스턴스 안에서만 안정적이라 dev/운영/scratch 간
+  재현이 안 된다"는 바로 위 주석과 충돌했다 — `startNode(r)=a`(방향)로
+  교체, 도메인 안정적인 tie-break만 남김.
+- **backend_error가 모든 예외를 삼킴(로그 없음)**: 과거엔 bare
+  `except Exception`이라 이 라우터 자체의 버그(TypeError 등)도 "그래프
+  장애"로 둔갑해 로그도 안 남고 조용히 200을 돌려줬다. 예외 타입의
+  모듈 이름이 `neo4j`로 시작할 때만 backend_error로 분류(패키지를
+  직접 import하지 않고 `type(exc).__module__`만 봐서 CI의 optional-import
+  제약을 안 건드림), 나머지는 `logger.exception` 후 그대로 500으로
+  드러나게 re-raise. `backend_error_reason` 필드 추가.
+- 새 테스트: fan-out source_type 부분 제외(허용된 사본으로 계속 탐색),
+  neo4j 기원 예외만 backend_error로 분류되고 그 외(TypeError)는 500으로
+  드러남 — `tests/test_graph_router.py`.
+
+### R02 — 동기화 run 상태의 정직성
+
+- `mark_synced` 실패(그래프 쓰기는 성공, PG 상태 기록만 실패)를
+  `graph_runs.documents_state_write_failed`로 집계하고 0보다 크면
+  `sync_cli` exit code가 non-zero가 된다(과거엔 `completed`/exit 0로
+  숨겨짐).
+- `graph_runs.scope`(`full`|`partial`) 추가 — `--source-ids` 디버그
+  실행을 구분. `GET /v1/graph/status`가 `latest_run`(가장 최근 아무
+  행)과 `latest_full_completed_run`(scope=full ∧ completed류)을 분리
+  반환, `generation_matches`는 후자 기준으로 판정 — partial 디버그
+  실행이 가장 최근 행이어도 "그래프가 최신"으로 오판하지 않음.
+- `graph_runs.lexicon_version` 실제로 채움(`lexicon_terms`의
+  (count, max(updated_at)) 지문).
+- `sync_cli`가 run 전체 기간 동안 전용 Postgres 커넥션으로
+  `pg_try_advisory_lock`을 쥐어 동시 writer를 막는다(풀링된 ORM
+  세션으로 잡으면 커넥션 반환 뒤에도 lock이 남을 수 있어 전용 커넥션
+  사용). 락을 못 잡으면 `graph_runs` 행을 만들지도 않고 즉시 exit 1.
+- 새 테스트: `tests/test_graph_sync_cli_db.py`(락 충돌, scope=partial
+  기록), `tests/test_graph_pipeline_db.py`(state_write_failed 집계),
+  `tests/test_graph_router.py`(latest_full_completed_run 분리).
+
+### R03 — lexicon seed 모든 진입점 비파괴 기본값
+
+- CLI 기본값 버그 실제 확인: `main()`이 `replace=not args.no_replace`라
+  `--no-replace`를 안 주면 늘 `replace=True`였다(함수 기본값 False와
+  불일치). `--replace`를 명시해야만 파괴적 동작, 기본은 보존.
+- `replace=False`도 과거엔 seed에 "있는" canonical의 variants를 그대로
+  덮어썼다(수동 추가 별칭 소실 가능) — 이제 기존 variants와 seed
+  variants를 union으로 병합. priority/metadata는 seed 값으로 갱신(이
+  둘은 수동 편집 대상이 아니라고 간주).
+- `seed_lexicon(dry_run=True)` / `POST /v1/lexicon/seed?dry_run=true` —
+  추가/변경/삭제 예상 canonical만 보여주고 쓰지 않음.
+- `build_lexicon_map()`이 같은 변형어가 두 canonical에 겹치면
+  `logger.warning`으로 기록(조용히 DB 반환 순서로 확정하지 않음),
+  `load_lexicon_map()`의 쿼리에 `ORDER BY canonical` 추가해 결정성 확보.
+- 새 테스트 4종 — `tests/test_lexicon_seed_db.py`.
+
+### R04 — 적용한 one-line 수정
+
+- `sync_document`의 skip 조건에 `not state.get("last_error")` 추가 —
+  `mark_failed()`는 input_hash/version/generation을 안 건드리므로, 해시
+  계산 전 단계에서 실패가 나고 문서 내용이 그대로면 last_error가 남은
+  채 영원히 skip되는 경로가 있었다(실제 코드 경로로 재현·테스트함).
+- `enrich_with_document_metadata`에 `pg_missing` 플래그 추가 — PG에서
+  못 찾은 문서(삭제됨 등)가 `archived=False`인 정상 문서로 보이던 문제
+  분리. MCP 렌더링에도 `[pg_missing]` 태그 추가.
+- **잔여(이번에도 미착수)**: namespace 충돌 합성 테스트, UnresolvedPage
+  역참조 재해석 — 설계가 더 필요해 범위 밖으로 유지.
+
+### R05 — 착수하지 않음(설계 필요, 의도적 보류)
+
+핸드오프 자체가 "먼저 holdout 질문 집합을 구현 전에 고정하고 랭킹
+튜닝에서 제외하라"(§3.3), "알려진 정답 ID를 가중치로 넣지 말라"(§2.5.4)
+고 명시한다 — 이건 버그 수정이 아니라 새 관련성 랭킹 기능이고, 잘못
+만들면 바로 그 금지사항(ID 특례, 하드코딩)을 어기기 쉬운 영역이다.
+이번 라운드에서 섣불리 구현하지 않았다 — **별도 브레인스토밍 세션으로
+설계(홀드아웃 질문셋, 랭킹 신호, 합격 기준 고정)부터 시작해야 한다.**
+
+### R06 — 근거 가시성
+
+- MCP `_render_route`가 `tag`(EXTRACTED/INFERRED)를 드롭하던 것을
+  `관계명[TAG]` 형식으로 표시.
+- `sync_failure_bucket`이 이 bucket 자신의
+  resolved/external_artifact/legacy_missing/target_not_ingested/
+  unresolved_reference 사유를 계산해 `FailureBucket.evidence_reasons_json`
+  으로 Neo4j 노드에 저장(sync 시점 1회 계산 — 매 요청마다
+  `page_identity_index`를 다시 만드는 비용을 피함), `kb_graph_explore`의
+  failure_bucket 결과 줄에 `evidence_reasons=...`로 노출.
+- 새 테스트: `mcp-server/test_graph_explore_format.py`(tag 렌더링),
+  `evidence_reasons` MCP 렌더링은 `_render_failure_bucket_line`에 추가.
+
+### R07 — 상태 envelope 일관성 / 범위 밖
+
+- `kb_graph_explore`의 unknown-anchor 404, 잘못된 anchor_type, 빈
+  anchor_value 세 분기 모두 이제 `status: ...`로 시작(과거엔 이 셋만
+  예외적으로 status 없는 문장 하나였다 — raw evidence로 재현 확인,
+  `invalid_request` status 신규).
+- `docs/AI_AGENT_GUIDE.md`의 "status가 항상 첫 줄" 설명을 실제 계약에
+  맞게 수정(이제 진짜로 모든 분기가 그렇다).
+- **BLOCKED(이 호스트에서 불가능)**: Codex 호스트의 캐시된 도구 계약
+  (2-인자 구버전)과 Windows 5곳의 스킬 캐시(10월 9일 계약) 동기화 —
+  이 dev 서버에는 Codex/Windows 세션 접근이 없고, `citec-mcp-workbench`
+  스킬 자체가 이 호스트에 설치돼 있지도 않다(1차 라운드와 동일 확인,
+  `find` 재실행으로 재확인). 정본(`docs/CITEC_KB_MCP_SKILL.md`)은 이미
+  현재 8-인자 계약을 정확히 반영하고 있어 그 쪽은 고칠 게 없었다 —
+  남은 건 그 정본을 실제 Codex/Windows 설치 경로에 동기화하는 것뿐인데,
+  그건 이 호스트 밖의 작업이라 패치 대상이 없다(이미 맞음).
+
+### R08 — CI/정리
+
+- **mcp-server를 CI에 추가했다가 되돌림**: R08은 "그래프·MCP 계약
+  검증을 실행하는 최소 job"을 명시적으로 허용해 한 번 추가했으나(커밋
+  `30d7ecc`), 사용자가 "사내 git 서버(code.sdsdev.co.kr)는 GitHub
+  Actions를 지원하지 않는 것 같다"고 지적 — 이 저장소의 `origin`이
+  실제로 `github.com:pjhwa/citec-kb`라 핸드오프가 가리키는 진짜 팀
+  저장소(code.sdsdev.co.kr)와 다르다는 뜻이고, `.github/workflows/ci.yml`
+  자체가(이번 추가분 포함 전부) 그 서버에서는 안 돌아갈 가능성이 높다.
+  바로 revert(`2168a58`)했다 — 실제 CI 시스템이 뭔지 확인되면 그에 맞는
+  형식(GitLab CI 등)으로 다시 검토.
+- **고립 유령 노드 827개**: `scripts/verify/ghost_node_audit.py` 신규
+  — 읽기 전용 dry-run만, 삭제 기능 자체가 없음. dev에서 실행 확인:
+  `source_type IS NULL`인 Document 827건 전부 고립(관계 0개) — 이전
+  라운드의 측정과 정확히 일치. 백업 manifest(id/external_id/title +
+  복구안)를 JSON으로 남김. 실제 삭제는 여전히 사람이 manifest를 보고
+  별도 승인해야 한다(그대로 보류).
+
+### 검증
+
+전체 `apps/api/tests/` 스위트(532 passed, 52 skipped, 3 deselected)와
+`scripts/verify/run_integration_tests.sh`(57 passed, 7개 통합 테스트
+파일 — 새로 추가된 `tests/test_graph_sync_cli_db.py` 포함)를 scratch
+Neo4j + Postgres로 재확인. `mcp-server/` 테스트(18 passed, 로컬 venv).
+R01의 핸드오프 재현 입력 4종을 dev 재시작 후 실제 `mcp__wiki-mcp__*`
+호출로 다시 실행해 수정을 직접 확인(위 "R01" 절).
+
+### 배포 메모(이번 라운드 추가분)
+
+- **재시작만으로 충분**: fan-out source_type 부분 제외, elementId→방향
+  tie-break, backend_error 로깅/좁히기, R02 상태 정직성 전체(락/scope/
+  lexicon_version/상태 엔드포인트), R03 lexicon seed 전체, R04
+  last_error 재시도·pg_missing, R06 tag/evidence_reasons 렌더링, R07
+  status 일관성. 마이그레이션 `20261013_0013`(`graph_runs.scope`,
+  `documents_state_write_failed`) 포함 — `alembic upgrade head` 확인.
+- **전체 재백필 필요**: 없음(이번 라운드는 모두 restart-only) — 단
+  `FailureBucket.evidence_reasons_json`은 다음 `sync_failure_bucket`
+  실행(이미 예정된 재백필에 포함됨) 전까지는 기존 bucket에 비어 있다.
