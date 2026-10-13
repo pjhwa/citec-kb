@@ -168,8 +168,12 @@ banner "6. 마이그레이션 확인"
 ALEMBIC_CURRENT="$(docker compose exec -T api alembic current 2>&1)"
 echo "$ALEMBIC_CURRENT"
 ALEMBIC_HEADS="$(docker compose exec -T api alembic heads 2>&1)"
-CURRENT_REV="$(echo "$ALEMBIC_CURRENT" | grep -oE '^[0-9a-zA-Z_]+' | head -1)"
-HEAD_REV="$(echo "$ALEMBIC_HEADS" | grep -oE '^[0-9a-zA-Z_]+' | head -1)"
+# alembic이 실제 리비전 줄보다 먼저 "INFO [alembic...]" 로그 줄을 찍는다 —
+# 단순히 맨 앞줄에서 토큰을 뽑으면 그 "INFO"를 리비전으로 잘못 읽는다(실제
+# 운영에서 재현된 버그: current=INFO로 잘못 판정해 정상 상태를 실패로 봄).
+# 이 저장소의 리비전 ID는 전부 YYYYMMDD_NNNN 형식이므로 그 패턴만 찾는다.
+CURRENT_REV="$(echo "$ALEMBIC_CURRENT" | grep -oE '^[0-9]{8}_[0-9]{4}' | head -1)"
+HEAD_REV="$(echo "$ALEMBIC_HEADS" | grep -oE '^[0-9]{8}_[0-9]{4}' | head -1)"
 if [[ -z "$CURRENT_REV" || "$CURRENT_REV" != "$HEAD_REV" ]]; then
   err "마이그레이션이 head까지 안 올라갔습니다 (current=${CURRENT_REV:-없음}, head=$HEAD_REV)"
   err "원인 확인: docker compose logs api --tail 100 | grep -i alembic"
