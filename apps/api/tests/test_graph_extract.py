@@ -138,6 +138,33 @@ def test_extract_lexicon_components_matches_multi_word_ascii_phrase():
     assert [e.target_value for e in edges] == ["NetApp_Cluster"]
 
 
+def test_extract_lexicon_components_longest_match_excludes_shorter_at_same_span():
+    # G06(이번 라운드) — 스펙 §2.5 "가장 긴 등록 구문을 구분해 매칭" 그대로:
+    # "NetApp Cluster"가 매칭된 자리에서는 "NetApp"/"Cluster" 단독이 같은
+    # 구간에서 추가로 집계되지 않는다.
+    doc = {"id": "d1", "body_md": "NetApp Cluster 장애 발생"}
+    lexicon_map = {
+        "netapp": ["NetApp"],
+        "cluster": ["Cluster"],
+        "netapp cluster": ["NetApp_Cluster", "NetApp Cluster"],
+    }
+    edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
+    assert [e.target_value for e in edges] == ["NetApp_Cluster"]
+
+
+def test_extract_lexicon_components_longest_match_still_matches_other_occurrences():
+    # 소비는 "자리(구간)" 단위다 — 같은 변형어가 소비되지 않은 다른 자리에
+    # 또 나오면 거기서는 그대로 매칭된다.
+    doc = {"id": "d1", "body_md": "NetApp Cluster 장애, 이후 NetApp 단독 재발"}
+    lexicon_map = {
+        "netapp": ["NetApp"],
+        "cluster": ["Cluster"],
+        "netapp cluster": ["NetApp_Cluster", "NetApp Cluster"],
+    }
+    edges = extract_lexicon_components(doc, lexicon_map=lexicon_map)
+    assert {e.target_value for e in edges} == {"NetApp_Cluster", "NetApp"}
+
+
 def test_extract_lexicon_components_matches_korean_variant_with_josa_suffix():
     # G06: "넷앱에서"처럼 조사가 붙으면 \b 경계로는 안 끊긴다 — 한글 변형어는
     # 단순 포함 검사를 쓴다.

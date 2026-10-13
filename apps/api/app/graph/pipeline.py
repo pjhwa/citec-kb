@@ -39,8 +39,10 @@ from app.lexicon.seed import load_lexicon_map
 
 logger = logging.getLogger("citec.graph")
 
-EXTRACTOR_VERSION = "2026-10-12.3"  # G06: ASCII 변형어 경계 재설계로 또 올림 — hash가
-# 같아도 이 버전 변경만으로 기존 graph_sync_state가 전부 재동기화 대상이 된다.
+EXTRACTOR_VERSION = "2026-10-13.1"  # G01(extract_references가 이제 page_identity_index의
+# 완전한 tie-break를 받음) + G06(가장 긴 등록 구문 우선 매칭, 소비된 구간은 재매칭
+# 안 함)로 또 올림 — hash가 같아도 이 버전 변경만으로 기존 graph_sync_state가 전부
+# 재동기화 대상이 된다.
 
 DEFAULT_GENERATION = "2026-10-12.g1"  # G05 — 환경변수 GRAPH_GENERATION으로 override
 
@@ -156,7 +158,14 @@ def sync_document(
     external_id_index: dict[str, list[dict]] | None = None,
     page_identity_index: dict[str, list[dict]] | None = None,
     generation: str = DEFAULT_GENERATION,
+    counters: dict[str, int] | None = None,
 ) -> Literal["synced", "skipped", "failed"]:
+    """counters(옵션): 호출자(sync_cli)가 넘기면 이번 호출이 낸
+    UnresolvedPage PARENT_OF edge 수를 counters["unresolved_references"]에
+    누적한다(G05 잔여 — graph_runs.unresolved_references가 항상 0이던 걸
+    해소). skip된 문서는 edges를 다시 계산하지 않으므로 집계에서 빠진다 —
+    전체 재백필(모든 문서가 synced)에서만 정확한 총합이 된다, 부분 실행은
+    "이번 실행이 실제로 건드린 범위"만 반영(다른 run 통계와 같은 의미)."""
     """문서 1건 동기화 — 문서 단위 격리(§4.4): 실패해도 예외를 밖으로 던지지 않고
     "failed"를 반환해, pipeline을 호출하는 쪽(향후 CLI)이 배치를 멈추지 않게 한다."""
     try:
@@ -223,7 +232,11 @@ def sync_document(
             return "skipped"
 
         lexicon_map = load_lexicon_map()
-        reference_index = _cached_simple_reference_index(external_id_index or {})
+        # G01 잔여(2차 리뷰 지적 — graph-evidence.md): extract_references가
+        # active/grade만 보는 축약된 external_id_index를 받으면 active>grade>
+        # source tier>id tie-break 중 뒤 둘이 적용되지 않는다. page_identity_index
+        # (상위집합)를 우선 쓰고, 없을 때만 과거 축약 인덱스로 degrade한다.
+        reference_index = _cached_simple_reference_index(page_identity_index or external_id_index or {})
         # extract_lexicon_components(INFERRED)와 extract_structured_components
         # (EXTRACTED)가 같은 (document, Component) 쌍에 둘 다 엣지를 낼 수 있다 —
         # _dedup_edges_prefer_extracted가 Neo4j에 쓰기 전에 EXTRACTED를 우선해
@@ -235,6 +248,9 @@ def sync_document(
             + extract_lexicon_components(doc_dict, lexicon_map=lexicon_map)
             + extract_references(doc_dict, external_id_index=reference_index)
         )
+        if counters is not None:
+            unresolved = sum(1 for e in edges if e.target_label == "UnresolvedPage")
+            counters["unresolved_references"] = counters.get("unresolved_references", 0) + unresolved
         # Neo4jClient._merge_document_tx가 머지 전에 이 문서가 소유하는 managed
         # edge를 전부 지우고 새로 쓰므로(G03), 본문에서 사라진 멘션도 여기서
         # 자동 제거된다 — 더 이상 "그래프가 단조증가만 하는" 문제가 아니다.

@@ -107,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
     fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None
     evidence_reasons: dict[str, int] = {}
+    counters: dict[str, int] = {"unresolved_references": 0}
     try:
         try:
             external_id_index = build_external_id_index()
@@ -115,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                 result = sync_document(
                     doc_id, client=client, external_id_index=external_id_index,
                     page_identity_index=page_identity_index, generation=args.generation,
+                    counters=counters,
                 )
                 stats[result] += 1
 
@@ -162,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
             documents_synced=stats["synced"], documents_skipped=stats["skipped"],
             documents_failed=stats["failed"], buckets_synced=fb_stats["synced"],
             buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
+            unresolved_references=counters.get("unresolved_references", 0),
         )
         raise
 
@@ -172,10 +175,12 @@ def main(argv: list[str] | None = None) -> int:
         documents_synced=stats["synced"], documents_skipped=stats["skipped"],
         documents_failed=stats["failed"], buckets_synced=fb_stats["synced"],
         buckets_failed=fb_stats["failed"], hub_recompute_ok=hub_recompute_ok,
+        unresolved_references=counters.get("unresolved_references", 0),
     )
     print(json.dumps(
         {"run_id": run_id, "generation": args.generation, "documents": stats, "failure_buckets": fb_stats,
-         "hub_recompute_ok": hub_recompute_ok, "evidence_reasons": evidence_reasons},
+         "hub_recompute_ok": hub_recompute_ok, "evidence_reasons": evidence_reasons,
+         "unresolved_references": counters.get("unresolved_references", 0)},
         ensure_ascii=False,
     ))
     return 0 if ok else 1

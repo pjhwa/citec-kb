@@ -142,19 +142,28 @@ def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) 
     점(.) 뒤에 영문/숫자/밑줄이 와서 식별자의 일부가 되는 경우도 아님"을
     요구한다 — 그 결과 과거 정밀도(경로/호스트명/점구분 키 안의 부분 문자열
     차단)는 되살리면서, 문장 끝의 "Redis." 나 조사 붙은 "Redis가"/"NetApp에서"는
-    오른쪽에 한글이 와도 안 막히므로 여전히 매칭된다. 긴 등록 구문을 먼저 봐
-    짧은 변형어가 같은 자리에서 중복 집계되는 것을 줄인다(완전한 상호배타는
-    아님 — "NetApp"과 "NetApp Cluster"는 같은 본문에서 둘 다 나올 수 있고, 둘
-    다 매칭되는 것이 맞는 동작이다)."""
+    오른쪽에 한글이 와도 안 막히므로 여전히 매칭된다.
+
+    G06(이번 라운드 — 스펙 §2.5 "가장 긴 등록 구문을 구분해 매칭" 글자 그대로
+    적용): 긴 변형어가 본문의 한 구간에서 매칭되면 그 구간은 "소비"되어, 더
+    짧은 변형어가 같은 구간에서 다시 매칭되지 않는다 — 예: "NetApp Cluster"가
+    매칭되면 그 구간에서는 "NetApp"/"Cluster" 단독 매칭이 추가로 집계되지
+    않는다. 같은 변형어가 본문의 다른(소비되지 않은) 자리에 또 나오면 거기서는
+    그대로 매칭된다 — "구간 단위" 배타이지 "변형어 전체 금지"가 아니다."""
     body = doc.get("body_md") or ""
     if not body:
         return []
     body_lower = body.lower()
 
     canonicals: set[str] = set()
+    consumed: list[tuple[int, int]] = []
+
+    def _is_consumed(start: int, end: int) -> bool:
+        return any(start < e and s < end for s, e in consumed)
+
     variants_sorted = sorted(
         ((variant, names[0]) for variant, names in lexicon_map.items() if names and variant),
-        key=lambda item: -len(item[0]),
+        key=lambda item: (-len(item[0]), item[0]),
     )
     for variant, canonical in variants_sorted:
         if len(variant) == 1 and _HANGUL_RE.fullmatch(variant):
@@ -169,16 +178,20 @@ def extract_lexicon_components(doc: dict, *, lexicon_map: dict[str, list[str]]) 
             # 한글 단어 안에 섞여 나오는 걸 막음) — 오른쪽은 열어 둬서 조사가
             # 붙은 꼴("넷앱에서")은 그대로 매칭되게 한다. 두 글자 이상이면 이
             # 정도 경계로 충분하다(한 글자짜리 오탐은 위에서 이미 걸러짐).
-            if re.search(r"(?<![가-힣])" + re.escape(variant), body_lower):
-                canonicals.add(canonical)
+            pattern = re.compile(r"(?<![가-힣])" + re.escape(variant))
         else:
-            pattern = (
+            pattern = re.compile(
                 r"(?<![a-z0-9_/\-])(?<![a-z0-9_]\.)"
                 + re.escape(variant)
                 + r"(?![a-z0-9_/\-])(?!\.[a-z0-9_])"
             )
-            if re.search(pattern, body_lower):
-                canonicals.add(canonical)
+        matched_spans = [
+            (m.start(), m.end()) for m in pattern.finditer(body_lower)
+            if not _is_consumed(m.start(), m.end())
+        ]
+        if matched_spans:
+            canonicals.add(canonical)
+            consumed.extend(matched_spans)
     return [
         Edge(
             rel_type="HAS_COMPONENT",
