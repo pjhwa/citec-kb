@@ -211,3 +211,25 @@ def test_execute_deletion_batch_failure_is_retry_safe(tmp_path, monkeypatch):
         with driver.session() as session:
             session.run("MATCH (d:Document) WHERE d.id IN $ids DETACH DELETE d", ids=ids)
         driver.close()
+
+
+def test_main_execute_blocked_when_sync_cli_lock_is_held(capsys):
+    """sync_cli가 이미 advisory lock을 쥐고 있으면, --execute는 Neo4j
+    판정 쿼리를 재실행하기 전에 즉시 중단해야 한다."""
+    from app.db.session import get_engine
+    from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+
+    mod = _load_ghost_audit_module()
+    lock_conn = get_engine().connect()
+    got = lock_conn.exec_driver_sql(
+        "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+    ).scalar()
+    assert got is True
+    try:
+        rc = mod.main(["--execute"])
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "lock_held_by_another_run" in captured.err
+    finally:
+        lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+        lock_conn.close()
