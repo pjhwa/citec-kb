@@ -120,28 +120,35 @@
       ],
       "implementation_status": "fixed",
       "verification_status": "PASS",
-      "source_sha": "05e23b1",
+      "source_sha": "7549abd..2ba187c",
       "deployed_sha": null,
       "case_ids": [
-        "test_graph_router.py::test_graph_status_ignores_partial_run_for_generation_matches"
+        "test_graph_sync_cli_db.py::test_sync_cli_main_records_lock_holder_pid_and_heartbeat",
+        "test_graph_sync_cli_db.py::test_heartbeat_raises_when_lock_connection_is_terminated",
+        "test_graph_router.py (liveness/read_state tests)"
       ],
       "evidence_paths": [
         "responses/f04_bonus_seq_fix.json"
       ],
-      "remaining": "Fixed per explicit user instruction ('덤으로 발견한 버그부터 고쳐') after the F01-F03 checkpoint. Full F04 scope (heartbeat/lease, hard-kill/concurrent-writer injection, read-snapshot policy, etc.) beyond this specific tie-break bug remains NOT_RUN."
+      "remaining": "documents_state_write_failed tracking already existed from a prior round (function-level fault injection test). This round added the end-to-end liveness/fencing layer around it. A full real-DB-outage fault injection (actually killing Postgres mid-run) was not attempted -- the fencing test proves the mechanism (heartbeat write fails -> raises) via pg_terminate_backend on the specific connection, which is the realistic equivalent."
     },
     {
       "requirement_id": "V04",
       "final_tasks": [
         "F04"
       ],
-      "implementation_status": "not_started_this_run",
-      "verification_status": "NOT_RUN",
-      "source_sha": null,
+      "implementation_status": "fixed",
+      "verification_status": "PASS",
+      "source_sha": "7549abd,ab809b2,2ba187c",
       "deployed_sha": null,
-      "case_ids": [],
+      "case_ids": [
+        "test_graph_sync_cli_subprocess_db.py::test_hard_killed_subprocess_leaves_running_row_that_next_run_marks_abandoned",
+        "test_graph_sync_cli_subprocess_db.py::test_two_real_subprocesses_second_one_is_rejected_by_advisory_lock",
+        "test_graph_sync_cli_db.py::test_sync_cli_marks_prior_running_rows_abandoned_on_next_run",
+        "test_graph_sync_cli_db.py::test_heartbeat_raises_when_lock_connection_is_terminated"
+      ],
       "evidence_paths": [],
-      "remaining": "Deferred, same as V03."
+      "remaining": "Real subprocess hard-kill and real two-process concurrency now both proven with actual OS processes (not simulated). A full line-by-line audit of every exception boundary between lock acquisition and _finish_run was not performed as a dedicated review pass, though the three concrete failure modes the handoff names (hard kill, concurrent writer, connection loss) are now each covered by a real test."
     },
     {
       "requirement_id": "V05",
@@ -149,13 +156,20 @@
         "F04",
         "F06"
       ],
-      "implementation_status": "not_started_this_run",
-      "verification_status": "NOT_RUN",
-      "source_sha": null,
+      "implementation_status": "fixed",
+      "verification_status": "PASS",
+      "source_sha": "7549abd,515ba37,e475c55,c343a76",
       "deployed_sha": null,
-      "case_ids": [],
-      "evidence_paths": [],
-      "remaining": "Deferred."
+      "case_ids": [
+        "test_graph_router.py (read_state tests)",
+        "test_graph_router.py::test_explore_response_includes_freshness_summary_distinct_from_as_of",
+        "mcp-server/test_graph_explore_format.py (freshness + kb_graph_status tests)"
+      ],
+      "evidence_paths": [
+        "responses/f04_mcp_freshness_live.json",
+        "responses/f04_kb_graph_status_live.json"
+      ],
+      "remaining": "read_state (consistent/mixed/unknown), neo4j_store_identity (separate from the write-generation marker), and MCP-side freshness summary + a dedicated kb_graph_status tool are all implemented and live-verified against dev. api_build_sha intentionally reports \"unknown\" -- no deploy-pipeline wiring exists to populate it, and scripts/git_pull_deploy.sh was deliberately left untouched (would need user approval, out of scope for this run). Deeper F06-scope cursor/pagination consistency during concurrent updates is NOT covered here (correctly belongs to F06, not F04)."
     },
     {
       "requirement_id": "V08",

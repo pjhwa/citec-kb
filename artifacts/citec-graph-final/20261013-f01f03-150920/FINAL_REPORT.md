@@ -1,17 +1,34 @@
-# 2026-10-13 최종 핸드오프 — F01~F03 처리 결과
+# 2026-10-13 최종 핸드오프 — F01~F04 처리 결과
 
-**범위: F01/F02/F03(확정된 세 결함)만.** F04~F10은 이번 실행에서 다루지 않았다 — 핸드오프 §3.1의 실행 순서와, 세 결함부터 끝낸 뒤 체크포인트하라는 지시를 따랐다. 아래는 결론과 상태표만 담고, 상세 재현/원시값은 `responses/`, `requirement-results.json`, `environment.json`에 있다.
+**범위: F01/F02/F03(확정된 세 결함) + F04(동기화 상태·freshness, 사용자 지시로 이어서 진행).** F05~F10은 이번 실행에서 다루지 않았다. 아래는 결론과 상태표만 담고, 상세 재현/원시값은 `responses/`, `requirement-results.json`, `environment.json`에 있다.
 
 ## 결론
 
-세 확정 결함(F01/F02/F03) 모두 수정·테스트·실제 dev MCP/CLI/REST로 재검증 완료. 이 과정에서 **F04(R02) 범위의 새 결함**(`GraphRun.started_at` 동시 삽입 시 동점 — `latest_run` 선택이 비결정적)을 하나 더 발견해 기록해뒀다(이번엔 수정하지 않음).
+세 확정 결함(F01/F02/F03) 모두 수정·테스트·실제 dev MCP/CLI/REST로 재검증 완료. 그 과정에서 발견한 F04(R02) 범위의 버그(`GraphRun.started_at` 동시 삽입 시 동점)를 사용자 지시로 즉시 고쳤고, 이어서 F04의 나머지 범위(heartbeat/lease 기반 생존 판정, 실제 하드킬·동시실행·fencing 테스트, store identity 분리, MCP freshness/상태 조회 경로)까지 진행했다.
 
 | 과제 | 상태 | 커밋 |
 |---|---|---|
 | F01 — 422를 연결 장애로 오분류 | ✅ 수정+검증 | `cf1882f` |
 | F02 — 고립 bucket 자신의 사유 미전달 | ✅ 수정+검증 | `5d3ebcc` |
 | F03 — 수동 metadata가 매 seed마다 지워짐 | ✅ 수정+검증 | `a134e78` |
-| F04~F10 | NOT_RUN(이번 범위 밖) | — |
+| F04 — 동기화 상태/freshness | ✅ 대부분 수정+검증(아래 "F04 상세" 참고) | `05e23b1`~`2ba187c` |
+| F05~F10 | NOT_RUN(이번 범위 밖) | — |
+
+## F04 상세 — 동기화 상태와 읽는 데이터의 시점 구분
+
+핸드오프 §2.4의 9개 요구 중 실제로 새로 구현·검증한 것:
+
+1. **store identity vs write generation**: `Neo4jClient.read_store_identity()`(`CALL db.info()`)를 `neo4j_generation`(우리가 쓴 마커)과 분리해 노출(`neo4j_store_identity`).
+2. **최신 run vs 마지막 완료된 full run**: 기존에 이미 분리돼 있던 `latest_run`/`latest_full_completed_run`을 재검증.
+3. **heartbeat/lease로 중단된 running 판별**: `graph_runs.lock_holder_pid`/`heartbeat_at` 추가, advisory lock을 쥔 pid가 지금도 `pg_locks`에 실제로 락을 쥐고 있는지 실시간 조회(락 획득 시도 없이) → `liveness.state`(running/stalled/likely_dead/unknown) + 근거(lock_currently_held, seconds_since_heartbeat) 노출.
+4. **부분 실행·하드킬·중복 writer가 전체 fresh로 안 보이게**: sync_cli가 락을 새로 쥐는 순간 이전 'running' 행을 전부 'abandoned'로 표시. **실제 OS 서브프로세스**를 SIGKILL/동시 실행해서 증명(시뮬레이션 아님).
+5. **lock 획득~종료 기록 예외 경계, fencing**: `_heartbeat()`가 lock_conn(락을 쥔 커넥션)으로 직접 쓰고 커밋 — 그 커넥션이 죽으면 예외가 나서 run이 중단된다. `pg_terminate_backend`로 lock_conn만 강제 종료하는 실제 테스트로 증명.
+6. **mixed/in-progress 읽기 정책**: `read_state`(consistent/mixed/unknown) 추가.
+7. **추출 상태 vs 전체 배치 상태 구분(MAX(synced_at)만으로 판정 금지)**: `/v1/graph/explore` 응답에 `freshness`(마지막 완료된 full 배치의 run_id/generation/완료시각/상태, 진행 중 여부) 추가 — `as_of`와 별개.
+8. **MCP에 run/revision/freshness + 상태 상세 조회**: `kb_graph_explore`에 freshness 한 줄 추가, 신규 MCP 도구 `kb_graph_status`로 REST `GET /v1/graph/status`와 동일한 근거를 MCP에서도 조회 가능.
+9. **API/MCP build SHA·contract version·extractor/lexicon revision**: `contract_version` 상수, `api_build_sha`(배포 파이프라인 연동 없어 정직하게 "unknown"), extractor_version/lexicon_version은 기존대로 run별 기록.
+
+**미완료로 남긴 것**: `api_build_sha`를 실제로 채우려면 `scripts/git_pull_deploy.sh` 변경이 필요한데, 사용자 승인 없이 배포 스크립트를 건드리지 않는다는 범위 제약상 손대지 않았다. lock 획득~종료 사이 모든 예외 경계에 대한 체계적인 줄 단위 감사는 하지 않았다(다만 핸드오프가 명시한 세 가지 구체적 실패 모드 — 하드킬/동시 writer/커넥션 유실 — 는 각각 실제 테스트로 증명됨).
 
 ## F01 — HTTP 오류 분류
 

@@ -1,8 +1,10 @@
 {
-  "requirement-results.json": "201f08069cb1d13746dc1d70abe39fadb04157ac930f38397c9037e816b931d2",
+  "requirement-results.json": "d9c57d8aca82310b1cfb5aa5799ce4c0d10fdca6bfa3c4b113da909950ed969f",
   "environment.json": "f78af310556140d768900ec1d24de7c212192ce4ef44abd922b081ab733ea17a",
-  "FINAL_REPORT.md": "f10139c941b59d1e72575abd1c8c824330fce47ad4be39d38f2ab0beef658b75",
+  "FINAL_REPORT.md": "3dce0749eede3c68412e7d581e725d81112cd01ab507c1299b83fcfae90852b1",
+  "responses/f04_kb_graph_status_live.json": "9cadfccd311f653af833dbce3c26112d1c9960905a68befa58adaca2d075c7ef",
   "responses/f03_isolated_cli_api_run.json": "a670e79540e81f412d4d263d2e0a1b767476a4126775354dabbc5d3429a66da3",
+  "responses/f04_mcp_freshness_live.json": "e396f982e32b4e8d7daa233c095e87635868f471dac33624452db98b8b4b2d23",
   "responses/f02_after_fix.json": "8d31eaddfa6dc21ba09a93334fc81eb4b7f6d426ee5a63f0ec1d5849dcc04ece",
   "responses/f01_after_fix.json": "5d943f798eea05978bce0d7a443c136c226d1022dbcba407d3a46bd59188c419",
   "responses/f04_bonus_seq_fix.json": "c27ca68a8e15307bc4b1b22e81dee980499684eb20e397f56936a9e22bdc008f"
