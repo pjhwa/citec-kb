@@ -183,16 +183,25 @@ def test_execute_deletion_batch_failure_is_retry_safe(tmp_path, monkeypatch):
     """배치 중간 실패 시: 이미 처리된 배치는 커밋된 채 남고, 재시도하면
     idempotent하게 나머지만 지워져야 한다.
 
-    _audit()의 _GHOST_QUERY는 d.id로 ORDER BY 하므로(Task 1), 배치는 생성
-    순서가 아니라 id 문자열의 사전순으로 나뉜다. 따라서 이 ids 리스트도
-    사전순으로 미리 정렬해, "앞의 2개가 첫 배치"라는 테스트의 전제가 실제
-    배치 순서와 항상 일치하도록 한다(그렇지 않으면 1/6 확률로만 통과하는
-    flaky 테스트가 된다)."""
+    이 테스트의 목적은 _audit()의 판정 정확성이 아니라 _execute_deletion의
+    배치/재시도 로직이므로, _audit()을 이 4개 id로만 고정(monkeypatch)해
+    배치 경계를 결정짓는다 — 그러지 않으면 공유 스크래치 Neo4j에 다른
+    테스트 파일이 남긴 고립 노드가 섞여 있을 때마다 배치 구성이 달라져
+    flaky해진다(실측 확인됨: 오염 노드 1개만 있어도 실패)."""
     mod = _load_ghost_audit_module()
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(mod, "_DELETE_BATCH_SIZE", 2)
     driver = _driver()
     ids = sorted(f"batch-{uuid.uuid4()}" for _ in range(4))
+    monkeypatch.setattr(
+        mod, "_audit",
+        lambda _driver: {
+            "total_null_source_type": len(ids),
+            "isolated_count": len(ids),
+            "would_delete_count": len(ids),
+            "would_delete": [{"id": i, "external_id": None, "title": None} for i in ids],
+        },
+    )
     try:
         with driver.session() as session:
             for i in ids:
