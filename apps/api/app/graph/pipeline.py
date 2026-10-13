@@ -200,6 +200,11 @@ def sync_document(
                 "space_key": space_key,
                 "priority_tier": compute_priority_tier(doc.source_type, space_key=space_key),
                 "metadata": metadata,
+                # G04 잔여 — exclude_subtree_ids로의 2hop bridge 차단은 Neo4j
+                # 쿼리 안에서 중간 노드를 걸러야 하는데, ancestor_ids는 PG
+                # 메타데이터뿐이라 Cypher가 못 본다. Document 노드 자체에
+                # 올려서 explore()가 직접 볼 수 있게 한다(_DOCUMENT_SET_CLAUSE).
+                "ancestor_ids": [str(a) for a in (metadata.get("ancestor_ids") or [])],
             }
             issue_frame_dict = (
                 {"components": list(issue_frame.components or [])} if issue_frame else None

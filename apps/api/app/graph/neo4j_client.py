@@ -115,7 +115,8 @@ _DOCUMENT_SET_CLAUSE = """
         d.source_uri = $source_uri,
         d.environment = $environment,
         d.space_key = $space_key,
-        d.priority_tier = $priority_tier
+        d.priority_tier = $priority_tier,
+        d.ancestor_ids = $ancestor_ids
 """
 
 
@@ -171,18 +172,21 @@ class Neo4jClient:
     def explore(
         self, anchor_label: str, anchor_key: str, anchor_value: str, *, max_hops: int = 2,
         exclude_external_ids: set[str] | None = None, exclude_source_types: set[str] | None = None,
+        exclude_subtree_ids: set[str] | None = None,
     ) -> dict:
         """읽기 전용 2-hop 순회. anchor_label/anchor_key는 이 모듈의 고정 4-레이블 enum뿐이라
         f-string 삽입이 안전하다(merge_* 메서드와 동일한 전제).
         max_hops는 현재 항상 2로 고정이며 파라미터 값은 무시된다(향후 가변 깊이 지원을 위한 자리 — 1단계는 쓰지 않음).
 
-        exclude_external_ids/exclude_source_types(G04 "중간 경로 bridge 차단"):
-        2hop 중간 노드(p)가 이 조건에 걸리면 그 경로 전체를 평가에서 뺀다 —
-        그 경로로만 도달 가능한 노드가 "제외된 페이지를 거쳐서만 보인다"는 걸
-        숨긴 채 결과에 남는 사고를 막는다(post-filter로는 못 막음 — 이미 한
-        후보로 수집된 뒤에는 "어느 경로로 왔는지"가 없어져서). exclude_subtree_ids
-        (조상 트리)는 범위 밖 — ancestor_ids는 Postgres 메타데이터라 Neo4j
-        노드 속성에 없다(docs/features/graph-evidence.md G04 잔여).
+        exclude_external_ids/exclude_source_types/exclude_subtree_ids(G04
+        "중간 경로 bridge 차단"): 2hop 중간 노드(p)가 이 조건에 걸리면 그
+        경로 전체를 평가에서 뺀다 — 그 경로로만 도달 가능한 노드가 "제외된
+        페이지를 거쳐서만 보인다"는 걸 숨긴 채 결과에 남는 사고를 막는다
+        (post-filter로는 못 막음 — 이미 한 후보로 수집된 뒤에는 "어느 경로로
+        왔는지"가 없어져서). exclude_subtree_ids는 Document.ancestor_ids
+        (merge_document가 PG metadata에서 복제해 Neo4j 노드에도 올려둔 배열,
+        G04 잔여 해소)로 판정한다 — p가 제외 대상 조상 트리 밑이면 그 경로를
+        뺀다.
 
         G08(2차 리뷰): 과거엔 `collect(DISTINCT {...})`가 같은 노드로 가는 서로
         다른 경로를 전부 별도 항목으로 남겨(NetApp처럼 1hop 문서가 7천 건대면
@@ -212,6 +216,8 @@ class Neo4jClient:
             WHERE n2 <> a AND NOT coalesce(p.is_hub, false)
               AND NOT coalesce(p.external_id, '') IN $exclude_external_ids
               AND NOT coalesce(p.source_type, '') IN $exclude_source_types
+              AND NOT coalesce(p.external_id, '') IN $exclude_subtree_ids
+              AND NOT any(x IN coalesce(p.ancestor_ids, []) WHERE x IN $exclude_subtree_ids)
             WITH a, n2, p, r1b, r2
             ORDER BY
                 coalesce($rel_priority[type(r1b)], 99) + coalesce($rel_priority[type(r2)], 99),
@@ -233,6 +239,7 @@ class Neo4jClient:
                 query, value=anchor_value, rel_priority=_REL_TYPE_PRIORITY,
                 exclude_external_ids=sorted(exclude_external_ids or set()),
                 exclude_source_types=sorted(exclude_source_types or set()),
+                exclude_subtree_ids=sorted(exclude_subtree_ids or set()),
             ).single()
         if record is None or record["anchor"] is None:
             return {
@@ -262,6 +269,7 @@ class Neo4jClient:
                 documents.append({
                     "id": node["id"], "title": node.get("title"), "source_type": node.get("source_type"),
                     "external_id": node.get("external_id"),
+                    "ancestor_ids": list(node.get("ancestor_ids") or []),
                     "relation": entry["relation"], "hops": entry["hops"], "route": path,
                 })
             elif "Component" in labels:
@@ -426,6 +434,10 @@ def _merge_edges(
 
 
 def _merge_document_tx(tx, doc: dict, edges: list[Edge], extractor_version: str, generation: str) -> None:
+    # ancestor_ids는 호출자(테스트 등)가 안 넣어도 되게 기본값을 채운다 —
+    # pipeline.sync_document는 항상 채워서 넘기지만, merge_document를 직접
+    # 쓰는 기존 호출자(테스트)까지 전부 고치지 않아도 되게 하위 호환 유지.
+    doc = {**doc, "ancestor_ids": doc.get("ancestor_ids") or []}
     tx.run(f"MERGE (d:Document {{id: $id}}){_DOCUMENT_SET_CLAUSE}", **doc)
     _replace_owned_edges_tx(
         tx, "Document", "id", doc["id"],

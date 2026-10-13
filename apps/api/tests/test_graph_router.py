@@ -411,6 +411,50 @@ def test_explore_bridge_block_hides_path_through_excluded_intermediate_page():
     assert comp_name not in comps_excl
 
 
+def test_explore_bridge_block_hides_path_through_excluded_subtree():
+    """G04 잔여 — exclude_subtree_ids로의 중간 경로 bridge 차단. merge_document
+    가 Document.ancestor_ids를 Neo4j 노드에 직접 써두므로(G04 잔여 해소),
+    PG 메타데이터 없이도 Cypher 안에서 조상 트리로 중간 노드를 거를 수 있다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"SubtreeBridgeComp-{uuid.uuid4()}"
+    excluded_root_id = str(uuid.uuid4())
+    bridge_doc_id = f"test-subtree-bridge-{uuid.uuid4()}"
+    anchor_bucket_id = f"test-subtree-anchor-fb-{uuid.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": bridge_doc_id, "source_type": "confluence_map", "external_id": str(uuid.uuid4()),
+         "title": "bridge", "source_uri": None, "environment": None, "space_key": None,
+         "priority_tier": 1, "ancestor_ids": [excluded_root_id]},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_failure_bucket(
+        {"id": anchor_bucket_id, "bucket_name": "b", "fb_domain": None, "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+              target_value=bridge_doc_id, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp_all = client.post("/v1/graph/explore", json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id})
+    assert resp_all.status_code == 200
+    assert comp_name in {c["canonical_name"] for c in resp_all.json()["components"]}
+
+    resp_excl = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id,
+              "exclude_subtree_ids": [excluded_root_id]},
+    )
+    assert resp_excl.status_code == 200
+    assert comp_name not in {c["canonical_name"] for c in resp_excl.json()["components"]}
+
+
 def test_explore_neo4j_failure_returns_backend_error_status_not_503(monkeypatch):
     """G08 — Neo4j 조회 실패는 503로 요청 전체를 죽이는 대신, 기계가 구분
     가능한 status="backend_error"로 200 응답을 돌려줘야 한다(MCP가 body의

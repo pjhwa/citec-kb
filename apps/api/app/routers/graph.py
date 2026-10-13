@@ -107,19 +107,21 @@ def _resolve_document_anchor_ids(anchor_value: str) -> tuple[str, list[str]]:
 _ENRICHMENT_COLUMNS = (
     Document.id, Document.evidence_grade, Document.status, Document.source_type,
     Document.external_id,
-    Document.metadata_["ancestor_ids"],
     Document.metadata_["space_key"].astext,
 )
 
 
 def _fetch_document_enrichment(document_ids: list[str]) -> dict[str, dict]:
-    """G08 2차 리뷰 — grade/상태(archived 포함)/계층(ancestor_ids)/동일 페이지
-    판별에 필요한 source_type·external_id·space_key를 PG 왕복 한 번으로 전부
-    가져온다(과거엔 _fetch_evidence_grades와 _fetch_ancestor_ids 두 번 왕복).
+    """G08 2차 리뷰 — grade/상태(archived 포함)/동일 페이지 판별에 필요한
+    source_type·external_id·space_key를 PG 왕복 한 번으로 전부 가져온다
+    (과거엔 _fetch_evidence_grades와 _fetch_ancestor_ids 두 번 왕복).
     space_key가 없으면 resolve_representative의 source tier 계산이 confluence_map
     LOOKIN/TechRepo를 tier 3로 잘못 떨어뜨려, G01 resolver와 다른 대표를 고를
-    수 있다 — 반드시 같이 가져온다. metadata_ 전체(JSONB)가 아니라 필요한 두
-    키만 서버 쪽에서 뽑아 전송량을 줄인다(NetApp류 수천 건 후보에서 중요)."""
+    수 있다 — 반드시 같이 가져온다. ancestor_ids는 더 이상 여기서 가져오지
+    않는다(G04 잔여 해소) — explore()가 돌려주는 Document.ancestor_ids
+    (merge_document가 Neo4j 노드에 직접 써둔 값)를 그대로 쓴다. 이 함수는
+    NetApp류 수천 건 후보에도 호출되므로, metadata_ 전체(JSONB)가 아니라
+    필요한 한 키만 서버 쪽에서 뽑아 전송량을 줄인다."""
     if not document_ids:
         return {}
     unique_ids = sorted(set(document_ids))
@@ -128,13 +130,28 @@ def _fetch_document_enrichment(document_ids: list[str]) -> dict[str, dict]:
             select(*_ENRICHMENT_COLUMNS).where(Document.id.in_(unique_ids))
         ).all()
     out: dict[str, dict] = {}
-    for doc_id, grade, status, source_type, external_id, ancestor_ids, space_key in rows:
+    for doc_id, grade, status, source_type, external_id, space_key in rows:
         out[doc_id] = {
             "evidence_grade": grade, "status": status, "source_type": source_type,
             "external_id": external_id, "space_key": space_key,
-            "ancestor_ids": list(ancestor_ids or []),
         }
     return out
+
+
+def _fetch_ancestor_ids(document_ids: list[str]) -> dict[str, list[str]]:
+    """document 앵커 자신의 ancestor_ids만 필요한 소규모 호출용(보통 같은
+    external_id의 수집본 몇 건) — anchor 자체가 exclude_subtree_ids에 걸리는지
+    판정하려면 explore()를 돌리기도 전에 PG에서 직접 봐야 한다. 큰 후보
+    목록(수천 건)에는 이 컬럼을 안 실어 보내는 _fetch_document_enrichment와
+    역할을 분리한다."""
+    if not document_ids:
+        return {}
+    unique_ids = sorted(set(document_ids))
+    with session_scope() as session:
+        rows = session.execute(
+            select(Document.id, Document.metadata_["ancestor_ids"]).where(Document.id.in_(unique_ids))
+        ).all()
+    return {doc_id: list(ancestor_ids or []) for doc_id, ancestor_ids in rows}
 
 
 @router.post("/graph/explore")
@@ -205,14 +222,15 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
             # "filtered"로 즉시 답한다(found와는 다른 신호: 그래프엔 있지만
             # 이 호출에서는 보여주지 않기로 한 것).
             anchor_enrichment = _fetch_document_enrichment(document_ids)
+            anchor_ancestor_ids = _fetch_ancestor_ids(document_ids)
             if any(
                 is_document_excluded(
                     e, exclude_page_ids=exclude_external_ids,
                     exclude_subtree_ids=exclude_subtree_ids,
                     exclude_source_types=exclude_source_types,
-                    ancestors=set(e.get("ancestor_ids") or []),
+                    ancestors=set(anchor_ancestor_ids.get(doc_id) or []),
                 )
-                for e in anchor_enrichment.values()
+                for doc_id, e in anchor_enrichment.items()
             ):
                 return shape_explore_result(
                     {"found": True, "documents": [], "components": [], "failure_buckets": [],
@@ -241,11 +259,14 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
                     merged["found"] = True
                     merged["excluded_hub_components"].append(value)
                     continue
-            # G04 — 중간 경로 bridge 차단: exclude_subtree_ids는 Neo4j 노드
-            # 속성이 아니라 PG 메타데이터라 여기서는 못 넘긴다(잔여, graph-evidence.md).
+            # G04 — 중간 경로 bridge 차단(exclude_page_ids/exclude_source_types/
+            # exclude_subtree_ids 전부 Cypher 안에서 거름 — Document.ancestor_ids
+            # 를 merge_document가 이제 Neo4j 노드에도 올려두므로 subtree도
+            # 가능해졌다, G04 잔여 해소).
             raw = client.explore(
                 label, key, value, max_hops=2,
                 exclude_external_ids=exclude_external_ids, exclude_source_types=exclude_source_types,
+                exclude_subtree_ids=exclude_subtree_ids,
             )
             if not raw.get("found"):
                 continue
@@ -285,18 +306,21 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
         fan_out_ids = {a[2] for a in anchors}
         merged["documents"] = [d for d in merged["documents"] if d["id"] not in fan_out_ids]
 
-    # PG 왕복 1회로 통합 — grade/상태/계층(ancestor_ids)/동일 페이지 판별에
-    # 쓰는 source_type·external_id를 전부 가져온다(G08). G04 필터와 collapse가
-    # 둘 다 이 하나의 결과를 쓴다.
+    # PG 왕복 1회로 통합 — grade/상태/동일 페이지 판별에 쓰는 source_type·
+    # external_id를 전부 가져온다(G08). G04 필터와 collapse가 둘 다 이 하나의
+    # 결과를 쓴다. ancestor_ids는 더 이상 여기서 PG로 가져오지 않는다 — Neo4j
+    # 가 explore() 결과에 Document.ancestor_ids를 이미 포함해 돌려주므로
+    # (merge_document가 써둠, G04 잔여 해소), 후보가 수천 건이어도 이 PG
+    # 왕복은 ancestor_ids 컬럼을 안 실어 전송량이 그만큼 준다.
     enrichment = _fetch_document_enrichment([d["id"] for d in merged["documents"]])
 
     # G04 — 제외 필터를 dedup/정렬/cap 이전에 적용
     if body.exclude_page_ids or body.exclude_subtree_ids or body.exclude_source_types:
-        ancestor_ids_by_doc_id = {doc_id: e["ancestor_ids"] for doc_id, e in enrichment.items()}
+        ancestor_ids_by_doc_id = {d["id"]: d.get("ancestor_ids") or [] for d in merged["documents"]}
         merged["documents"] = filter_excluded_documents(
             merged["documents"],
             exclude_page_ids=set(body.exclude_page_ids),
-            exclude_subtree_ids=set(body.exclude_subtree_ids),
+            exclude_subtree_ids=exclude_subtree_ids,
             exclude_source_types=set(body.exclude_source_types),
             ancestor_ids_by_doc_id=ancestor_ids_by_doc_id,
         )
