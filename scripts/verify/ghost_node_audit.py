@@ -37,6 +37,10 @@ RETURN d.id AS id, d.external_id AS external_id, d.title AS title
 ORDER BY d.id
 """
 
+# labels() 가드 때문에 total_null_source_type은 "source_type이 NULL인 모든
+# Document"가 아니라 "label이 Document 하나뿐이면서 source_type이 NULL인
+# Document"다 — 멀티 라벨 노드는 삭제 후보에서도, 이 총계에서도 빠진다
+# (의도적 — 삭제 후보 집합과 항상 숫자가 일치하게 유지하기 위함).
 _COUNT_QUERY = """
 MATCH (d:Document)
 WHERE d.source_type IS NULL AND labels(d) = ['Document']

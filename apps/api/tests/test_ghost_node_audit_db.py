@@ -62,7 +62,7 @@ def _driver():
 
     return GraphDatabase.driver(
         _NEO4J_URI,
-        auth=(os.environ.get("GRAPH_NEO4J_TEST_USER", "neo4j"), os.environ["NEO4J_PASSWORD"]),
+        auth=(os.environ.get("NEO4J_USERNAME", "neo4j"), os.environ["NEO4J_PASSWORD"]),
     )
 
 
