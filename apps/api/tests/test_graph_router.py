@@ -864,3 +864,185 @@ def test_explore_component_anchor_has_no_evidence_reasons_field_pollution():
     resp = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
     assert resp.status_code == 200
     assert "evidence_reasons" not in resp.json()["anchor"]
+
+
+def test_graph_status_liveness_running_when_lock_actually_held():
+    """F04(2026-10-13 최종 핸드오프) §3/4 — status='running'이고 그
+    lock_holder_pid가 지금도 실제로 advisory lock을 쥐고 있으면
+    liveness.state='running', lock_currently_held=True."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope, get_engine
+    from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+    from datetime import datetime, timezone
+
+    run_id = str(uuid.uuid4())
+    lock_conn = get_engine().connect()
+    try:
+        got = lock_conn.exec_driver_sql(
+            "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+        ).scalar()
+        assert got is True
+        pid = lock_conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+
+        with session_scope() as session:
+            session.add(GraphRun(
+                run_id=run_id, extractor_version="v", generation="g", scope="full",
+                status="running", lock_holder_pid=pid, heartbeat_at=datetime.now(timezone.utc),
+            ))
+
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["latest_run"]["run_id"] == run_id
+        liveness = body["latest_run"]["liveness"]
+        assert liveness["state"] == "running"
+        assert liveness["lock_currently_held"] is True
+        assert liveness["lock_holder_pid"] == pid
+        assert body["read_state"] == "mixed"  # full run이 실제로 진행 중
+    finally:
+        lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+        lock_conn.close()
+
+
+def test_graph_status_liveness_likely_dead_when_lock_not_held():
+    """status='running'인데 그 pid가 지금 락을 안 쥐고 있으면(하드킬 등)
+    liveness.state='likely_dead' — 전체 fresh로 표시되면 안 된다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+    from datetime import datetime, timezone
+
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="full",
+            status="running", lock_holder_pid=999999999, heartbeat_at=datetime.now(timezone.utc),
+        ))
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.status_code == 200
+    liveness = resp.json()["latest_run"]["liveness"]
+    assert liveness["state"] == "likely_dead"
+    assert liveness["lock_currently_held"] is False
+
+
+def test_graph_status_liveness_stalled_when_heartbeat_too_old():
+    """락은 쥐고 있지만 heartbeat가 임계값(30분)보다 오래됐으면
+    'stalled' — '죽은 것'과는 다른 상태로 구분해야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope, get_engine
+    from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+    from datetime import datetime, timezone, timedelta
+
+    run_id = str(uuid.uuid4())
+    lock_conn = get_engine().connect()
+    try:
+        got = lock_conn.exec_driver_sql(
+            "SELECT pg_try_advisory_lock(%s)", (_ADVISORY_LOCK_KEY,)
+        ).scalar()
+        assert got is True
+        pid = lock_conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+
+        with session_scope() as session:
+            session.add(GraphRun(
+                run_id=run_id, extractor_version="v", generation="g", scope="full",
+                status="running", lock_holder_pid=pid,
+                heartbeat_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            ))
+
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        liveness = resp.json()["latest_run"]["liveness"]
+        assert liveness["state"] == "stalled"
+        assert liveness["lock_currently_held"] is True
+        assert liveness["seconds_since_heartbeat"] > 1800
+    finally:
+        lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
+        lock_conn.close()
+
+
+def test_graph_status_liveness_unknown_when_no_lock_holder_pid_recorded():
+    """이 컬럼이 생기기 전에 만들어진(또는 알 수 없는) run은 liveness가
+    'unknown'이어야 한다 — 모르는 걸 '살아있다'거나 '죽었다'로 지어내지
+    않는다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="full", status="running",
+        ))
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    liveness = resp.json()["latest_run"]["liveness"]
+    assert liveness["state"] == "unknown"
+    assert liveness["lock_holder_pid"] is None
+
+
+def test_graph_status_read_state_consistent_when_full_run_cleanly_completed():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="full", status="completed",
+        ))
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.json()["read_state"] == "consistent"
+
+
+def test_graph_status_read_state_mixed_when_last_full_run_completed_with_warnings():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="full",
+            status="completed_warn", documents_state_write_failed=3,
+        ))
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.json()["read_state"] == "mixed"
+
+
+def test_graph_status_read_state_unknown_when_no_full_run_ever_completed():
+    """read_state="unknown"의 전제는 "완료된 scope=full 행이 테이블에 하나도
+    없음"이다 — 이 테스트 파일의 다른 테스트들이 공유 스크래치 DB에 이미
+    scope=full/completed 행을 남겨두므로(정리 안 함), 이 테스트만큼은 먼저
+    graph_runs를 비우고 시작해야 전제를 실제로 만들 수 있다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+    from sqlalchemy import delete
+
+    run_id = str(uuid.uuid4())
+    with session_scope() as session:
+        session.execute(delete(GraphRun))
+        session.add(GraphRun(
+            run_id=run_id, extractor_version="v", generation="g", scope="partial", status="completed",
+        ))
+
+    client = TestClient(app)
+    resp = client.get("/v1/graph/status")
+    assert resp.json()["read_state"] == "unknown"

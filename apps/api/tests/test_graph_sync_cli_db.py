@@ -93,3 +93,49 @@ def test_sync_cli_main_records_partial_scope_with_source_ids(capsys):
         row = session.get(GraphRun, run_id)
         assert row.scope == "partial"
         assert row.lexicon_version is not None
+
+
+def test_sync_cli_main_records_lock_holder_pid_and_heartbeat():
+    """F04(2026-10-13 최종 핸드오프) §3/4 — 새 run 행은 lock_holder_pid와
+    초기 heartbeat_at을 가져야 한다(둘 다 나중에 '이 run이 살아있는지'를
+    판정하는 근거가 된다)."""
+    from sqlalchemy import select
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+    from app.graph.sync_cli import main
+
+    rc = main(["--source-ids", f"nonexistent-{uuid.uuid4()}", "--skip-hub-recompute"])
+    assert rc == 1  # 존재하지 않는 source-id라 documents.failed=1 — 이 테스트가 보는 건 아래 필드들
+
+    captured_run_id = None
+    with session_scope() as session:
+        row = session.scalar(select(GraphRun).order_by(GraphRun.seq.desc()))
+        assert row.lock_holder_pid is not None
+        assert row.heartbeat_at is not None
+        captured_run_id = row.run_id
+    assert captured_run_id is not None
+
+
+def test_sync_cli_marks_prior_running_rows_abandoned_on_next_run():
+    """F04 §3/4 — 하드킬 등으로 'running'에 영원히 남은 이전 행은, 락을
+    새로 쥔 다음 sync_cli 실행이 시작되는 순간 'abandoned'로 바뀌어야
+    한다(그 시점에 락을 쥔 프로세스는 자신뿐이므로, 아직 running인 다른
+    행은 전부 죽은 게 확실하다)."""
+    import uuid as uuid_module
+    from sqlalchemy import select
+    from app.db.models import GraphRun
+    from app.db.session import session_scope
+    from app.graph.sync_cli import main
+
+    stale_run_id = str(uuid_module.uuid4())
+    with session_scope() as session:
+        session.add(GraphRun(
+            run_id=stale_run_id, extractor_version="v", generation="stale-gen",
+            scope="full", status="running",
+        ))
+
+    main(["--source-ids", f"nonexistent-{uuid.uuid4()}", "--skip-hub-recompute"])
+
+    with session_scope() as session:
+        stale_row = session.get(GraphRun, stale_run_id)
+        assert stale_row.status == "abandoned"

@@ -606,6 +606,17 @@ class GraphRun(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # F04(2026-10-13 최종 핸드오프) §3/4 — advisory lock을 쥔 커넥션의 실제
+    # pid를 남겨서, 그 pid가 지금도 락을 쥐고 있는지 pg_locks로 실시간
+    # 확인할 수 있게 한다(획득 시도 없이 조회만 — GET 핸들러가 락을
+    # 건드리면 막 시작하는 sync_cli와 경합할 수 있다). status='running'인데
+    # 이 pid가 더 이상 락을 안 쥐고 있으면 "죽은 게 확실"하다(kill -9여도
+    # Postgres가 커넥션 종료 시 세션 수준 advisory lock을 자동 해제하므로).
+    lock_holder_pid: Mapped[Optional[int]] = mapped_column(Integer)
+    # 문서/버킷 루프 안에서 주기적으로(약 60초 간격) 갱신 — status='running'
+    # 인데 heartbeat_at이 한참 전이면 "락은 아직 쥐고 있지만 멈춘 것 같다"는
+    # 신호(죽은 것과는 다른 상태 — fencing 쪽에서 구분해 처리한다).
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     extractor_version: Mapped[str] = mapped_column(String(32), nullable=False)
     generation: Mapped[str] = mapped_column(String(64), nullable=False)
     lexicon_version: Mapped[Optional[str]] = mapped_column(String(64))

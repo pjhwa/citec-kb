@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.db.models import Document, GraphRun
 from app.db.session import session_scope
@@ -441,6 +442,71 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     return shaped
 
 
+_STALE_HEARTBEAT_SECONDS = 1800  # 30분 — sync_cli가 문서 루프 안에서 약
+# 60초마다 heartbeat를 찍으므로, 정상 실행이라면 이 값을 절대 넘지 않는다.
+
+
+def _advisory_lock_key_parts(key: int) -> tuple[int, int]:
+    """F04(2026-10-13 최종 핸드오프) §3/4 — pg_locks.classid/objid는 signed
+    int4로, bigint 키의 상위/하위 32비트를 각각 담는다(운영 Postgres에
+    실제로 락을 쥔 채 pg_locks를 조회해 실측 확인됨). 이 값으로 "락 획득을
+    시도하지 않고" 지금 그 pid가 여전히 락을 쥐고 있는지만 읽는다 — 시도
+    자체를 하면 막 시작하는 sync_cli와 경합할 수 있어서다."""
+    high = (key >> 32) & 0xFFFFFFFF
+    low = key & 0xFFFFFFFF
+
+    def _to_signed32(v: int) -> int:
+        return v - 0x100000000 if v >= 0x80000000 else v
+
+    return _to_signed32(high), _to_signed32(low)
+
+
+def _is_lock_currently_held(session, pid: int) -> bool:
+    from app.graph.sync_cli import _ADVISORY_LOCK_KEY
+
+    classid, objid = _advisory_lock_key_parts(_ADVISORY_LOCK_KEY)
+    held = session.execute(
+        text(
+            "SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
+            "AND classid = :classid AND objid = :objid AND objsubid = 1 "
+            "AND granted AND pid = :pid"
+        ),
+        {"classid": classid, "objid": objid, "pid": pid},
+    ).first()
+    return held is not None
+
+
+def _run_liveness(session, row: GraphRun) -> dict[str, Any] | None:
+    """F04 §3/4/6 — status='running'인 행에만 적용된다. "판별 근거와
+    unknown도 노출하라"는 요구대로, 최종 결론(state)뿐 아니라 그 근거
+    (lock_holder_pid/lock_currently_held/heartbeat_at)도 그대로 돌려준다."""
+    if row.status != "running":
+        return None
+    if row.lock_holder_pid is None:
+        return {
+            "state": "unknown", "lock_holder_pid": None, "lock_currently_held": None,
+            "heartbeat_at": None, "seconds_since_heartbeat": None,
+        }
+    lock_held = _is_lock_currently_held(session, row.lock_holder_pid)
+    seconds_since_heartbeat = (
+        (datetime.now(timezone.utc) - row.heartbeat_at).total_seconds()
+        if row.heartbeat_at else None
+    )
+    if not lock_held:
+        state = "likely_dead"
+    elif seconds_since_heartbeat is None:
+        state = "unknown"
+    elif seconds_since_heartbeat > _STALE_HEARTBEAT_SECONDS:
+        state = "stalled"
+    else:
+        state = "running"
+    return {
+        "state": state, "lock_holder_pid": row.lock_holder_pid, "lock_currently_held": lock_held,
+        "heartbeat_at": row.heartbeat_at.isoformat() if row.heartbeat_at else None,
+        "seconds_since_heartbeat": seconds_since_heartbeat,
+    }
+
+
 @router.get("/graph/status")
 def graph_status() -> dict[str, Any]:
     """G05 §잔여 — graph_sync_state.max(synced_at)만으로는 "마지막 완료 배치가
@@ -451,7 +517,7 @@ def graph_status() -> dict[str, Any]:
     Neo4j로 바뀌었거나 그 뒤로 새 배치가 전혀 안 돈 상태)."""
     as_of = get_latest_synced_at()
     run_info: dict[str, Any] | None = None
-    def _run_dict(row: GraphRun) -> dict[str, Any]:
+    def _run_dict(row: GraphRun, session) -> dict[str, Any]:
         return {
             "run_id": row.run_id,
             "started_at": row.started_at.isoformat() if row.started_at else None,
@@ -469,6 +535,11 @@ def graph_status() -> dict[str, Any]:
             "buckets_failed": row.buckets_failed,
             "unresolved_references": row.unresolved_references,
             "hub_recompute_ok": row.hub_recompute_ok,
+            # F04(2026-10-13 최종 핸드오프) §3/4/6 — status='running'일 때만
+            # 채워진다. "unknown도 노출하라"는 요구대로, 판단 불가능한
+            # 경우(마이그레이션 전 run 등)는 liveness.state="unknown"으로
+            # 명시한다(그냥 생략하지 않음).
+            "liveness": _run_liveness(session, row),
         }
 
     full_completed_info: dict[str, Any] | None = None
@@ -483,7 +554,7 @@ def graph_status() -> dict[str, Any]:
         # 속성에 접근하면 세션이 이미 닫혀 DetachedInstanceError가 난다(실제
         # 테스트로 재현됨).
         if latest_run is not None:
-            run_info = _run_dict(latest_run)
+            run_info = _run_dict(latest_run, session)
         # R02(2026-10-13 2차 핸드오프) §5/6 — latest_run은 --source-ids
         # 디버그 실행이나 하드킬로 영원히 "running"에 남은 행도 그대로
         # 돌려준다. "마지막으로 완료된 전체 그래프 스냅샷"이 필요한 호출자는
@@ -494,7 +565,7 @@ def graph_status() -> dict[str, Any]:
             .order_by(GraphRun.seq.desc())
         )
         if latest_full_completed is not None:
-            full_completed_info = _run_dict(latest_full_completed)
+            full_completed_info = _run_dict(latest_full_completed, session)
 
     try:
         neo4j_generation = _build_client().read_generation_marker()
@@ -503,6 +574,24 @@ def graph_status() -> dict[str, Any]:
         # 조용히 삼키지 않고 로그는 남긴다(advisor 지적 — 원인 추적 가능해야).
         logger.exception("graph status: failed to read neo4j generation marker")
         neo4j_generation = None
+
+    # F04(2026-10-13 최종 핸드오프) §6 — "혼합 결과를 완료 snapshot으로
+    # 표현하지 말라"는 요구. mixed = 지금 full run이 실제로 진행 중이거나
+    # (liveness.state in running/stalled — likely_dead/unknown은 "진행
+    # 중"이라는 확신이 없으므로 mixed로 안 본다), 마지막 완료가
+    # completed_warn(일부 실패 섞인 완료)인 경우. 전부 아니면 unknown —
+    # "완료된 full run 자체가 아직 없다"는 뜻이라 consistent라고 할 수 없다.
+    run_in_progress = (
+        run_info is not None and run_info["scope"] == "full"
+        and run_info.get("liveness") is not None
+        and run_info["liveness"]["state"] in ("running", "stalled")
+    )
+    if run_in_progress or (full_completed_info is not None and full_completed_info["status"] == "completed_warn"):
+        read_state = "mixed"
+    elif full_completed_info is not None and full_completed_info["status"] == "completed":
+        read_state = "consistent"
+    else:
+        read_state = "unknown"
 
     return {
         "as_of": as_of.date().isoformat() if as_of else None,
@@ -514,4 +603,5 @@ def graph_status() -> dict[str, Any]:
             and neo4j_generation is not None
             and full_completed_info["generation"] == neo4j_generation
         ),
+        "read_state": read_state,
     }

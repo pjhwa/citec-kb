@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -30,12 +31,15 @@ logger = logging.getLogger("citec.graph.sync_cli")
 
 _ADVISORY_LOCK_KEY = 0x63697465635F6772  # "citec_gr"(앞 8바이트)의 임의 고정값 — pg_advisory_lock은 bigint 1개만 받는다
 
-def _start_run(*, generation: str, scope: str, lexicon_version: str | None) -> str:
+def _start_run(
+    *, generation: str, scope: str, lexicon_version: str | None, lock_holder_pid: int | None = None,
+) -> str:
     run_id = str(uuid4())
     with session_scope() as session:
         session.add(GraphRun(
             run_id=run_id, extractor_version=EXTRACTOR_VERSION, generation=generation,
             scope=scope, lexicon_version=lexicon_version,
+            lock_holder_pid=lock_holder_pid, heartbeat_at=datetime.now(timezone.utc),
         ))
     return run_id
 
@@ -45,6 +49,19 @@ def _release_lock(lock_conn) -> None:
         lock_conn.exec_driver_sql("SELECT pg_advisory_unlock(%s)", (_ADVISORY_LOCK_KEY,))
     finally:
         lock_conn.close()
+
+
+def _heartbeat(lock_conn, run_id: str) -> None:
+    """F04(2026-10-13 최종 핸드오프) §3/4 — lock_conn(advisory lock을 쥔 그
+    커넥션)으로 직접 쓴다. 이 커넥션이 이미 죽었으면(DB 재시작, 네트워크
+    끊김 등) 여기서 예외가 나는데, 그건 "더 이상 락을 보장할 수 없다"는
+    뜻이므로 조용히 삼키지 않고 그대로 올려서 run을 중단시킨다(fencing —
+    락 없이 계속 Neo4j에 쓰는 사고를 막는다). lock_conn으로 직접 커밋해야
+    다른 세션(GET /v1/graph/status)이 이 값을 바로 볼 수 있다."""
+    lock_conn.exec_driver_sql(
+        "UPDATE graph_runs SET heartbeat_at = now() WHERE run_id = %s", (run_id,)
+    )
+    lock_conn.commit()
 
 
 def _lexicon_version() -> str | None:
@@ -133,6 +150,17 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"error": "lock_held_by_another_run"}), file=sys.stderr)
         return 1
 
+    lock_holder_pid = lock_conn.exec_driver_sql("SELECT pg_backend_pid()").scalar()
+    # F04(2026-10-13 최종 핸드오프) §3/4 — 이 락을 쥔 순간부터는 다른 어떤
+    # 프로세스도 동시에 돌 수 없다는 게 보장되므로, 그 시점에 아직
+    # 'running'으로 남아있는 행은 전부 죽은 게 확실하다(정상 종료라면
+    # _finish_run이 completed/failed/completed_warn으로 바꿔놓고 끝났을
+    # 것 — hard kill만이 'running'을 그대로 남긴다). 이 판정은 락을 쥔
+    # writer(여기)만 내린다 — GET 핸들러는 절대 쓰지 않는다(막 시작하는
+    # 다음 sync_cli와 경합할 수 있어서).
+    lock_conn.exec_driver_sql("UPDATE graph_runs SET status = 'abandoned' WHERE status = 'running'")
+    lock_conn.commit()
+
     client = build_neo4j_client()
     if args.generation:
         generation = args.generation
@@ -149,7 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     args.generation = generation  # 아래에서 그대로 참조되는 모든 곳에 일관되게 반영
 
     scope = "partial" if args.source_ids else "full"
-    run_id = _start_run(generation=args.generation, scope=scope, lexicon_version=_lexicon_version())
+    run_id = _start_run(
+        generation=args.generation, scope=scope, lexicon_version=_lexicon_version(),
+        lock_holder_pid=lock_holder_pid,
+    )
     stats = {"synced": 0, "skipped": 0, "failed": 0}
     fb_stats = {"synced": 0, "failed": 0}
     hub_recompute_ok: bool | None = None
@@ -159,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             external_id_index = build_external_id_index()
             page_identity_index = build_page_identity_index()
+            last_heartbeat = time.monotonic()
             for doc_id in doc_ids:
                 result = sync_document(
                     doc_id, client=client, external_id_index=external_id_index,
@@ -166,6 +198,14 @@ def main(argv: list[str] | None = None) -> int:
                     counters=counters,
                 )
                 stats[result] += 1
+                # F04 — 약 60초 간격으로 throttle. 전체 문서를 다 돌아도
+                # 시간이 몇 초뿐인 디버그/테스트 실행에선 한 번도 안 찍힐
+                # 수 있는데, 그건 괜찮다 — heartbeat 신선도는 status가
+                # 'running'으로 오래 머무를 때만 의미가 있다.
+                if time.monotonic() - last_heartbeat > 60:
+                    _heartbeat(lock_conn, run_id)
+                    last_heartbeat = time.monotonic()
+            _heartbeat(lock_conn, run_id)  # 문서 루프 종료 지점
 
             all_buckets: list[dict] = []
             with session_scope() as session:
@@ -188,6 +228,7 @@ def main(argv: list[str] | None = None) -> int:
                     page_identity_index=page_identity_index, generation=args.generation,
                 )
                 fb_stats[result] += 1
+            _heartbeat(lock_conn, run_id)  # 버킷 루프 종료 지점
 
             evidence_reasons = aggregate_evidence_reasons(
                 all_buckets, external_id_index=external_id_index, page_identity_index=page_identity_index,
