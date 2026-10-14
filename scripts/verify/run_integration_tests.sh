@@ -19,13 +19,22 @@ cd "$(dirname "$0")/../../apps/api"
 REQUIRE="${GRAPH_REQUIRE_INTEGRATION:-0}"
 PYTHON="${GRAPH_VERIFY_PYTHON:-python}"
 
-if [[ "$REQUIRE" == "1" ]] && [[ -z "${GRAPH_TEST_DATABASE_URL:-}" || -z "${GRAPH_NEO4J_TEST_URI:-}" ]]; then
-  echo "✗ GRAPH_REQUIRE_INTEGRATION=1인데 GRAPH_TEST_DATABASE_URL/GRAPH_NEO4J_TEST_URI가 비어 있음 — 설정 누락을 skip이 아니라 실패로 처리" >&2
+# F09(2026-10-14) — test_confluence_sync_db.py/test_mcp_access_log_db.py는
+# GRAPH_TEST_DATABASE_URL이 아니라 CONFLUENCE_SYNC_TEST_DATABASE_URL을 쓴다
+# (다른 DB-통합 테스트 관례, 기존 모듈 그대로). 이 러너에 안 넣으면 "설정
+# 깜빡해서 skip"을 영원히 못 잡는다는 이 스크립트 자체의 존재 이유를
+# 이 두 파일만 비껴가게 된다 — 같은 REQUIRE 게이트에 포함시킨다.
+if [[ "$REQUIRE" == "1" ]] && {
+  [[ -z "${GRAPH_TEST_DATABASE_URL:-}" ]] ||
+  [[ -z "${GRAPH_NEO4J_TEST_URI:-}" ]] ||
+  [[ -z "${CONFLUENCE_SYNC_TEST_DATABASE_URL:-}" ]]
+}; then
+  echo "✗ GRAPH_REQUIRE_INTEGRATION=1인데 GRAPH_TEST_DATABASE_URL/GRAPH_NEO4J_TEST_URI/CONFLUENCE_SYNC_TEST_DATABASE_URL 중 하나 이상이 비어 있음 — 설정 누락을 skip이 아니라 실패로 처리" >&2
   exit 1
 fi
 
-if [[ -z "${GRAPH_TEST_DATABASE_URL:-}" || -z "${GRAPH_NEO4J_TEST_URI:-}" ]]; then
-  echo "GRAPH_TEST_DATABASE_URL/GRAPH_NEO4J_TEST_URI 미설정 — 통합 테스트 전체 skip (GRAPH_REQUIRE_INTEGRATION=1이면 이 자체가 실패)"
+if [[ -z "${GRAPH_TEST_DATABASE_URL:-}" || -z "${GRAPH_NEO4J_TEST_URI:-}" || -z "${CONFLUENCE_SYNC_TEST_DATABASE_URL:-}" ]]; then
+  echo "GRAPH_TEST_DATABASE_URL/GRAPH_NEO4J_TEST_URI/CONFLUENCE_SYNC_TEST_DATABASE_URL 중 하나 이상 미설정 — 통합 테스트 전체 skip (GRAPH_REQUIRE_INTEGRATION=1이면 이 자체가 실패)"
   exit 0
 fi
 
@@ -40,6 +49,10 @@ INTEGRATION_FILES=(
   tests/test_graph_sync_cli_subprocess_db.py
   tests/test_graph_runs_seq_migration_db.py
   tests/test_ghost_node_audit_db.py
+  tests/test_confluence_sync_db.py
+  tests/test_mcp_access_log_db.py
+  tests/test_map_integrity_round_db.py
+  tests/test_ops_dashboard_coverage_gaps_db.py
 )
 
 failed=0

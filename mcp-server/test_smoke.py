@@ -207,6 +207,19 @@ async def main() -> int:
             help_t[:800],
         )
 
+    # F05(2026-10-13 최종 핸드오프) §2.5.5 — kb_graph_explore(include_archived=)
+    # 과 kb_graph_status가 kb_tools_help()에 반영됐는지 같은 방식으로 확인.
+    assert "include_archived" in inspect.signature(server.kb_graph_explore).parameters, (
+        "kb_graph_explore lost its include_archived= param — update this assertion "
+        "(and check kb_tools_help() is still accurate) if that's intentional"
+    )
+    check(
+        "kb_tools_help() documents kb_graph_explore(include_archived=)",
+        "kb_graph_explore(" in help_t and "include_archived=" in help_t.split("kb_graph_explore(")[1].split(")")[0],
+        help_t[:1600],
+    )
+    check("kb_tools_help() documents kb_graph_status", "kb_graph_status" in help_t, help_t[:1600])
+
     cd = await server.kb_confluence_list_diagrams("0")
     check(
         "kb_confluence_list_diagrams",
@@ -217,9 +230,15 @@ async def main() -> int:
     )
 
     # connection failure
+    # F01(2026-10-13 최종 핸드오프) — _err()가 이제 "오류:" 앞에 "status: ..."
+    # 한 줄을 먼저 붙인다(기계가 상태를 문장 추측 없이 읽게). 이 체크가
+    # startswith("오류:")만 보고 있어서 F01 반영 이후 실제로는 FAIL이었는데
+    # (이 스크립트는 라이브 API가 필요해 통합 pytest 스위트에 안 걸림)
+    # 아무도 못 잡고 있었다 — 실측으로 발견해 고침.
     server.CITEC_KB_BASE_URL = "http://127.0.0.1:1"
     fail = await server.kb_search("x")
-    check("down backend → 오류", fail.startswith("오류:"), fail)
+    check("down backend → status: backend_error", fail.startswith("status: backend_error"), fail)
+    check("down backend → 오류", "오류:" in fail, fail)
     server.CITEC_KB_BASE_URL = base
 
     print(f"\n{PASS} passed, {FAIL} failed")

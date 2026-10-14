@@ -1394,11 +1394,13 @@ async def kb_tools_help() -> str:
 [지식그래프 — 연관 탐색]
   kb_graph_explore(anchor_type=, anchor_value=, exclude_page_ids=, exclude_subtree_ids=,
                     exclude_source_types=, documents_offset=, components_offset=,
-                    failure_buckets_offset=)
+                    failure_buckets_offset=, include_archived=)
                   anchor_type: failure_bucket|document|component|symptom_text
                   장애 분석 시 연관 컴포넌트/문서/과거 장애를 2hop까지 탐색.
                   kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은
-                  다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인).
+                  다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인,
+                  응답의 freshness 한 줄로 "마지막 완료된 전체 배치가 언제·어떤
+                  상태였는지"와 "지금 새 배치가 진행 중인지"도 같이 보여줌).
                   카테고리당 최대 50건, 그 이상이면 응답에 "N건 중 X-Y건 표시"와
                   다음 페이지 안내가 나온다 — *_offset으로 재호출해 끝까지 볼 것.
                   맨 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를
@@ -1407,10 +1409,28 @@ async def kb_tools_help() -> str:
                   PARENT_OF는 ↑(anchor가 자식 쪽)/↓(anchor가 부모 쪽), 나머지
                   관계는 →/←로 방향 표시. document 앵커는 같은 페이지의 여러
                   수집본(confluence_map/tech_repo/confluence_docs) 중 어느 쪽으로
-                  걸어도 같은 계층을 찾는다. 결과의 같은 페이지 수집본도 하나로
-                  묶여 copies=N으로 표시(_EN 체크항목 등은 안 묶임). archived는
-                  비활성 원문 — 결론에 그대로 쓰지 말 것. "원문: kb_get_document
-                  (path=...)"가 실제 호출 경로, confluence_map은 발췌(snapshot)뿐.
+                  걸어도 같은 계층을 찾는다 — 대표 사본이 exclude_source_types로
+                  제외되면 anchor.resolved_id는 그대로 대표를 가리키되
+                  representative_excluded=True와 traversal_start_ids(실제 탐색
+                  시작 사본)로 그 사실이 드러난다. 결과의 같은 페이지 수집본도
+                  하나로 묶여 copies=N으로 표시(_EN 체크항목 등은 안 묶임).
+                  archived는 비활성 원문 — 결론에 그대로 쓰지 말 것. 기본은
+                  archived 문서를 결과에서 뺀다, include_archived=true로 과거
+                  이력까지 볼 수 있음(단 archived 문서가 다른 두 문서 사이의
+                  중간 경로로 쓰이는 것 자체는 막지 않음 — 알려진 한계).
+                  failure_bucket 앵커는 앵커 자신의 evidence_reasons(resolved/
+                  external_artifact/legacy_missing/target_not_ingested/
+                  unresolved_reference 건수)도 같이 나옴 — 전부 0이고 isolated면
+                  "원인 불명"이 아니라 이 사유 분해를 먼저 볼 것. "원문:
+                  kb_get_document(path=...)"가 실제 호출 경로, confluence_map은
+                  발췌(snapshot)뿐.
+  kb_graph_status()
+                  지식그래프 동기화 run/generation/freshness 상세(GET
+                  /v1/graph/status와 동일 근거). kb_graph_explore의 freshness
+                  한 줄보다 자세한 정보가 필요할 때 — 지금 진행 중인 배치가
+                  정말 살아있는지(liveness, pg_locks로 실제 확인), Neo4j
+                  store identity가 맞는지, read_state가 consistent/mixed/
+                  unknown 중 뭔지 먼저 볼 것.
 
 [문서 업로드 — 쓰기]
   kb_upload_document(filename=, content=, source_type=)   문서 1건 즉시 ingest 큐 등록
