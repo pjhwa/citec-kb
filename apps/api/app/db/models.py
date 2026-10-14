@@ -478,6 +478,28 @@ class QueryLog(Base):
     )
 
 
+class McpAccessLog(Base):
+    """2026-10-14 — 운영자가 "AI가 MCP로 실제로 뭘 조회하는지" 구분해서 볼 수
+    있게 모든 MCP 유래 HTTP 요청을 기록한다(QueryLog와 별도: QueryLog는
+    audit=True로 명시한 호출만, 그것도 웹/MCP 구분 없이 기록해서, kb_search
+    같은 가장 흔한 MCP 조회는 지금껏 전혀 안 남았다 — mcp-server가 항상 보내는
+    X-Citec-Client 헤더를 app.middleware.mcp_access가 가로채 여기에 남긴다)."""
+
+    __tablename__ = "mcp_access_log"
+    __table_args__ = (Index("ix_mcp_access_log_created_at", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    tool: Mapped[Optional[str]] = mapped_column(String(128))
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path: Mapped[str] = mapped_column(String(256), nullable=False)
+    query_summary: Mapped[Optional[str]] = mapped_column(String(512))
+    status_code: Mapped[Optional[int]] = mapped_column(Integer)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
+
+
 class Answer(Base):
     __tablename__ = "answers"
 

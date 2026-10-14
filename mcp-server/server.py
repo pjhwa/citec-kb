@@ -6,6 +6,7 @@ Calls the citec-kb API (wiki-qa compatible /api/* plus native /v1/* helpers).
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from typing import Any, Optional
@@ -33,18 +34,28 @@ mcp = FastMCP(
 )
 
 
-def _headers() -> dict[str, str]:
-    h: dict[str, str] = {"Accept": "application/json"}
+def _headers(tool: Optional[str] = None) -> dict[str, str]:
+    # 2026-10-14 — 운영자 admin 대시보드가 "AI가 MCP로 실제 뭘 조회하는지"를
+    # 보여주려면, API 쪽이 이 요청이 MCP에서 왔다는 것과 어느 도구인지를 알아야
+    # 한다. X-Citec-Client는 app.middleware.mcp_access가 가로채는 기준 헤더다.
+    h: dict[str, str] = {"Accept": "application/json", "X-Citec-Client": "mcp-server"}
+    if tool:
+        h["X-Citec-Tool"] = tool
     if CITEC_KB_TOKEN:
         h["Authorization"] = f"Bearer {CITEC_KB_TOKEN}"
     return h
 
 
 def _client(timeout: float = 30.0) -> httpx.AsyncClient:
+    # 호출한 kb_* 도구 함수 이름을 콜스택에서 그대로 읽는다 — 이 모듈의 모든
+    # 도구 함수가 자기 본문에서 직접 _client(...)를 호출하는 한 단계 패턴이라
+    # (공용 wrapper를 거치지 않음) 안전하다. 이렇게 하면 33곳의 _client() 호출을
+    # 전부 수정하지 않고도 매 호출마다 정확한 도구 이름을 헤더로 보낼 수 있다.
+    caller = inspect.stack()[1].function
     return httpx.AsyncClient(
         base_url=CITEC_KB_BASE_URL.rstrip("/"),
         timeout=timeout,
-        headers=_headers(),
+        headers=_headers(tool=caller),
     )
 
 

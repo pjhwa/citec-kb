@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 
 from app import __version__
+from app.audit.mcp_access import mcp_query_stats
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
 from app.db.models import (
@@ -176,5 +177,11 @@ def ops_dashboard(
             result["failure_buckets"] = recent_failure_buckets(session)
     except Exception as exc:  # noqa: BLE001
         result["failure_buckets"] = {"error": str(exc)}
+
+    try:
+        with session_scope() as session:
+            result["mcp_queries"] = mcp_query_stats(session)
+    except Exception as exc:  # noqa: BLE001
+        result["mcp_queries"] = {"error": str(exc)}
 
     return result
