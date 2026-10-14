@@ -47,11 +47,20 @@ def _headers(tool: Optional[str] = None) -> dict[str, str]:
 
 
 def _client(timeout: float = 30.0) -> httpx.AsyncClient:
-    # 호출한 kb_* 도구 함수 이름을 콜스택에서 그대로 읽는다 — 이 모듈의 모든
-    # 도구 함수가 자기 본문에서 직접 _client(...)를 호출하는 한 단계 패턴이라
-    # (공용 wrapper를 거치지 않음) 안전하다. 이렇게 하면 33곳의 _client() 호출을
-    # 전부 수정하지 않고도 매 호출마다 정확한 도구 이름을 헤더로 보낼 수 있다.
-    caller = inspect.stack()[1].function
+    # 호출한 kb_* 도구 함수 이름을 콜스택에서 그대로 읽는다 — 이 모듈의 거의
+    # 모든 도구 함수가 자기 본문에서 직접 _client(...)를 호출하는 한 단계
+    # 패턴이라 안전하다. 다만 kb_search/wiki_search처럼 공용 `_search_impl`
+    # 헬퍼를 거치는 경우가 있다(실측으로 발견 — 재배포 직후 mcp_access_log에
+    # tool="_search_impl"로 찍힘, 어느 도구가 호출했는지 알 수 없게 됨).
+    # `_`로 시작하는 private 헬퍼 프레임은 건너뛰고, 그 바로 바깥의 공개
+    # 도구 함수 이름을 찾는다 — 33곳의 _client() 호출 어디도 수정할 필요가
+    # 없다.
+    caller = "unknown"
+    for frame_info in inspect.stack()[1:]:
+        name = frame_info.function
+        if not name.startswith("_"):
+            caller = name
+            break
     return httpx.AsyncClient(
         base_url=CITEC_KB_BASE_URL.rstrip("/"),
         timeout=timeout,
