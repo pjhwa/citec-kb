@@ -370,12 +370,54 @@ See §6.3 for the full taxonomy and when to use each:
   (`documents_total`도 묶인 뒤의 수). `_EN` 접미사(한영 체크항목) 등 다른 source_type은
   절대 묶지 않는다.
 - `archived`가 true면 비활성화된(삭제/이동 등으로 더 이상 유효하지 않은) 원문이다 —
-  결론에 그대로 쓰지 말고 `kb_search`로 현재 유효한 문서인지 다시 확인한다.
+  결론에 그대로 쓰지 말고 `kb_search`로 현재 유효한 문서인지 다시 확인한다. 기본
+  동작(F05, 2026-10-14)은 archived 문서를 "연관 문서" 결과에서 아예 뺀다 — 과거
+  이력/감사 목적으로 비활성 문서까지 보고 싶으면 `include_archived=true`를 명시한다.
+  단 이 옵션은 결과 목록 표시만 바꾼다 — archived 문서가 다른 두 문서 사이의 중간
+  경로(bridge)로 쓰이는 순회 자체는 막지 않는다(알려진 한계).
+- 대표 사본(`anchor.resolved_id`)이 `exclude_source_types`로 제외되면, 응답에
+  `representative_excluded=true`와 `traversal_start_ids`(실제로 탐색이 시작된
+  사본 id 목록)가 같이 나온다 — `resolved_id`만 보고 "이 사본으로 탐색했다"고
+  오해하지 말 것.
+- `failure_bucket` 앵커는 앵커 자신의 `evidence_reasons`(resolved/
+  external_artifact/legacy_missing/target_not_ingested/unresolved_reference
+  건수)도 함께 돌아온다. 전부 0이고 `isolated`여도 "원인 불명"으로 단정하지 말고
+  이 사유 분해부터 확인한다 — 아직 이 값을 채우는 배치가 돈 적 없으면 `unknown`
+  으로 명시된다.
+- 응답에 `freshness`(마지막으로 "완료된" 전체 배치의 run_id/generation/완료
+  시각/상태, 그리고 지금 새 전체 배치가 진행 중인지)가 `as_of`와 별개로 포함된다 —
+  `as_of`(MAX(synced_at))만으로는 "지금 보이는 그래프가 깨끗한 단일 스냅샷인지,
+  부분 실행/진행 중인 배치가 섞인 건지" 구분이 안 되기 때문. freshness가 "지금 새
+  전체 배치가 진행 중"을 가리키면 이번 응답이 혼합 상태일 수 있음을 염두에 둔다.
 - 결과 줄의 "원문: kb_get_document(path='…')"가 실제 호출할 경로다. `confluence_map`
   소스는 본문이 발췌(snapshot)뿐이라 결과에 `snapshot`이 표시되며, 이 경우 Confluence
   현재 버전 확인은 `confluence-mcp`(있으면)로 따로 해야 한다.
 
 **API:** `POST /v1/graph/explore`
+
+### 4.17 `kb_graph_status` — 지식그래프 동기화 상태 상세 조회
+
+`kb_graph_explore`의 `freshness` 한 줄 요약보다 더 자세한 근거가 필요할 때 먼저
+부른다 — 인자 없음.
+
+- `latest_run`/`latest_full_completed_run`: 가장 최근 run과, 그중 "scope=full이고
+  완료된" run을 분리해서 보여준다. `--source-ids` 디버그 실행처럼 scope=partial인
+  행이 가장 최근이어도 `latest_full_completed_run`은 그걸 가리키지 않는다.
+- `latest_run.liveness`: `status=running`인 행이 실제로 지금도 advisory lock을
+  쥐고 있는지 `pg_locks`로 직접 확인한 결과다(`running`/`stalled`/`likely_dead`/
+  `unknown`). `status=running`인데 `liveness.state=likely_dead`/`stalled`면,
+  그 run은 실제로는 멈췄거나 죽은 것이다 — "진행 중" 문구만 보고 기다리지 말 것
+  (하드킬, 컨테이너 재시작 중 cron과 겹침 등으로 실제로 발생한다).
+- `read_state`: `consistent`(마지막 완료된 full run 기준 깨끗한 스냅샷) /
+  `mixed`(지금 새 full run이 진행 중이거나, 마지막 완료가 일부 실패 포함) /
+  `unknown`(완료된 full run 자체가 아직 없음).
+- `neo4j_generation`(우리가 쓴 generation 마커) vs `neo4j_store_identity`(Neo4j
+  자신의 db.info() 식별자, 물리적으로 다른 저장소인지 구분) — 둘은 다른 질문에
+  답한다. `generation_matches`는 전자만 비교한다.
+- `api_build_sha`/`contract_version`: 배포 파이프라인이 채워준 실제 배포 커밋(없으면
+  정직하게 `"unknown"`)과 이 응답 "모양" 자체의 버전.
+
+**API:** `GET /v1/graph/status`
 
 ---
 
