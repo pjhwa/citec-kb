@@ -992,6 +992,7 @@ async def kb_graph_explore(
     documents_offset: int = 0,
     components_offset: int = 0,
     failure_buckets_offset: int = 0,
+    include_archived: bool = False,
 ) -> str:
     """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
 
@@ -1004,6 +1005,12 @@ async def kb_graph_explore(
     documents_offset/components_offset/failure_buckets_offset: 한 카테고리의
                   전체 후보가 50건을 넘으면("N건 중 X-Y건 표시" + 다음 페이지
                   안내로 알 수 있음) 그 수만큼 올려 재호출한다(예: documents_offset=50).
+    include_archived: 기본 False — archived 문서는 "연관 문서" 목록에서
+                  기본 제외된다(pg_missing은 대상 아님 — 결과의 pg_missing
+                  플래그로 계속 노출만 됨). 과거 이력/감사 목적으로 비활성
+                  문서까지 보고 싶을 때만 True로 준다. 단, archived
+                  문서가 다른 두 문서 사이의 중간 경로(bridge)로 쓰이는 것
+                  자체는 이 옵션과 무관하게 막히지 않는다(알려진 한계).
 
     응답 첫 줄 status(found/not_found/no_match/isolated)로 성공 여부를 판단할
     것 — 문장으로 추측하지 말 것. 각 결과의 [Nhop 경로]는 anchor부터 그
@@ -1049,6 +1056,7 @@ async def kb_graph_explore(
                     "documents_offset": documents_offset,
                     "components_offset": components_offset,
                     "failure_buckets_offset": failure_buckets_offset,
+                    "include_archived": include_archived,
                 },
             )
             if resp.status_code == 404:

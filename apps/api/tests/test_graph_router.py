@@ -1239,3 +1239,55 @@ def test_explore_response_includes_freshness_summary_distinct_from_as_of():
     assert freshness["latest_full_completed_generation"] == "g-fresh"
     assert freshness["latest_full_completed_status"] == "completed"
     assert freshness["full_run_in_progress"] is False
+
+
+def test_explore_excludes_archived_documents_by_default_and_opt_in_shows_them():
+    """F05(2026-10-13 최종 핸드오프) §2.5.5 — 기본은 archived 연관 문서를
+    빼고, include_archived=True면 다시 보여준다. merge_document는 Neo4j
+    Document 노드에 status를 전혀 안 쓰므로(1단계 설계 원칙), 이 필터는
+    Postgres 기반 응답-조립 단계에서만 적용된다 — 순회 자체를 바꾸지 않는다."""
+    import uuid as uuid_mod
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    comp_name = f"ExposureComp-{uuid_mod.uuid4()}"
+    active_id = f"tech_repo:{uuid_mod.uuid4()}"
+    archived_id = f"tech_repo:{uuid_mod.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for doc_id in (active_id, archived_id):
+        nclient.merge_document(
+            {"id": doc_id, "source_type": "tech_repo", "external_id": doc_id.split(":")[1],
+             "title": "문서", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    with session_scope() as session:
+        session.add(Document(
+            id=active_id, source_type="tech_repo", external_id=active_id.split(":")[1],
+            title="활성 문서", body_md="x", content_hash="h1", status="active", evidence_grade="A",
+        ))
+        session.add(Document(
+            id=archived_id, source_type="tech_repo", external_id=archived_id.split(":")[1],
+            title="archived 문서", body_md="x", content_hash="h2", status="archived", evidence_grade="A",
+        ))
+
+    client = TestClient(app)
+    resp_default = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    doc_ids_default = {d["id"] for d in resp_default.json()["documents"]}
+    assert active_id in doc_ids_default
+    assert archived_id not in doc_ids_default
+
+    resp_include = client.post("/v1/graph/explore", json={
+        "anchor_type": "component", "anchor_value": comp_name, "include_archived": True,
+    })
+    doc_ids_include = {d["id"] for d in resp_include.json()["documents"]}
+    assert active_id in doc_ids_include
+    assert archived_id in doc_ids_include

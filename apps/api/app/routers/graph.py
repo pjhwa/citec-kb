@@ -17,6 +17,7 @@ from app.db.models import Document, GraphRun
 from app.db.session import session_scope
 from app.doc_access import attach_document_access
 from app.graph.explore import (
+    apply_exposure_policy,
     collapse_duplicate_copies,
     dedup_by_key,
     enrich_with_document_metadata,
@@ -77,6 +78,11 @@ class GraphExploreBody(BaseModel):
     documents_offset: int = Field(default=0, ge=0)
     components_offset: int = Field(default=0, ge=0)
     failure_buckets_offset: int = Field(default=0, ge=0)
+    # F05(2026-10-13 최종 핸드오프) §2.5.5 — 기본은 archived 문서를 "연관 문서"
+    # 목록에서 뺀다(pg_missing은 대상 아님 — 유령 노드는 별도 도구가 다룸).
+    # 과거 감사/이력 조회처럼 명시적으로 필요할 때만 True로 opt-in한다
+    # (app.graph.explore.apply_exposure_policy).
+    include_archived: bool = False
 
 
 def _rows_to_candidates(rows) -> list[dict[str, Any]]:
@@ -449,6 +455,8 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     # (G08) — dedup 이후, 정렬/cap 이전. *_total은 이 묶인 뒤의 수를 센다.
     merged["documents"] = collapse_duplicate_copies(merged["documents"], enrichment_by_id=enrichment)
     merged["documents"] = enrich_with_document_metadata(merged["documents"], enrichment)
+    # F05 §2.5.5 — archived/pg_missing 여부가 채워진 뒤에만 적용 가능하다.
+    merged["documents"] = apply_exposure_policy(merged["documents"], include_archived=body.include_archived)
 
     if body.anchor_type == "symptom_text":
         anchor_info: dict[str, Any] = {

@@ -209,6 +209,31 @@ def enrich_with_document_metadata(documents: list[dict], enrichment_by_id: dict[
     return out
 
 
+def apply_exposure_policy(documents: list[dict], *, include_archived: bool = False) -> list[dict]:
+    """F05(2026-10-13 최종 핸드오프) §2.5.5 — 비활성/archived 문서의 기본 노출
+    정책. 호출자가 명시적으로 include_archived=True를 주지 않는 한, archived
+    문서는 "연관 문서" 목록에서 기본 제외한다 — enrich_with_document_metadata가
+    이미 archived bool을 채운 뒤에만 호출할 수 있다.
+
+    pg_missing(Postgres에 행이 없는 노드)은 이 정책의 대상이 아니다 — 의도적
+    결정: pg_missing은 "비활성 문서를 숨길지"와는 다른 축의 문제(유령 노드
+    데이터 정합성)라, 전용 도구(scripts/verify/ghost_node_audit.py)가 다룬다.
+    여기서 기본 제외해버리면 "archived가 아닌데 PG 조회가 일시적으로 늦은"
+    정상 케이스까지 숨겨 혼동을 줄 수 있다 — 계속 응답에 pg_missing bool로
+    노출만 하고 필터링은 하지 않는다.
+
+    알려진 한계(의도적으로 범위 밖, 정직하게 문서화): merge_document가 Neo4j
+    Document 노드에 status를 전혀 안 쓴다(Postgres만 source of truth,
+    1단계 설계 원칙) — 그래서 이 필터는 Cypher 순회 "이후", 응답을 만드는
+    단계에서만 적용된다. archived 문서가 다른 두 문서 사이의 중간 경로
+    (bridge)로 쓰이는 경로 자체를 끊는 건 Neo4j 쓰기 경로 변경(재백필 필요)
+    이라 이번 라운드에서 다루지 않는다 — 이 함수는 "결과 목록에 보여줄지"만
+    결정하고, 순회 자체는 그대로다."""
+    if include_archived:
+        return documents
+    return [doc for doc in documents if not doc.get("archived")]
+
+
 _COLLAPSIBLE_SOURCE_TYPES = {"confluence_map", "confluence_docs", "tech_repo"}
 
 

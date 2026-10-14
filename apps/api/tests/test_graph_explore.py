@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.graph.explore import (
     MAX_RESULTS_PER_CATEGORY,
+    apply_exposure_policy,
     collapse_duplicate_copies,
     dedup_by_key,
     enrich_with_document_metadata,
@@ -321,3 +322,26 @@ def test_collapse_duplicate_copies_single_copy_passes_through_unchanged():
     collapsed = collapse_duplicate_copies(docs, enrichment_by_id=enrichment)
     assert collapsed == docs
     assert "copies" not in collapsed[0]
+
+
+def test_apply_exposure_policy_excludes_archived_by_default():
+    """F05(2026-10-13 최종 핸드오프) §2.5.5 — 기본값은 archived만 뺀다.
+    pg_missing은 이 정책의 대상이 아니다(유령 노드는 별도 도구가 다룸) —
+    여기서 숨기면 PG 조회가 일시적으로 늦은 정상 케이스까지 숨겨진다."""
+    docs = [
+        {"id": "a", "archived": False, "pg_missing": False},
+        {"id": "b", "archived": True, "pg_missing": False},
+        {"id": "c", "archived": False, "pg_missing": True},
+    ]
+    out = apply_exposure_policy(docs)
+    assert [d["id"] for d in out] == ["a", "c"]
+
+
+def test_apply_exposure_policy_include_archived_keeps_everything():
+    docs = [
+        {"id": "a", "archived": False, "pg_missing": False},
+        {"id": "b", "archived": True, "pg_missing": False},
+        {"id": "c", "archived": False, "pg_missing": True},
+    ]
+    out = apply_exposure_policy(docs, include_archived=True)
+    assert [d["id"] for d in out] == ["a", "b", "c"]
