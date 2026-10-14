@@ -309,7 +309,17 @@ wait_health() {
         wait_http "http://127.0.0.1:8573/v1/health" "api" || failed=1
         ;;
       web)
-        wait_http "http://127.0.0.1:8572/" "web" || failed=1
+        # 2026-10-14 실전 재현 — 예전엔 nginx 정적 루트("/")만 확인해서, api가
+        # 재시작으로 새 연결을 갱신 못 해 모든 /v1/* 가 502인 상태를 "web
+        # ready"로 오판했다(실제로 /v1/health도 502였음). nginx를 거쳐
+        # /v1/health를 직접 확인해야 "브라우저가 실제로 보는 것"과 같다.
+        # 처음에 실패하면 nginx가 api의 새 연결/주소를 못 따라간 것일 수
+        # 있으니(stateless 프록시라 안전) web만 한 번 재시작 후 재확인한다.
+        if ! wait_http "http://127.0.0.1:8572/v1/health" "web"; then
+          warn "web(nginx)이 /v1/health 프록시에 응답하지 않음 — api 재시작 직후 nginx가 새 연결을 못 따라간 것일 수 있어 web만 한 번 더 재시작합니다"
+          compose restart web
+          wait_http "http://127.0.0.1:8572/v1/health" "web" || failed=1
+        fi
         ;;
       mcp)
         local deadline=$((SECONDS + WAIT_TIMEOUT)) ok=0
@@ -341,6 +351,32 @@ restart_services() {
   compose restart "${SERVICES[@]}"
 }
 
+# F04(2026-10-13 최종 핸드오프) — 2026-10-14 실전 재현: 운영의 05:00 UTC
+# 그래프 전체 재백필 cron과 이 스크립트의 `docker compose restart api ...`가
+# 겹치면, lock을 쥔 채 돌던 sync_cli 프로세스가 api 컨테이너와 함께
+# 죽는다(liveness.state=likely_dead로 남게 됨 — 데이터 정합성엔 문제
+# 없지만 다음 cron까지 graph_runs에 죽은 'running' 행이 남는다). 재시작
+# 직전에 advisory lock이 지금 쥐어져 있는지 **시도 없이** pg_locks로만
+# 확인해(sync_cli 자신의 lock 획득 시도와 레이스 없음) 경고한다 — 자동
+# 배포(-y)는 막지 않고 경고만, 사람이 보는 실행은 한 번 더 확인받는다.
+_GRAPH_SYNC_LOCK_CLASSID=1667855461
+_GRAPH_SYNC_LOCK_OBJID=1667196786
+warn_if_graph_sync_running() {
+  local holder
+  holder="$(compose exec -T postgres psql -U "${POSTGRES_USER:-citec}" -d "${POSTGRES_DB:-citec_knowledge}" -tAc \
+    "SELECT pid FROM pg_locks WHERE locktype='advisory' AND classid=${_GRAPH_SYNC_LOCK_CLASSID} AND objid=${_GRAPH_SYNC_LOCK_OBJID} AND objsubid=1 AND granted;" \
+    2>/dev/null || true)"
+  holder="$(echo "$holder" | tr -d '[:space:]')"
+  if [[ -n "$holder" ]]; then
+    warn "그래프 전체 재백필(sync_cli)이 지금 advisory lock을 쥐고 있습니다(pid=${holder}) — 지금 재시작하면 그 run이 중간에 죽습니다(데이터 정합성엔 문제없지만 graph_runs에 죽은 'running' 행이 남고, 다음 배치까지 그 상태로 보임)."
+    if ! $YES; then
+      echo -e "${RED}${BOLD}그래도 지금 재시작할까요? [y/N]${RESET} "
+      read -r CONFIRM_LOCK
+      [[ "${CONFIRM_LOCK}" =~ ^[Yy]$ ]] || die "취소 — 재백필이 끝난 뒤(또는 cron 외 시간대에) 다시 시도하세요"
+    fi
+  fi
+}
+
 # restart_only_flow: git pull 을 전혀 하지 않고 재시작 + 헬스체크만 한다.
 # --attach-git 직후("파일은 최신, 컨테이너만 구버전")처럼 git SHA 비교로는
 # 감지되지 않는 "재시작만 밀린" 상태를 위한 것 — 롤백 대상 커밋 개념이 없으므로
@@ -356,6 +392,7 @@ restart_only_flow() {
     [[ "${CONFIRM}" =~ ^[Yy]$ ]] || { warn "취소"; exit 0; }
   fi
 
+  warn_if_graph_sync_running
   restart_services
   if wait_health; then
     echo ""
@@ -502,6 +539,14 @@ APPLIED_SHA="$(git rev-parse HEAD)"
 [[ "$APPLIED_SHA" == "$NEW_SHA" ]] || die "pull 후 커밋이 예상과 다릅니다 (예상 ${NEW_SHA:0:12}, 실제 ${APPLIED_SHA:0:12})"
 log "✅ 코드 반영: ${CURRENT_SHA:0:12} → ${APPLIED_SHA:0:12}"
 
+# F04(2026-10-13 최종 핸드오프) §9 — GET /v1/graph/status의 api_build_sha를
+# 채운다. 환경변수(docker-compose.yml에 API_BUILD_SHA 추가)는 이 스크립트가
+# 쓰는 `docker compose restart`로는 안 읽히고(재생성이 아니라 재시작이라
+# 컨테이너 env가 그대로 유지됨), docker-compose.yml을 고치면
+# IMAGE_SENSITIVE_PATTERN 게이트에 걸린다 — 대신 api가 bind-mount로 보는
+# 앱 디렉터리 안에 파일로 남긴다(.gitignore 대상, 커밋되지 않음).
+echo "${APPLIED_SHA:0:12}" > "${PROJECT_DIR}/apps/api/app/.build_sha"
+
 if $NO_RESTART; then
   warn "--no-restart — 컨테이너 재시작 생략 (수동으로 재시작하세요)"
   exit 0
@@ -521,6 +566,7 @@ do_rollback() {
   fi
 }
 
+warn_if_graph_sync_running
 restart_services
 
 if wait_health; then

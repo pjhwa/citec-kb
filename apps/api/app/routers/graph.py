@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -36,11 +36,23 @@ router = APIRouter(prefix="/v1", tags=["graph"])
 logger = logging.getLogger("citec.graph.router")
 
 # F04(2026-10-13 최종 핸드오프) §9 — /v1/graph/status 응답 "모양" 자체의
-# 버전. 필드를 추가/제거/의미 변경할 때 올린다. API_BUILD_SHA는 배포
-# 파이프라인이 채워줘야 하는 값인데, 아직 그 배선이 없다 — 지어내지
-# 않고 정직하게 "unknown"으로 보고한다(scripts/git_pull_deploy.sh를
-# 사용자 승인 없이 고치지 않는다는 범위 제약).
+# 버전. 필드를 추가/제거/의미 변경할 때 올린다.
 GRAPH_STATUS_CONTRACT_VERSION = "2026-10-13.1"
+
+# 2026-10-14 — API_BUILD_SHA 환경변수는 `docker compose restart`(이미지
+# 재생성이 아니라 재시작)로는 안 읽히고, docker-compose.yml을 고치면
+# IMAGE_SENSITIVE_PATTERN 게이트에 걸린다. 대신 scripts/git_pull_deploy.sh가
+# bind-mount되는 앱 디렉터리 안에 평문 파일로 남긴다(.gitignore 대상) —
+# 파일이 없으면(이 스크립트로 배포된 적 없는 환경 등) 지어내지 않고
+# 정직하게 "unknown"을 보고한다.
+_BUILD_SHA_FILE = Path(__file__).resolve().parent.parent / ".build_sha"
+
+
+def _read_api_build_sha() -> str:
+    try:
+        return _BUILD_SHA_FILE.read_text(encoding="utf-8").strip() or "unknown"
+    except OSError:
+        return "unknown"
 
 
 def _is_backend_error(exc: Exception) -> bool:
@@ -678,6 +690,6 @@ def graph_status() -> dict[str, Any]:
         # F04 §1/9 — store identity(Neo4j 자신의 db.info())와 write
         # generation(우리가 쓴 마커)은 서로 다른 의미이므로 분리해서 노출한다.
         "neo4j_store_identity": neo4j_store_identity,
-        "api_build_sha": os.environ.get("API_BUILD_SHA", "unknown"),
+        "api_build_sha": _read_api_build_sha(),
         "contract_version": GRAPH_STATUS_CONTRACT_VERSION,
     }

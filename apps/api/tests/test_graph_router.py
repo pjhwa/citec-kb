@@ -1204,6 +1204,30 @@ def test_graph_status_exposes_neo4j_store_identity_separately_from_generation():
     assert "api_build_sha" in body
 
 
+def test_graph_status_reads_api_build_sha_from_deploy_marker_file(tmp_path, monkeypatch):
+    """F04(2026-10-13 최종 핸드오프) §9 — api_build_sha는 더 이상 환경변수가
+    아니라 scripts/git_pull_deploy.sh가 bind-mount 디렉터리 안에 남기는
+    파일에서 읽는다(docker compose restart로는 env가 안 갱신되고,
+    docker-compose.yml을 고치면 IMAGE_SENSITIVE_PATTERN 게이트에 걸리므로).
+    파일이 없으면 지어내지 않고 "unknown"을 보고해야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    import app.routers.graph as graph_router
+
+    client = TestClient(app)
+
+    missing_file = tmp_path / "does-not-exist" / ".build_sha"
+    monkeypatch.setattr(graph_router, "_BUILD_SHA_FILE", missing_file)
+    resp = client.get("/v1/graph/status")
+    assert resp.json()["api_build_sha"] == "unknown"
+
+    present_file = tmp_path / ".build_sha"
+    present_file.write_text("abc123def456\n", encoding="utf-8")
+    monkeypatch.setattr(graph_router, "_BUILD_SHA_FILE", present_file)
+    resp = client.get("/v1/graph/status")
+    assert resp.json()["api_build_sha"] == "abc123def456"
+
+
 def test_explore_response_includes_freshness_summary_distinct_from_as_of():
     """F04(2026-10-13 최종 핸드오프) §7/8 — as_of(MAX(synced_at))와 별개로,
     마지막 '완료된' 전체 배치의 run_id/generation/완료시각/상태를 함께
