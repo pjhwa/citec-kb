@@ -31,6 +31,20 @@
   table.tbl td { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
   .pb { height:6px; background:#eef2f7; border-radius:3px; overflow:hidden; min-width:80px; }
   .pb-f { height:100%; border-radius:3px; background:var(--primary); }
+  .stack-bar { display:flex; height:14px; border-radius:4px; overflow:hidden; background:#eef2f7; width:100%; }
+  .stack-seg { height:100%; }
+  .stack-seg.ok { background:var(--ok); }
+  .stack-seg.bad { background:var(--bad); }
+  .stack-seg.na { background:#cbd5e1; }
+  .stack-legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:4px; }
+  .stack-legend span.dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+  .hbar-row { display:flex; align-items:center; gap:8px; margin:3px 0; font-size:12px; }
+  .hbar-label { width:130px; flex-shrink:0; text-align:right; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .hbar-track { flex:1; height:12px; background:#eef2f7; border-radius:3px; overflow:hidden; }
+  .hbar-fill { height:100%; border-radius:3px; background:var(--primary); }
+  .hbar-count { width:36px; flex-shrink:0; font-weight:700; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; animation:pulse 1.4s infinite; }
+  @keyframes pulse { 0%{opacity:1} 50%{opacity:.25} 100%{opacity:1} }
   .job-c { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
   .job-top { display:flex; justify-content:space-between; margin-bottom:4px; }
   label.toggle { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
@@ -106,7 +120,14 @@
         <strong class="meta">최신 run</strong>
         <div class="row"><span>상태 / liveness</span><span id="graphLatestStatus" class="meta">…</span></div>
         <div class="row"><span>scope / generation</span><span id="graphLatestScope" class="meta">…</span></div>
-        <div class="row"><span>문서 synced/skip/fail</span><span id="graphLatestDocs" class="meta">…</span></div>
+        <div style="margin:6px 0">
+          <div class="stack-bar" id="graphDocsBar"></div>
+          <div class="stack-legend">
+            <span><span class="dot" style="background:var(--ok)"></span>synced <b id="graphDocsSynced">—</b></span>
+            <span><span class="dot" style="background:#cbd5e1"></span>skipped <b id="graphDocsSkipped">—</b></span>
+            <span><span class="dot" style="background:var(--bad)"></span>failed <b id="graphDocsFailed">—</b></span>
+          </div>
+        </div>
         <div class="row"><span>시작 / 완료</span><span id="graphLatestTime" class="meta">…</span></div>
       </div>
       <div>
@@ -150,7 +171,7 @@
       mcp-server가 보내는 모든 요청에 실린 호출 도구 이름 기준 — kb_search처럼 과거엔 전혀 기록 안 되던 조회도 전부 잡힘.
       <span id="mcpCounts"></span>
     </p>
-    <div id="mcpByTool" class="meta" style="margin-bottom:6px"></div>
+    <div id="mcpByToolChart" style="margin:4px 0 8px"></div>
     <table class="tbl">
       <thead><tr><th>시각</th><th>도구</th><th>경로</th><th>요약</th><th>상태</th><th>지연</th></tr></thead>
       <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
@@ -325,15 +346,30 @@ async function refreshGraphStatus() {
   if (lr) {
     const live = lr.liveness;
     const liveText = live ? live.state + (live.seconds_since_heartbeat != null ? " (" + live.seconds_since_heartbeat + "s 전 heartbeat)" : "") : "—";
-    $("graphLatestStatus").innerHTML = '<span class="badge ' + jobBadgeClass(lr.status) + '">' + esc(lr.status) + '</span>' +
+    const runningPulse = (live && live.state === "running") ? '<span class="pulse"></span>' : '';
+    $("graphLatestStatus").innerHTML = runningPulse + '<span class="badge ' + jobBadgeClass(lr.status) + '">' + esc(lr.status) + '</span>' +
       (live ? ' <span class="badge ' + livenessBadgeClass(live.state) + '">' + esc(liveText) + '</span>' : '');
     $("graphLatestScope").textContent = (lr.scope || "—") + " / " + (lr.generation || "—");
-    $("graphLatestDocs").textContent = (lr.documents_synced ?? "—") + " / " + (lr.documents_skipped ?? "—") + " / " + (lr.documents_failed ?? "—");
+
+    const synced = lr.documents_synced || 0, skipped = lr.documents_skipped || 0, failed = lr.documents_failed || 0;
+    const totalDocs = synced + skipped + failed;
+    $("graphDocsBar").innerHTML = totalDocs
+      ? ['[synced,ok]','[skipped,na]','[failed,bad]'].map((_, i) => {
+          const vals = [synced, skipped, failed], classes = ["ok", "na", "bad"];
+          const pct = (vals[i] / totalDocs) * 100;
+          return pct > 0 ? '<div class="stack-seg ' + classes[i] + '" style="width:' + pct.toFixed(2) + '%" title="' + vals[i] + '"></div>' : '';
+        }).join("")
+      : '<div class="stack-seg na" style="width:100%" title="0"></div>';
+    $("graphDocsSynced").textContent = synced.toLocaleString();
+    $("graphDocsSkipped").textContent = skipped.toLocaleString();
+    $("graphDocsFailed").textContent = failed.toLocaleString();
+
     $("graphLatestTime").textContent = fmtTs(lr.started_at) + (lr.completed_at ? " → " + fmtTs(lr.completed_at) + " (" + fmtDur(lr.started_at, lr.completed_at) + ")" : " (진행중/미완료)");
   } else {
     $("graphLatestStatus").textContent = "기록 없음";
     $("graphLatestScope").textContent = "—";
-    $("graphLatestDocs").textContent = "—";
+    $("graphDocsBar").innerHTML = '<div class="stack-seg na" style="width:100%"></div>';
+    $("graphDocsSynced").textContent = $("graphDocsSkipped").textContent = $("graphDocsFailed").textContent = "—";
     $("graphLatestTime").textContent = "—";
   }
 
@@ -428,15 +464,21 @@ async function refreshDashboard() {
   const mcpData = d.mcp_queries || {};
   if (mcpData.error) {
     $("mcpCounts").textContent = "오류: " + mcpData.error;
-    $("mcpByTool").textContent = "";
+    $("mcpByToolChart").textContent = "";
     $("mcpQueryBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(mcpData.error) + '</td></tr>';
   } else {
     $("mcpCounts").textContent = "· 1h=" + (mcpData.count_1h ?? "—") + " · 24h=" + (mcpData.count_24h ?? "—");
     const byTool = mcpData.by_tool_24h || {};
-    const toolKeys = Object.keys(byTool);
-    $("mcpByTool").textContent = toolKeys.length
-      ? "도구별(24h): " + toolKeys.map((k) => k + "=" + byTool[k]).join(", ")
-      : "도구별(24h): 기록 없음";
+    const toolEntries = Object.keys(byTool).map((k) => [k, byTool[k]]).sort((a, b) => b[1] - a[1]);
+    const maxCount = toolEntries.length ? toolEntries[0][1] : 0;
+    $("mcpByToolChart").innerHTML = toolEntries.length
+      ? toolEntries.map(([tool, count]) => {
+          const pct = maxCount ? (count / maxCount) * 100 : 0;
+          return '<div class="hbar-row"><span class="hbar-label" title="' + esc(tool) + '">' + esc(tool) + '</span>' +
+            '<span class="hbar-track"><span class="hbar-fill" style="width:' + pct.toFixed(1) + '%"></span></span>' +
+            '<span class="hbar-count">' + count + '</span></div>';
+        }).join("")
+      : '<div class="meta">도구별(24h): 기록 없음</div>';
     const mq = mcpData.recent || [];
     $("mcpQueryBody").innerHTML = mq.length
       ? mq.map((r) => {
