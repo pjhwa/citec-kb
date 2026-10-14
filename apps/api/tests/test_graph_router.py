@@ -60,22 +60,34 @@ def test_graph_status_reports_latest_run_and_generation_match():
             hub_recompute_ok=True, status="completed",
         ))
     nclient = _neo4j_test_client()
-    nclient.write_generation_marker(generation)
-    nclient.close()
+    # F05(2026-10-14) 사전 점검 중 실제로 재현된 사고 — 이 테스트가 dev의
+    # 공유 Neo4j(별도 scratch 인스턴스가 없어 재사용 중)에 write_generation_marker로
+    # 테스트용 값을 썼는데, 원래 값을 저장/복원하지 않아서 그 뒤로 dev Neo4j의
+    # GraphMeta 마커가 영원히 "test-gen-..."로 오염된 채 남았다. 다음 날 실제
+    # 전체 재백필(scripts/graph_sync.sh, --generation 생략)이 이 오염된 마커를
+    # "진짜 generation"으로 읽어 114,930건 전체에 그대로 썼다 — try/finally로
+    # 반드시 원래 값을 복원한다.
+    original_marker = nclient.read_generation_marker()
+    try:
+        nclient.write_generation_marker(generation)
 
-    client = TestClient(app)
-    resp = client.get("/v1/graph/status")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["latest_run"]["run_id"] == run_id
-    assert body["latest_run"]["generation"] == generation
-    assert body["latest_run"]["unresolved_references"] == 2
-    assert body["latest_run"]["scope"] == "full"
-    assert body["neo4j_generation"] == generation
-    # R02(2026-10-13 2차 핸드오프) §5/6 — generation_matches는 latest_run이
-    # 아니라 "scope=full이고 완료된" run 기준이어야 한다.
-    assert body["latest_full_completed_run"]["run_id"] == run_id
-    assert body["generation_matches"] is True
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["latest_run"]["run_id"] == run_id
+        assert body["latest_run"]["generation"] == generation
+        assert body["latest_run"]["unresolved_references"] == 2
+        assert body["latest_run"]["scope"] == "full"
+        assert body["neo4j_generation"] == generation
+        # R02(2026-10-13 2차 핸드오프) §5/6 — generation_matches는 latest_run이
+        # 아니라 "scope=full이고 완료된" run 기준이어야 한다.
+        assert body["latest_full_completed_run"]["run_id"] == run_id
+        assert body["generation_matches"] is True
+    finally:
+        if original_marker is not None:
+            nclient.write_generation_marker(original_marker)
+        nclient.close()
 
 
 def test_graph_status_ignores_partial_run_for_generation_matches():
@@ -98,16 +110,24 @@ def test_graph_status_ignores_partial_run_for_generation_matches():
             scope="partial", status="completed",
         ))
     nclient = _neo4j_test_client()
-    nclient.write_generation_marker(partial_generation)  # Neo4j는 partial run과 "우연히" 같은 값
-    nclient.close()
+    # F05(2026-10-14) — 위 테스트와 같은 이유로 원래 마커를 저장/복원한다(실제
+    # 재현: 이 함수가 복원 없이 dev 공유 Neo4j에 남긴 "test-partial-gen-..."
+    # 값이 다음 날 실제 전체 재백필의 generation으로 그대로 쓰였다).
+    original_marker = nclient.read_generation_marker()
+    try:
+        nclient.write_generation_marker(partial_generation)  # Neo4j는 partial run과 "우연히" 같은 값
 
-    client = TestClient(app)
-    resp = client.get("/v1/graph/status")
-    body = resp.json()
-    assert body["latest_run"]["scope"] == "partial"  # 가장 최근 행은 partial
-    assert body["latest_full_completed_run"]["generation"] == full_generation
-    # partial과는 마커가 같아도, full-completed 기준으로는 다르므로 False
-    assert body["generation_matches"] is False
+        client = TestClient(app)
+        resp = client.get("/v1/graph/status")
+        body = resp.json()
+        assert body["latest_run"]["scope"] == "partial"  # 가장 최근 행은 partial
+        assert body["latest_full_completed_run"]["generation"] == full_generation
+        # partial과는 마커가 같아도, full-completed 기준으로는 다르므로 False
+        assert body["generation_matches"] is False
+    finally:
+        if original_marker is not None:
+            nclient.write_generation_marker(original_marker)
+        nclient.close()
 
 
 def test_explore_unknown_failure_bucket_returns_404():
