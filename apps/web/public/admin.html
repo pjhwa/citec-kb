@@ -91,6 +91,35 @@
   </div>
 
   <div class="card" style="margin-top:12px">
+    <div class="job-top">
+      <strong>지식그래프 (Postgres → Neo4j) 현황</strong>
+      <span id="graphReadState" class="badge na">…</span>
+    </div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:6px">
+      <div>
+        <div class="row"><span>generation 일치</span><span id="graphGenMatch" class="badge na">…</span></div>
+        <div class="row"><span>neo4j_generation</span><span id="graphNeoGen" class="meta">…</span></div>
+        <div class="row"><span>store identity</span><span id="graphStoreId" class="meta">…</span></div>
+        <div class="row"><span>api_build_sha / contract</span><span id="graphBuild" class="meta">…</span></div>
+      </div>
+      <div>
+        <strong class="meta">최신 run</strong>
+        <div class="row"><span>상태 / liveness</span><span id="graphLatestStatus" class="meta">…</span></div>
+        <div class="row"><span>scope / generation</span><span id="graphLatestScope" class="meta">…</span></div>
+        <div class="row"><span>문서 synced/skip/fail</span><span id="graphLatestDocs" class="meta">…</span></div>
+        <div class="row"><span>시작 / 완료</span><span id="graphLatestTime" class="meta">…</span></div>
+      </div>
+      <div>
+        <strong class="meta">마지막 완료된 full run</strong>
+        <div class="row"><span>run_id / generation</span><span id="graphFullId" class="meta">…</span></div>
+        <div class="row"><span>완료 시각</span><span id="graphFullTime" class="meta">…</span></div>
+        <div class="row"><span>unresolved_references</span><span id="graphFullUnresolved" class="meta">…</span></div>
+      </div>
+    </div>
+    <span id="graphMsg" class="meta"></span>
+  </div>
+
+  <div class="card" style="margin-top:12px">
     <strong>인제스트 / 임베딩 진행률</strong>
     <table class="tbl">
       <thead><tr><th>소스</th><th>raw 파일</th><th>문서</th><th>청크(활성)</th><th>임베딩</th><th>진행률</th><th>최근 잡</th></tr></thead>
@@ -107,11 +136,25 @@
     </div>
     <div class="card">
       <strong>최근 쿼리 (최대 10건)</strong>
+      <p class="meta" style="margin:2px 0 6px">audit=true로 명시한 호출만 기록됨(웹/MCP 구분 없음). MCP가 실제로 뭘 조회했는지는 아래 카드 참고.</p>
       <table class="tbl">
         <thead><tr><th>시각</th><th>모드</th><th>지연</th><th>쿼리</th></tr></thead>
         <tbody id="queryBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <strong>MCP 경유 조회 (최근 20건)</strong>
+    <p class="meta" style="margin:2px 0 6px">
+      mcp-server가 보내는 모든 요청에 실린 호출 도구 이름 기준 — kb_search처럼 과거엔 전혀 기록 안 되던 조회도 전부 잡힘.
+      <span id="mcpCounts"></span>
+    </p>
+    <div id="mcpByTool" class="meta" style="margin-bottom:6px"></div>
+    <table class="tbl">
+      <thead><tr><th>시각</th><th>도구</th><th>경로</th><th>요약</th><th>상태</th><th>지연</th></tr></thead>
+      <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
   </div>
 
   <div class="card" style="margin-top:12px">
@@ -239,10 +282,73 @@ async function refresh() {
   catch (e) { problems.push(String(e)); }
   try { await refreshMapSync(); }
   catch (e) { problems.push(String(e)); }
+  try { await refreshGraphStatus(); }
+  catch (e) { problems.push(String(e)); }
 
   $("msg").textContent = problems.length
     ? problems.join(" | ")
     : "ok " + new Date().toLocaleTimeString();
+}
+
+function fmtDur(iso1, iso2) {
+  if (!iso1 || !iso2) return "—";
+  const ms = new Date(iso2) - new Date(iso1);
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + "s";
+  return Math.floor(s / 60) + "m " + (s % 60) + "s";
+}
+
+function livenessBadgeClass(state) {
+  if (state === "running") return "ok";
+  if (state === "stalled" || state === "likely_dead") return "bad";
+  return "na";
+}
+
+async function refreshGraphStatus() {
+  // /v1/graph/status는 인증 불필요(읽기 전용 공개 상태 조회) — CitecAuth 안 거침.
+  const r = await fetch("/v1/graph/status");
+  const d = await readJson(r, "/v1/graph/status");
+
+  {
+    const rs = $("graphReadState");
+    rs.textContent = d.read_state || "?";
+    rs.className = "badge " + (d.read_state === "consistent" ? "ok" : d.read_state === "mixed" ? "warn" : "na");
+  }
+  badge($("graphGenMatch"), d.generation_matches === true, d.generation_matches ? "일치" : "불일치/확인불가");
+  $("graphNeoGen").textContent = d.neo4j_generation || "—";
+  const si = d.neo4j_store_identity;
+  $("graphStoreId").textContent = si ? (si.id || si.name || "—") + (si.creation_date ? " (" + fmtTs(si.creation_date) + " 생성)" : "") : "—";
+  $("graphBuild").textContent = (d.api_build_sha || "unknown") + " / " + (d.contract_version || "—");
+
+  const lr = d.latest_run;
+  if (lr) {
+    const live = lr.liveness;
+    const liveText = live ? live.state + (live.seconds_since_heartbeat != null ? " (" + live.seconds_since_heartbeat + "s 전 heartbeat)" : "") : "—";
+    $("graphLatestStatus").innerHTML = '<span class="badge ' + jobBadgeClass(lr.status) + '">' + esc(lr.status) + '</span>' +
+      (live ? ' <span class="badge ' + livenessBadgeClass(live.state) + '">' + esc(liveText) + '</span>' : '');
+    $("graphLatestScope").textContent = (lr.scope || "—") + " / " + (lr.generation || "—");
+    $("graphLatestDocs").textContent = (lr.documents_synced ?? "—") + " / " + (lr.documents_skipped ?? "—") + " / " + (lr.documents_failed ?? "—");
+    $("graphLatestTime").textContent = fmtTs(lr.started_at) + (lr.completed_at ? " → " + fmtTs(lr.completed_at) + " (" + fmtDur(lr.started_at, lr.completed_at) + ")" : " (진행중/미완료)");
+  } else {
+    $("graphLatestStatus").textContent = "기록 없음";
+    $("graphLatestScope").textContent = "—";
+    $("graphLatestDocs").textContent = "—";
+    $("graphLatestTime").textContent = "—";
+  }
+
+  const fc = d.latest_full_completed_run;
+  if (fc) {
+    $("graphFullId").textContent = fc.run_id.slice(0, 8) + "… / " + (fc.generation || "—");
+    $("graphFullTime").textContent = fmtTs(fc.completed_at);
+    $("graphFullUnresolved").textContent = fc.unresolved_references ?? "—";
+  } else {
+    $("graphFullId").textContent = "완료된 full run 없음";
+    $("graphFullTime").textContent = "—";
+    $("graphFullUnresolved").textContent = "—";
+  }
+
+  $("graphMsg").textContent = "as_of " + (d.as_of || "—") + " · " + new Date().toLocaleTimeString();
 }
 
 async function refreshDashboard() {
@@ -318,6 +424,31 @@ async function refreshDashboard() {
           '</td><td>' + esc(r.query || "") + '</td></tr>';
       }).join("")
     : '<tr><td colspan="4" class="meta">기록 없음</td></tr>';
+
+  const mcpData = d.mcp_queries || {};
+  if (mcpData.error) {
+    $("mcpCounts").textContent = "오류: " + mcpData.error;
+    $("mcpByTool").textContent = "";
+    $("mcpQueryBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(mcpData.error) + '</td></tr>';
+  } else {
+    $("mcpCounts").textContent = "· 1h=" + (mcpData.count_1h ?? "—") + " · 24h=" + (mcpData.count_24h ?? "—");
+    const byTool = mcpData.by_tool_24h || {};
+    const toolKeys = Object.keys(byTool);
+    $("mcpByTool").textContent = toolKeys.length
+      ? "도구별(24h): " + toolKeys.map((k) => k + "=" + byTool[k]).join(", ")
+      : "도구별(24h): 기록 없음";
+    const mq = mcpData.recent || [];
+    $("mcpQueryBody").innerHTML = mq.length
+      ? mq.map((r) => {
+          const statusOk = r.status_code != null && r.status_code < 400;
+          return '<tr><td>' + fmtTs(r.created_at) + '</td><td>' + esc(r.tool || "—") +
+            '</td><td>' + esc(r.path || "—") +
+            '</td><td>' + esc(r.query_summary || "—") +
+            '</td><td><span class="badge ' + (r.status_code == null ? "na" : statusOk ? "ok" : "bad") + '">' + esc(r.status_code ?? "—") + '</span></td>' +
+            '<td>' + (r.latency_ms != null ? r.latency_ms + "ms" : "—") + '</td></tr>';
+        }).join("")
+      : '<tr><td colspan="6" class="meta">MCP 경유 조회 기록 없음 — AI가 아직 MCP로 아무것도 조회하지 않았거나, 이 배포에 아직 적용 전입니다.</td></tr>';
+  }
 
   const fbData = d.failure_buckets || {};
   const fb = fbData.recent || [];
