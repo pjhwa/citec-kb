@@ -52,6 +52,15 @@ diagnostics_*.txt
 # superpowers:using-git-worktrees — isolated per-feature worktrees
 .worktrees/
 
+# docker compose local override (standard compose convention — every
+# environment may have one, not just prod). 2026-10-13/14 round: this line
+# existed only in production's local .gitignore, never in the committed
+# file, so every `git pull`-based deploy hit a dirty-tree abort on
+# .gitignore itself and needed a manual stash/pop dance. Committing it
+# here makes prod's working tree exactly match the committed file — no
+# more diff, no more stash needed for this.
+docker-compose.override.yml
+
 # F04(2026-10-13 최종 핸드오프) §9 — scripts/git_pull_deploy.sh가 배포마다
 # 쓰는 build SHA 마커(GET /v1/graph/status의 api_build_sha). 배포 환경에만
 # 존재해야 하는 런타임 상태, 커밋 대상 아님.
