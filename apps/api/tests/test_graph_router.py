@@ -511,6 +511,218 @@ def test_explore_bridge_block_hides_path_through_excluded_subtree():
     assert comp_name not in {c["canonical_name"] for c in resp_excl.json()["components"]}
 
 
+def test_explore_excluded_path_does_not_hide_candidate_reachable_via_allowed_path():
+    """F08(2026-10-13 최종 핸드오프) §2.8.1/2 — "같은 후보로 가는 제외 경로와
+    허용 대체 경로를 동시에 만든다... 제외를 경로 선택 전에 적용하고 허용
+    경로와 후보가 남는지 확인한다." 같은 Component가 제외된 중간 문서
+    하나와, 제외 안 된 중간 문서 하나 모두를 거쳐 2hop으로 도달 가능할 때,
+    하나의 경로가 막혀도 다른 경로로 여전히 나와야 한다 — "후보 자체가
+    제외됐다"로 오판하면 안 된다(post-filter가 아니라 경로 단위 판정이라는
+    뜻)."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"DualPathComp-{uuid.uuid4()}"
+    excluded_bridge_page = str(uuid.uuid4())
+    excluded_bridge_doc = f"test-dualpath-excl-{uuid.uuid4()}"
+    allowed_bridge_doc = f"test-dualpath-ok-{uuid.uuid4()}"
+    anchor_bucket_id = f"test-dualpath-anchor-fb-{uuid.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for bridge_id, page_id in ((excluded_bridge_doc, excluded_bridge_page), (allowed_bridge_doc, str(uuid.uuid4()))):
+        nclient.merge_document(
+            {"id": bridge_id, "source_type": "confluence_map", "external_id": page_id,
+             "title": "bridge", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.merge_failure_bucket(
+        {"id": anchor_bucket_id, "bucket_name": "b", "fb_domain": None, "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [
+            Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+                 target_value=excluded_bridge_doc, tag="EXTRACTED"),
+            Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+                 target_value=allowed_bridge_doc, tag="EXTRACTED"),
+        ],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id,
+              "exclude_page_ids": [excluded_bridge_page]},
+    )
+    assert resp.status_code == 200
+    # 제외된 경로(excluded_bridge_doc)로만 도달 가능했다면 이 Component도
+    # 사라져야 맞지만, allowed_bridge_doc을 거친 경로가 여전히 살아있으므로
+    # 후보 자체는 남아야 한다.
+    assert comp_name in {c["canonical_name"] for c in resp.json()["components"]}
+
+
+def test_explore_page_exclusion_removes_all_copies_source_exclusion_removes_one():
+    """F08 §2.8.3 — "page 제외는 모든 사본, source 제외는 해당 사본에만
+    적용"을 연관 문서(앵커 자신이 아니라 2hop 이웃) 기준으로 명시적으로
+    검증한다. 같은 external_id를 가진 두 수집본(confluence_map/
+    confluence_docs)이 공유 Component를 거쳐 "연관 문서"에 나올 때:
+    exclude_source_types는 그 source_type 사본 하나만 빼고, exclude_page_ids
+    (같은 external_id)는 둘 다 뺀다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"PageVsSourceComp-{uuid.uuid4()}"
+    shared_external_id = str(uuid.uuid4())
+    copy_map = f"confluence_map:{shared_external_id}"
+    copy_docs = f"confluence_docs:{shared_external_id}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    for doc_id, source in ((copy_map, "confluence_map"), (copy_docs, "confluence_docs")):
+        nclient.merge_document(
+            {"id": doc_id, "source_type": source, "external_id": shared_external_id,
+             "title": "같은 페이지", "source_uri": None, "environment": None, "space_key": None,
+             "priority_tier": 1},
+            [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+                  target_value=comp_name, tag="EXTRACTED")],
+        )
+    nclient.close()
+
+    client = TestClient(app)
+
+    resp_source = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name,
+              "exclude_source_types": ["confluence_docs"]},
+    )
+    doc_ids_source = {d["id"] for d in resp_source.json()["documents"]}
+    assert copy_map in doc_ids_source  # 다른 source_type 사본은 남음
+    assert copy_docs not in doc_ids_source  # 이 source_type 사본만 빠짐
+
+    resp_page = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name,
+              "exclude_page_ids": [shared_external_id]},
+    )
+    doc_ids_page = {d["id"] for d in resp_page.json()["documents"]}
+    assert copy_map not in doc_ids_page  # 같은 external_id — 둘 다 빠짐
+    assert copy_docs not in doc_ids_page
+
+
+def test_explore_bridge_block_also_hides_failure_bucket_reached_through_excluded_intermediate():
+    """F08 §2.8.4 — "앵커·fan-out·중간 노드·끝점·support·모든 결과 카테고리의
+    누출을 검사"를 failure_buckets 카테고리로 확장 검증(기존 bridge 테스트는
+    documents/components만 다뤘다). Component 앵커 → 제외 대상 중간 문서 →
+    그 문서의 evidence로 걸린 FailureBucket, 이 2hop 경로가 제외되면
+    failure_buckets 결과에도 그 bucket이 안 보여야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"FbBridgeComp-{uuid.uuid4()}"
+    bridge_page_id = str(uuid.uuid4())
+    bridge_doc_id = f"test-fbbridge-{uuid.uuid4()}"
+    target_bucket_id = f"test-fbbridge-target-{uuid.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": bridge_doc_id, "source_type": "confluence_map", "external_id": bridge_page_id,
+         "title": "bridge", "source_uri": None, "environment": None, "space_key": None, "priority_tier": 1},
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_failure_bucket(
+        {"id": target_bucket_id, "bucket_name": "target bucket", "fb_domain": None, "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+              target_value=bridge_doc_id, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp_all = client.post("/v1/graph/explore", json={"anchor_type": "component", "anchor_value": comp_name})
+    assert resp_all.status_code == 200
+    assert target_bucket_id in {b["id"] for b in resp_all.json()["failure_buckets"]}
+
+    resp_excl = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "component", "anchor_value": comp_name,
+              "exclude_page_ids": [bridge_page_id]},
+    )
+    assert resp_excl.status_code == 200
+    assert target_bucket_id not in {b["id"] for b in resp_excl.json()["failure_buckets"]}
+
+
+def test_explore_subtree_exclusion_known_gap_unset_ancestor_ids_is_not_treated_as_excluded():
+    """F08 §2.8.5(발견했지만 이번 라운드에서 고치지 않음, 정직하게 문서화) —
+    "subtree의 실제 ancestor metadata와 namespace를 대조한다. strict
+    평가에서 ancestry를 모르면 안전하게 제외하거나 미판정 사유를 노출하라."
+
+    실측 결과: Neo4jClient.explore()는 Document.ancestor_ids가 애초에
+    한 번도 안 써진 노드(property 자체가 없음, NULL)와 "조상이 없는 최상위
+    문서"(실제로 ancestor_ids=[])를 구분하지 못한다 — 둘 다
+    `coalesce(p.ancestor_ids, [])`로 빈 배열이 된다(neo4j_client.py의 Cypher
+    bridge 필터와 app.graph.explore.is_document_excluded 둘 다 동일).
+    그 결과 "이 중간 문서가 실제로 제외 대상 subtree 밑에 있는지 우리가
+    전혀 모른다"는 상태가 "확실히 그 subtree 밑이 아니다"와 똑같이
+    취급돼, exclude_subtree_ids가 안전하지 않게(조용히) 새 나갈 수 있다.
+
+    고치지 않은 이유: (1) "안전하게 기본 제외"로 바꾸면 애초에 계층
+    개념이 없는 source_type(티켓 등, ancestor_ids가 원래 '해당 없음')의
+    정상 결과까지 기본적으로 숨겨버려 더 큰 회귀가 될 수 있다 — 어떤
+    source_type이 "원래 해당 없음"이고 어떤 게 "원래 있어야 하는데
+    누락"인지 이번 라운드 조사로는 구분할 수 없었다. (2) NULL과 빈
+    배열을 Neo4j 쪽에서 구분하려면 merge_document의 쓰기 경로(그리고
+    과거 기록된 모든 노드의 재백필)를 건드려야 해, 재백필 없이 끝내는
+    이번 라운드 범위를 벗어난다. 이 테스트는 "모르면 안전하게 제외"가
+    아직 구현 안 됐다는 사실 자체를 회귀 가드로 고정해 둔다 — 나중에
+    고치면 이 테스트도 기대값을 뒤집어야 한다."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.graph.extract import Edge
+
+    comp_name = f"UnknownAncestryComp-{uuid.uuid4()}"
+    excluded_root_id = str(uuid.uuid4())
+    # ancestor_ids를 아예 안 넘긴다 — "이 문서의 조상을 모른다"를 흉내낸다
+    # (실제로는 이 subtree 밑에 있을 수도, 아닐 수도 있다 — 우리는 모른다).
+    bridge_doc_id = f"test-unknown-ancestry-{uuid.uuid4()}"
+    anchor_bucket_id = f"test-unknown-ancestry-anchor-{uuid.uuid4()}"
+
+    nclient = _neo4j_test_client()
+    nclient.ensure_constraints()
+    nclient.merge_document(
+        {"id": bridge_doc_id, "source_type": "confluence_map", "external_id": str(uuid.uuid4()),
+         "title": "ancestry unknown", "source_uri": None, "environment": None, "space_key": None,
+         "priority_tier": 1},  # ancestor_ids 생략 — merge_document가 []로 기본값 채움(의도된 재현)
+        [Edge(rel_type="HAS_COMPONENT", target_label="Component", target_key="canonical_name",
+              target_value=comp_name, tag="EXTRACTED")],
+    )
+    nclient.merge_failure_bucket(
+        {"id": anchor_bucket_id, "bucket_name": "b", "fb_domain": None, "protocol": None,
+         "environment": None, "evidence_ref": None},
+        [Edge(rel_type="HAS_EVIDENCE", target_label="Document", target_key="id",
+              target_value=bridge_doc_id, tag="EXTRACTED")],
+    )
+    nclient.close()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/v1/graph/explore",
+        json={"anchor_type": "failure_bucket", "anchor_value": anchor_bucket_id,
+              "exclude_subtree_ids": [excluded_root_id]},
+    )
+    assert resp.status_code == 200
+    # 알려진 gap: ancestry를 모르는 중간 문서가 "제외 안 됨"으로 취급돼
+    # comp_name이 그대로 샌다. 이상적으로는 미판정 상태를 노출하거나
+    # 안전하게 제외해야 하지만, 위 docstring에 적은 이유로 이번 라운드는
+    # 현재 동작을 회귀 가드로만 고정한다.
+    assert comp_name in {c["canonical_name"] for c in resp.json()["components"]}
+
+
 def test_explore_neo4j_driver_failure_returns_backend_error_status_not_503(monkeypatch):
     """G08 — Neo4j 드라이버 장애는 503로 요청 전체를 죽이는 대신, 기계가
     구분 가능한 status="backend_error"로 200 응답을 돌려줘야 한다(MCP가
