@@ -480,10 +480,23 @@ if [[ "$CURRENT_BRANCH" != "$BRANCH" ]]; then
 fi
 
 # ── 작업 트리 clean 확인 (로컬 변경을 임의로 버리지 않음) ──────────────
-if [[ -n "$(git status --porcelain)" ]]; then
-  err "작업 트리에 커밋되지 않은 변경이 있습니다 — 중단합니다."
-  git status --short
-  die "먼저 커밋/stash 하거나 직접 확인하세요 (git status)"
+# 2026-10-14/15 — .gitignore만 로컬에서 수정돼 있으면(운영 전용 무시 규칙
+# 등, scripts/prod_deploy_and_backfill.sh에 이미 있던 것과 같은 관례)
+# 자동으로 stash하고 배포 뒤 되돌린다. 그 외의 변경이 섞여 있으면(원인이
+# 뭔지 사람이 봐야 하므로) 여전히 중단한다 — 로컬 변경을 임의로 버리지
+# 않는다는 원칙은 그대로 유지.
+STASHED_GITIGNORE=false
+DIRTY="$(git status --porcelain)"
+if [[ -n "$DIRTY" ]]; then
+  if [[ "$DIRTY" == " M .gitignore" ]]; then
+    warn ".gitignore만 로컬 수정됨 — 자동 stash 후 배포 뒤 복원합니다"
+    git stash push -m "prod-local gitignore (auto, git_pull_deploy.sh)" -- .gitignore
+    STASHED_GITIGNORE=true
+  else
+    err "작업 트리에 커밋되지 않은 변경이 있습니다 — 중단합니다."
+    git status --short
+    die "먼저 커밋/stash 하거나 직접 확인하세요 (git status)"
+  fi
 fi
 CURRENT_SHA="$(git rev-parse HEAD)"
 info "현재 커밋: ${CURRENT_SHA:0:12}"
@@ -523,6 +536,7 @@ fi
 
 if $DRY_RUN; then
   warn "DRY-RUN — pull/restart 하지 않고 종료"
+  $STASHED_GITIGNORE && git stash pop
   exit 0
 fi
 
@@ -549,6 +563,7 @@ echo "${APPLIED_SHA:0:12}" > "${PROJECT_DIR}/apps/api/app/.build_sha"
 
 if $NO_RESTART; then
   warn "--no-restart — 컨테이너 재시작 생략 (수동으로 재시작하세요)"
+  $STASHED_GITIGNORE && git stash pop
   exit 0
 fi
 
@@ -558,11 +573,97 @@ do_rollback() {
   restart_services
   if wait_health; then
     warn "롤백 완료 — 서비스는 ${CURRENT_SHA:0:12} 상태로 복구되었습니다. 실패한 배포(${APPLIED_SHA:0:12})를 조사하세요."
+    $STASHED_GITIGNORE && warn ".gitignore stash는 그대로 남겨둡니다 — 문제 해결 후 'git stash pop'으로 직접 복원하세요"
     return 0
   else
     err "롤백 후에도 헬스체크 실패 — 수동 개입이 필요합니다!"
     err "  docker compose logs --tail 100 ${SERVICES[*]}"
+    $STASHED_GITIGNORE && warn ".gitignore stash는 그대로 남겨둡니다 — 문제 해결 후 'git stash pop'으로 직접 복원하세요"
     return 1
+  fi
+}
+
+# 2026-10-14/15 — "스크립트 하나만 실행하면 배포가 실제로 됐는지 끝까지
+# 확인된다"를 위해, 지금까지 매 배포마다 사람이 손으로 하나씩 돌려보던
+# 사후 점검(HEAD sha, alembic head, api_build_sha 파일, 공개 헬스/그래프
+# 상태 엔드포인트)을 여기서 자동으로 돈다. wait_health는 "컨테이너가 떴다"
+# 까지만 보장하고, api_build_sha처럼 "이 배포가 실제로 반영됐다"는 더 깊은
+# 확인은 안 해준다 — 둘은 다른 질문이다(어제 nginx가 떠 있었는데도 /v1/*
+# 전부 502였던 사고가 바로 그 차이).
+POST_DEPLOY_VERIFY_FAILED=false
+
+post_deploy_verify() {
+  banner "배포 후 검증"
+
+  local head_sha
+  head_sha="$(git rev-parse --short=12 HEAD)"
+  if [[ "$head_sha" == "${APPLIED_SHA:0:12}" ]]; then
+    log "  ✓ git HEAD = ${head_sha}"
+  else
+    err "  ✗ git HEAD(${head_sha}) != 적용 예정 커밋(${APPLIED_SHA:0:12})"
+    POST_DEPLOY_VERIFY_FAILED=true
+  fi
+
+  local alembic_out
+  alembic_out="$(compose exec -T api alembic current 2>&1 || true)"
+  if echo "$alembic_out" | grep -q "(head)"; then
+    log "  ✓ alembic current: $(echo "$alembic_out" | tail -1)"
+  else
+    err "  ✗ alembic이 head가 아님(마이그레이션 누락 의심): $alembic_out"
+    POST_DEPLOY_VERIFY_FAILED=true
+  fi
+
+  local build_sha_file="${PROJECT_DIR}/apps/api/app/.build_sha"
+  if [[ -f "$build_sha_file" ]] && grep -q "${APPLIED_SHA:0:12}" "$build_sha_file"; then
+    log "  ✓ apps/api/app/.build_sha = $(cat "$build_sha_file")"
+  else
+    err "  ✗ .build_sha 파일이 없거나 이번 커밋과 다름 (${build_sha_file})"
+    POST_DEPLOY_VERIFY_FAILED=true
+  fi
+
+  # web(nginx)을 거친 /v1/health — 컨테이너가 떠 있어도 nginx 프록시가 깨진
+  # 상태(2026-10-14 실전 재현)는 wait_health의 web 체크가 이미 잡지만,
+  # 여기서도 실제 JSON 내용까지 한 번 더 사람이 보기 좋게 보여준다.
+  local health_json
+  health_json="$(curl -sf --max-time 5 "http://127.0.0.1:8572/v1/health" 2>/dev/null || true)"
+  if echo "$health_json" | grep -q '"status":"ok"'; then
+    log "  ✓ GET /v1/health (via web) → ok"
+  else
+    err "  ✗ GET /v1/health (via web) 응답 이상: ${health_json:-<empty>}"
+    POST_DEPLOY_VERIFY_FAILED=true
+  fi
+
+  # F04(2026-10-13 최종 핸드오프)로 만든 그래프 현황 엔드포인트 — 인증
+  # 불필요(읽기 전용 공개 상태 조회). read_state/generation_matches/
+  # api_build_sha/contract_version을 한 번에 확인한다.
+  local status_json
+  status_json="$(curl -sf --max-time 5 "http://127.0.0.1:8572/v1/graph/status" 2>/dev/null || true)"
+  if [[ -n "$status_json" ]]; then
+    echo "$status_json" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    print(f'  ✗ /v1/graph/status 응답 JSON 파싱 실패: {e}')
+    sys.exit(1)
+print(f\"  · read_state={d.get('read_state')} generation_matches={d.get('generation_matches')}\")
+print(f\"  · api_build_sha={d.get('api_build_sha')} contract_version={d.get('contract_version')}\")
+lr = d.get('latest_run') or {}
+live = lr.get('liveness') or {}
+print(f\"  · latest_run: status={lr.get('status')} scope={lr.get('scope')} liveness={live.get('state')}\")
+if d.get('api_build_sha') not in (None, 'unknown', '${APPLIED_SHA:0:12}'):
+    print(f\"  ⚠ api_build_sha가 이번 배포 커밋과 다름 — 확인 필요\")
+" || POST_DEPLOY_VERIFY_FAILED=true
+    log "  ✓ GET /v1/graph/status (via web) 응답 받음 — 위 요약 확인"
+  else
+    err "  ✗ GET /v1/graph/status (via web) 응답 없음/실패"
+    POST_DEPLOY_VERIFY_FAILED=true
+  fi
+
+  if $POST_DEPLOY_VERIFY_FAILED; then
+    err "배포 후 검증에서 하나 이상 이상 신호 발견 — 위 ✗ 항목을 직접 확인하세요(자동 롤백 대상은 아님, wait_health는 이미 통과함)"
+  else
+    log "  ✓ 배포 후 검증 전부 통과"
   fi
 }
 
@@ -573,6 +674,8 @@ if wait_health; then
   DEPLOY_TRACK_DIR="${HOME}/bin"
   mkdir -p "$DEPLOY_TRACK_DIR"
   echo "$APPLIED_SHA" > "${DEPLOY_TRACK_DIR}/.citec_kb_git_deployed"
+  post_deploy_verify
+  $STASHED_GITIGNORE && git stash pop
   echo ""
   banner "✅ 배포 완료"
   echo "  commit: ${APPLIED_SHA:0:12} ($BRANCH)"
@@ -580,12 +683,14 @@ if wait_health; then
   echo "  web  http://localhost:8572"
   echo "  api  http://localhost:8573/v1/health"
   echo "  mcp  http://localhost:8577"
+  $POST_DEPLOY_VERIFY_FAILED && exit 2
   exit 0
 else
   if $NO_ROLLBACK; then
     err "헬스체크 실패 — --no-rollback 지정됨, 자동 롤백하지 않습니다"
     err "  현재 코드: ${APPLIED_SHA:0:12}  (직전: ${CURRENT_SHA:0:12})"
     err "  로그 확인: docker compose logs --tail 100 ${SERVICES[*]}"
+    $STASHED_GITIGNORE && warn ".gitignore stash는 그대로 남겨둡니다 — 문제 해결 후 'git stash pop'으로 직접 복원하세요"
     exit 1
   fi
   do_rollback
