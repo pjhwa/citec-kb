@@ -355,3 +355,141 @@ def test_seed_lexicon_dry_run_matches_actual_apply_diff(monkeypatch):
             session.query(LexiconTerm).filter_by(canonical=unchanged).delete()
             session.query(LexiconTerm).filter_by(canonical=changing).delete()
             session.query(LexiconTerm).filter_by(canonical=new_one).delete()
+
+
+def test_seed_lexicon_apply_blocks_on_concurrent_row_lock_and_sees_latest_state():
+    """F03(2026-10-13 최종 핸드오프) §2.3.5/8 — "dry-run 시점 이후 데이터가
+    바뀌면... 오래된 계획을 그대로 덮어쓰지 말라"의 실제 재현. 실제 두 번째
+    커넥션으로 같은 행에 FOR UPDATE 잠금을 먼저 쥐고(= "seed_lexicon() 호출
+    도중 다른 writer가 수동으로 이 행을 고친다"는 상황을 흉내), seed_lexicon()
+    이 실제로 그 잠금에 블록되는지, 블록이 풀린 뒤 그 수동 변경 위에 자기
+    변경을 올바르게 병합하는지(수동 변경을 지우지 않는지) 검증한다."""
+    import threading
+    import time
+    import uuid as uuid_mod
+
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope, get_engine
+    from sqlalchemy import text
+
+    canonical = f"TestLock-{uuid_mod.uuid4().hex[:8]}"
+    other_conn = None
+    try:
+        with session_scope() as session:
+            session.add(LexiconTerm(canonical=canonical, variants=["base"], priority=100, metadata_={}))
+
+        # 1) 별도 커넥션(= "다른 writer")으로 이 행을 FOR UPDATE로 먼저 잠근다.
+        other_conn = get_engine().connect()
+        other_conn.execute(text(
+            "SELECT * FROM lexicon_terms WHERE canonical = :c FOR UPDATE"
+        ), {"c": canonical})
+
+        monkeypatch_seed = {"canonical": canonical, "variants": ["base", "from-seed"], "priority": 100}
+        from unittest.mock import patch
+
+        seed_done = threading.Event()
+        with patch.object(
+            seed_module, "load_lexicon_seed_file",
+            return_value={"terms": [monkeypatch_seed], "_loaded_from": "test"},
+        ):
+            def run_seed():
+                seed_module.seed_lexicon(replace=False)
+                seed_done.set()
+
+            t = threading.Thread(target=run_seed, daemon=True)
+            t.start()
+
+            # 2) seed_lexicon()이 실제로 블록돼 있는지 간접 증명 — 잠금이 없으면
+            # 이 작업은 수 ms면 끝나므로, 넉넉한 유예시간(1.5s) 안에도 안 끝났다면
+            # FOR UPDATE에 블록된 것으로 본다(pg_stat_activity 폴링보다 훨씬
+            # 단순하고, 이 테스트가 실제로 한 번 hang을 일으킨 적이 있어
+            # 더 견고한 방식으로 바꿨다).
+            still_blocked = not seed_done.wait(timeout=1.5)
+            assert still_blocked, (
+                "seed_lexicon()이 다른 writer가 FOR UPDATE로 잠근 행 때문에 블록되기도 전에 "
+                "끝나버렸다 — 잠금이 전혀 효과가 없다는 뜻"
+            )
+
+            # 3) "다른 writer"가 수동으로 alias를 추가하고 커밋 — seed_lexicon()은 아직 대기 중.
+            other_conn.execute(text(
+                "UPDATE lexicon_terms SET variants = variants || ARRAY['manual-alias'] WHERE canonical = :c"
+            ), {"c": canonical})
+            other_conn.commit()
+            other_conn.close()
+            other_conn = None
+
+            t.join(timeout=10)
+            assert seed_done.is_set(), "seed_lexicon()이 잠금 해제 후에도 끝나지 않음"
+
+        with session_scope() as session:
+            row = session.query(LexiconTerm).filter_by(canonical=canonical).one()
+            # 수동 alias가 살아있어야 한다(= seed_lexicon()이 블록 풀린 뒤 최신 상태를
+            # 다시 읽어 그 위에 병합했다는 뜻 — 잠금 전 스냅샷으로 덮어쓰지 않았다).
+            assert "manual-alias" in row.variants
+            assert "from-seed" in row.variants
+            assert "base" in row.variants
+    finally:
+        if other_conn is not None:
+            # 중간에 assert가 실패해도 이 커넥션이 쥔 행 잠금을 반드시 풀어야
+            # 아래 cleanup DELETE가 영원히 블록되지 않는다(실제로 한 번 이렇게
+            # hang이 났다 — 수정 전에는 이 finally가 없었음).
+            try:
+                other_conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            other_conn.close()
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=canonical).delete()
+
+
+def test_seed_lexicon_apply_is_atomic_on_mid_loop_failure():
+    """F03(2026-10-13 최종 핸드오프) §2.3.6 — "적용의 원자성... 변경 실패 시
+    상태를 검증하라". seed_lexicon()은 전부 한 session_scope() 안에서 도므로,
+    루프 중간에 예외가 나면 그 전까지 처리한 canonical들도 전부 롤백돼야
+    한다(부분 적용 금지) — _plan_term_change를 N번째 호출에서 일부러 실패
+    시켜 실제로 검증한다."""
+    import uuid as uuid_mod
+    from unittest.mock import patch
+
+    import app.lexicon.seed as seed_module
+    from app.db.models import LexiconTerm
+    from app.db.session import session_scope
+
+    c1 = f"TestAtomic1-{uuid_mod.uuid4().hex[:8]}"
+    c2 = f"TestAtomic2-{uuid_mod.uuid4().hex[:8]}"  # 이 canonical 처리 중 실패를 주입
+    c3 = f"TestAtomic3-{uuid_mod.uuid4().hex[:8]}"
+
+    seed_terms = {
+        "terms": [
+            {"canonical": c1, "variants": ["v1"], "priority": 100},
+            {"canonical": c2, "variants": ["v1"], "priority": 100},
+            {"canonical": c3, "variants": ["v1"], "priority": 100},
+        ],
+        "_loaded_from": "test",
+    }
+
+    original_plan = seed_module._plan_term_change
+
+    def failing_plan(row, seed_term, *, replace):
+        if seed_term.get("canonical") == c2:
+            raise RuntimeError("injected mid-loop failure for atomicity test")
+        return original_plan(row, seed_term, replace=replace)
+
+    try:
+        with patch.object(seed_module, "load_lexicon_seed_file", return_value=seed_terms):
+            with patch.object(seed_module, "_plan_term_change", side_effect=failing_plan):
+                with pytest.raises(RuntimeError):
+                    seed_module.seed_lexicon(replace=False)
+
+        with session_scope() as session:
+            # c1은 c2보다 먼저 루프를 돌아 session.add()까지 됐을 수 있지만,
+            # 예외로 전체 트랜잭션이 롤백됐으므로 셋 다 DB에 없어야 한다.
+            assert session.query(LexiconTerm).filter_by(canonical=c1).first() is None
+            assert session.query(LexiconTerm).filter_by(canonical=c2).first() is None
+            assert session.query(LexiconTerm).filter_by(canonical=c3).first() is None
+    finally:
+        with session_scope() as session:
+            session.query(LexiconTerm).filter_by(canonical=c1).delete()
+            session.query(LexiconTerm).filter_by(canonical=c2).delete()
+            session.query(LexiconTerm).filter_by(canonical=c3).delete()

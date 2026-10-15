@@ -138,7 +138,19 @@ def seed_lexicon(*, replace: bool = False, dry_run: bool = False) -> dict[str, A
     seed_canonicals = {str(t["canonical"]).strip() for t in terms}
 
     with session_scope() as session:
-        existing_rows = {r.canonical: r for r in session.scalars(select(LexiconTerm)).all()}
+        # F03(2026-10-13 최종 핸드오프) §2.3.5/8 — "dry-run 시점 이후 데이터가
+        # 바뀌면... 오래된 계획을 그대로 덮어쓰지 말라", "여러 worker·batch의
+        # 사전 revision과 갱신을 검증하라". dry_run=False(실제 적용)일 때만
+        # FOR UPDATE로 이 테이블 전체 행을 잠근다 — seed는 드물게 도는 배치
+        # 작업이라 전체 잠금 비용이 낮고, 두 번째 호출의 SELECT 자체가 첫
+        # 번째 호출의 COMMIT까지 블록돼 "오래된 읽기 위에 쓰기"를 구조적으로
+        # 막는다(두 번째 호출은 블록이 풀리는 순간 첫 번째가 이미 커밋한
+        # 최신 값을 읽어 그 위에 병합한다 — lost update 불가능). dry_run은
+        # 쓰지 않으므로 잠그지 않는다(다른 dry-run/apply를 막을 이유가 없음).
+        existing_query = select(LexiconTerm)
+        if not dry_run:
+            existing_query = existing_query.with_for_update()
+        existing_rows = {r.canonical: r for r in session.scalars(existing_query).all()}
 
         would_add: list[str] = []
         would_change: list[str] = []
