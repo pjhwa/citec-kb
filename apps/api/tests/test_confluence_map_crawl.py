@@ -154,3 +154,59 @@ def test_map_crawl_one_bad_page_does_not_abort_the_others(tmp_path):
     assert [w.page_id for w in result.written] == ["good"]
     assert len(result.errors) == 1
     assert result.errors[0]["page_id"] == "bad"
+
+
+def test_search_failure_among_many_good_pages_blocks_cursor_end_to_end(tmp_path):
+    """실제 크롤러 결과(루트 검색 401 + 정상 페이지 다수)를 커서 판정 헬퍼에 그대로
+    넣는다 — 오류율이 1% 미만이어도 전진 불가여야 한다(루트 변경분 영구 누락 방지)."""
+    from app.confluence.sync import errors_allow_cursor_advance
+
+    client = _client()
+    roots = {"bad_root": "Bad Root", "good_root": "Good Root"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if request.url.path.endswith("/search"):
+            if "bad_root" in params["cql"]:
+                return httpx.Response(401, json={"error": "unauthorized"})
+            if int(params["start"]) >= 50 * 3:
+                return httpx.Response(200, json={"results": []})
+            start = int(params["start"])
+            return httpx.Response(200, json={"results": [{"id": f"p{start + i}"} for i in range(50)]})
+        page_id = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, json=_page_meta_response(page_id))
+
+    _patch_bulk_client(client, handler)
+    result = asyncio.run(
+        _crawl_map_source(
+            client, source_id="test_source", roots=roots, space_key="DevOps001",
+            space_name="SCP인프라운영팀", since=None, raw_dir=tmp_path,
+            max_pages_per_root=None, rps=0, tz_name="Asia/Seoul",
+        )
+    )
+    assert len(result.written) == 150
+    assert len(result.errors) == 1 and result.errors[0]["page_id"] is None
+    total = len(result.written) + len(result.errors)
+    s = Settings(CONFLUENCE_MAX_ERROR_RATE=0.5, CONFLUENCE_MAX_ERROR_COUNT=10)  # 아무리 느슨해도
+    assert errors_allow_cursor_advance(result.errors, total, s) is False
+
+
+def _s(rate=0.01, count=0):
+    return Settings(CONFLUENCE_MAX_ERROR_RATE=rate, CONFLUENCE_MAX_ERROR_COUNT=count)
+
+
+def test_errors_allow_cursor_advance_policy_table():
+    from app.confluence.sync import errors_allow_cursor_advance as ok
+
+    page = lambda n: [{"page_id": f"p{i}", "root_id": "r", "error": "x"} for i in range(n)]  # noqa: E731
+    root = [{"page_id": None, "root_id": "r", "error": "search"}]
+    assert ok([], 10, _s()) is True
+    assert ok(page(1), 1000, _s()) is True            # 0.1% <= 1%
+    assert ok(page(1), 2, _s()) is False              # 50% > 1%, count=0
+    assert ok(page(1), 2, _s(count=1)) is True        # opt-in count
+    assert ok(page(2), 4, _s(count=1)) is False       # over count and rate
+    assert ok(root, 1000, _s()) is False              # root-level: never
+    assert ok(root, 1000, _s(rate=1.0, count=99)) is False
+    assert ok(page(1) + root, 1000, _s()) is False    # mixed: root-level wins
+    # explicit-seed errors carry page_id with root_id None → page-level
+    assert ok([{"page_id": "9", "root_id": None, "error": "x"}], 1000, _s()) is True

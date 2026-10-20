@@ -153,6 +153,15 @@ source_type이 아니라 source_id 단위로 선택).
 14,600건을 전부 처음부터 크롤한다 — 0.3req/s 기준 약 10시간 소요 추정.
 마이그레이션을 먼저 하는 걸 강력히 권장한다.
 
+### 커서 전진 에러 규칙 (confluence_docs와 공유)
+
+2026-10-20부터 `map_sync`도 `app.confluence.sync.errors_allow_cursor_advance()`를 쓴다.
+**루트 단위 에러(검색 호출 실패/페이지네이션 정체, `page_id` 없음)는 오류율과 무관하게
+항상 커서를 막는다** — 전진하면 그 루트의 해당 구간 변경분이 영구 누락된다(증분 조회가
+`lastmodified > 커서`뿐). 페이지 단위 에러만 `CONFLUENCE_MAX_ERROR_RATE`(기본 1%) 또는
+`CONFLUENCE_MAX_ERROR_COUNT`(기본 0, 옵트인)로 허용한다. 자세한 근거는
+`docs/CONFLUENCE_SYNC.md` 참고.
+
 ### 레이트리밋 — `CONFLUENCE_RATE_LIMIT_RPS`는 절대 올리지 않는다
 
 `map_sync.py`는 `app.confluence.sync`(기존 confluence_docs/tech_repo,

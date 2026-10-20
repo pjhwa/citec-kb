@@ -668,6 +668,76 @@ def test_sync_map_ingest_failure_does_not_advance_cursor_or_clear_checkpoint(tmp
             session.query(Source).filter_by(id=source_id).delete()
 
 
+def _run_map_body(tmp_path, monkeypatch, *, n_written, page_errors=0, root_errors=0):
+    """_sync_map_body를 합성 source 1개로 직접 호출(위 P1-B 테스트와 같은 방식)하고
+    (stats, last_sync_at)을 돌려준다. run_ingest_and_embed=False라 커서는 크롤 직후
+    판정 결과대로 바로 커밋된다."""
+    import app.confluence.map_sync as map_sync_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+    from app.settings import get_settings
+
+    get_settings.cache_clear()
+    source_id = "test_map_error_policy_source"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+        session.add(Source(id=source_id, type="confluence_map", name="Test Space", config={}))
+
+    async def fake_crawl_map_source(*args, **kwargs):
+        written = [map_sync_mod.WrittenPage(page_id=str(i), path=tmp_path / f"{i}.md") for i in range(n_written)]
+        errors = [{"page_id": f"e{i}", "root_id": "1", "error": "401"} for i in range(page_errors)]
+        errors += [{"page_id": None, "root_id": "1", "error": "search 401"} for _ in range(root_errors)]
+        return map_sync_mod.CrawlResult(written=written, errors=errors, cql_log=[])
+
+    monkeypatch.setattr(map_sync_mod, "_crawl_map_source", fake_crawl_map_source)
+    all_defs = {source_id: {"space_key": "TESTSPACE", "space_name": "Test Space", "roots": {"1": "root"}}}
+    run_started = datetime.now(timezone.utc)
+    try:
+        stats = map_sync_mod._sync_map_body(
+            defs=[source_id], raw_root=tmp_path, settings=get_settings(), client=None,
+            run_started=run_started,
+            stats={"dry_run": False, "started_at": run_started.isoformat(), "sources": {}},
+            dry_run=False, max_pages_per_root=None, root_id=None,
+            run_ingest_and_embed=False, all_defs=all_defs,
+        )
+        with session_scope() as session:
+            last = session.get(Source, source_id).last_sync_at
+        return stats["sources"][source_id], last
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_map_root_level_error_never_advances_cursor(tmp_path, monkeypatch):
+    """confluence_map도 confluence_docs와 같은 규칙: 루트 검색 실패(page_id None)는
+    오류율이 낮아도(1/1000) 건수 허용을 켜도 커서를 전진시키면 안 된다."""
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src, last = _run_map_body(tmp_path, monkeypatch, n_written=999, root_errors=1)
+    assert src["cursor_advanced"] is False and last is None
+    monkeypatch.setenv("CONFLUENCE_MAX_ERROR_COUNT", "5")
+    src, last = _run_map_body(tmp_path, monkeypatch, n_written=999, root_errors=1)
+    assert src["cursor_advanced"] is False and last is None
+
+
+def test_sync_map_low_page_error_rate_still_advances_cursor(tmp_path, monkeypatch):
+    """기존 1% 비율 허용은 페이지 단위 에러에 대해 그대로 유지(회귀 방지)."""
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src, last = _run_map_body(tmp_path, monkeypatch, n_written=999, page_errors=1)
+    assert src["cursor_advanced"] is True and last is not None
+
+
+def test_sync_map_small_run_page_error_blocks_cursor_by_default(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src, last = _run_map_body(tmp_path, monkeypatch, n_written=2, page_errors=1)
+    assert src["cursor_advanced"] is False and last is None
+
+
+def test_sync_map_no_errors_advances_cursor(tmp_path, monkeypatch):
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src, last = _run_map_body(tmp_path, monkeypatch, n_written=3)
+    assert src["cursor_advanced"] is True and last is not None
+
+
 def test_sync_embed_failure_does_not_block_cursor_advance(tmp_path, monkeypatch):
     """embed_pending_chunks() is a global self-healing queue over every
     chunk lacking an embedding, not scoped to this run — unlike a

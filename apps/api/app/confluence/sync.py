@@ -442,6 +442,25 @@ def _advance_cursor(source_id: str, run_started: datetime) -> None:
             src.last_sync_at = new_cursor
 
 
+def errors_allow_cursor_advance(errors: list[dict[str, Any]], total_attempted: int, settings: Any) -> bool:
+    """커서 전진을 허용하는 에러 상태인지 판정 — sync()와 map_sync가 공유한다.
+
+    루트 단위 에러(page_id 없음: 검색 호출 실패/페이지네이션 정체)는 그 루트의
+    변경분 전체를 놓쳤다는 뜻이라 어떤 허용 기준으로도 전진시키면 안 된다(전진하면
+    그 구간 변경분이 영구 누락 — 조회가 `lastmodified > 커서`뿐이므로). 페이지 단위
+    에러만 오류율(CONFLUENCE_MAX_ERROR_RATE) 또는 건수(CONFLUENCE_MAX_ERROR_COUNT,
+    기본 0)로 허용한다."""
+    if not errors:
+        return True
+    if any(not e.get("page_id") for e in errors):
+        return False
+    error_rate = len(errors) / total_attempted if total_attempted else 0.0
+    return (
+        error_rate <= settings.confluence_max_error_rate
+        or len(errors) <= settings.confluence_max_error_count
+    )
+
+
 def sync(
     raw_dir: str | Path,
     *,
@@ -515,17 +534,7 @@ def sync(
         truncated = max_pages_per_root is not None or root_id is not None
         total_attempted = len(result.written) + len(result.errors)
         error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
-        # 루트 단위 에러(page_id 없음: 검색 호출 실패/페이지네이션 정체)는 그
-        # 루트의 변경분 전체를 놓쳤다는 뜻이다 — 어떤 허용 기준으로도 cursor를
-        # 전진시키면 안 된다(전진하면 그 구간의 변경분이 영구 누락).
-        root_level_errors = [e for e in result.errors if not e.get("page_id")]
-        error_rate_ok = not result.errors or (
-            not root_level_errors
-            and (
-                error_rate <= settings.confluence_max_error_rate
-                or len(result.errors) <= settings.confluence_max_error_count
-            )
-        )
+        error_rate_ok = errors_allow_cursor_advance(result.errors, total_attempted, settings)
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance and result.errors:
             logger.warning(

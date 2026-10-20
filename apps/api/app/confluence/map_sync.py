@@ -46,6 +46,7 @@ from app.confluence.sync import (
     _now,
     _sanitize_line_value,
     directory_breadcrumb,
+    errors_allow_cursor_advance,
     page_url,
     version_date,
 )
@@ -1091,7 +1092,7 @@ def _sync_map_body(
 
         total_attempted = len(result.written) + len(result.errors)
         error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
-        error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
+        error_rate_ok = errors_allow_cursor_advance(result.errors, total_attempted, settings)
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance:
             pending_commits[source_id] = (run_started, use_checkpoint)
