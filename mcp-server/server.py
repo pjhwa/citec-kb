@@ -804,6 +804,95 @@ async def kb_list_tickets(
 
 
 @mcp.tool()
+async def kb_recent_changes(
+    relative: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    change_type: str = "modified",
+    source_types: str = "",
+    space_key: str = "",
+    title_contains: str = "",
+    include_folders: bool = False,
+    limit: int = 30,
+    offset: int = 0,
+) -> str:
+    """Confluence 문서의 최근 수정/신규 목록 조회 (confluence_map·confluence_docs·tech_repo).
+
+    기간: relative 예 '최근 7일', '지난 주', '이번 달' 또는 date_from/date_to(ISO date).
+          아무것도 안 주면 최근 7일.
+    change_type:
+      modified(기본) = Confluence에서 수정된 시각(source_modified_at) 기준
+      added          = KB가 처음 수집한 시각 기준 (Confluence 페이지 생성일이 아님)
+      all            = 둘 중 하나라도 기간 내
+    source_types: 콤마 구분(기본 3종 전부). space_key: 예 'DevOps001','LOOKIN','TechRepo'.
+    include_folders=False면 confluence_map의 폴더(이정표) 페이지는 제외.
+    KB 반영은 Confluence 수정 후 최대 수 시간 지연될 수 있다(confluence_sync 2시간, map_sync 하루 3회).
+    수정 시각 정보가 없는 문서는 modified 결과에서 빠지며 결과 머리에 건수를 표시한다.
+    """
+    params: dict[str, Any] = {
+        "change_type": change_type or "modified",
+        "include_folders": bool(include_folders),
+        "limit": min(max(limit, 1), 200),
+        "offset": max(offset, 0),
+    }
+    for key, val in (
+        ("relative", relative),
+        ("date_from", date_from),
+        ("date_to", date_to),
+        ("source_types", source_types),
+        ("space_key", space_key),
+        ("title_contains", title_contains),
+    ):
+        if val and val.strip():
+            params[key] = val.strip()
+    try:
+        async with _client() as client:
+            resp = await client.get("/v1/documents/recent-changes", params=params)
+            if resp.status_code == 400:
+                return f"status: invalid_request\n오류: {_api_error_detail(resp)}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return _format_recent_changes(data)
+
+
+def _format_recent_changes(data: dict[str, Any]) -> str:
+    rng = data.get("range") or {}
+    items = data.get("items") or []
+    label = rng.get("label") or f"{rng.get('date_from')}~{rng.get('date_to')}"
+    lines = [
+        f"recent_changes total={data.get('total', len(items))} change_type={data.get('change_type')} "
+        f"range={label} ({rng.get('date_from')}~{rng.get('date_to')}, KST) "
+        f"offset={data.get('offset', 0)} shown={len(items)}"
+    ]
+    missing = data.get("missing_modified_at") or 0
+    if missing:
+        lines.append(
+            f"참고: 수정 시각 정보가 없는 문서 {missing}건은 modified 결과에서 제외됨 "
+            "(added/all의 KB 수집 시각 기준에는 포함될 수 있음)."
+        )
+    if data.get("change_type") != "modified":
+        lines.append("참고: added는 KB가 처음 수집한 시각이며 Confluence 페이지 생성일이 아닙니다.")
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        lines.append(
+            f"- [{it.get('change')}] {it.get('title')} "
+            f"(space={it.get('space_key')}, type={it.get('source_type')}, page_id={it.get('page_id')}, "
+            f"modified={it.get('source_modified_at') or '-'}, kb_created={it.get('kb_created_at') or '-'}, "
+            f"v={it.get('source_version') if it.get('source_version') is not None else '-'})"
+        )
+        if it.get("path"):
+            lines.append(f"    path: {it['path']}")
+        if it.get("url"):
+            lines.append(f"    url: {it['url']}")
+    if not items:
+        lines.append("조건에 맞는 변경이 없습니다.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
 async def kb_analytics(
     group_by: str = "year",
     relative: str = "",
@@ -1367,6 +1456,10 @@ async def kb_tools_help() -> str:
 [기간 조회 · 목록]
   kb_list_tickets(relative=|date_from=|date_to=)  티켓 기간 목록
                   예: relative="지난 주", date_from="2026-01-01", date_to="2026-03-31"
+  kb_recent_changes(relative=|date_from=|date_to=, change_type=modified|added|all,
+                    space_key=, source_types=, title_contains=)
+                  Confluence(map/docs/tech_repo) 최근 수정·신규 문서 목록
+                  예: relative="최근 7일", space_key="DevOps001", change_type="all"
 
 [집계 · 분석]
   kb_analytics(group_by=, relative=, entity=, component=)

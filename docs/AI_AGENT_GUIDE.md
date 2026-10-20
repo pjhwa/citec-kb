@@ -82,6 +82,7 @@ Use specialized tools when you already know the structured parameters (dates, gr
 |-----------|----------|
 | One clear fact question | `kb_query` or `kb_search` → 1–2 `kb_get_document` |
 | Period list | `kb_list_tickets` (not N full-text searches) |
+| "What changed in Confluence recently?" | `kb_recent_changes` (not N searches) |
 | Counts / breakdown | `kb_analytics` (not LLM counting) |
 | “Similar past outage” | `kb_similar_incident` |
 | Full narrative answer | `kb_ask` after optional search |
@@ -216,6 +217,30 @@ Returns markdown body + access meta. **Primary way to quote full text.**
 **API:** `GET /v1/tickets?...`
 
 Use this instead of inventing lists from memory. Combine with `kb_ticket` for full body.
+
+### 4.4b `kb_recent_changes` — recently modified / added Confluence pages
+
+| Arg | Description |
+|-----|-------------|
+| `relative` / `date_from` / `date_to` | See §5; default last 7 days (KST) |
+| `change_type` | `modified` (default) = Confluence edit time; `added` = first time **KB** saw it; `all` = either |
+| `source_types` | comma list of `confluence_map,confluence_docs,tech_repo` (default all three) |
+| `space_key` | e.g. `DevOps001`, `LOOKIN`, `TechRepo` (case-insensitive) |
+| `title_contains` | literal, case-insensitive substring |
+| `include_folders` | default false — hides `confluence_map` folder ("이정표") pages |
+| `limit` / `offset` | pagination (limit ≤ 200) |
+
+**API:** `GET /v1/documents/recent-changes?...`
+
+Caveats the agent must relay:
+- `modified` uses `source_modified_at` (Confluence `version.when`). KB lags Confluence by up to
+  ~2 h (`confluence_sync`) / several hours (`map_sync`).
+- `added` is **not** the Confluence creation date — it is `documents.created_at`, the time the
+  KB first ingested the page. Bulk-ingested history shares one timestamp, so only use short,
+  recent ranges.
+- Pages without `source_modified_at` (a small fraction) are excluded from `modified`; the header
+  line reports the count (`missing_modified_at`).
+- This lists metadata only; use `kb_get_document` for the body.
 
 ### 4.5 `kb_analytics`
 

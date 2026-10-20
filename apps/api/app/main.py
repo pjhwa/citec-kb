@@ -38,6 +38,7 @@ from app.routers import insights as insights_router  # noqa: E402
 from app.routers import jobs as jobs_router  # noqa: E402
 from app.routers import lexicon as lexicon_router  # noqa: E402
 from app.routers import ops as ops_router  # noqa: E402
+from app.routers import documents as documents_router  # noqa: E402
 from app.routers import tickets as tickets_router  # noqa: E402
 from app.routers import external_compat as external_compat_router  # noqa: E402
 from app.routers import graph as graph_router  # noqa: E402
@@ -98,6 +99,7 @@ app.include_router(frames_router.router)
 app.include_router(si_router.router)
 app.include_router(bundles_router.router)
 app.include_router(tickets_router.router)
+app.include_router(documents_router.router)
 app.include_router(analytics_router.router)
 app.include_router(capacity_router.router)
 app.include_router(entities_router.router)

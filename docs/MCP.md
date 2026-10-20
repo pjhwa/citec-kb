@@ -33,6 +33,7 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 |------|------|--------|
 | **`kb_list_tickets`** | `relative` / `date_from`·`date_to` 기간 목록 | `GET /v1/tickets` |
 | `kb_ticket` | 티켓 전체 본문 | `GET /v1/tickets/{id}` |
+| **`kb_recent_changes`** | Confluence(map/docs/tech_repo) 최근 수정·신규 문서 목록 (`relative`·`date_from`/`date_to`, `change_type`, `space_key`) | `GET /v1/documents/recent-changes` |
 
 ### 집계 · 분석
 
