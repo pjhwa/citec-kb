@@ -515,13 +515,25 @@ def sync(
         truncated = max_pages_per_root is not None or root_id is not None
         total_attempted = len(result.written) + len(result.errors)
         error_rate = (len(result.errors) / total_attempted) if total_attempted else 0.0
-        error_rate_ok = not result.errors or error_rate <= settings.confluence_max_error_rate
+        # 루트 단위 에러(page_id 없음: 검색 호출 실패/페이지네이션 정체)는 그
+        # 루트의 변경분 전체를 놓쳤다는 뜻이다 — 어떤 허용 기준으로도 cursor를
+        # 전진시키면 안 된다(전진하면 그 구간의 변경분이 영구 누락).
+        root_level_errors = [e for e in result.errors if not e.get("page_id")]
+        error_rate_ok = not result.errors or (
+            not root_level_errors
+            and (
+                error_rate <= settings.confluence_max_error_rate
+                or len(result.errors) <= settings.confluence_max_error_count
+            )
+        )
         can_advance = not dry_run and not truncated and error_rate_ok
         if can_advance and result.errors:
             logger.warning(
-                "confluence cursor advancing despite %d error(s) (rate=%.4f <= %.4f) "
-                "source_type=%s — failed page_ids=%s",
+                "confluence cursor advancing despite %d error(s) (rate=%.4f, tolerated: "
+                "rate<=%.4f or count<=%d) source_type=%s — failed page_ids=%s "
+                "(not retried until the page is modified again)",
                 len(result.errors), error_rate, settings.confluence_max_error_rate,
+                settings.confluence_max_error_count,
                 source_type, [e.get("page_id") for e in result.errors],
             )
         # P1-B (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md

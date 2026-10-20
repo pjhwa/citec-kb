@@ -99,6 +99,13 @@ class Settings(BaseSettings):
     # fraction — failed page_ids are still logged (error_detail) so they can
     # be checked, but one flaky page must not force endless full recrawls.
     confluence_max_error_rate: float = Field(default=0.01, alias="CONFLUENCE_MAX_ERROR_RATE")
+    # 건수 기준 허용(옵트인). 기본 0 = 비율 기준만(기존 동작). 1 이상이면
+    # "에러 건수 <= 이 값"도 cursor 전진을 허용한다 — 한 번에 0~수 건만 처리하는
+    # 단주기 sync에서 영구히 실패하는 페이지 1건이 cursor를 막는 상황을 풀기 위한
+    # 것. 주의: 허용된 페이지 에러는 그 페이지가 다시 수정될 때까지 재시도되지
+    # 않는다(유실). 일시 장애는 cursor를 막아 두는 쪽이 오히려 자동 복구되므로
+    # 영구 실패 페이지가 확인됐을 때만 켠다. 루트 단위 에러는 항상 cursor를 막는다.
+    confluence_max_error_count: int = Field(default=0, ge=0, alias="CONFLUENCE_MAX_ERROR_COUNT")
 
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(

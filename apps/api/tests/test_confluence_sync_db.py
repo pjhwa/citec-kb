@@ -248,6 +248,10 @@ def test_sync_blocks_cursor_when_error_rate_exceeds_threshold(tmp_path, monkeypa
     import app.confluence.sync as sync_mod
     from app.db.models import Source
     from app.db.session import session_scope
+    from app.settings import get_settings
+
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)  # 기본(0) = 비율 기준만
+    get_settings.cache_clear()
 
     source_id = "confluence_lookin_docs"
     with session_scope() as session:
@@ -272,6 +276,65 @@ def test_sync_blocks_cursor_when_error_rate_exceeds_threshold(tmp_path, monkeypa
     finally:
         with session_scope() as session:
             session.query(Source).filter_by(id=source_id).delete()
+
+
+def _run_small_crawl(tmp_path, monkeypatch, *, n_written, n_errors, root_errors=0):
+    import app.confluence.sync as sync_mod
+    from app.db.models import Source
+    from app.db.session import session_scope
+    from app.settings import get_settings
+
+    get_settings.cache_clear()
+    source_id = "confluence_lookin_docs"
+    with session_scope() as session:
+        session.query(Source).filter_by(id=source_id).delete()
+
+    async def fake_crawl_source(*args, **kwargs):
+        written = [sync_mod.WrittenPage(page_id=str(i), path=tmp_path / f"{i}.md") for i in range(n_written)]
+        errors = [{"page_id": f"e{i}", "root_id": "r1", "error": "401"} for i in range(n_errors)]
+        errors += [{"page_id": None, "root_id": "r1", "error": "search 401"} for _ in range(root_errors)]
+        return sync_mod.CrawlResult(written=written, errors=errors, cql_log=[])
+
+    monkeypatch.setattr(sync_mod, "_crawl_source", fake_crawl_source)
+    try:
+        stats = sync_mod.sync(
+            tmp_path, dry_run=False, sources=["confluence_docs"], run_ingest_and_embed=False
+        )
+        return stats["sources"]["confluence_docs"]
+    finally:
+        with session_scope() as session:
+            session.query(Source).filter_by(id=source_id).delete()
+
+
+def test_sync_small_run_error_blocks_cursor_by_default(tmp_path, monkeypatch):
+    """기본(COUNT=0): 소규모 실행의 페이지 에러 1건은 cursor를 막는다 — 다음 실행이
+    같은 구간을 재크롤하므로 유실 없음."""
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src = _run_small_crawl(tmp_path, monkeypatch, n_written=2, n_errors=1)
+    assert src["cursor_advanced"] is False
+
+
+def test_sync_opt_in_count_tolerates_single_page_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_ERROR_COUNT", "1")
+    src = _run_small_crawl(tmp_path, monkeypatch, n_written=2, n_errors=1)
+    assert src["cursor_advanced"] is True
+
+
+def test_sync_opt_in_count_still_blocks_when_exceeded(tmp_path, monkeypatch):
+    monkeypatch.setenv("CONFLUENCE_MAX_ERROR_COUNT", "1")
+    src = _run_small_crawl(tmp_path, monkeypatch, n_written=2, n_errors=2)
+    assert src["cursor_advanced"] is False
+
+
+def test_sync_root_level_error_never_advances_cursor(tmp_path, monkeypatch):
+    """루트 검색 실패(page_id None)는 그 루트 변경분 전체 누락 — 비율(1/1000)이든
+    건수 허용이든 cursor를 전진시키면 안 된다."""
+    monkeypatch.setenv("CONFLUENCE_MAX_ERROR_COUNT", "5")
+    src = _run_small_crawl(tmp_path, monkeypatch, n_written=999, n_errors=0, root_errors=1)
+    assert src["cursor_advanced"] is False
+    monkeypatch.delenv("CONFLUENCE_MAX_ERROR_COUNT", raising=False)
+    src = _run_small_crawl(tmp_path, monkeypatch, n_written=999, n_errors=0, root_errors=1)
+    assert src["cursor_advanced"] is False
 
 
 def test_sync_unknown_source_type_is_skipped_not_a_crash(tmp_path):
