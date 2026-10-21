@@ -166,7 +166,7 @@
         (d.status ? ` · status=${esc(d.status)}` : "") +
         (d.assignee ? ` · assignee=${esc(d.assignee)}` : "") +
         (d.Created ? ` · Created=${esc(d.Created)}` : "") +
-        (d.path || d.web_url ? `<br/>${d.web_url ? `<a href="${esc(d.web_url)}">${esc(d.web_url)}</a>` : `path=<code>${esc(d.path)}</code>`}` : "");
+        (d.path || d.web_url ? `<br/>${d.web_url ? `<a href="${esc(window.CitecMD ? CitecMD.localizeUrl(d.web_url) : d.web_url)}">${esc(window.CitecMD ? CitecMD.localizeUrl(d.web_url) : d.web_url)}</a>` : `path=<code>${esc(d.path)}</code>`}` : "");
       $("btnApi").href = apiUrl;
       $("btnToggle").textContent = structured
         ? "구조 뷰 / JSON 원문"

@@ -13,6 +13,23 @@
       .replace(/"/g, "&quot;");
   }
 
+  // 서버가 PUBLIC_WEB_BASE/PUBLIC_API_BASE 기본값(localhost)으로 만든 절대 URL은
+  // 사용자 브라우저에서 열리지 않는다. 현재 접속 주소로 바꿔 준다.
+  //  - :8573(API)  → 현재 호스트의 같은 포트
+  //  - 그 외 localhost/127.0.0.1/0.0.0.0 → 현재 origin (웹 프록시)
+  function localizeUrl(url) {
+    var u = String(url == null ? "" : url);
+    var m = u.match(/^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::(\d+))?(?=[\/?#]|$)/i);
+    if (!m || !global.location) return u;
+    var h = global.location.hostname;
+    if (!h || /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(h)) return u; // 이미 로컬 접속
+    var rest = u.slice(m[0].length);
+    var origin = m[1] === "8573"
+      ? global.location.protocol + "//" + h + ":8573"
+      : global.location.origin;
+    return origin + rest;
+  }
+
   function inline(md) {
     var s = escHtml(md);
     // code first
@@ -25,12 +42,17 @@
     // links [text](url)
     s = s.replace(
       /\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
-      '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>'
+      function (_, t, u) {
+        return '<a href="' + localizeUrl(u) + '" target="_blank" rel="noopener noreferrer">' + t + "</a>";
+      }
     );
     // autolink bare urls (simple)
     s = s.replace(
       /(^|[\s(])(https?:\/\/[^\s<)]+)/g,
-      '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>'
+      function (_, pre, u) {
+        var l = localizeUrl(u);
+        return pre + '<a href="' + l + '" target="_blank" rel="noopener noreferrer">' + l + "</a>";
+      }
     );
     return s;
   }
@@ -227,6 +249,7 @@
   }
 
   global.CitecMD = {
+    localizeUrl: localizeUrl,
     render: renderSafe,
     renderRaw: render,
     sanitize: sanitize,
