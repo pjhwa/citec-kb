@@ -133,8 +133,12 @@ def is_checklist_intent(q: str) -> bool:
     return bool(_CHECKLIST_INTENT.search(q or ""))
 
 
-def build_fts_variants(q: str) -> list[str]:
+def build_fts_variants(q: str, *, restricted: bool = False) -> list[str]:
     """Build OR-friendly FTS variants.
+
+    ``restricted``: the request already narrows to checkitems / a domain, so
+    the ``PISAOLNX`` code-prefix expansion (matches every Linux checkitem and
+    drowns the real term) is not generated.
 
     ``plainto_tsquery`` ANDs every token — long Korean questions like
     「리눅스 파일시스템 관련 체크리스트」 become 4-way AND and match nothing.
@@ -184,6 +188,8 @@ def build_fts_variants(q: str) -> list[str]:
         for syn in _TOKEN_SYNONYMS.get(low, []):
             if syn.lower() in {"linux", "리눅스"}:
                 continue  # only via paired expansions below
+            if restricted and syn == "PISAOLNX":
+                continue
             add(syn)
         # DB/file lexicon synonyms (GRO, Redis, hang, …)
         try:
@@ -212,12 +218,19 @@ def build_fts_variants(q: str) -> list[str]:
         add("파일시스템")
     if has_linux and has_fs:
         add("파일 시스템")
-        add("PISAOLNX")  # Linux OS checkitem family
+        if not restricted:
+            add("PISAOLNX")  # Linux OS checkitem family
     elif has_linux:
         add("Linux")
+        if not restricted:
+            add("PISAOLNX")
+    if is_checklist_intent(base) and has_linux and not restricted:
         add("PISAOLNX")
-    if is_checklist_intent(base) and has_linux:
-        add("PISAOLNX")
+
+    from app.retrieval.search_synonyms import search_synonyms
+
+    for syn in search_synonyms(base):
+        add(syn)
 
     # Keep original last as precision path (may return 0 — OK)
     add(base)
@@ -514,6 +527,10 @@ def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
     return stmt
 
 
+def _code_prefix_restricted(filters: "SearchFilters") -> bool:
+    return filters.source_type == "checkitem" or bool(filters.domain)
+
+
 def fts_search(session: Session, req: SearchRequest) -> list[str]:
     """Return chunk ids ordered by FTS rank (best first).
 
@@ -523,7 +540,7 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
     base = (req.q or "").strip()
     if not base:
         return []
-    variants = build_fts_variants(base)
+    variants = build_fts_variants(base, restricted=_code_prefix_restricted(req.filters))
 
     scored: dict[str, float] = {}
     for v in variants:
@@ -758,7 +775,11 @@ def hybrid_search(
             if st == "checkitem":
                 fused[cid] = sc + 0.02
             ext = str((meta_by_id.get(cid) or {}).get("external_id") or "")
-            if ext.startswith("PISAOLNX") and re.search(r"리눅스|linux", req.q, re.I):
+            if (
+                not _code_prefix_restricted(req.filters)
+                and ext.startswith("PISAOLNX")
+                and re.search(r"리눅스|linux", req.q, re.I)
+            ):
                 fused[cid] = fused[cid] + 0.015
 
     if len(tokens) >= 2 and fused and meta_by_id:

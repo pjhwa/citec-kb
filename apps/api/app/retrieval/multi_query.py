@@ -23,6 +23,7 @@ from app.retrieval.search import (
     SearchRequest,
     SearchResponse,
     _map_copy_key,
+    _code_prefix_restricted,
     build_fts_variants,
     collapse_map_copies,
     hybrid_search,
@@ -160,6 +161,7 @@ def expand_queries(
     *,
     extra: Optional[list[str]] = None,
     max_queries: int = 6,
+    restricted: bool = False,
 ) -> list[str]:
     """Build ordered query variants for multi-hybrid merge.
 
@@ -251,7 +253,7 @@ def expand_queries(
         pass
 
     # 5) FTS variants — phrases only for multi-query heads
-    for v in build_fts_variants(stripped or q):
+    for v in build_fts_variants(stripped or q, restricted=restricted):
         if len(v) < 4 or len(v) > 64:
             continue
         if v == q or v == stripped:
@@ -289,7 +291,11 @@ def multi_hybrid_search(
         resp = hybrid_search(session, req, query_vector=query_vector)
         return resp, {"multi_query": False, "queries": [req.q], "n_queries": 1}
 
-    queries = expand_queries(req.q, extra=extra_queries)
+    queries = expand_queries(
+        req.q,
+        extra=extra_queries,
+        restricted=_code_prefix_restricted(req.filters),
+    )
     if not queries:
         queries = [req.q]
 
