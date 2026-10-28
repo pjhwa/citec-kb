@@ -14,6 +14,7 @@ from app.failure_buckets.service import (
     get_bucket,
     list_buckets,
     match_buckets,
+    normalize_match_filters,
     refine_bucket,
 )
 
@@ -122,12 +123,16 @@ def post_refine_failure_bucket(
 
 @router.post("/failure-buckets/match")
 def post_match_failure_buckets(body: FailureBucketMatch) -> dict[str, Any]:
+    try:
+        fb_domain, environment = normalize_match_filters(body.fb_domain, body.environment)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     results = match_buckets(
         observed_signals=body.observed_signals,
         symptom=body.symptom,
-        fb_domain=body.fb_domain,
+        fb_domain=fb_domain,
         protocol=body.protocol,
-        environment=body.environment,
+        environment=environment,
         top_k=body.top_k,
     )
     return {"results": results, "total": len(results)}

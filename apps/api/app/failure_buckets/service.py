@@ -34,6 +34,32 @@ def _known_fb_domains() -> frozenset[str]:
     return frozenset(_FB_DOMAIN_TO_CORPUS_DOMAIN.keys())
 
 
+_ENVIRONMENTS = ("csp", "msp", "onprem", "hybrid")
+
+
+def normalize_match_filters(
+    fb_domain: Optional[str], environment: Optional[str]
+) -> tuple[Optional[str], Optional[str]]:
+    """Lower-case and validate the filters of /failure-buckets/match.
+
+    알 수 없는 fb_domain / environment는 "일치하는 버킷 없음"으로 조용히 끝나지 않고
+    허용 값 목록과 함께 ValueError로 거부한다. fb_domain 허용 집합은 문서화된
+    값(_known_fb_domains)과 이미 등록된 버킷이 쓰는 값의 합집합이다(미등재 도메인도
+    등록은 허용하는 soft convention과 맞춘다).
+    """
+    dom = (fb_domain or "").strip().lower() or None
+    env = (environment or "").strip().lower() or None
+    if env and env not in _ENVIRONMENTS:
+        raise ValueError(f"invalid environment {environment!r} — allowed: {list(_ENVIRONMENTS)}")
+    if dom:
+        with session_scope() as session:
+            present = {r[0] for r in session.execute(select(FailureBucket.fb_domain).distinct()).all() if r[0]}
+        allowed = sorted(set(_known_fb_domains()) | present)
+        if dom not in allowed:
+            raise ValueError(f"invalid fb_domain {fb_domain!r} — allowed: {allowed}")
+    return dom, env
+
+
 def _to_dict(row: FailureBucket) -> dict[str, Any]:
     return {
         "id": row.id,

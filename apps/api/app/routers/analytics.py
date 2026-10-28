@@ -37,16 +37,19 @@ def analytics_tickets(
             raise HTTPException(status_code=400, detail=f"unrecognized relative range: {relative}")
         df, dt = dr.date_from, dr.date_to
         range_label = dr.label
-    result = aggregate_tickets(
-        source_type=source_type,
-        group_by=group_by,
-        date_field=date_field,
-        date_from=df,
-        date_to=dt,
-        component=component,
-        entity=entity,
-        top_k=top_k,
-    )
+    try:
+        result = aggregate_tickets(
+            source_type=source_type,
+            group_by=group_by,
+            date_field=date_field,
+            date_from=df,
+            date_to=dt,
+            component=component,
+            entity=entity,
+            top_k=top_k,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if range_label:
         result["range_label"] = range_label
     return result

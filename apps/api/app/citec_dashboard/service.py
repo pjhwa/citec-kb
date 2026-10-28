@@ -126,6 +126,29 @@ def _fetch_candidates(
     return out
 
 
+def _canonical_filter(
+    values: Optional[list[str]], allowed: tuple[str, ...], label: str
+) -> Optional[list[str]]:
+    """Case-insensitively map filter values onto the allowed vocabulary.
+
+    알 수 없는 값은 조용히 "반복 패턴 없음"으로 끝나지 않고 허용 목록과 함께 거부한다.
+    """
+    if not values:
+        return values
+    by_lower = {a.lower(): a for a in allowed}
+    out: list[str] = []
+    bad: list[str] = []
+    for v in values:
+        canon = by_lower.get(str(v).strip().lower())
+        if canon is None:
+            bad.append(v)
+        elif canon not in out:
+            out.append(canon)
+    if bad:
+        raise ValueError(f"invalid {label} value(s): {bad} — allowed: {list(allowed)}")
+    return out
+
+
 def query_recurring_patterns(
     *,
     group_by: list[str],
@@ -164,6 +187,9 @@ def query_recurring_patterns(
         raise ValueError("group_by must have at least one dimension")
     if len(group_by) > MAX_GROUP_DIMS:
         raise ValueError(f"group_by supports at most {MAX_GROUP_DIMS} dimensions, got {len(group_by)}")
+
+    domains = _canonical_filter(domains, CITEC_DOMAINS, "domains")
+    severity_tiers = _canonical_filter(severity_tiers, tuple(SEVERITY_TIER_LEGEND), "severity_tiers")
 
     candidates = _fetch_candidates(domains=domains, severity_tiers=severity_tiers)
 

@@ -95,3 +95,39 @@ def test_similar_incident_forwards_source_types_and_shows_the_source(monkeypatch
 
     asyncio.run(server.kb_similar_incident("정전"))
     assert "source_types" not in seen["body"]
+
+
+# ── A3: limit 검증 ──
+def test_search_limit_zero_is_rejected_not_silently_one():
+    import asyncio
+
+    import server
+
+    out = asyncio.run(server.kb_search("redis", limit=0))
+    assert out.startswith("오류: limit은 1~50")
+
+
+def test_search_limit_over_50_is_clamped_and_reported(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    import server
+
+    seen = {}
+
+    def handler(request):
+        import json
+
+        seen["top_k"] = json.loads(request.content)["top_k"]
+        return httpx.Response(200, json={"results": [{"title": "t", "source_type": "support_history", "external_id": "CITECTS-1", "score": 1.0}]})
+
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(base_url="http://t", transport=httpx.MockTransport(handler)),
+    )
+    out = asyncio.run(server.kb_search("redis", limit=500))
+    assert seen["top_k"] == 50
+    assert "limit 500→50으로 보정" in out.splitlines()[0]
+    ok = asyncio.run(server.kb_search("redis", limit=5))
+    assert "보정" not in ok.splitlines()[0]

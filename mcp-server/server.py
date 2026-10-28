@@ -289,6 +289,12 @@ async def _search_impl(
     # both are requested together there is no side that carries both, so
     # this returns an explicit unsupported-combination error rather than
     # silently picking one (§4 item 5's other option).
+    # limit 검증 — 예전에는 limit=0이 조용히 1건으로 바뀌었다. 범위 밖 값은 거부(0 이하)
+    # 하거나 보정(50 초과)하고, 보정은 결과 머리에 표시한다.
+    if limit < 1:
+        return f"오류: limit은 1~50 사이여야 합니다 (받은 값: {limit})."
+    _limit_note = f" [note: limit {limit}→50으로 보정(최대 50)]" if limit > 50 else ""
+    limit = min(limit, 50)
     _v1_only_filters_requested = bool(
         exclude_page_ids
         or exclude_source_types
@@ -376,6 +382,7 @@ async def _search_impl(
             if _auto_upgraded_to_v1
             else ""
         )
+        + _limit_note
         + ". 원문: kb_get_document(path=…)"
     ]
     for r in results:

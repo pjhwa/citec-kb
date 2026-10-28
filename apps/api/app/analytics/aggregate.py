@@ -89,7 +89,10 @@ def aggregate_tickets(
     """Aggregate support tickets by metadata field. Numbers are SQL/Python only."""
     gb = (group_by or "year").lower().strip()
     if gb not in _GROUP_BY:
-        gb = "year"
+        # 예전에는 조용히 year로 바꿔 집계해서 오타(group_by=bogus)가 정상 결과처럼 보였다.
+        raise ValueError(
+            f"invalid group_by {group_by!r} — allowed: {', '.join(sorted(_GROUP_BY))}"
+        )
     date_field = resolve_date_field(source_type, date_field)
     top_k = max(1, min(int(top_k), 200))
     sample_limit = max(1, min(int(sample_limit), 30))
