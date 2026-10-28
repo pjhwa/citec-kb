@@ -711,7 +711,9 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 1. `kb_get_failure_bucket(bucket_id="FB-12")`로 버킷 확인 (`FB-12`는 예시 — 실제
    `bucket_id`는 UUID 형식).
 2. `kb_graph_explore(anchor_type="failure_bucket", anchor_value="FB-12")`로 2hop 연관
-   문서/컴포넌트/과거 장애 탐색.
+   문서/컴포넌트/failure bucket 탐색. 과거 장애 *티켓*은 "연관 문서"에 섞여 나온다 —
+   "연관 failure bucket 0건"은 등록 패턴이 연결되지 않았다는 뜻일 뿐 과거 장애가 없다는
+   뜻이 아니다(`kb_similar_incident`로 교차 확인).
 3. 범용 컴포넌트가 "제외된 범용 컴포넌트"에 뜨면 — 그건 애초에 의미 없는 결과이니
    무시하고, 나머지 구체적 컴포넌트/문서로만 답변 구성.
 4. `as_of`가 비어 있거나(아직 백필 전) 2일 이상 지났으면 응답에 그 사실을 한 줄

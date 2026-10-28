@@ -1157,7 +1157,8 @@ async def kb_graph_explore(
     failure_buckets_offset: int = 0,
     include_archived: bool = False,
 ) -> str:
-    """장애 분석 시 연관 컴포넌트·문서·과거 장애를 지식그래프에서 탐색한다(2hop).
+    """장애 분석 시 연관 컴포넌트·문서·failure bucket을 지식그래프에서 탐색한다(2hop).
+    (과거 장애 티켓은 "연관 문서"에 섞여 나온다 — "연관 failure bucket"은 등록된 패턴 라이브러리 항목만 센다)
 
     anchor_type: "failure_bucket" | "document" | "component" | "symptom_text"
     anchor_value: 각각 FailureBucket.id / documents.id 또는 external_id /
@@ -1340,7 +1341,7 @@ async def kb_graph_explore(
         return " ".join(parts)
 
     def _render_category(label: str, items: list, offset: int, total_key: str, trunc_key: str,
-                          offset_param: str, line_fn) -> None:
+                          offset_param: str, line_fn, empty_hint: str = "") -> None:
         # 표시 줄 수 == 페이지 크기여야 한다 — 과거엔 페이지(최대 50)를 20줄만
         # 찍고 "offset+len(items)"를 다음 offset으로 안내해 21~50번째 항목이
         # 영원히 안 보이는 구멍이 있었다(2차 리뷰에서 지적). 전부 찍는다.
@@ -1351,6 +1352,8 @@ async def kb_graph_explore(
         lines.append(f"\n{label} ({total}건 중 {shown_from}-{shown_to}건 표시):")
         for item in items:
             lines.append(line_fn(item))
+        if not items and empty_hint:
+            lines.append(f"  ({empty_hint})")
         if truncated:
             next_offset = offset + len(items)
             lines.append(f"  … 다음 페이지: {offset_param}={next_offset}로 재호출")
@@ -1404,8 +1407,11 @@ async def kb_graph_explore(
 
     fbs = data.get("failure_buckets") or []
     _render_category(
-        "연관 과거 장애", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
+        "연관 failure bucket", fbs, failure_buckets_offset, "failure_buckets_total", "failure_buckets_truncated",
         "failure_buckets_offset", _render_failure_bucket_line,
+        # A7: 이 섹션은 등록된 FailureBucket(패턴 라이브러리)만 센다 — 과거 장애 티켓이 아니다.
+        empty_hint="등록된 failure bucket이 연결되지 않았다는 뜻일 뿐 과거 장애가 없다는 뜻이 아닙니다. "
+                   "과거 장애 티켓은 위 '연관 문서'의 support_history/incident_reports 항목이나 kb_similar_incident로 확인하세요",
     )
 
     return "\n".join(lines)
@@ -1565,7 +1571,8 @@ async def kb_tools_help() -> str:
                     exclude_source_types=, documents_offset=, components_offset=,
                     failure_buckets_offset=, include_archived=)
                   anchor_type: failure_bucket|document|component|symptom_text
-                  장애 분석 시 연관 컴포넌트/문서/과거 장애를 2hop까지 탐색.
+                  장애 분석 시 연관 컴포넌트/문서/failure bucket을 2hop까지 탐색(과거 장애 티켓은
+                  "연관 문서"에 나오며, "연관 failure bucket"은 등록된 패턴만 — 0건이어도 과거 장애 없음이 아님).
                   kb_match_failure_bucket/kb_similar_incident로 1차 후보를 찾은
                   다음 단계로 쓸 것 — 검색 대체재 아님. 하루 1회 배치 갱신(as_of 확인,
                   응답의 freshness 한 줄로 "마지막 완료된 전체 배치가 언제·어떤

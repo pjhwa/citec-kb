@@ -314,3 +314,20 @@ def test_kb_graph_status_renders_read_state_and_liveness(monkeypatch):
     assert "neo4j_store_identity(store id): store-abc" in out
     assert "contract_version: 2026-10-13.1" in out
     assert "latest_full_completed_run: run_id=r0" in out
+
+
+def test_failure_bucket_section_label_and_empty_hint(monkeypatch):
+    """A7 — '연관 과거 장애'는 FailureBucket 목록이라 오해를 불렀다. 라벨 변경 + 0건 안내."""
+    out = _run(monkeypatch, _page_payload(total=1, offset=0))
+    assert "연관 failure bucket (0건" in out
+    assert "연관 과거 장애" not in out
+    assert "과거 장애가 없다는 뜻이 아닙니다" in out and "kb_similar_incident" in out
+
+
+def test_failure_bucket_section_with_items_has_no_empty_hint(monkeypatch):
+    payload = _page_payload(total=1, offset=0)
+    payload["failure_buckets"] = [{"id": "fb-1", "bucket_name": "RST idle", "hops": 1, "route": []}]
+    payload["failure_buckets_total"] = 1
+    out = _run(monkeypatch, payload)
+    assert "연관 failure bucket (1건" in out and "RST idle" in out
+    assert "과거 장애가 없다는 뜻이 아닙니다" not in out
