@@ -632,6 +632,22 @@ async def kb_query(
     return _format_query_response(data)
 
 
+def _format_entity_share(result: dict[str, Any]) -> str:
+    """엔티티 점유율 — 분자/분모를 라벨과 함께 보여준다(`total`은 분모임을 명시)."""
+    rng = ""
+    if result.get("date_from") or result.get("date_to"):
+        rng = f" range={result.get('range_label') or ''} {result.get('date_from') or ''}~{result.get('date_to') or ''}".rstrip()
+    lines = [
+        f"entity_share entity={result.get('entity')!r} source_type={result.get('source_type') or '(default)'}{rng}",
+        f"matched(엔티티 포함 건수)={result.get('matched')} / total(분모: 같은 기간·소스 전체)={result.get('total')}"
+        f" → share={result.get('share')}",
+        f"method={result.get('method')}",
+    ]
+    if result.get("definition"):
+        lines.append(f"정의: {result['definition']}")
+    return "\n".join(lines)
+
+
 def _format_query_response(data: dict[str, Any]) -> str:
     intent = data.get("intent") or "unknown"
     note = data.get("note") or ""
@@ -649,7 +665,10 @@ def _format_query_response(data: dict[str, Any]) -> str:
             if params.get(k) is not None:
                 lines.append(f"param.{k}={params.get(k)}")
 
-    if intent == "analytics" or result.get("group_by"):
+    if isinstance(result, dict) and "matched" in result and "share" in result and not result.get("group_by"):
+        # entity_share 모드: `total`은 분모(전체)이므로 건수로 오해하지 않게 따로 포맷한다.
+        lines.append(_format_entity_share(result))
+    elif intent == "analytics" or result.get("group_by"):
         lines.append(
             f"group_by={result.get('group_by')} total={result.get('total')} "
             f"method={result.get('method')}"
@@ -958,7 +977,11 @@ async def kb_entity_share(
     date_to: str = "",
     source_type: str = "support_history",
 ) -> str:
-    """특정 키워드(엔티티) 점유율/건수. 예: entity='SCP', relative='올해'."""
+    """특정 키워드(엔티티) 점유율/건수. 예: entity='SCP', relative='올해'.
+
+    matched = 같은 기간·소스에서 제목/ID/본문 앞부분에 엔티티 문자열이 있는 건수
+    (kb_analytics entity= 와 같은 정의), total = 같은 기간·소스 전체 건수(분모).
+    """
     if not (entity or "").strip():
         return "오류: entity 가 비어 있습니다."
     params: dict[str, Any] = {
@@ -978,7 +1001,7 @@ async def kb_entity_share(
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
-    return _json_compact(data, 3000)
+    return _format_entity_share(data)
 
 
 @mcp.tool()

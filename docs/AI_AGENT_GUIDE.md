@@ -259,11 +259,12 @@ Caveats the agent must relay:
 ### 4.6 `kb_entity_share`
 
 Share of tickets matching `entity` in a period.  
-**API:** `GET /v1/analytics/entity_share`
+**API:** `GET /v1/analytics/entity_share`  
+`matched` = documents in the same source type and period whose title / ID / first 1,500 body characters contain the entity string (same definition as `kb_analytics(entity=…)`); `total` = **all** documents in that source type and period (the denominator, not a count of the entity). `matched <= total` always holds.
 
 ### 4.7 `kb_title_tokens`
 
-Title token frequency (optional `component`).  
+Title token frequency (optional `component`). Output header shows `document_n` (titles scanned) and `unique_tokens`; each row has count and share.  
 **API:** `GET /v1/analytics/title_tokens`
 
 ### 4.8 `kb_similar_incident`

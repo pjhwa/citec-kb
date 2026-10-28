@@ -213,9 +213,16 @@ def entity_share(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict[str, Any]:
-    """Share of tickets for an entity.
+    """Share of tickets mentioning an entity within the same date range.
 
-    Prefer document_entities links when seeded; fall back to title ILIKE scan.
+    분자(matched)와 분모(total)는 둘 다 ``aggregate_tickets``로 센다 — 같은 소스
+    타입·같은 날짜 범위·``entity`` 부분일치(제목·external_id·본문 앞 1500자)라서
+    ``matched <= total``이 항상 성립하고 ``kb_analytics(entity=…)``와 건수가 같다.
+
+    예전에는 ``document_entities`` 링크 수(기간 필터 없는 전체 활성 문서)를 분자로
+    쓰고 분모만 기간으로 좁혀 점유율이 1을 넘었다(2026-10-28 SCP 올해 425/278).
+    링크 기반 수는 날짜 메타와 정의가 달라 같은 엔티티가 도구마다 다른 건수를
+    냈으므로 쓰지 않는다(``_entity_share_from_links``는 참고용으로만 남김).
     """
     entity = (entity or "").strip()
     if not entity:
@@ -227,58 +234,33 @@ def entity_share(
             "llm_used": False,
         }
 
-    # Try entity table links first
-    linked = _entity_share_from_links(entity, source_type=source_type)
-    if linked is not None:
-        base = aggregate_tickets(
-            source_type=source_type,
-            group_by="total",
-            date_field=date_field,
-            date_from=date_from,
-            date_to=date_to,
-        )
-        tot = int(base["total"])
-        m = int(linked["matched"])
-        # optional date filter not applied on links yet — still report link count
-        return {
-            "entity": entity,
-            "matched": m,
-            "total": tot,
-            "share": round(m / tot, 4) if tot else 0.0,
-            "date_field": date_field,
-            "date_from": date_from.isoformat() if date_from else None,
-            "date_to": date_to.isoformat() if date_to else None,
-            "method": "document_entities",
-            "entity_id": linked.get("entity_id"),
-            "llm_used": False,
-        }
-
-    base = aggregate_tickets(
+    scope = dict(
         source_type=source_type,
         group_by="total",
         date_field=date_field,
         date_from=date_from,
         date_to=date_to,
     )
-    matched = aggregate_tickets(
-        source_type=source_type,
-        group_by="total",
-        date_field=date_field,
-        date_from=date_from,
-        date_to=date_to,
-        entity=entity,
-    )
+    base = aggregate_tickets(**scope)
+    matched = aggregate_tickets(**scope, entity=entity)
     tot = int(base["total"])
     m = int(matched["total"])
+    if m > tot:  # 같은 범위의 부분집합이므로 불가능 — 깨지면 조용히 넘기지 않는다
+        raise RuntimeError(f"entity_share invariant violated: matched={m} > total={tot}")
     return {
         "entity": entity,
         "matched": m,
         "total": tot,
         "share": round(m / tot, 4) if tot else 0.0,
-        "date_field": date_field,
+        "source_type": source_type,
+        "date_field": matched.get("date_field") or date_field,
         "date_from": date_from.isoformat() if date_from else None,
         "date_to": date_to.isoformat() if date_to else None,
         "method": "title_entity_scan",
+        "definition": (
+            "matched = 같은 기간·소스의 문서 중 제목/ID/본문 앞 1500자에 엔티티 문자열이 "
+            "포함된 건수(kb_analytics entity=와 동일), total = 같은 기간·소스의 전체 문서 수"
+        ),
         "llm_used": False,
     }
 
