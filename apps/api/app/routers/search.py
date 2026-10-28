@@ -9,6 +9,11 @@ from pydantic import BaseModel, Field
 from app.audit.log import log_query_answer
 from app.db.session import session_scope
 from app.doc_access import attach_document_access
+from app.retrieval.filter_args import (
+    canonical_domain,
+    normalize_source_type,
+    normalize_source_types,
+)
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 
@@ -55,10 +60,22 @@ def search(body: SearchBody) -> dict[str, Any]:
         # Degrade to FTS-only when model/deps unavailable (keep search usable).
         embed_error = f"{type(exc).__name__}: {exc}"
 
+    fdict = body.filters.model_dump()
+    filter_warnings: list[str] = []
+    try:
+        fdict["source_type"] = normalize_source_type(fdict.get("source_type"), field="section")
+        fdict["exclude_source_types"] = normalize_source_types(
+            fdict.get("exclude_source_types"), field="exclude_source_types"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    fdict["domain"], dom_warn = canonical_domain(fdict.get("domain"))
+    if dom_warn:
+        filter_warnings.append(dom_warn)
     req = SearchRequest(
         q=body.q,
         top_k=body.top_k,
-        filters=SearchFilters(**body.filters.model_dump()),
+        filters=SearchFilters(**fdict),
     )
     try:
         with session_scope() as session:
@@ -115,6 +132,8 @@ def search(body: SearchBody) -> dict[str, Any]:
             for r in resp.results
         ],
     }
+    if filter_warnings:
+        out["warnings"] = filter_warnings
     if embed_error and qvec is None:
         out["embed_degraded"] = True
         out["embed_error"] = embed_error[:240]

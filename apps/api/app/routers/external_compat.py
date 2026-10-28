@@ -44,6 +44,7 @@ from app.ingest.adapters import (
 )
 from app.ingest.pipeline import upsert_document_from_draft
 from app.rag.pipeline import run_fast_rag, stream_rag
+from app.retrieval.filter_args import canonical_domain, normalize_source_type
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 from app.settings import get_settings
@@ -600,9 +601,20 @@ def api_wiki_search(
 ) -> dict[str, Any]:
     """wiki-qa MCP `wiki_search` compatible document search."""
     _ = category  # reserved
-    source_type = _map_section(section)
-    domain = area.strip() or None
-    return _search_results(q, source_type=source_type, domain=domain, limit=limit)
+    # 알려진 wiki-qa 섹션명은 기존 표로, 그 밖의 값은 /v1/search 와 같은 검증을 거친다
+    # (모르는 값이 조용히 0건이 되지 않게 400 + 허용 목록).
+    try:
+        if (section or "").strip().lower() in _SECTION_MAP:
+            source_type = _map_section(section)
+        else:
+            source_type = normalize_source_type(section, field="section")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    domain, dom_warn = canonical_domain(area)
+    out = _search_results(q, source_type=source_type, domain=domain, limit=limit)
+    if dom_warn:
+        out["warnings"] = [dom_warn]
+    return out
 
 
 @router.get("/api/wiki/search/facets")

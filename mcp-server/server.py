@@ -214,8 +214,9 @@ async def kb_search(
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
-    section/source_type: support_history|checkitems|tech_repo|tuning_ai|confluence_docs|incident_reports|dept_archive|…
-    area: domain 필터 (os|dbms|network|cloud|storage|…)
+    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|insight
+        (checkitems·incident 같은 흔한 별칭은 서버가 정규화하고, 모르는 값은 허용 목록과 함께 거부한다)
+    area: domain 필터 (os|dbms|network|cloud|storage|…, 대소문자 무시). 문서에 없는 값이면 결과 머리에 경고가 붙는다
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
     exclude_page_ids: 결과에서 뺄 external_id — 그 페이지 하나만 빠지고 하위 페이지는 남는다
     exclude_subtree_ids: 그 페이지와 모든 하위 페이지를 뺀다 (정답 누출 방지에는 이쪽을 쓸 것.
@@ -362,7 +363,10 @@ async def _search_impl(
         return _err(e)
 
     results = data.get("results") or data.get("hits") or []
+    _warn_lines = [f"[경고] {w}" for w in (data.get("warnings") or [])]
     if not results:
+        if _warn_lines:
+            return "검색 결과가 없습니다.\n" + "\n".join(_warn_lines)
         if _auto_upgraded_to_v1:
             return "검색 결과가 없습니다. (참고: use_v1=false였지만 지원되지 않는 필터가 있어 v1로 자동 전환했습니다)"
         return "검색 결과가 없습니다."
@@ -385,6 +389,7 @@ async def _search_impl(
         + _limit_note
         + ". 원문: kb_get_document(path=…)"
     ]
+    lines.extend(_warn_lines)
     for r in results:
         st = r.get("section") or r.get("source_type") or ""
         title = r.get("title", "(제목 없음)")
@@ -526,7 +531,7 @@ async def kb_ask(
     include_irrelevant_maps: Optional[bool] = None,
 ) -> str:
     """CI-TEC 지식 근거로 자연어 질문에 답변한다 (RAG + Trust).
-    template: general|checkitems|support_history|tech_repo|tuning_ai|incident_reports|synthesis
+    template: general|checkitem(checkitems도 가능)|support_history|tech_repo|tuning_ai|incident_reports|synthesis
     mode: fast|deep
     exclude_page_ids/exclude_subtree_ids/exclude_source_types/include_irrelevant_maps:
         kb_search/kb_query와 동일한 제외 정책. 독립 평가에서 자신의 정답 문서를
@@ -1155,7 +1160,9 @@ async def kb_graph_explore(
     copies=N으로 묶여 나온다(_EN 접미사 체크항목 등은 안 묶임).
     archived는 비활성화된 원문이라는 뜻 — 결론에 그대로 쓰지 말 것.
     각 줄의 "원문: kb_get_document(path=...)"가 실제 호출 경로다 —
-    confluence_map 소스는 본문이 발췌(snapshot)뿐이니 참고.
+    confluence_map 결과의 `snapshot` 표시는 "KB가 크롤 시점에 저장한 사본(현재 Confluence와
+    다를 수 있음)"이라는 뜻이다. 2026-10 이후 크롤된 공간은 본문 전체가 들어 있지만
+    근거 등급은 C(정책)라 현재 버전은 confluence-mcp로 따로 확인한다.
 
     그래프는 하루 1회 배치로 갱신되므로(응답의 as_of 날짜 참고) 그 이후 변경은
     반영 안 돼 있을 수 있다 — 최종 확인은 kb_search/kb_get_document로.
@@ -1559,8 +1566,8 @@ async def kb_tools_help() -> str:
                   external_artifact/legacy_missing/target_not_ingested/
                   unresolved_reference 건수)도 같이 나옴 — 전부 0이고 isolated면
                   "원인 불명"이 아니라 이 사유 분해를 먼저 볼 것. "원문:
-                  kb_get_document(path=...)"가 실제 호출 경로, confluence_map은
-                  발췌(snapshot)뿐.
+                  kb_get_document(path=...)"가 실제 호출 경로, confluence_map의
+                  `snapshot` 표시 = 크롤 시점 저장본(현재 버전은 confluence-mcp로 확인).
   kb_graph_status()
                   지식그래프 동기화 run/generation/freshness 상세(GET
                   /v1/graph/status와 동일 근거). kb_graph_explore의 freshness

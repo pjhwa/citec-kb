@@ -182,10 +182,10 @@ Base MCP: FastMCP over **streamable-http** (`http://localhost:8577/mcp`) or **st
 | Arg | Type | Description |
 |-----|------|-------------|
 | `query` | str | Search string |
-| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitems`, `confluence_docs`, `dept_archive`, … |
-| `area` | str | → domain filter (`os`, `dbms`, `network`, `cloud`, `storage`, …) |
+| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitem`, `confluence_docs`, `confluence_map`, `dept_archive`, `failure_bucket`, `insight`. Common aliases (`checkitems`, `incident`, `insights`, …) are normalised server-side; an unknown value returns HTTP 400 with the allowed list instead of silently returning 0 hits |
+| `area` | str | → domain filter (`os`, `dbms`, `network`, `cloud`, `storage`, …); case-insensitive. A value no document has adds a warning line instead of an unexplained empty result |
 | `category` | str | wiki-compat only when `use_v1=false` |
-| `limit` | int | 1–50 |
+| `limit` | int | 1–50 (`< 1` is rejected; `> 50` is clamped and the header says so) |
 | `environment` | str | e.g. `csp` |
 | `work_type` | str | e.g. 기술지원 / 장애지원 |
 | `multi_query` | bool | Expand synonyms/phrases (default true) |
@@ -416,8 +416,9 @@ See §6.3 for the full taxonomy and when to use each:
   부분 실행/진행 중인 배치가 섞인 건지" 구분이 안 되기 때문. freshness가 "지금 새
   전체 배치가 진행 중"을 가리키면 이번 응답이 혼합 상태일 수 있음을 염두에 둔다.
 - 결과 줄의 "원문: kb_get_document(path='…')"가 실제 호출할 경로다. `confluence_map`
-  소스는 본문이 발췌(snapshot)뿐이라 결과에 `snapshot`이 표시되며, 이 경우 Confluence
-  현재 버전 확인은 `confluence-mcp`(있으면)로 따로 해야 한다.
+  결과의 `snapshot` 표시는 "KB가 크롤 시점에 저장한 사본"이라는 뜻이다(2026-10 이후 크롤된
+  공간은 본문 전체가 들어 있지만 근거 등급은 C — §6.1). Confluence 현재 버전 확인은
+  `confluence-mcp`(있으면)로 따로 해야 한다.
 
 **API:** `POST /v1/graph/explore`
 

@@ -131,3 +131,23 @@ def test_search_limit_over_50_is_clamped_and_reported(monkeypatch):
     assert "limit 500→50으로 보정" in out.splitlines()[0]
     ok = asyncio.run(server.kb_search("redis", limit=5))
     assert "보정" not in ok.splitlines()[0]
+
+
+def test_search_warnings_are_printed(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    import server
+
+    payload = {"results": [], "warnings": ["area/domain 'zzz'에 해당하는 문서가 없습니다"]}
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(
+            base_url="http://t", transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))),
+    )
+    out = asyncio.run(server.kb_search("x", area="zzz"))
+    assert "[경고]" in out and "zzz" in out
+    payload["results"] = [{"title": "t", "source_type": "checkitem", "external_id": "A", "score": 1.0}]
+    out2 = asyncio.run(server.kb_search("x", area="zzz"))
+    assert "[경고]" in out2 and "- [checkitem] t" in out2
