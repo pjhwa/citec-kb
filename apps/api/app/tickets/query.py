@@ -56,6 +56,57 @@ def parse_meta_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
+_CITECTS_ID_RE = re.compile(r"^citects[\s_-]*0*(\d+)$", re.I)
+
+
+def normalize_ticket_id(raw: str) -> str:
+    """`citects-2502`, `CITECTS 2502`, `citects2502` → `CITECTS-2502` (그 외는 strip만)."""
+    s = (raw or "").strip()
+    m = _CITECTS_ID_RE.match(s)
+    return f"CITECTS-{int(m.group(1))}" if m else s
+
+
+def _ticket_exists(external_id: str, source_type: str) -> bool:
+    with session_scope() as session:
+        stmt = (
+            select(Document.id)
+            .where(Document.status == "active")
+            .where(Document.source_type == source_type)
+            .where(Document.external_id == external_id)
+            .limit(1)
+        )
+        return session.scalars(stmt).first() is not None
+
+
+def resolve_ticket(
+    external_id: str, *, source_type: str = "support_history"
+) -> dict[str, Any]:
+    """Look up one ticket, tolerating case/format variants of the id.
+
+    - 대소문자·`CITECTS 2502`·`citects2502` 같은 변형은 모호하지 않으므로 자동으로
+      `CITECTS-2502`로 해석하고 `normalized_from`에 원래 입력을 남긴다.
+    - 숫자만 온 경우(`2502`)는 자동 확정하지 않는다(SWIM 번호처럼 숫자만 쓰는 ID도
+      있다). 없으면 `did_you_mean`으로 `CITECTS-2502` 후보만 제안한다.
+    반환: {"row": dict|None, "did_you_mean": str|None}
+    """
+    eid = (external_id or "").strip()
+    row = get_ticket_by_external_id(eid, source_type=source_type)
+    if row:
+        return {"row": row, "did_you_mean": None}
+    for cand in dict.fromkeys([normalize_ticket_id(eid), eid.upper()]):
+        if cand and cand != eid:
+            row = get_ticket_by_external_id(cand, source_type=source_type)
+            if row:
+                row["normalized_from"] = eid
+                return {"row": row, "did_you_mean": None}
+    suggestion = None
+    if eid.isdigit() and source_type == "support_history":
+        cand = f"CITECTS-{int(eid)}"
+        if _ticket_exists(cand, "support_history"):
+            suggestion = cand
+    return {"row": None, "did_you_mean": suggestion}
+
+
 def get_ticket_by_external_id(
     external_id: str,
     *,

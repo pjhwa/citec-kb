@@ -1980,7 +1980,11 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
 
 @mcp.tool()
 async def kb_ticket(external_id: str, source_type: str = "support_history") -> str:
-    """지원 티켓 전체 본문을 조회한다. 예: CITECTS-2502"""
+    """지원 티켓 전체 본문을 조회한다. 예: CITECTS-2502
+
+    대소문자(citects-2502)·공백/무구분(CITECTS 2502)은 자동으로 해석한다. 숫자만(2502) 주면
+    자동 확정하지 않고, 없으면 CITECTS-2502 후보만 제안한다. 없는 번호는 '찾을 수 없습니다'.
+    """
     eid = (external_id or "").strip()
     if not eid:
         return "오류: external_id 가 비어 있습니다."
@@ -1991,14 +1995,27 @@ async def kb_ticket(external_id: str, source_type: str = "support_history") -> s
                 params={"source_type": source_type or "support_history"},
             )
             if resp.status_code == 404:
-                return f"오류: 티켓을 찾을 수 없습니다: {eid}"
+                hint = ""
+                try:
+                    detail = resp.json().get("detail")
+                    if isinstance(detail, dict) and detail.get("did_you_mean"):
+                        hint = f" 혹시 {detail['did_you_mean']} 인가요? (자동 확정하지 않았습니다 — 맞으면 그 번호로 다시 호출)"
+                except ValueError:
+                    pass
+                return f"오류: 티켓을 찾을 수 없습니다: {eid}.{hint}".replace(".  ", ". ")
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
 
+    note = (
+        f"(입력 {data['normalized_from']!r} → {data.get('external_id')} 로 해석)\n"
+        if data.get("normalized_from")
+        else ""
+    )
     return (
-        f"# {data.get('title') or eid}\n"
+        note
+        + f"# {data.get('title') or eid}\n"
         f"id={data.get('external_id')} · component={data.get('component')} · "
         f"status={data.get('status')} · assignee={data.get('assignee')}\n\n"
         f"{data.get('body_md') or '(본문 없음)'}"
