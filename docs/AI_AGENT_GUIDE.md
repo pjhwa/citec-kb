@@ -195,6 +195,7 @@ Base MCP: FastMCP over **streamable-http** (`http://localhost:8577/mcp`) or **st
 
 - Existence questions: prefer full NL in `query` (and/or `kb_query`); avoid only `SCP` or only `Multi-AZ`.  
 - After hits: always use printed `path` for `kb_get_document`.
+- The result header now carries `trust=` (`strong|medium|weak|empty`) and `exact_tokens=`. If the query contains a document-ID-like token (`CITECTS-####`, `ISS-…`, `PISA…_nn.nn`, `confluence_<id>`, or a 9+ digit SWIM/page id) that exists in **no** active document, a `[경고] 질의의 식별자 … 는 코퍼스에서 찾지 못했습니다` line is added (`missing_identifiers` in the JSON) and `trust` is lowered to `weak` when *all* such tokens are missing. Treat the listed hits as unrelated similar documents and verify the number with `kb_ticket`.
 
 ### 4.3 `kb_get_document` / `wiki_get_document`
 

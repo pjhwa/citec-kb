@@ -102,6 +102,7 @@ def search(body: SearchBody) -> dict[str, Any]:
         "total_candidates": resp.total_candidates,
         "gated": resp.gated,
         "trust_retrieval": resp.trust_retrieval,
+        "missing_identifiers": resp.missing_identifiers,
         "vector_used": vector_used,
         "multi_query": mq_meta.get("multi_query"),
         "expanded_queries": mq_meta.get("queries"),

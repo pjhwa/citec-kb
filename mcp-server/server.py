@@ -363,7 +363,7 @@ async def _search_impl(
         return _err(e)
 
     results = data.get("results") or data.get("hits") or []
-    _warn_lines = [f"[경고] {w}" for w in (data.get("warnings") or [])]
+    _warn_lines = _missing_id_warning(data) + [f"[경고] {w}" for w in (data.get("warnings") or [])]
     if not results:
         if _warn_lines:
             return "검색 결과가 없습니다.\n" + "\n".join(_warn_lines)
@@ -380,6 +380,7 @@ async def _search_impl(
             else ""
         )
         + (f" vector={data.get('vector_used')}" if "vector_used" in data else "")
+        + _trust_inline(data)
         + (f" expanded={data.get('expanded_queries')}" if data.get("expanded_queries") else "")
         + (
             " [note: use_v1=false였지만 지원되지 않는 필터가 있어 v1로 자동 전환]"
@@ -660,6 +661,28 @@ def _format_entity_share(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _trust_inline(data: dict[str, Any]) -> str:
+    """머리 줄에 붙일 ` trust=… exact_tokens=[…]` (없으면 빈 문자열)."""
+    parts: list[str] = []
+    if data.get("trust_retrieval"):
+        parts.append(f"trust={data['trust_retrieval']}")
+    if data.get("exact_tokens"):
+        parts.append(f"exact_tokens={data['exact_tokens']}")
+    return (" " + " ".join(parts)) if parts else ""
+
+
+def _missing_id_warning(data: dict[str, Any]) -> list[str]:
+    """질의의 문서 ID 형태 토큰이 코퍼스에 없을 때의 경고 줄(A6)."""
+    missing = data.get("missing_identifiers") or []
+    if not missing:
+        return []
+    return [
+        "[경고] 질의의 식별자 " + ", ".join(str(m) for m in missing)
+        + " 는 코퍼스에서 찾지 못했습니다 — 아래 결과는 그 식별자와 무관한 유사 문서일 수 있습니다"
+        + "(번호가 맞는지 kb_ticket 으로 먼저 확인)."
+    ]
+
+
 def _format_query_response(data: dict[str, Any]) -> str:
     intent = data.get("intent") or "unknown"
     note = data.get("note") or ""
@@ -704,7 +727,9 @@ def _format_query_response(data: dict[str, Any]) -> str:
         lines.append(
             f"hits={result.get('total', len(items))}"
             + (f" total_candidates={cand}" if cand is not None else "")
+            + _trust_inline(result)
         )
+        lines.extend(_missing_id_warning(result))
         for it in items[:12]:
             if not isinstance(it, dict):
                 continue

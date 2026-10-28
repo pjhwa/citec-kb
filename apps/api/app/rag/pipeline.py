@@ -227,6 +227,7 @@ def _prepare(
     retrieval_meta = {
         "total": resp.total,
         "trust_retrieval": resp.trust_retrieval,
+        "missing_identifiers": resp.missing_identifiers,
         "vector_used": qvec is not None or bool(mq_meta.get("vector_used")),
         "gated": resp.gated,
         "exact_tokens": resp.exact_tokens,

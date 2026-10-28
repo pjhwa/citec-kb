@@ -17,6 +17,7 @@ from typing import Any, Callable, Optional
 
 from sqlalchemy.orm import Session
 
+from app.retrieval.identifiers import check_query_identifiers
 from app.retrieval.search import (
     SearchHit,
     SearchRequest,
@@ -355,15 +356,17 @@ def multi_hybrid_search(
 
     base = first_resp or hybrid_search(session, req, query_vector=query_vector)
     returned = len(ranked)
+    trust, missing_ids = check_query_identifiers(session, req.q, retrieval_trust(ranked))
     out = SearchResponse(
         query=req.q,
         exact_tokens=base.exact_tokens,
         total=returned,
         gated=False if ranked else True,
-        trust_retrieval=retrieval_trust(ranked),
+        trust_retrieval=trust,
         results=ranked,
         returned_count=returned,
         total_candidates=total_candidates,
+        missing_identifiers=missing_ids,
     )
     meta = {
         "multi_query": True,

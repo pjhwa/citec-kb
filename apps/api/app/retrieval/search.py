@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.orm import Session
 
 from app.db.models import Chunk, Document, Embedding
+from app.retrieval.identifiers import check_query_identifiers
 from app.retrieval.fusion import (
     RankedHit,
     apply_exact_boost,
@@ -420,6 +421,9 @@ class SearchResponse:
     trust_retrieval: str  # strong | medium | weak | empty
     returned_count: int = 0
     total_candidates: int = 0
+    # 질의에 있던 문서 ID 형태 토큰 중 코퍼스에 존재하지 않는 것(A6). 전부 없으면
+    # trust_retrieval 은 weak 로 내려가 있다.
+    missing_identifiers: list[str] = field(default_factory=list)
 
 
 def _include_irrelevant_maps(filters: SearchFilters) -> bool:
@@ -852,6 +856,7 @@ def hybrid_search(
         gated = True
 
     trust = retrieval_trust(results)
+    trust, missing_ids = check_query_identifiers(session, req.q, trust)
     returned = len(results)
 
     return SearchResponse(
@@ -863,4 +868,5 @@ def hybrid_search(
         trust_retrieval=trust,
         returned_count=returned,
         total_candidates=total_candidates,
+        missing_identifiers=missing_ids,
     )

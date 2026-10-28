@@ -151,3 +151,54 @@ def test_search_warnings_are_printed(monkeypatch):
     payload["results"] = [{"title": "t", "source_type": "checkitem", "external_id": "A", "score": 1.0}]
     out2 = asyncio.run(server.kb_search("x", area="zzz"))
     assert "[경고]" in out2 and "- [checkitem] t" in out2
+
+
+def test_search_header_shows_trust_and_missing_identifier(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    import server
+
+    payload = {
+        "results": [{"title": "무관", "source_type": "support_history", "external_id": "CITECTS-1", "score": 0.02}],
+        "trust_retrieval": "weak", "exact_tokens": ["CITECTS-99999"], "missing_identifiers": ["CITECTS-99999"],
+    }
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(
+            base_url="http://t", transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))),
+    )
+    out = asyncio.run(server.kb_search("CITECTS-99999 내용"))
+    head = out.splitlines()[0]
+    assert "trust=weak" in head and "exact_tokens=['CITECTS-99999']" in head
+    assert "[경고] 질의의 식별자 CITECTS-99999 는 코퍼스에서 찾지 못했습니다" in out
+    assert "- [support_history] 무관" in out
+
+
+def test_query_hybrid_branch_shows_trust_and_missing_identifier():
+    import server
+
+    out = server._format_query_response({
+        "intent": "hybrid_search", "params": {},
+        "result": {"total": 1, "trust_retrieval": "weak", "missing_identifiers": ["CITECTS-8888"],
+                   "items": [{"title": "x", "external_id": "CITECTS-1", "source_type": "support_history", "score": 0.01}]},
+    })
+    assert "trust=weak" in out and "CITECTS-8888" in out
+
+
+def test_clean_search_header_unchanged_without_trust_fields(monkeypatch):
+    import asyncio
+
+    import httpx
+
+    import server
+
+    payload = {"results": [{"title": "t", "source_type": "tech_repo", "external_id": "1", "score": 1.0}]}
+    monkeypatch.setattr(
+        server, "_client",
+        lambda timeout=30.0: httpx.AsyncClient(
+            base_url="http://t", transport=httpx.MockTransport(lambda r: httpx.Response(200, json=payload))),
+    )
+    out = asyncio.run(server.kb_search("x"))
+    assert "trust=" not in out and "[경고]" not in out
