@@ -1001,14 +1001,28 @@ async def kb_title_tokens(
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
-    tokens = data.get("tokens") or data.get("items") or []
-    lines = [f"title_tokens top_k={top_k} component={component or '(all)'}"]
+    # API(`app.analytics.title_tokens`)는 `buckets`에 {token,count,share}를 담는다.
+    # `tokens`/`items`는 예전 응답 형태 호환용 폴백.
+    tokens = data.get("buckets") or data.get("tokens") or data.get("items") or []
+    n_docs = data.get("document_n")
+    uniq = data.get("unique_tokens")
+    head = f"title_tokens top_k={top_k} component={component or '(all)'}"
+    if n_docs is not None:
+        head += f" source_type={data.get('source_type') or source_type} document_n={n_docs}"
+    if uniq is not None:
+        head += f" unique_tokens={uniq}"
+    lines = [head]
     if isinstance(tokens, list):
         for t in tokens[:top_k]:
             if isinstance(t, dict):
-                lines.append(f"- {t.get('token') or t.get('key')}: {t.get('count')}")
+                row = f"- {t.get('token') or t.get('key')}: {t.get('count')}"
+                if isinstance(t.get("share"), (int, float)):
+                    row += f" ({t['share'] * 100:.1f}%)"
+                lines.append(row)
             else:
                 lines.append(f"- {t}")
+        if not tokens:
+            lines.append("(조건에 맞는 제목 토큰이 없습니다 — component/source_type 값을 확인하세요)")
     else:
         lines.append(_json_compact(data, 2500))
     return "\n".join(lines)
