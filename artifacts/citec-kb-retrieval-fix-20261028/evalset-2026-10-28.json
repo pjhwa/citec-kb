@@ -1,0 +1,526 @@
+{
+  "evalset_id": "citec-kb-retrieval-fix-20261028",
+  "provenance": "정답 external_id 는 2026-10-28 dev DB 에서 원문 body 를 열어 확인(PISAOLNX_02.01.02 점검방법 'Out of Memory' dmesg, PISAOLNX_04.04.03 'df -i', PISAOLNX_02.02.15 pacemaker Memory Leak, CITECTS-2334/2508/2327/2394/2634/2502 본문 증상·원인). 질문은 본문을 바꿔 쓴 것. 사람 재확인 전.",
+  "caveats": [
+    "symptom 군의 질문은 정답 문서에서 파생돼 쉬운 편(자기참조 편향) — 절대 수치보다 변경 전/후 차이로 본다",
+    "홀드아웃과 달리 소규모(케이스당 1정답)라 군 단위 통계적 유의성은 없다"
+  ],
+  "cases": [
+    {
+      "id": "chk-oom-1",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "Linux OOM",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-oom-2",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "OOM",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-oom-3",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "Linux Out of Memory",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-oom-4",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "Out of Memory 로그 dmesg",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-oom-5",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "메모리 과다 사용 이력",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-oom-nofilter",
+      "group": "checklist_oom",
+      "kind": "search",
+      "q": "Linux OOM 점검항목",
+      "filters": {
+        "source_type": "checkitem"
+      },
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 5
+    },
+    {
+      "id": "chk-inode-1",
+      "group": "checklist_inode",
+      "kind": "search",
+      "q": "Linux 파일시스템 inode 사용률",
+      "filters": {
+        "source_type": "checkitem"
+      },
+      "expect": [
+        "PISAOLNX_04.04.03"
+      ],
+      "forbid_above": [
+        "PISAVSOS_01.02.08"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-inode-2",
+      "group": "checklist_inode",
+      "kind": "search",
+      "q": "파일시스템 inode 고갈 점검",
+      "filters": {
+        "source_type": "checkitem"
+      },
+      "expect": [
+        "PISAOLNX_04.04.03"
+      ],
+      "forbid_above": [
+        "PISAVSOS_01.02.08"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-memleak-1",
+      "group": "checklist_memleak",
+      "kind": "search",
+      "q": "Linux memory leak",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.02.15"
+      ],
+      "k": 3
+    },
+    {
+      "id": "chk-memleak-2",
+      "group": "checklist_memleak",
+      "kind": "search",
+      "q": "메모리 누수 pacemaker",
+      "filters": {
+        "source_type": "checkitem",
+        "domain": "linux"
+      },
+      "expect": [
+        "PISAOLNX_02.02.15"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2502-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "BFD down 4시간 주기 Redis 접속 불가",
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2502-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "BFD down 4시간 주기 Redis 접속 불가",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2502-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "BFD down 4시간 주기 Redis 접속 불가",
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 3,
+      "product": "모니모"
+    },
+    {
+      "id": "sym-2502b-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "Spine BGW 구간 peak 트래픽 때 BFD가 끊겨 Redis timeout 발생",
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2502b-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "Spine BGW 구간 peak 트래픽 때 BFD가 끊겨 Redis timeout 발생",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2502b-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "Spine BGW 구간 peak 트래픽 때 BFD가 끊겨 Redis timeout 발생",
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2334-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "호스트에서 df ssh systemctl 실행이 느리고 tmpfs 마운트가 수만 개 중복 기록됨",
+      "expect": [
+        "CITECTS-2334"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2334-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "호스트에서 df ssh systemctl 실행이 느리고 tmpfs 마운트가 수만 개 중복 기록됨",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2334"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2334-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "호스트에서 df ssh systemctl 실행이 느리고 tmpfs 마운트가 수만 개 중복 기록됨",
+      "expect": [
+        "CITECTS-2334"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2508-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "GPU 서버 모니터링 프로세스가 D state 로 멈추고 nvme controller reset timeout 이 1분마다 반복",
+      "expect": [
+        "CITECTS-2508"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2508-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "GPU 서버 모니터링 프로세스가 D state 로 멈추고 nvme controller reset timeout 이 1분마다 반복",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2508"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2508-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "GPU 서버 모니터링 프로세스가 D state 로 멈추고 nvme controller reset timeout 이 1분마다 반복",
+      "expect": [
+        "CITECTS-2508"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2327-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "백업 대상을 100개에서 500개로 늘린 뒤 스냅샷 생성과 볼륨 attach 실패가 대량 발생, LUN 1024개 한계",
+      "expect": [
+        "CITECTS-2327"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2327-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "백업 대상을 100개에서 500개로 늘린 뒤 스냅샷 생성과 볼륨 attach 실패가 대량 발생, LUN 1024개 한계",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2327"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2327-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "백업 대상을 100개에서 500개로 늘린 뒤 스냅샷 생성과 볼륨 attach 실패가 대량 발생, LUN 1024개 한계",
+      "expect": [
+        "CITECTS-2327"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2394-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "VDI 신규 접속이 느리고 AD 서버 lsass handle 과 커널 메모리 pool 이 계속 증가, Defender 삭제 후 정상화",
+      "expect": [
+        "CITECTS-2394"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2394-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "VDI 신규 접속이 느리고 AD 서버 lsass handle 과 커널 메모리 pool 이 계속 증가, Defender 삭제 후 정상화",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2394"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2394-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "VDI 신규 접속이 느리고 AD 서버 lsass handle 과 커널 메모리 pool 이 계속 증가, Defender 삭제 후 정상화",
+      "expect": [
+        "CITECTS-2394"
+      ],
+      "k": 3
+    },
+    {
+      "id": "sym-2634-nofilter",
+      "group": "symptom_search_nofilter",
+      "kind": "search",
+      "q": "NAS 파일 서비스 지연, 스토리지 CPU 95~100% 포화, NFSv3 Lookup 지연과 파일 개수 제약",
+      "expect": [
+        "CITECTS-2634"
+      ],
+      "k": 10
+    },
+    {
+      "id": "sym-2634-sh",
+      "group": "symptom_search_support_history",
+      "kind": "search",
+      "q": "NAS 파일 서비스 지연, 스토리지 CPU 95~100% 포화, NFSv3 Lookup 지연과 파일 개수 제약",
+      "filters": {
+        "source_type": "support_history"
+      },
+      "expect": [
+        "CITECTS-2634"
+      ],
+      "k": 5
+    },
+    {
+      "id": "sym-2634-si",
+      "group": "symptom_similar_incident",
+      "kind": "similar_incident",
+      "q": "NAS 파일 서비스 지연, 스토리지 CPU 95~100% 포화, NFSv3 Lookup 지연과 파일 개수 제약",
+      "expect": [
+        "CITECTS-2634"
+      ],
+      "k": 3
+    },
+    {
+      "id": "idm-1",
+      "group": "identifier",
+      "kind": "missing_identifier",
+      "q": "CITECTS-99999 내용 알려줘",
+      "expect_missing": [
+        "CITECTS-99999"
+      ]
+    },
+    {
+      "id": "idm-2",
+      "group": "identifier",
+      "kind": "missing_identifier",
+      "q": "CITECTS-8888 Redis 장애 사례 알려줘",
+      "expect_missing": [
+        "CITECTS-8888"
+      ]
+    },
+    {
+      "id": "idm-3",
+      "group": "identifier",
+      "kind": "missing_identifier",
+      "q": "CITECTS-99999 내용 알려줘",
+      "expect_missing": [
+        "CITECTS-99999"
+      ],
+      "multi_query": false
+    },
+    {
+      "id": "idp-1",
+      "group": "identifier",
+      "kind": "present_identifier",
+      "q": "CITECTS-2502 내용 알려줘",
+      "expect": [
+        "CITECTS-2502"
+      ],
+      "k": 3
+    },
+    {
+      "id": "idp-2",
+      "group": "identifier",
+      "kind": "present_identifier",
+      "q": "PISAOLNX_02.01.02 점검 방법",
+      "expect": [
+        "PISAOLNX_02.01.02"
+      ],
+      "k": 3
+    },
+    {
+      "id": "inv-es-scp",
+      "group": "invariants",
+      "kind": "inv_entity_share",
+      "entity": "SCP",
+      "relative": "올해"
+    },
+    {
+      "id": "inv-es-redis",
+      "group": "invariants",
+      "kind": "inv_entity_share",
+      "entity": "redis",
+      "relative": "올해"
+    },
+    {
+      "id": "inv-period-2026-09",
+      "group": "invariants",
+      "kind": "inv_query_period",
+      "q": "2026년 9월 기술지원 목록",
+      "date_from": "2026-09-01",
+      "date_to": "2026-09-30",
+      "source_type": "support_history"
+    },
+    {
+      "id": "inv-count-scp-lastyear",
+      "group": "invariants",
+      "kind": "inv_query_entity_count",
+      "q": "작년 SCP 건수",
+      "entity": "SCP",
+      "relative": "작년"
+    },
+    {
+      "id": "smoke-tickets-lastweek",
+      "group": "skill_smoke",
+      "kind": "tickets_relative",
+      "relative": "지난 주",
+      "min_total": 0
+    },
+    {
+      "id": "smoke-recent-lookin",
+      "group": "skill_smoke",
+      "kind": "recent_changes",
+      "relative": "최근 3일",
+      "space_key": "LOOKIN"
+    },
+    {
+      "id": "probe-1",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "Redis timeout"
+    },
+    {
+      "id": "probe-2",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "Linux OOM"
+    },
+    {
+      "id": "probe-3",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "SCP 장애"
+    },
+    {
+      "id": "probe-4",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "NetApp 성능 지연"
+    },
+    {
+      "id": "probe-5",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "Kubernetes pod 재시작"
+    },
+    {
+      "id": "probe-6",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "방화벽 정책 변경"
+    },
+    {
+      "id": "probe-7",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "Oracle RAC 장애"
+    },
+    {
+      "id": "probe-8",
+      "group": "b2_probe_unfiltered",
+      "kind": "probe",
+      "q": "VMware 가상머신 지연"
+    }
+  ]
+}
