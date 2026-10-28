@@ -205,13 +205,18 @@ def _case_inv_entity_share(base: str, c: dict) -> dict:
 
 def _case_inv_query_period(base: str, c: dict) -> dict:
     q, ms, status, nbytes = _http("POST", base, "/v1/query", body={"q": c["q"], "include_search": False})
-    tk, _, _, _ = _http("GET", base, "/v1/tickets",
-                        params={"source_type": c["source_type"], "date_from": c["date_from"],
-                                "date_to": c["date_to"], "limit": 1})
+    # The planner may narrow by an explicit Component word ("기술지원"); the
+    # reference count must apply the same component or it compares different sets.
+    comp = ((q or {}).get("params") or {}).get("component")
+    tparams = {"source_type": c["source_type"], "date_from": c["date_from"],
+               "date_to": c["date_to"], "limit": 1}
+    if comp:
+        tparams["component"] = comp
+    tk, _, _, _ = _http("GET", base, "/v1/tickets", params=tparams)
     intent = (q or {}).get("intent")
     total = ((q or {}).get("result") or {}).get("total")
     expected = (tk or {}).get("total")
-    detail = {"intent": intent, "query_total": total, "tickets_total": expected}
+    detail = {"intent": intent, "query_total": total, "tickets_total": expected, "component": comp}
     ok = intent == "time_scoped_list" and total is not None and total == expected
     return {"id": c["id"], "group": c["group"], "kind": c["kind"], "pass": ok, "rank": None,
             "detail": detail, "latency_ms": round(ms, 1), "status": status, "bytes": nbytes, "pointer_top5": None}

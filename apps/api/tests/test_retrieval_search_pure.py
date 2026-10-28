@@ -88,3 +88,13 @@ def test_title_bonus_scales_between_floor_and_ceiling():
 
 def test_title_bonus_empty_batch_is_floor():
     assert title_match_bonus([]) == 0.05
+
+
+def test_query_years_extraction():
+    from app.retrieval.search import _query_years
+
+    assert _query_years("2026년 SCP v2 Multi-AZ") == {"2026"}
+    assert _query_years("2025 년과 2026년 비교") == {"2025", "2026"}
+    assert _query_years("SCP 12026 년") == set()
+    assert _query_years("지난해 장애") == set()
+

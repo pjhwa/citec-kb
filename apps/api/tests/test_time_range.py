@@ -135,3 +135,33 @@ def test_absolute_range_swim_never_gets_a_component():
     assert intent is not None
     assert intent["source_type"] == "incident_reports"
     assert intent["component"] is None
+
+
+# --- B4: whole-month expressions ("2026년 9월") are an absolute range.
+
+
+def test_month_expression_is_time_scoped_list():
+    intent = detect_time_scoped_list("2026년 9월 기술지원 목록")
+    assert intent is not None and intent["intent"] == "time_scoped_list"
+    assert (intent["date_from"], intent["date_to"]) == ("2026-09-01", "2026-09-30")
+    assert intent["component"] == "기술지원"
+
+
+def test_month_range_and_year_rollover():
+    from app.query.time_range import parse_absolute_range
+
+    r = parse_absolute_range("2026년 7월부터 9월까지 지원 목록")
+    assert (r.date_from.isoformat(), r.date_to.isoformat()) == ("2026-07-01", "2026-09-30")
+    r = parse_absolute_range("2025년 12월 지원 이력")
+    assert (r.date_from.isoformat(), r.date_to.isoformat()) == ("2025-12-01", "2025-12-31")
+    r = parse_absolute_range("2026년 2월")
+    assert r.date_to.isoformat() == "2026-02-28"
+
+
+def test_month_pattern_does_not_swallow_day_forms_or_bare_year():
+    from app.query.time_range import parse_absolute_range
+
+    assert parse_absolute_range("2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?") is None
+    assert parse_absolute_range("2026년 9월 7일 지원") is None
+    assert detect_time_scoped_list("2026년 SCP v2 Multi-AZ 가용성 테스트가 있는가?") is None
+    assert parse_absolute_range("2026년 13월 목록") is None

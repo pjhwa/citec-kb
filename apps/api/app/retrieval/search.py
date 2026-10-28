@@ -527,6 +527,13 @@ def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
     return stmt
 
 
+_YEAR_IN_QUERY = re.compile(r"(?<!\d)(20\d{2})\s*년")
+
+
+def _query_years(q: str) -> set[str]:
+    return set(_YEAR_IN_QUERY.findall(q or ""))
+
+
 def _code_prefix_restricted(filters: "SearchFilters") -> bool:
     return filters.source_type == "checkitem" or bool(filters.domain)
 
@@ -781,6 +788,26 @@ def hybrid_search(
                 and re.search(r"리눅스|linux", req.q, re.I)
             ):
                 fused[cid] = fused[cid] + 0.015
+
+    # A year in the question ("2026년 …") is a soft preference, never a filter:
+    # tickets created that year get a bump scaled to this batch's own top
+    # score, and a year with no documents leaves the ranking untouched.
+    years = _query_years(req.q)
+    if years and fused and meta_by_id:
+        doc_ids = {m["document_id"] for m in meta_by_id.values() if m["source_type"] == "support_history"}
+        created: dict[str, str] = {}
+        if doc_ids:
+            for did, cr in session.execute(
+                select(Document.id, Document.metadata_["Created"].astext).where(
+                    Document.id.in_(doc_ids)
+                )
+            ).all():
+                created[did] = cr or ""
+        year_bonus = 0.15 * max(fused.values())
+        for cid in list(fused):
+            cr = created.get((meta_by_id.get(cid) or {}).get("document_id"), "")
+            if cr[:4] in years:
+                fused[cid] = fused[cid] + year_bonus
 
     if len(tokens) >= 2 and fused and meta_by_id:
         bonus = title_match_bonus(fused.values())

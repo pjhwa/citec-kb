@@ -73,6 +73,12 @@ _ABS_KO = re.compile(
     r"(?P<y1>\d{4})\s*년\s*(?P<m1>\d{1,2})\s*월\s*(?P<d1>\d{1,2})\s*일\s*부터\s*"
     r"(?P<y2>\d{4})\s*년\s*(?P<m2>\d{1,2})\s*월\s*(?P<d2>\d{1,2})\s*일\s*까지"
 )
+# "2026년 9월" or "2026년 7월부터 9월까지" (whole calendar months). A month
+# followed by a day ("9월 7일") belongs to the day-level patterns, never here.
+_MONTH_KO = re.compile(
+    r"(?P<y>\d{4})\s*년\s*(?P<m1>\d{1,2})\s*월(?!\s*\d{1,2}\s*일)"
+    r"(?:\s*(?:부터|~|～)\s*(?:(?P<y2>\d{4})\s*년\s*)?(?P<m2>\d{1,2})\s*월(?!\s*\d{1,2}\s*일)(?:\s*까지)?)?"
+)
 _DATE_ATTEMPT = re.compile(
     r"\d{4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일|\d{4}[-./]\d{1,2}[-./]\d{1,2}"
 )
@@ -114,12 +120,29 @@ def parse_absolute_range(text: str) -> Optional[DateRange]:
             return _ordered_range(a, b, f"{a.isoformat()}~{b.isoformat()}")
     m = _ABS_ISO.search(t) or _ABS_DOTTED.search(t)
     if not m:
-        return None
+        return _parse_month_range(t)
     a = _parse_ymd_token(m.group("a"))
     b = _parse_ymd_token(m.group("b"))
     if not a or not b:
         return None
     return _ordered_range(a, b, f"{a.isoformat()}~{b.isoformat()}")
+
+
+def _parse_month_range(t: str) -> Optional[DateRange]:
+    m = _MONTH_KO.search(t)
+    if not m:
+        return None
+    y1, m1 = int(m.group("y")), int(m.group("m1"))
+    y2 = int(m.group("y2") or y1)
+    m2 = int(m.group("m2") or m1)
+    if not (1 <= m1 <= 12 and 1 <= m2 <= 12):
+        return None
+    a = date(y1, m1, 1)
+    last = date(y2 + (m2 == 12), m2 % 12 + 1, 1) - timedelta(days=1)
+    if last < a:
+        a, last = date(y2, m2, 1), date(y1 + (m1 == 12), m1 % 12 + 1, 1) - timedelta(days=1)
+    label = f"{y1}년 {m1}월" if (y1, m1) == (y2, m2) else f"{a.isoformat()}~{last.isoformat()}"
+    return DateRange(a, last, label)
 
 
 def has_unparsed_date_span(text: str) -> bool:
