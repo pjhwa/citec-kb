@@ -538,6 +538,62 @@ def _code_prefix_restricted(filters: "SearchFilters") -> bool:
     return filters.source_type == "checkitem" or bool(filters.domain)
 
 
+# ts_rank_cd is unnormalised (a term-dense chunk of one common word scores
+# ~25 while a chunk matching two rare words scores ~0.07), so a selective AND
+# variant (fewer hits than the limit) is placed ahead of the single-token pool.
+_RARE_AND_BASE = 1000.0
+_RARE_DF_CAP = 2000
+_RARE_MIN_TOKENS = 4  # only long, sentence-like queries need this
+_RARE_DF_CACHE: dict[str, tuple[float, int]] = {}
+_RARE_DF_TTL_S = 600.0
+
+
+def _token_df(session: Session, tok: str) -> int:
+    """Active-chunk document frequency of one token (cached; global, unfiltered)."""
+    import time
+
+    now = time.monotonic()
+    hit = _RARE_DF_CACHE.get(tok.lower())
+    if hit and now - hit[0] < _RARE_DF_TTL_S:
+        return hit[1]
+    # Capped: only "rare" matters, and counting every hit of a common word
+    # (10k+ chunks) is what makes this expensive.
+    capped = (
+        select(Chunk.id)
+        .where(Chunk.is_active.is_(True))
+        .where(Chunk.tsv.op("@@")(func.plainto_tsquery("simple", tok)))
+        .limit(_RARE_DF_CAP)
+        .subquery()
+    )
+    n = int(session.scalar(select(func.count()).select_from(capped)) or 0)
+    if len(_RARE_DF_CACHE) > 4096:
+        _RARE_DF_CACHE.clear()
+    _RARE_DF_CACHE[tok.lower()] = (now, n)
+    return n
+
+
+def rare_token_variants(session: Session, q: str) -> list[str]:
+    """AND-variants of the corpus-rarest query tokens for long sentence queries.
+
+    A sentence query ANDs to zero hits and its single tokens are all common
+    words, so the document that actually carries the distinctive terms never
+    reaches the candidate set. The two/three rarest tokens (by document
+    frequency; tokens absent from the corpus are skipped) joined as an AND
+    phrase restore it. Purely statistical: no query- or answer-specific rules.
+    """
+    toks = [t for t in content_tokens(q) if not re.search(r"^\d+$", t)]
+    if len(toks) < _RARE_MIN_TOKENS:
+        return []
+    dfs = [(t, _token_df(session, t)) for t in toks[:10]]
+    dfs = sorted((x for x in dfs if x[1] > 0), key=lambda x: x[1])
+    if len(dfs) < 2:
+        return []
+    out = [f"{dfs[0][0]} {dfs[1][0]}"]
+    if len(dfs) >= 3:
+        out.append(f"{dfs[0][0]} {dfs[1][0]} {dfs[2][0]}")
+    return out
+
+
 def fts_search(session: Session, req: SearchRequest) -> list[str]:
     """Return chunk ids ordered by FTS rank (best first).
 
@@ -548,10 +604,15 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
     if not base:
         return []
     variants = build_fts_variants(base, restricted=_code_prefix_restricted(req.filters))
+    rare = rare_token_variants(session, base)
+    for rv in rare:
+        if rv.lower() not in {x.lower() for x in variants}:
+            variants.append(rv)
 
     scored: dict[str, float] = {}
     for v in variants:
-        w = _variant_weight(v)
+        is_rare = v in rare
+        w = 1.0 if is_rare else _variant_weight(v)
         if w <= 0:
             continue
         tsq = func.plainto_tsquery("simple", v)
@@ -570,8 +631,10 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
         # identical searches could return a different top-N when rank ties,
         # which is exactly what §2's "반복 top1 동일 16/16→14/16" measured.
         stmt = stmt.order_by(rank_expr.desc(), Chunk.id).limit(req.fts_limit)
-        for cid, rk in session.execute(stmt).all():
-            contrib = w * float(rk or 0.0)
+        rows = session.execute(stmt).all()
+        selective = is_rare and len(rows) < req.fts_limit
+        for cid, rk in rows:
+            contrib = w * float(rk or 0.0) + (_RARE_AND_BASE if selective else 0.0)
             # Keep best weighted contribution (avoid DF-sum flooding)
             prev = scored.get(cid, 0.0)
             if contrib > prev:
@@ -585,6 +648,7 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
         t
         for t in variants
         if t != base
+        and t not in rare  # AND-of-rare-tokens is a body match; ILIKE would seq-scan
         and _variant_weight(t) >= 1.0
         and len(t) >= 2
         and t.lower() not in _STOPWORDS

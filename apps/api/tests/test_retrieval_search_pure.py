@@ -98,3 +98,37 @@ def test_query_years_extraction():
     assert _query_years("SCP 12026 년") == set()
     assert _query_years("지난해 장애") == set()
 
+
+class _FakeSession:
+    def __init__(self, dfs):
+        self.dfs = dfs
+        self.calls = 0
+
+    def scalar(self, stmt):
+        self.calls += 1
+        return self.dfs[self._tok(stmt)]
+
+    @staticmethod
+    def _tok(stmt):
+        # params hold the 'simple' regconfig and the token; the token is the other one
+        vals = [v for v in stmt.compile().params.values() if v != "simple"]
+        return vals[0]
+
+
+def test_rare_token_variants_pick_rarest_and_skip_absent(monkeypatch):
+    import app.retrieval.search as S
+
+    monkeypatch.setattr(S, "_RARE_DF_CACHE", {})
+    dfs = {"BFD": 72, "down": 10357, "4시간": 79, "주기": 740, "Redis": 870, "접속": 5470, "불가": 7447, "없는말": 0}
+    fs = _FakeSession(dfs)
+    out = S.rare_token_variants(fs, "BFD down 4시간 주기 Redis 접속 불가 없는말")
+    assert out == ["BFD 4시간", "BFD 4시간 주기"]
+
+
+def test_rare_token_variants_ignore_short_queries(monkeypatch):
+    import app.retrieval.search as S
+
+    monkeypatch.setattr(S, "_RARE_DF_CACHE", {})
+    fs = _FakeSession({})
+    assert S.rare_token_variants(fs, "Redis timeout 원인") == []
+    assert fs.calls == 0
