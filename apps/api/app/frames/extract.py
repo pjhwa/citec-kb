@@ -14,7 +14,7 @@ from typing import Any, Optional
 # that could change a document's extracted slots — app.frames.job compares
 # this against IssueFrame.extractor_version to decide whether a stored frame
 # is stale relative to the extractor itself, not just relative to body_md.
-EXTRACTOR_VERSION = "2026-09-30.1"
+EXTRACTOR_VERSION = "2026-10-29.1"
 
 
 def body_hash(body_md: Optional[str]) -> str:
@@ -40,7 +40,7 @@ _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "root_cause",
         re.compile(
-            r"(?:^|\n)\s*(?:#{1,4}\s*|h[1-6]\.\s*|\*\*)?(?:이슈\s*)?(?:장애\s*)?(?:원인|근본\s*원인|분석결과|세부원인)"
+            r"(?:^|\n)\s*(?:#{1,4}\s*|h[1-6]\.\s*|\*\*)?\*?(?:이슈\s*)?(?:장애\s*)?(?:원인|근본\s*원인|분석결과|세부원인)"
             r"|(?:^|\n)\s*[-*•]\s*\*\*(?:분석결과|원인)\*\*"
             r"|(?:^|\n)\s*[-*]?\s*\d+[.)]\s*(?:장애\s*)?원인"
             r"|(?:^|\n)\s*○\s*장애\s*원인"
@@ -52,7 +52,7 @@ _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*(?:#{1,4}\s*|h[1-6]\.\s*|\*\*)?(?:해결(?:\s*방안)?|조치(?:\s*내용|\s*내역)?|장애\s*조치)"
+            r"(?:^|\n)\s*(?:#{1,4}\s*|h[1-6]\.\s*|\*\*)?\*?(?:해결(?:\s*방안)?|조치(?:\s*내용|\s*내역)?|장애\s*조치)"
             r"|(?:^|\n)\s*h[1-6]\.\s*(?:\d+\.?\s*)?조치\s*(?:내용|내역)?"
             r"|(?:^|\n)\s*[-*•]\s*\*\*조치내용\*\*"
             r"|(?:^|\n)\s*\*?\s*조치\s*내용\*?"
@@ -77,32 +77,38 @@ _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 # (incident_reports) markdown, which uses "■ 장애상황:"/"■ 장애원인:"/
 # "■ 장애조치:" instead of -/*/•/○. Without it these patterns never match a
 # SWIM line at all (frames_total stayed support_history-only).
+# Bullet / arrow / bold prefixes seen in real tickets: "□ 장애원인 :", "-> 원인 :",
+# "*=> 원인 : …*", "■ 이슈 원인 :". Value may start on the next line.
+_B = r"(?:->|=>|[-*•○■□▶▷▪●◆◇※→⇒>])*\s*\**\s*"
+_STOP = r"(?=\n\s*(?:->|=>|[-*•○■□▶▷▪●◆◇※→⇒>#hH]|\d+[.)]|\Z)|\s*\Z)"
+_CAUSE_LABEL = r"(?:(?:장애|이슈|문제|근본|직접)\s*)?원인"
+
 _INLINE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
         "root_cause",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:\d+[.)]\s*)?(?:장애\s*)?원인\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*" + _B + r"(?:\d+[.)]\s*)?" + _CAUSE_LABEL + r"\s*\**\s*[:：]\s*(.+?)" + _STOP,
             re.I | re.S,
         ),
     ),
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:장애\s*)?조치(?:\s*내용|\s*내역|\s*완료)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*" + _B + r"(?:장애\s*)?조치(?:\s*내용|\s*내역|\s*완료)?\s*\**\s*[:：]\s*(.+?)" + _STOP,
             re.I | re.S,
         ),
     ),
     (
         "resolution",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?해결(?:\s*방안|\s*책)?\s*[:：]\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*" + _B + r"해결(?:\s*방안|\s*책)?\s*\**\s*[:：]\s*(.+?)" + _STOP,
             re.I | re.S,
         ),
     ),
     (
         "root_cause",
         re.compile(
-            r"(?:^|\n)\s*(?:[-*•○■]?\s*)?(?:\d+[.)]\s*)?장애원인\s*[:：]?\s*(.+?)(?=\n\s*(?:[-*•○■#hH]|\d+[.)]|\Z))",
+            r"(?:^|\n)\s*" + _B + r"(?:\d+[.)]\s*)?장애원인\s*[:：]?\s*(.+?)" + _STOP,
             re.I | re.S,
         ),
     ),
@@ -165,6 +171,14 @@ def _clean_slot_text(s: str) -> str:
     t = re.sub(r"^(?:\*\*|내용)\s*[:：]?\s*", "", t)
     t = re.sub(r"^h[1-3]\.\s*[^\n*]{0,40}\*?\s*", "", t, flags=re.I)
     t = re.sub(r"^(?:이슈\s*)?(?:원인|증상|조치|해결(?:\s*방안)?)\s*[:：]\s*", "", t, flags=re.I)
+    # label residue left by markdown emphasis: "원인분석* * …", "조치 경과* - …"
+    # (only when a '*' marks the label end, so ordinary text is never trimmed)
+    t = re.sub(
+        r"^(?:이슈\s*|장애\s*)?(?:원인\s*분석|원인|조치\s*(?:내용|내역|경과|의견)?|해결(?:\s*(?:방안|내용))?|분석결과)"
+        r"\s*(?:\([^)]{0,30}\))?\s*\*+\s*[:：]?\s*",
+        "",
+        t,
+    )
     t = re.sub(r"\s+", " ", t).strip(" \t\r\n-•*")
     return t
 
