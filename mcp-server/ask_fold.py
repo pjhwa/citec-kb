@@ -20,6 +20,8 @@ def fold_ask_events(events: list[dict]) -> str:
     errors: list[str] = []
     saw_done = False
     llm_error: str | None = None
+    gen_status: str | None = None
+    seen_paths: set[str] = set()
 
     for event in events:
         if not isinstance(event, dict):
@@ -36,6 +38,7 @@ def fold_ask_events(events: list[dict]) -> str:
             result = event.get("result") or {}
             if result.get("llm_error"):
                 llm_error = str(result.get("llm_error"))
+            gen_status = result.get("generation_status") or gen_status
             if not answer_parts and result.get("answer"):
                 answer_parts.append(str(result.get("answer")))
             for c in result.get("citations") or []:
@@ -46,6 +49,11 @@ def fold_ask_events(events: list[dict]) -> str:
                 path = c.get("path") or (f"{st}/{eid}.md" if eid and st else eid)
                 web = c.get("web_url") or c.get("web_path") or ""
                 body = c.get("body_api") or c.get("body_api_url") or ""
+                # One entry per document: several chunks of the same ticket
+                # used to print the same source 4 times.
+                if path in seen_paths:
+                    continue
+                seen_paths.add(path)
                 if path:
                     sources.append(path)
                 cite_lines.append(
@@ -65,8 +73,11 @@ def fold_ask_events(events: list[dict]) -> str:
         detail = errors[-1] if errors else "답변을 생성하지 못했습니다."
         raise KbAskError(detail)
 
-    if llm_error or errors:
-        answer = "[스니펫 요약] LLM 생성 답변이 아닙니다. 검색 근거만 요약합니다.\n" + answer
+    if llm_error or errors or (gen_status and gen_status not in {"ok", "not_attempted"}):
+        reason = llm_error or (errors[-1] if errors else gen_status)
+        head = f"[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status={gen_status or 'failed_snippet_fallback'}, 사유: {reason})"
+        # The API already prefixes its own notice; keep the MCP header as line 1 once.
+        answer = head + "\n" + answer.replace("⚠ 생성 실패 — 아래는 LLM 답변이 아니라 검색 스니펫 요약입니다.\n", "", 1)
     if cite_lines:
         answer += "\n\n**출처 (원문 접근)**\n" + "\n".join(cite_lines)
     elif sources:

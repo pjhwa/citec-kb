@@ -58,10 +58,22 @@ def _looks_like_abstain(answer: str) -> bool:
     return any(m in a for m in markers)
 
 
+_FALLBACK_NOTICE = "⚠ 생성 실패 — 아래는 LLM 답변이 아니라 검색 스니펫 요약입니다."
+
+
 def _snippet_fallback(packed: list[PackedChunk], header: str) -> str:
-    return header + "\n" + "\n".join(
-        f"- [{p.cite_id}] {p.title}: {p.snippet[:160]}" for p in packed[:5]
-    )
+    """Snippet summary for a failed generation: one line per document."""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for p in packed:
+        key = p.external_id or p.document_id
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f"- [{p.cite_id}] {p.title}: {p.snippet[:160]}")
+        if len(lines) >= 5:
+            break
+    return f"{_FALLBACK_NOTICE}\n{header}\n" + "\n".join(lines)
 
 
 def _prepare(
@@ -256,6 +268,7 @@ def _prepare(
                 "citations_used": [],
                 "retrieval": retrieval_meta,
                 "llm_error": None,
+                "generation_status": "not_attempted",
             },
         }
 
@@ -294,7 +307,18 @@ def _finalize(
     answer: str,
     llm_error: Optional[str],
 ) -> dict[str, Any]:
-    used_cites = [c for c in _extract_citation_ids(answer) if c in {p.cite_id for p in packed}]
+    # A failed generation leaves a snippet summary whose "[C#]" markers were
+    # written by us, not asserted by a model — they must not count as citations
+    # backing a generated answer (and so must not raise trust).
+    fallback = bool(llm_error)
+    if fallback:
+        generation_status = (
+            "empty_snippet_fallback" if llm_error == "empty_completion" else "failed_snippet_fallback"
+        )
+        used_cites = []
+    else:
+        generation_status = "ok"
+        used_cites = [c for c in _extract_citation_ids(answer) if c in {p.cite_id for p in packed}]
     packed_by_cite = {p.cite_id: p for p in packed}
     n_verified_used = sum(
         1 for c in used_cites if packed_by_cite[c].evidence_eligible
@@ -303,11 +327,16 @@ def _finalize(
         retrieval_trust=str(retrieval_meta.get("trust_retrieval") or "weak"),
         n_hits=len(packed),
         n_citations_used=len(used_cites),
-        answer=answer,
+        answer="" if fallback else answer,
         context_blobs=[p.snippet for p in packed],
         force_abstain=False,
         n_verified_citations_used=n_verified_used,
     )
+    if fallback and trust.level in {"strong", "medium"}:
+        trust.level = "weak"
+        trust.banner = "생성 실패 — 검색 스니펫 요약입니다. 출처 원문을 직접 확인하세요."
+    if fallback:
+        trust.reasons.append("LLM 생성 실패 — 생성 답변이 아닌 스니펫 요약(인용 미집계)")
     if trust.abstain and not llm_error:
         answer = (
             "제공된 근거로는 확답할 수 없습니다. 아래 출처를 직접 확인하세요.\n"
@@ -323,6 +352,7 @@ def _finalize(
         "citations_used": used_cites,
         "retrieval": retrieval_meta,
         "llm_error": llm_error,
+        "generation_status": generation_status,
     }
 
 

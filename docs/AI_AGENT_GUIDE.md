@@ -823,3 +823,9 @@ If a tool name is missing in the live server, call `kb_tools_help` or fall back 
 - **B2** — Unfiltered search multiplies pointer-only (`confluence_map`) scores by `SEARCH_POINTER_FACTOR` (default 0.85; `1.0` turns it off).
 - **B3** — Sentence-like queries (≥4 content tokens) also search an AND of the two/three corpus-rarest tokens, ranked ahead of the single-token pool when selective.
 - **B4** — `YYYY년 M월` and `YYYY년 M월부터 N월까지` route to `time_scoped_list` (same count as `/v1/tickets` with the same component). A year in a free-text query is a soft score bump for `support_history`, never a filter. A component word such as `기술지원` narrows the list (25 of 38 in 2026-09 on dev).
+
+## C: `kb_ask` generation-failure transparency (2026-10-29)
+
+- `/v1/chat`, `/api/query` results now carry `generation_status`: `ok` | `failed_snippet_fallback` | `empty_snippet_fallback` | `not_attempted` (early abstain). A failed generation is never `trust` medium/strong and its snippet-fallback `[C#]` markers are not counted as citations (`citations_used=[]`).
+- MCP `kb_ask`/`wiki_ask` first line on failure: `[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status=…, 사유: …)`. The `[스니펫 요약]` prefix is unchanged. Fallback text and the source list show one entry per document.
+- Production still has `llm_backend=fabrix` with no chat adapter (`kb_health` → `chat_supported=False`), so there every `kb_ask` is a snippet summary until a Fabrix chat adapter exists. This needs the Fabrix chat API spec; it is not implemented.
