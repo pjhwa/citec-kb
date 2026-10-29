@@ -4,7 +4,8 @@
 
 ## 0. 적용 시점 (운영 확인됨)
 - B1~B4는 운영(`70.222.78.8:8572`)에 **배포되어 측정까지 끝났다**(2026-10-29, 배포 전/후 동일 평가셋). A1~A7도 같은 배포에 포함됐다. 따라서 A·B 우회는 아래 표대로 줄여도 된다.
-- C(`generation_status`)는 코드가 dev 저장소에 있고, **운영 배포 여부는 `kb_ask` 첫 줄에 `⚠ 생성 실패`가 보이는지로 확인**한다(운영은 아직 Fabrix chat 어댑터가 없어 항상 폴백이다).
+- C(`generation_status`)와 **Fabrix chat 어댑터는 운영에 배포되어 확인됐다**(2026-10-29, 커밋 `8ce9bf8`). `kb_health`가 `chat_supported=True`, `kb_ask`는 `generation_status=ok`와 `[C#]` 인용이 붙은 생성 답변을 낸다. 생성이 실패하면 여전히 첫 줄에 `[스니펫 요약] ⚠ 생성 실패`가 붙는다.
+- B 배포 직후 `Linux OOM` 같은 일반 질의가 2.4초에서 24초로 느려지는 회귀가 있었고 `8ce9bf8`에서 해소됐다(운영 b2_probe 중앙값 2.6초). 스킬에서 이 회귀 때문에 만든 우회가 있다면 지운다.
 
 ## 1. 운영 측정 결과 (우회 판단 근거)
 | 항목 | 배포 전 | 배포 후 |
@@ -24,7 +25,7 @@
 | B2 | 필터 없는 검색에서 pointer-only 행 점수 ×0.85(`SEARCH_POINTER_FACTOR`). `section=confluence_map`이면 적용 안 함 | "필터 없는 검색은 map이 채운다 → 항상 `section` 지정" 지시를 **"가능하면 section 지정, 안 해도 상위가 map으로만 차지되지는 않는다"**로 완화. map 근거는 계속 "pointer, 원문 미확인"으로 표기 |
 | B3 | 4단어 이상 문장형 질의에서 코퍼스 희소 토큰 AND 변형을 후보에 추가 | "증상 문장은 `kb_similar_incident` 먼저" 규칙은 **유지**(여전히 가장 정확). 단 `kb_search` 증상 검색이 상위 10에 들어올 가능성이 올랐으므로 "검색은 안 된다"는 단정은 삭제 |
 | B4 | `YYYY년 M월`, `YYYY년 M월부터 N월까지`가 기간 목록으로 분기. 질의 속 연도는 support_history 소프트 부스트 | `kb_query` 행의 "연월 표현은 기간 질의로 분기 안 됨" 삭제. 단 "기술지원" 같은 component 단어가 있으면 그 component로 좁혀 **건수가 전체보다 작을 수 있다**고 안내(예: 2026-09 전체 38건 vs 기술지원 25건). 전체 건수가 필요하면 `kb_list_tickets(date_from, date_to)` |
-| C | `/v1/chat`·`kb_ask` 결과에 `generation_status`(`ok`/`failed_snippet_fallback`/`empty_snippet_fallback`/`not_attempted`). 실패 시 trust는 weak 이하, 폴백 `[C#]`는 인용으로 세지 않음. MCP 첫 줄: `[스니펫 요약] ⚠ 생성 실패 — …`. 출처는 문서당 1건 | `kb_ask` 행: 첫 줄이 `[스니펫 요약]`/`⚠ 생성 실패`이면 **LLM 답변이 아니라 검색 스니펫**이므로 사실 근거로 쓰지 말고 출처를 `kb_get_document`로 열어 확인. Fabrix 어댑터 배포 전의 운영은 **항상 이 경우**였다. 어댑터(`llm_fabrix.py`)가 배포되면 `kb_health`가 `chat_supported=True`이고 `kb_ask` 첫 줄에 실패 문구가 없어야 한다 — 그때부터는 생성 답변도 `[C#]` 인용이 실제 출처와 맞는지 확인하고 쓴다. `kb_ask`를 라우팅의 기본 답변 수단으로 쓰지 않는다 |
+| C | `/v1/chat`·`kb_ask` 결과에 `generation_status`(`ok`/`failed_snippet_fallback`/`empty_snippet_fallback`/`not_attempted`). 실패 시 trust는 weak 이하, 폴백 `[C#]`는 인용으로 세지 않음. MCP 첫 줄: `[스니펫 요약] ⚠ 생성 실패 — …`. 출처는 문서당 1건 | `kb_ask` 행: 첫 줄이 `[스니펫 요약]`/`⚠ 생성 실패`이면 **LLM 답변이 아니라 검색 스니펫**이므로 사실 근거로 쓰지 말고 출처를 `kb_get_document`로 열어 확인. Fabrix 어댑터 배포 전의 운영은 **항상 이 경우**였다. 어댑터(`llm_fabrix.py`)가 배포되면 `kb_health`가 `chat_supported=True`이고 `kb_ask` 첫 줄에 실패 문구가 없어야 한다 — 그때부터는 생성 답변도 `[C#]` 인용이 실제 출처와 맞는지 확인하고 쓴다. `kb_ask`는 느리다(약 20~30초)·인용을 직접 검증해야 하므로 라우팅의 기본 답변 수단으로 쓰지 않고, 근거 문서를 먼저 `kb_search`/`kb_get_document`로 확인한 뒤 요약이 필요할 때만 쓴다 |
 
 ## 3. 아직 우회를 유지할 것
 - **파일시스템 inode 질의**: `Linux 파일시스템 inode 사용률`이 정답 `PISAOLNX_04.04.03`을 8위에 둔다(운영 동일). 원인은 `multi_query`가 일반 헤드(`파일 시스템`)의 점수를 그대로 max-merge하는 방식이라 B1~B4로는 풀리지 않았다. 이런 질의는 `kb_list_checkitems(q="inode")` 또는 제목 키워드 단독 검색을 우선한다.
@@ -39,7 +40,7 @@
 | "Linux OOM 점검항목" | `section="checkitem"`로 1~2회 호출 내에 `PISAOLNX_02.01.02` |
 | "Redis timeout" (필터 없음) | 상위 5가 모두 map 포인터가 아님 |
 | "2026년 9월 기술지원 목록" | 기간 목록, 건수 = `kb_list_tickets(2026-09-01~09-30, component=기술지원)` |
-| "kb_ask 아무 질문" | 첫 줄 `[스니펫 요약] ⚠ 생성 실패 …`, 사실 인용 금지 |
+| "kb_ask 아무 질문" | 생성 답변 + `[C#]` 인용 + 출처 목록(응답 시간 약 20~30초, 검색 약 9초 + 생성 약 14초). 첫 줄이 `[스니펫 요약] ⚠ 생성 실패 …`이면 실패 폴백이므로 사실 인용 금지 |
 
 ## 5. 하지 말 것
 - inode, 2502(필터 없음)의 우회를 지우지 않는다.
