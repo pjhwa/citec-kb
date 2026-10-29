@@ -536,7 +536,7 @@ same `page_id` elsewhere.
 재사용한다 — 그래프 자체는 구조(관계)만 저장하고, 신뢰도 판단 기준은 항상 이 절의
 Postgres 값이 유일한 출처다.
 
-### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages) — `confluence_map` ranks last
+### 6.2 Structured-copy overlap (`tech_repo` ⊇ some `confluence_map` pages) — `confluence_map` is cited last (citation priority, not a search-rank rule)
 
 A handful of pages exist under **both** `tech_repo` (or `confluence_docs`)
 *and* `confluence_map` with the same Confluence `external_id` — both were
@@ -697,7 +697,7 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 ### Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (`confluence_map` hit, C-grade)
 
 1. `kb_search(query="…", section="confluence_map")` → hit's body is usually the real page text now (§6.1), but carries `evidence_grade="C"`.
-2. Check if the same `external_id`/page_id also appears under `tech_repo` or `confluence_docs` in the same search (or re-search without `section` filter) — if so, **prefer that A-grade copy** for the answer (§6.2); `confluence_map` ranks last when both exist.
+2. Check if the same `external_id`/page_id also appears under `tech_repo` or `confluence_docs` in the same search (or re-search without `section` filter) — if so, **prefer that A-grade copy** for the answer (§6.2); `confluence_map` is the lowest *citation* priority when both exist. In search ranking, unfiltered queries only apply a mild score demotion (×`SEARCH_POINTER_FACTOR`, default 0.85) to pointer-only map rows; `section=confluence_map` disables it. It is not an exclusion rule — add `section` or `exclude_source_types` if you need map rows gone.
 3. If `confluence_map` is the only copy: you can answer from its body, but say the source is an unverified C-grade index entry rather than presenting it with the same confidence as an A-grade document. If the body looks like just a breadcrumb (no real paragraphs), it predates full-body capture — open the live `URL`/`source_uri` instead of guessing from the title.
 
 ### Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"
@@ -815,3 +815,11 @@ After code deploy: `docker compose restart mcp` (server.py is bind-mounted).
 
 This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help** and `kb_search` → `/v1/search` (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools. **2026-10-08 correction**: §6.1/§6.2 originally said `confluence_map` body_md is pointer-only with no real content — that was only true before the 2026-10-01 full-body capture round; most production `confluence_map` rows now carry the real page text, but `evidence_grade="C"` and the "rank below tech_repo/confluence_docs on the same page_id" rule are unchanged by policy, not by content availability).
 If a tool name is missing in the live server, call `kb_tools_help` or fall back to `kb_query` + REST in [EXTERNAL_API.md](./EXTERNAL_API.md).
+
+
+## B-phase retrieval changes (2026-10-29)
+
+- **B1** — With `section=checkitem` or `area`/domain set, the `PISAOLNX` code-prefix expansion is no longer generated (it matched every Linux checkitem), and the +0.015 `PISAOLNX` bump applies only when neither is set. Search-only synonym groups (`retrieval/search_synonyms.py`: `OOM`↔`Out of Memory`↔`메모리 부족`↔`oom-killer`, `kernel panic`↔`커널 패닉`, `failover`↔`페일오버`, `deadlock`↔`데드락`, `memory leak`↔`메모리 누수`, `k8s`↔`Kubernetes`↔`쿠버네티스`) widen FTS. They are not in the graph lexicon, so no graph backfill is needed. 1–2 character Korean terms (펜싱, 넷앱) are intentionally excluded.
+- **B2** — Unfiltered search multiplies pointer-only (`confluence_map`) scores by `SEARCH_POINTER_FACTOR` (default 0.85; `1.0` turns it off).
+- **B3** — Sentence-like queries (≥4 content tokens) also search an AND of the two/three corpus-rarest tokens, ranked ahead of the single-token pool when selective.
+- **B4** — `YYYY년 M월` and `YYYY년 M월부터 N월까지` route to `time_scoped_list` (same count as `/v1/tickets` with the same component). A year in a free-text query is a soft score bump for `support_history`, never a filter. A component word such as `기술지원` narrows the list (25 of 38 in 2026-09 on dev).
