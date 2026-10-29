@@ -58,6 +58,19 @@ def _looks_like_abstain(answer: str) -> bool:
     return any(m in a for m in markers)
 
 
+# Chunk text starts with a "[source_type | external_id | title]" header (then
+# either " | " + body or a newline). It is index metadata, not content.
+_SNIPPET_HEADER = re.compile(r"^\[[a-z_]+ \| [^|\]]+ \| .*?(?:\]\s*\|\s*|\]\s*\n)", re.S)
+
+
+def _clean_snippet(text: str, limit: int) -> str:
+    t = (text or "").strip()
+    m = _SNIPPET_HEADER.match(t)
+    if m and len(t) > m.end():
+        t = t[m.end():]
+    return re.sub(r"\s+", " ", t).strip()[:limit]
+
+
 _FALLBACK_NOTICE = "⚠ 생성 실패 — 아래는 LLM 답변이 아니라 검색 스니펫 요약입니다."
 
 
@@ -70,7 +83,7 @@ def _snippet_fallback(packed: list[PackedChunk], header: str) -> str:
         if key in seen:
             continue
         seen.add(key)
-        lines.append(f"- [{p.cite_id}] {p.title}: {p.snippet[:160]}")
+        lines.append(f"- [{p.cite_id}] {p.title}: {_clean_snippet(p.snippet, 160)}")
         if len(lines) >= 5:
             break
     return f"{_FALLBACK_NOTICE}\n{header}\n" + "\n".join(lines)
@@ -336,6 +349,8 @@ def _finalize(
         trust.level = "weak"
         trust.banner = "생성 실패 — 검색 스니펫 요약입니다. 출처 원문을 직접 확인하세요."
     if fallback:
+        # "no [C#] in the answer" is meaningless here: the fallback never claims any.
+        trust.reasons = [r for r in trust.reasons if "[C#] 인용이 없거나" not in r]
         trust.reasons.append("LLM 생성 실패 — 생성 답변이 아닌 스니펫 요약(인용 미집계)")
     if trust.abstain and not llm_error:
         answer = (

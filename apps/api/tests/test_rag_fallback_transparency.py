@@ -40,3 +40,20 @@ def test_empty_completion_status():
     r = P._finalize(q="q", mode="fast", packed=packed, citations=[], answer="x",
                     retrieval_meta={"trust_retrieval": "strong"}, llm_error="empty_completion")
     assert r["generation_status"] == "empty_snippet_fallback"
+
+
+def test_clean_snippet_strips_index_header():
+    a = "[support_history | CITECTS-976 | [CITECTS-976] [기술지원] G-MES DB Out of Memory 이슈] | [CITECTS-976] 본문 시작 내용"
+    assert P._clean_snippet(a, 100) == "[CITECTS-976] 본문 시작 내용"
+    b = "[confluence_map | 157895699 | Out Of Memory(OOM)와 OOM Killer]\nOut Of Memory 설명\n둘째 줄"
+    assert P._clean_snippet(b, 100) == "Out Of Memory 설명 둘째 줄"
+    assert P._clean_snippet("헤더 없는 평범한 문장", 100) == "헤더 없는 평범한 문장"
+    assert P._clean_snippet("[x | y | z]", 100) == "[x | y | z]"  # header only: keep, never empty
+
+
+def test_fallback_trust_reasons_drop_missing_cite_reason():
+    packed = [_pk(1, "CITECTS-1"), _pk(2, "CITECTS-2")]
+    r = P._finalize(q="q", mode="fast", packed=packed, citations=[], answer="x",
+                    retrieval_meta={"trust_retrieval": "strong"}, llm_error="boom")
+    assert not any("[C#] 인용이 없거나" in x for x in r["trust"]["reasons"])
+    assert any("생성 실패" in x for x in r["trust"]["reasons"])
