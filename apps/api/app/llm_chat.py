@@ -1,4 +1,4 @@
-"""OpenAI-compatible chat completion (sync + stream) for RAG."""
+"""Chat completion (sync + stream) for RAG: OpenRouter (OpenAI-compatible) or Fabrix."""
 
 from __future__ import annotations
 
@@ -61,7 +61,14 @@ def chat_complete(
     if settings.llm_backend == "none":
         raise LLMChatError("LLM not configured (OPENROUTER_API_KEY)")
     if settings.llm_backend == "fabrix":
-        raise LLMChatError("Fabrix live chat not wired yet; use OpenRouter in dev")
+        from app import llm_fabrix
+
+        try:
+            return llm_fabrix.complete(
+                settings, messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
+            )
+        except llm_fabrix.FabrixError as exc:
+            raise LLMChatError(str(exc)) from exc
 
     url = settings.openrouter_base_url.rstrip("/") + "/chat/completions"
     body = _build_body(
@@ -88,8 +95,18 @@ def chat_complete_stream(
 ) -> Iterator[str]:
     """Yield text deltas from SSE stream."""
     settings = settings or get_settings()
+    if settings.llm_backend == "fabrix":
+        from app import llm_fabrix
+
+        try:
+            yield from llm_fabrix.stream(
+                settings, messages, max_tokens=max_tokens, temperature=temperature, timeout=timeout
+            )
+        except llm_fabrix.FabrixError as exc:
+            raise LLMChatError(str(exc)) from exc
+        return
     if settings.llm_backend != "openrouter":
-        raise LLMChatError(f"stream requires openrouter, got {settings.llm_backend}")
+        raise LLMChatError(f"stream requires openrouter/fabrix, got {settings.llm_backend}")
 
     url = settings.openrouter_base_url.rstrip("/") + "/chat/completions"
     body = _build_body(
