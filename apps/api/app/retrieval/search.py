@@ -654,11 +654,18 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
                 scored[cid] = prev + 0.15 * contrib
 
     # Title / header ILIKE only for high-signal phrases (not bare Linux).
+    # Synonym-group expansions and rare-token ANDs are body matches already
+    # covered by the FTS branches; each ILIKE is a ~0.6 s sequential scan and
+    # multi-query repeats it per sub-query (B1 regression: "Linux OOM" 2.4s→24s).
+    from app.retrieval.search_synonyms import search_synonyms
+
+    no_like = {x.lower() for x in search_synonyms(base)}
     like_terms = [
         t
         for t in variants
         if t != base
-        and t not in rare  # AND-of-rare-tokens is a body match; ILIKE would seq-scan
+        and t not in rare
+        and t.lower() not in no_like
         and _variant_weight(t) >= 1.0
         and len(t) >= 2
         and t.lower() not in _STOPWORDS

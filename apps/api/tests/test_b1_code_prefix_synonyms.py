@@ -43,3 +43,12 @@ def test_no_short_korean_terms():
         for t in g:
             if any("가" <= c <= "힣" for c in t):
                 assert len(t.replace(" ", "")) >= 3, t
+
+
+def test_synonym_variants_are_excluded_from_title_ilike_scan():
+    """The ILIKE branch is a seq scan; synonym expansions must not feed it."""
+    import inspect
+    import app.retrieval.search as S
+
+    src = inspect.getsource(S.fts_search)
+    assert "no_like" in src and "search_synonyms(base)" in src
