@@ -132,3 +132,16 @@ def test_rare_token_variants_ignore_short_queries(monkeypatch):
     fs = _FakeSession({})
     assert S.rare_token_variants(fs, "Redis timeout 원인") == []
     assert fs.calls == 0
+
+
+def test_pointer_factor_env(monkeypatch):
+    import app.retrieval.search as S
+
+    monkeypatch.delenv("SEARCH_POINTER_FACTOR", raising=False)
+    assert S._pointer_factor() == 0.85
+    monkeypatch.setenv("SEARCH_POINTER_FACTOR", "1")
+    assert S._pointer_factor() == 1.0
+    monkeypatch.setenv("SEARCH_POINTER_FACTOR", "abc")
+    assert S._pointer_factor() == 0.85
+    monkeypatch.setenv("SEARCH_POINTER_FACTOR", "7")
+    assert S._pointer_factor() == 1.0

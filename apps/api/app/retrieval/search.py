@@ -439,6 +439,16 @@ class SearchResponse:
     missing_identifiers: list[str] = field(default_factory=list)
 
 
+def _pointer_factor() -> float:
+    """Score multiplier for pointer-only rows in unfiltered search (1.0 = off)."""
+    import os
+
+    try:
+        return min(1.0, max(0.0, float(os.environ.get("SEARCH_POINTER_FACTOR", "0.85"))))
+    except ValueError:
+        return 0.85
+
+
 def _include_irrelevant_maps(filters: SearchFilters) -> bool:
     if filters.include_irrelevant_maps is not None:
         return filters.include_irrelevant_maps
@@ -879,6 +889,21 @@ def hybrid_search(
             title = str((meta_by_id.get(cid) or {}).get("title") or "").lower()
             if title and all(tok.lower() in title for tok in tokens):
                 fused[cid] = fused[cid] + bonus
+
+    # Pointer-only rows (evidence_eligible=False, i.e. confluence_map) are ~2/3
+    # of the corpus and fill unfiltered top slots. Demote them mildly — never
+    # when the caller asked for the map, and never when nothing else was found
+    # (a demoted lone result could fall under the quality gate).
+    factor = _pointer_factor()
+    if factor < 1.0 and fused and (req.filters.source_type or "") != "confluence_map":
+        is_ptr = {
+            cid: (meta_by_id.get(cid) or {}).get("source_type") == "confluence_map"
+            for cid in fused
+        }
+        if not all(is_ptr.values()):
+            for cid, ptr in is_ptr.items():
+                if ptr:
+                    fused[cid] = fused[cid] * factor
 
     before_boost = dict(fused)
     fused = apply_exact_boost(

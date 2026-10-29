@@ -1,0 +1,2013 @@
+{
+  "label": "after-B2",
+  "base_url": "http://localhost:8573",
+  "git_sha": "fddc967a469a",
+  "measured_at_utc": "2026-10-29T01:03:51+00:00",
+  "api_health": {
+    "status": "ok",
+    "api_build_sha": null
+  },
+  "holdout": {
+    "multi_query_on": {
+      "summary": {
+        "n": 30,
+        "hit_at_3": 0.4,
+        "recall_at_5": 0.4667,
+        "recall_at_10": 0.5333,
+        "mrr": 0.3142,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 17254.8,
+        "p95_latency_ms": 20546.1,
+        "median_bytes": 28573,
+        "errors": 0
+      },
+      "by_domain": {
+        "Ceph": {
+          "n": 1,
+          "hit_at_3": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "mrr": 0.3333,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17953.7,
+          "p95_latency_ms": 17953.7,
+          "median_bytes": 25641,
+          "errors": 0
+        },
+        "Database": {
+          "n": 2,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.125,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17160.3,
+          "p95_latency_ms": 17254.8,
+          "median_bytes": 26076,
+          "errors": 0
+        },
+        "Kubernetes": {
+          "n": 1,
+          "hit_at_3": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 20213.7,
+          "p95_latency_ms": 20213.7,
+          "median_bytes": 28568,
+          "errors": 0
+        },
+        "Linux": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 18357.3,
+          "p95_latency_ms": 18357.3,
+          "median_bytes": 23001,
+          "errors": 0
+        },
+        "Middleware": {
+          "n": 3,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.3333,
+          "mrr": 0.0476,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17404.4,
+          "p95_latency_ms": 17504.0,
+          "median_bytes": 27153,
+          "errors": 0
+        },
+        "Network": {
+          "n": 11,
+          "hit_at_3": 0.4545,
+          "recall_at_5": 0.4545,
+          "recall_at_10": 0.5455,
+          "mrr": 0.3182,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 8291.9,
+          "p95_latency_ms": 20546.1,
+          "median_bytes": 28862,
+          "errors": 0
+        },
+        "OpenStack": {
+          "n": 2,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.1,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17307.9,
+          "p95_latency_ms": 21012.6,
+          "median_bytes": 31357,
+          "errors": 0
+        },
+        "Storage": {
+          "n": 2,
+          "hit_at_3": 1.0,
+          "recall_at_5": 1.0,
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17144.0,
+          "p95_latency_ms": 17533.3,
+          "median_bytes": 28642,
+          "errors": 0
+        },
+        "VMware": {
+          "n": 2,
+          "hit_at_3": 0.5,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.5,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 16281.0,
+          "p95_latency_ms": 16608.5,
+          "median_bytes": 27456,
+          "errors": 0
+        },
+        "Windows": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17611.5,
+          "p95_latency_ms": 17611.5,
+          "median_bytes": 29813,
+          "errors": 0
+        },
+        "성능": {
+          "n": 4,
+          "hit_at_3": 0.5,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.375,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 17527.0,
+          "p95_latency_ms": 17692.9,
+          "median_bytes": 29446,
+          "errors": 0
+        }
+      },
+      "per_item": [
+        {
+          "id": "network-01",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 20546.1,
+          "status": 200,
+          "bytes": 28565,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-02",
+          "domain": "Network",
+          "rank": 6,
+          "latency_ms": 6615.0,
+          "status": 200,
+          "bytes": 28506,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-03",
+          "domain": "Network",
+          "rank": 3,
+          "latency_ms": 6711.0,
+          "status": 200,
+          "bytes": 29066,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-04",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 7795.3,
+          "status": 200,
+          "bytes": 28862,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-05",
+          "domain": "Network",
+          "rank": 1,
+          "latency_ms": 7974.3,
+          "status": 200,
+          "bytes": 29704,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-06",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 8291.9,
+          "status": 200,
+          "bytes": 28512,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-07",
+          "domain": "Network",
+          "rank": 1,
+          "latency_ms": 7533.0,
+          "status": 200,
+          "bytes": 29560,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-08",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 17728.6,
+          "status": 200,
+          "bytes": 29471,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-09",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 19213.4,
+          "status": 200,
+          "bytes": 28187,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-10",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 16100.5,
+          "status": 200,
+          "bytes": 29681,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-11",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 16085.1,
+          "status": 200,
+          "bytes": 28666,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-01",
+          "domain": "성능",
+          "rank": 1,
+          "latency_ms": 17692.9,
+          "status": 200,
+          "bytes": 28164,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-02",
+          "domain": "성능",
+          "rank": null,
+          "latency_ms": 17527.0,
+          "status": 200,
+          "bytes": 27149,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-03",
+          "domain": "성능",
+          "rank": null,
+          "latency_ms": 17389.9,
+          "status": 200,
+          "bytes": 33974,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-04",
+          "domain": "성능",
+          "rank": 2,
+          "latency_ms": 16525.5,
+          "status": 200,
+          "bytes": 30729,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-01",
+          "domain": "Middleware",
+          "rank": 7,
+          "latency_ms": 16035.1,
+          "status": 200,
+          "bytes": 29246,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-02",
+          "domain": "Middleware",
+          "rank": null,
+          "latency_ms": 17504.0,
+          "status": 200,
+          "bytes": 27153,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-03",
+          "domain": "Middleware",
+          "rank": null,
+          "latency_ms": 17404.4,
+          "status": 200,
+          "bytes": 24194,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "database-01",
+          "domain": "Database",
+          "rank": null,
+          "latency_ms": 17254.8,
+          "status": 200,
+          "bytes": 26831,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "database-02",
+          "domain": "Database",
+          "rank": 4,
+          "latency_ms": 17160.3,
+          "status": 200,
+          "bytes": 25321,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "vmware-01",
+          "domain": "VMware",
+          "rank": null,
+          "latency_ms": 16608.5,
+          "status": 200,
+          "bytes": 28578,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "vmware-02",
+          "domain": "VMware",
+          "rank": 1,
+          "latency_ms": 16281.0,
+          "status": 200,
+          "bytes": 26335,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "storage-01",
+          "domain": "Storage",
+          "rank": 1,
+          "latency_ms": 17144.0,
+          "status": 200,
+          "bytes": 28218,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "storage-02",
+          "domain": "Storage",
+          "rank": 1,
+          "latency_ms": 17533.3,
+          "status": 200,
+          "bytes": 29066,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "openstack-01",
+          "domain": "OpenStack",
+          "rank": 5,
+          "latency_ms": 21012.6,
+          "status": 200,
+          "bytes": 33762,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "openstack-02",
+          "domain": "OpenStack",
+          "rank": null,
+          "latency_ms": 17307.9,
+          "status": 200,
+          "bytes": 28952,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "kubernetes-01",
+          "domain": "Kubernetes",
+          "rank": 2,
+          "latency_ms": 20213.7,
+          "status": 200,
+          "bytes": 28568,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "windows-01",
+          "domain": "Windows",
+          "rank": null,
+          "latency_ms": 17611.5,
+          "status": 200,
+          "bytes": 29813,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "linux-01",
+          "domain": "Linux",
+          "rank": null,
+          "latency_ms": 18357.3,
+          "status": 200,
+          "bytes": 23001,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "ceph-01",
+          "domain": "Ceph",
+          "rank": 3,
+          "latency_ms": 17953.7,
+          "status": 200,
+          "bytes": 25641,
+          "pointer_top5": 0.0
+        }
+      ]
+    },
+    "multi_query_off": {
+      "summary": {
+        "n": 30,
+        "hit_at_3": 0.2333,
+        "recall_at_5": 0.3333,
+        "recall_at_10": 0.4667,
+        "mrr": 0.1706,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 7664.3,
+        "p95_latency_ms": 8346.4,
+        "median_bytes": 28148,
+        "errors": 0
+      },
+      "by_domain": {
+        "Ceph": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 8102.2,
+          "p95_latency_ms": 8102.2,
+          "median_bytes": 23526,
+          "errors": 0
+        },
+        "Database": {
+          "n": 2,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.125,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7877.1,
+          "p95_latency_ms": 8195.4,
+          "median_bytes": 26948,
+          "errors": 0
+        },
+        "Kubernetes": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 8174.9,
+          "p95_latency_ms": 8174.9,
+          "median_bytes": 28111,
+          "errors": 0
+        },
+        "Linux": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 1.0,
+          "mrr": 0.1429,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 8346.4,
+          "p95_latency_ms": 8346.4,
+          "median_bytes": 24366,
+          "errors": 0
+        },
+        "Middleware": {
+          "n": 3,
+          "hit_at_3": 0.3333,
+          "recall_at_5": 0.3333,
+          "recall_at_10": 0.3333,
+          "mrr": 0.1111,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7425.4,
+          "p95_latency_ms": 7632.4,
+          "median_bytes": 26609,
+          "errors": 0
+        },
+        "Network": {
+          "n": 11,
+          "hit_at_3": 0.3636,
+          "recall_at_5": 0.5455,
+          "recall_at_10": 0.6364,
+          "mrr": 0.2424,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 3409.7,
+          "p95_latency_ms": 8220.4,
+          "median_bytes": 28666,
+          "errors": 0
+        },
+        "OpenStack": {
+          "n": 2,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7640.8,
+          "p95_latency_ms": 7896.9,
+          "median_bytes": 29468,
+          "errors": 0
+        },
+        "Storage": {
+          "n": 2,
+          "hit_at_3": 0.5,
+          "recall_at_5": 0.5,
+          "recall_at_10": 0.5,
+          "mrr": 0.5,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7517.8,
+          "p95_latency_ms": 8311.1,
+          "median_bytes": 27584,
+          "errors": 0
+        },
+        "VMware": {
+          "n": 2,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.5,
+          "mrr": 0.0625,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7441.9,
+          "p95_latency_ms": 7837.6,
+          "median_bytes": 27361,
+          "errors": 0
+        },
+        "Windows": {
+          "n": 1,
+          "hit_at_3": 0.0,
+          "recall_at_5": 0.0,
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 8609.5,
+          "p95_latency_ms": 8609.5,
+          "median_bytes": 28535,
+          "errors": 0
+        },
+        "성능": {
+          "n": 4,
+          "hit_at_3": 0.25,
+          "recall_at_5": 0.25,
+          "recall_at_10": 0.5,
+          "mrr": 0.15,
+          "pointer_only_top5_ratio": 0.0,
+          "p50_latency_ms": 7903.3,
+          "p95_latency_ms": 8078.8,
+          "median_bytes": 27550,
+          "errors": 0
+        }
+      },
+      "per_item": [
+        {
+          "id": "network-01",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 8207.1,
+          "status": 200,
+          "bytes": 28743,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-02",
+          "domain": "Network",
+          "rank": 4,
+          "latency_ms": 2870.8,
+          "status": 200,
+          "bytes": 28244,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-03",
+          "domain": "Network",
+          "rank": 4,
+          "latency_ms": 7653.2,
+          "status": 200,
+          "bytes": 30490,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-04",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 3409.7,
+          "status": 200,
+          "bytes": 29376,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-05",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 3018.2,
+          "status": 200,
+          "bytes": 28719,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-06",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 2998.8,
+          "status": 200,
+          "bytes": 27796,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-07",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 7931.9,
+          "status": 200,
+          "bytes": 26653,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-08",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 3347.4,
+          "status": 200,
+          "bytes": 28058,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-09",
+          "domain": "Network",
+          "rank": 2,
+          "latency_ms": 2965.8,
+          "status": 200,
+          "bytes": 28382,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-10",
+          "domain": "Network",
+          "rank": 6,
+          "latency_ms": 8220.4,
+          "status": 200,
+          "bytes": 28705,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "network-11",
+          "domain": "Network",
+          "rank": null,
+          "latency_ms": 7354.8,
+          "status": 200,
+          "bytes": 28666,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-01",
+          "domain": "성능",
+          "rank": null,
+          "latency_ms": 8078.8,
+          "status": 200,
+          "bytes": 27575,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-02",
+          "domain": "성능",
+          "rank": null,
+          "latency_ms": 7903.3,
+          "status": 200,
+          "bytes": 27525,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-03",
+          "domain": "성능",
+          "rank": 10,
+          "latency_ms": 7686.7,
+          "status": 200,
+          "bytes": 25471,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "performance-04",
+          "domain": "성능",
+          "rank": 2,
+          "latency_ms": 7664.3,
+          "status": 200,
+          "bytes": 28636,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-01",
+          "domain": "Middleware",
+          "rank": 3,
+          "latency_ms": 7425.4,
+          "status": 200,
+          "bytes": 28856,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-02",
+          "domain": "Middleware",
+          "rank": null,
+          "latency_ms": 7632.4,
+          "status": 200,
+          "bytes": 26609,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "middleware-03",
+          "domain": "Middleware",
+          "rank": null,
+          "latency_ms": 7366.4,
+          "status": 200,
+          "bytes": 24993,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "database-01",
+          "domain": "Database",
+          "rank": null,
+          "latency_ms": 8195.4,
+          "status": 200,
+          "bytes": 27073,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "database-02",
+          "domain": "Database",
+          "rank": 4,
+          "latency_ms": 7877.1,
+          "status": 200,
+          "bytes": 26823,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "vmware-01",
+          "domain": "VMware",
+          "rank": null,
+          "latency_ms": 7441.9,
+          "status": 200,
+          "bytes": 28533,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "vmware-02",
+          "domain": "VMware",
+          "rank": 8,
+          "latency_ms": 7837.6,
+          "status": 200,
+          "bytes": 26190,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "storage-01",
+          "domain": "Storage",
+          "rank": 1,
+          "latency_ms": 8311.1,
+          "status": 200,
+          "bytes": 26738,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "storage-02",
+          "domain": "Storage",
+          "rank": null,
+          "latency_ms": 7517.8,
+          "status": 200,
+          "bytes": 28430,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "openstack-01",
+          "domain": "OpenStack",
+          "rank": null,
+          "latency_ms": 7896.9,
+          "status": 200,
+          "bytes": 30751,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "openstack-02",
+          "domain": "OpenStack",
+          "rank": null,
+          "latency_ms": 7640.8,
+          "status": 200,
+          "bytes": 28186,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "kubernetes-01",
+          "domain": "Kubernetes",
+          "rank": null,
+          "latency_ms": 8174.9,
+          "status": 200,
+          "bytes": 28111,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "windows-01",
+          "domain": "Windows",
+          "rank": null,
+          "latency_ms": 8609.5,
+          "status": 200,
+          "bytes": 28535,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "linux-01",
+          "domain": "Linux",
+          "rank": 7,
+          "latency_ms": 8346.4,
+          "status": 200,
+          "bytes": 24366,
+          "pointer_top5": 0.0
+        },
+        {
+          "id": "ceph-01",
+          "domain": "Ceph",
+          "rank": null,
+          "latency_ms": 8102.2,
+          "status": 200,
+          "bytes": 23526,
+          "pointer_top5": 0.0
+        }
+      ]
+    }
+  },
+  "evalset": {
+    "evalset_id": "citec-kb-retrieval-fix-20261028",
+    "groups": {
+      "b2_probe_unfiltered": {
+        "n": 8,
+        "hit_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "recall_at_10": 0.0,
+        "mrr": 0.0,
+        "pointer_only_top5_ratio": 0.0813,
+        "p50_latency_ms": 2778.3,
+        "p95_latency_ms": 38579.6,
+        "median_bytes": 12911,
+        "errors": 0,
+        "passed": 8,
+        "cases": 8
+      },
+      "checklist_inode": {
+        "n": 2,
+        "hit_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "recall_at_10": 1.0,
+        "mrr": 0.125,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 31512.1,
+        "p95_latency_ms": 31717.4,
+        "median_bytes": 25082,
+        "errors": 0,
+        "passed": 0,
+        "cases": 2
+      },
+      "checklist_memleak": {
+        "n": 2,
+        "hit_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 1.0,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 1065.8,
+        "p95_latency_ms": 1136.1,
+        "median_bytes": 22457,
+        "errors": 0,
+        "passed": 2,
+        "cases": 2
+      },
+      "checklist_oom": {
+        "n": 6,
+        "hit_at_3": 0.8333,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 0.7833,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 2542.9,
+        "p95_latency_ms": 9594.3,
+        "median_bytes": 22932,
+        "errors": 0,
+        "passed": 6,
+        "cases": 6
+      },
+      "identifier": {
+        "n": 5,
+        "hit_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "recall_at_10": 0.0,
+        "mrr": 0.0,
+        "pointer_only_top5_ratio": null,
+        "p50_latency_ms": 12179.6,
+        "p95_latency_ms": 24384.1,
+        "median_bytes": 13375,
+        "errors": 0,
+        "passed": 5,
+        "cases": 5
+      },
+      "invariants": {
+        "n": 4,
+        "hit_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "recall_at_10": 0.0,
+        "mrr": 0.0,
+        "pointer_only_top5_ratio": null,
+        "p50_latency_ms": 441.4,
+        "p95_latency_ms": 447.8,
+        "median_bytes": 672,
+        "errors": 0,
+        "passed": 4,
+        "cases": 4
+      },
+      "skill_smoke": {
+        "n": 2,
+        "hit_at_3": 0.0,
+        "recall_at_5": 0.0,
+        "recall_at_10": 0.0,
+        "mrr": 0.0,
+        "pointer_only_top5_ratio": null,
+        "p50_latency_ms": 216.9,
+        "p95_latency_ms": 576.9,
+        "median_bytes": 189,
+        "errors": 0,
+        "passed": 2,
+        "cases": 2
+      },
+      "symptom_search_nofilter": {
+        "n": 7,
+        "hit_at_3": 0.1429,
+        "recall_at_5": 0.1429,
+        "recall_at_10": 0.8571,
+        "mrr": 0.1444,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 10626.7,
+        "p95_latency_ms": 47581.2,
+        "median_bytes": 25091,
+        "errors": 0,
+        "passed": 6,
+        "cases": 7
+      },
+      "symptom_search_support_history": {
+        "n": 7,
+        "hit_at_3": 0.7143,
+        "recall_at_5": 0.7143,
+        "recall_at_10": 1.0,
+        "mrr": 0.4825,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 8702.0,
+        "p95_latency_ms": 41857.6,
+        "median_bytes": 28510,
+        "errors": 0,
+        "passed": 5,
+        "cases": 7
+      },
+      "symptom_similar_incident": {
+        "n": 7,
+        "hit_at_3": 0.8571,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "mrr": 0.8214,
+        "pointer_only_top5_ratio": null,
+        "p50_latency_ms": 14962.9,
+        "p95_latency_ms": 34350.7,
+        "median_bytes": 14571,
+        "errors": 0,
+        "passed": 6,
+        "cases": 7
+      }
+    },
+    "cases": [
+      {
+        "id": "chk-oom-1",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.01.02",
+          "PISAOLNX_04.02.01#EN",
+          "PISAOLNX_04.02.02#EN",
+          "PISAOLNX_01.02.01",
+          "PISAOLNX_01.04.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 2105.5,
+        "status": 200,
+        "bytes": 23186,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-oom-2",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.02.15",
+          "PISAOLNX_02.01.02",
+          "PISAOLNX_04.02.01#EN",
+          "PISAOLNX_04.02.02#EN",
+          "PISAOLNX_01.02.01"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 2542.9,
+        "status": 200,
+        "bytes": 22883,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-oom-3",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.01.02",
+          "PISAOLNX_04.02.01#EN",
+          "PISAOLNX_04.02.02#EN",
+          "PISAOLNX_01.04.05",
+          "PISAOLNX_01.03.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 2773.6,
+        "status": 200,
+        "bytes": 22508,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-oom-4",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.01.02",
+          "PISAOLNX_01.02.01",
+          "PISAOLNX_04.02.01#EN",
+          "PISAOLNX_04.02.02#EN",
+          "PISAOLNX_01.04.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 3062.9,
+        "status": 200,
+        "bytes": 22626,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-oom-5",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.01.02",
+          "PISAOLNX_04.02.03",
+          "PISAOLNX_01.04.05",
+          "PISAOLNX_04.02.01",
+          "PISAOLNX_01.03.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1241.5,
+        "status": 200,
+        "bytes": 23091,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-oom-nofilter",
+        "group": "checklist_oom",
+        "kind": "search",
+        "rank": 5,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "PISADBOR_02.02.50",
+          "PISAVSOS_02.01.02",
+          "PISAWAST_01.06.02",
+          "PISADBPG_01.03.04",
+          "PISAOLNX_02.01.02"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9594.3,
+        "status": 200,
+        "bytes": 22981,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-inode-1",
+        "group": "checklist_inode",
+        "kind": "search",
+        "rank": 8,
+        "pass": false,
+        "k": 3,
+        "top": [
+          "PISAOLNX_01.01.01",
+          "PISADBTB_06.03.08",
+          "PISAOUHP_04.04.02",
+          "PISAOUOR_01.06.06",
+          "PISAOUOR_01.04.10"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 31717.4,
+        "status": 200,
+        "bytes": 25084,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-inode-2",
+        "group": "checklist_inode",
+        "kind": "search",
+        "rank": 8,
+        "pass": false,
+        "k": 3,
+        "top": [
+          "PISAOLNX_01.01.01",
+          "PISADBTB_06.03.08",
+          "PISAOUHP_04.04.02",
+          "PISAOUOR_01.06.06",
+          "PISAOUOR_01.04.10"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 31512.1,
+        "status": 200,
+        "bytes": 25081,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-memleak-1",
+        "group": "checklist_memleak",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.02.15#EN",
+          "PISAOLNX_02.02.15",
+          "PISAOLNX_01.03.05#EN",
+          "PISAOLNX_02.01.02#EN",
+          "PISAOLNX_03.04.02#EN"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1065.8,
+        "status": 200,
+        "bytes": 22258,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "chk-memleak-2",
+        "group": "checklist_memleak",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "PISAOLNX_02.02.15",
+          "PISAOLNX_02.02.15#EN",
+          "PISAOLNX_01.03.05",
+          "PISAOLNX_03.02.91",
+          "PISAOLNX_01.03.05#EN"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1136.1,
+        "status": 200,
+        "bytes": 22656,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2502-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 10,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "CITECTS-1330",
+          "900845570",
+          "PISADNRE_03.01.05",
+          "CITECTS-2280",
+          "PISADNRE_06.01.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 47581.2,
+        "status": 200,
+        "bytes": 24906,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2502-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "CITECTS-1330",
+          "CITECTS-2280",
+          "CITECTS-2502",
+          "CITECTS-953",
+          "CITECTS-1687"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 41857.6,
+        "status": 200,
+        "bytes": 27850,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2502-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "CITECTS-2502",
+          "23062752793",
+          "26051461110",
+          "26071161242",
+          "CITECTS-1278"
+        ],
+        "latency_ms": 5161.3,
+        "status": 200,
+        "bytes": 15483,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2502b-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "CITECTS-1330",
+          "900845570",
+          "PISADNRE_03.01.05",
+          "CITECTS-2280",
+          "PISADNRE_06.01.05"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 29317.7,
+        "status": 200,
+        "bytes": 24539,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2502b-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "CITECTS-1330",
+          "CITECTS-2280",
+          "CITECTS-2502",
+          "CITECTS-591",
+          "CITECTS-338"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 7431.1,
+        "status": 200,
+        "bytes": 29268,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2502b-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "CITECTS-2502",
+          "24061957311",
+          "CITECTS-2319",
+          "24071957460",
+          "CITECTS-2557"
+        ],
+        "latency_ms": 34350.7,
+        "status": 200,
+        "bytes": 14571,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2334-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 7,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1085286494",
+          "1781965980",
+          "2498035256",
+          "1633906609",
+          "1898033765"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9925.3,
+        "status": 200,
+        "bytes": 25091,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2334-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "CITECTS-2334",
+          "CITECTS-708",
+          "CITECTS-1429",
+          "CITECTS-558",
+          "CITECTS-762"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 8343.6,
+        "status": 200,
+        "bytes": 27551,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2334-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "CITECTS-2334",
+          "CITECTS-708",
+          "CITECTS-2484",
+          "CITECTS-2604",
+          "CITECTS-1638"
+        ],
+        "latency_ms": 14329.4,
+        "status": 200,
+        "bytes": 13156,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2508-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 6,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1203688244",
+          "230545647",
+          "2280888676",
+          "2542098833",
+          "1122936330"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 24984.0,
+        "status": 200,
+        "bytes": 24357,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2508-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 10,
+        "pass": false,
+        "k": 5,
+        "top": [
+          "CITECTS-570",
+          "CITECTS-1090",
+          "CITECTS-1031",
+          "CITECTS-1665",
+          "CITECTS-1408"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 20670.6,
+        "status": 200,
+        "bytes": 27645,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2508-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 4,
+        "pass": false,
+        "k": 3,
+        "top": [
+          "23120855351",
+          "24081457588",
+          "CITECTS-2483",
+          "CITECTS-2508",
+          "24022956349"
+        ],
+        "latency_ms": 24269.4,
+        "status": 200,
+        "bytes": 15900,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2327-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 8,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1781957779",
+          "1788496241",
+          "1552553330",
+          "CITECTS-2201",
+          "CITECTS-2466"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9271.3,
+        "status": 200,
+        "bytes": 26821,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2327-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "CITECTS-2245",
+          "CITECTS-2327",
+          "CITECTS-878",
+          "CITECTS-2466",
+          "CITECTS-2201"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 8702.0,
+        "status": 200,
+        "bytes": 28510,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2327-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "CITECTS-2327",
+          "CITECTS-2466",
+          "CITECTS-2479",
+          "CITECTS-2201",
+          "CITECTS-2483"
+        ],
+        "latency_ms": 14962.9,
+        "status": 200,
+        "bytes": 18178,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2394-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 7,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "223583170",
+          "223578484",
+          "24101357811",
+          "1778098821",
+          "26012360126"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10315.8,
+        "status": 200,
+        "bytes": 26538,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2394-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 9,
+        "pass": false,
+        "k": 5,
+        "top": [
+          "CITECTS-2263",
+          "CITECTS-2619",
+          "CITECTS-175",
+          "CITECTS-1798",
+          "CITECTS-2015"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9598.9,
+        "status": 200,
+        "bytes": 29174,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2394-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 2,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "26012360126",
+          "CITECTS-2394",
+          "CITECTS-2563",
+          "24101857825",
+          "CITECTS-2619"
+        ],
+        "latency_ms": 14231.6,
+        "status": 200,
+        "bytes": 12268,
+        "pointer_top5": null
+      },
+      {
+        "id": "sym-2634-nofilter",
+        "group": "symptom_search_nofilter",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "24081157580",
+          "CITECTS-2163",
+          "CITECTS-2634",
+          "1490711076",
+          "2448625386"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10626.7,
+        "status": 200,
+        "bytes": 28129,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2634-sh",
+        "group": "symptom_search_support_history",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 5,
+        "top": [
+          "CITECTS-2634",
+          "CITECTS-2163",
+          "CITECTS-986",
+          "CITECTS-2351",
+          "CITECTS-752"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 8557.4,
+        "status": 200,
+        "bytes": 29381,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "sym-2634-si",
+        "group": "symptom_similar_incident",
+        "kind": "similar_incident",
+        "rank": 1,
+        "pass": true,
+        "k": 3,
+        "top": [
+          "CITECTS-2634",
+          "24081157580",
+          "24110757928",
+          "25012558257",
+          "23080753528"
+        ],
+        "latency_ms": 15721.7,
+        "status": 200,
+        "bytes": 13525,
+        "pointer_top5": null
+      },
+      {
+        "id": "idm-1",
+        "group": "identifier",
+        "kind": "missing_identifier",
+        "pass": true,
+        "rank": null,
+        "missing_identifiers": [
+          "CITECTS-99999"
+        ],
+        "trust": "weak",
+        "top": [
+          "2498030568",
+          "CITECTS-1988",
+          "278772639"
+        ],
+        "latency_ms": 12179.6,
+        "status": 200,
+        "bytes": 13406,
+        "pointer_top5": null
+      },
+      {
+        "id": "idm-2",
+        "group": "identifier",
+        "kind": "missing_identifier",
+        "pass": true,
+        "rank": null,
+        "missing_identifiers": [
+          "CITECTS-8888"
+        ],
+        "trust": "weak",
+        "top": [
+          "CITECTS-1330",
+          "900845570",
+          "PISADNRE_03.01.05"
+        ],
+        "latency_ms": 24384.1,
+        "status": 200,
+        "bytes": 13338,
+        "pointer_top5": null
+      },
+      {
+        "id": "idm-3",
+        "group": "identifier",
+        "kind": "missing_identifier",
+        "pass": true,
+        "rank": null,
+        "missing_identifiers": [
+          "CITECTS-99999"
+        ],
+        "trust": "weak",
+        "top": [
+          "2498030568",
+          "CITECTS-1981",
+          "278772639"
+        ],
+        "latency_ms": 7727.4,
+        "status": 200,
+        "bytes": 13375,
+        "pointer_top5": null
+      },
+      {
+        "id": "idp-1",
+        "group": "identifier",
+        "kind": "present_identifier",
+        "pass": true,
+        "rank": null,
+        "missing_identifiers": [],
+        "trust": "strong",
+        "top": [
+          "CITECTS-2502",
+          "CITECTS-209",
+          "CITECTS-2302"
+        ],
+        "latency_ms": 12165.3,
+        "status": 200,
+        "bytes": 14029,
+        "pointer_top5": null
+      },
+      {
+        "id": "idp-2",
+        "group": "identifier",
+        "kind": "present_identifier",
+        "pass": true,
+        "rank": null,
+        "missing_identifiers": [],
+        "trust": "strong",
+        "top": [
+          "PISAOLNX_02.01.02#EN",
+          "PISAOLNX_02.01.02",
+          "file_159768"
+        ],
+        "latency_ms": 23093.5,
+        "status": 200,
+        "bytes": 11538,
+        "pointer_top5": null
+      },
+      {
+        "id": "inv-es-scp",
+        "group": "invariants",
+        "kind": "inv_entity_share",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "matched": 137,
+          "total": 278,
+          "share": 0.4928,
+          "method": "title_entity_scan",
+          "analytics_total": 137
+        },
+        "latency_ms": 430.2,
+        "status": 200,
+        "bytes": 455,
+        "pointer_top5": null
+      },
+      {
+        "id": "inv-es-redis",
+        "group": "invariants",
+        "kind": "inv_entity_share",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "matched": 2,
+          "total": 278,
+          "share": 0.0072,
+          "method": "title_entity_scan",
+          "analytics_total": 2
+        },
+        "latency_ms": 447.8,
+        "status": 200,
+        "bytes": 455,
+        "pointer_top5": null
+      },
+      {
+        "id": "inv-period-2026-09",
+        "group": "invariants",
+        "kind": "inv_query_period",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "intent": "time_scoped_list",
+          "query_total": 25,
+          "tickets_total": 25,
+          "component": "기술지원"
+        },
+        "latency_ms": 250.8,
+        "status": 200,
+        "bytes": 61931,
+        "pointer_top5": null
+      },
+      {
+        "id": "inv-count-scp-lastyear",
+        "group": "invariants",
+        "kind": "inv_query_entity_count",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "intent": "analytics",
+          "reported_count": 175,
+          "analytics_total": 175,
+          "result_keys": [
+            "date_field",
+            "date_from",
+            "date_to",
+            "definition",
+            "entity",
+            "llm_used",
+            "matched",
+            "method"
+          ]
+        },
+        "latency_ms": 441.4,
+        "status": 200,
+        "bytes": 889,
+        "pointer_top5": null
+      },
+      {
+        "id": "smoke-tickets-lastweek",
+        "group": "skill_smoke",
+        "kind": "tickets_relative",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "total": 0
+        },
+        "latency_ms": 216.9,
+        "status": 200,
+        "bytes": 205,
+        "pointer_top5": null
+      },
+      {
+        "id": "smoke-recent-lookin",
+        "group": "skill_smoke",
+        "kind": "recent_changes",
+        "pass": true,
+        "rank": null,
+        "detail": {
+          "total": 0
+        },
+        "latency_ms": 576.9,
+        "status": 200,
+        "bytes": 173,
+        "pointer_top5": null
+      },
+      {
+        "id": "probe-1",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "support_history",
+          "confluence_docs",
+          "support_history",
+          "confluence_map",
+          "confluence_docs"
+        ],
+        "top": [
+          "CITECTS-2502",
+          "2277925696",
+          "CITECTS-1330",
+          "1000717339",
+          "900845570"
+        ],
+        "latency_ms": 21500.6,
+        "status": 200,
+        "bytes": 13251,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "probe-2",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "tech_repo",
+          "support_history",
+          "support_history",
+          "confluence_map",
+          "checkitem"
+        ],
+        "top": [
+          "574701423",
+          "CITECTS-1219",
+          "CITECTS-976",
+          "157895699",
+          "PISADBOR_02.02.50"
+        ],
+        "latency_ms": 38579.6,
+        "status": 200,
+        "bytes": 12115,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "probe-3",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "support_history",
+          "support_history",
+          "tech_repo",
+          "support_history",
+          "support_history"
+        ],
+        "top": [
+          "CITECTS-1810",
+          "CITECTS-986",
+          "2260396468",
+          "CITECTS-1455",
+          "CITECTS-2074"
+        ],
+        "latency_ms": 7137.4,
+        "status": 200,
+        "bytes": 14179,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "probe-4",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "confluence_map",
+          "support_history",
+          "confluence_docs",
+          "support_history"
+        ],
+        "top": [
+          "2085239581",
+          "CITECTS-1506",
+          "1836189018",
+          "CITECTS-755"
+        ],
+        "latency_ms": 1503.5,
+        "status": 200,
+        "bytes": 10508,
+        "pointer_top5": 0.25
+      },
+      {
+        "id": "probe-5",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "confluence_docs",
+          "confluence_docs",
+          "tech_repo",
+          "checkitem",
+          "confluence_docs"
+        ],
+        "top": [
+          "736515803",
+          "769397813",
+          "1702230989",
+          "PISAVKSS_02.03.01",
+          "769397816"
+        ],
+        "latency_ms": 2382.9,
+        "status": 200,
+        "bytes": 12401,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "probe-6",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "incident_reports",
+          "incident_reports",
+          "incident_reports",
+          "confluence_docs",
+          "incident_reports"
+        ],
+        "top": [
+          "23020849690",
+          "23010248928",
+          "22072545292",
+          "829852439",
+          "23071153029"
+        ],
+        "latency_ms": 2304.2,
+        "status": 200,
+        "bytes": 16044,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "probe-7",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "confluence_docs",
+          "support_history",
+          "support_history",
+          "support_history",
+          "support_history"
+        ],
+        "top": [
+          "1224012630",
+          "CITECTS-1779",
+          "CITECTS-2517",
+          "CITECTS-460",
+          "CITECTS-1721"
+        ],
+        "latency_ms": 2778.3,
+        "status": 200,
+        "bytes": 14315,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "probe-8",
+        "group": "b2_probe_unfiltered",
+        "kind": "probe",
+        "pass": true,
+        "rank": null,
+        "top_source_types": [
+          "confluence_docs",
+          "tech_repo",
+          "confluence_docs",
+          "incident_reports",
+          "confluence_docs"
+        ],
+        "top": [
+          "1171682510",
+          "2032943940",
+          "1156657970",
+          "20010834197",
+          "228472476"
+        ],
+        "latency_ms": 1647.7,
+        "status": 200,
+        "bytes": 12571,
+        "pointer_top5": 0.0
+      }
+    ]
+  }
+}
