@@ -11,7 +11,7 @@
 |---|---|---|
 | Linux OOM 점검항목 (`section=checkitem`, `Linux OOM`/`OOM`/`Linux Out of Memory`) | 2/6 | 6/6 (순위 1·2·1) |
 | 필터 없는 검색 상위 5 중 pointer-only(confluence_map) 비율 (홀드아웃) | 49.3% (multi_query 끔 60.7%) | 8.0% (끔 4.7%) |
-| 일반 키워드 probe 8건의 pointer-only 비율 | 61.3% | (배포 후 값은 `prod-after.json` 참고) |
+| 일반 키워드 probe 8건의 pointer-only 비율 | 61.3% | 10.6% |
 | 증상 문장 검색, 필터 없음 | 3/7 | 6/7 |
 | 유사장애 | 6/7 | 7/7 |
 | "2026년 9월 기술지원 목록" | hybrid_search | `time_scoped_list` (component=기술지원 → 25건) |
