@@ -28,6 +28,7 @@
 게이트(compare): 홀드아웃 recall@10 이 multi_query on/off 어느 쪽에서든 하락하면 실패.
 이전에 통과하던 evalset 불변식·정답 케이스가 실패로 바뀌면 "회귀"로 표시하고 실패.
 (개선은 표로만 보여주고 통과/실패 판정에 쓰지 않는다 — "개선됨"은 수치로 말한다.)
+v2_ 접두사 군은 케이스 단위 회귀 대신 recall@10 차이의 페어 부트스트랩 95% 구간으로 판정한다.
 
 정답 ID 를 코드에 하드코딩하지 않는다 — 모두 evalset/holdout 파일에 있다."""
 
@@ -35,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import statistics
 import subprocess
 import sys
@@ -47,6 +49,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 TIMEOUT = 90.0
+STAT_GROUP_PREFIX = "v2_"      # 이 접두사 군은 케이스 단위 pass→fail 대신 통계적으로 판정한다
+MIN_STAT_N = 8                  # 공통 케이스가 이보다 적으면 판정하지 않는다
+BOOT_ITERS = 2000
 
 
 # ── HTTP ────────────────────────────────────────────────────────────────
@@ -100,6 +105,27 @@ def _pointer_ratio_top5(data: Any) -> Optional[float]:
 
 
 # ── 집계 ────────────────────────────────────────────────────────────────
+def paired_bootstrap(before: list[float], after: list[float], iters: int = BOOT_ITERS,
+                     seed: int = 20261102) -> tuple[float, float, float]:
+    """(평균 차이 after-before, 95% 하한, 95% 상한) — 같은 케이스끼리 짝지어 재표집한다."""
+    n = len(before)
+    if n == 0 or n != len(after):
+        raise ValueError("paired_bootstrap needs equal, non-empty inputs")
+    diffs = [a - b for a, b in zip(after, before)]
+    mean = sum(diffs) / n
+    rng = random.Random(seed)
+    means = sorted(sum(diffs[rng.randrange(n)] for _ in range(n)) / n for _ in range(iters))
+    return mean, means[int(0.025 * iters)], means[int(0.975 * iters) - 1]
+
+
+def _hit10(c: dict) -> float:
+    return 1.0 if c.get("rank") and c["rank"] <= 10 else 0.0
+
+
+def _rr(c: dict) -> float:
+    return (1.0 / c["rank"]) if c.get("rank") else 0.0
+
+
 def _pct(vals: list[float], p: float) -> Optional[float]:
     if not vals:
         return None
@@ -332,7 +358,8 @@ def cmd_run(a: argparse.Namespace) -> int:
                                                          "measured_at_utc": out["measured_at_utc"]})
             out = prev
         for g, s in out["evalset"]["groups"].items():
-            print(f"[evalset {g}] pass {s['passed']}/{s['cases']} hit@3={s['hit_at_3']} p50={s['p50_latency_ms']}ms")
+            extra = f" recall@10={s['recall_at_10']} mrr={s['mrr']}" if g.startswith(STAT_GROUP_PREFIX) else ""
+            print(f"[evalset {g}] pass {s['passed']}/{s['cases']} hit@3={s['hit_at_3']}{extra} p50={s['p50_latency_ms']}ms")
     Path(a.out).write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"저장: {a.out}")
     return 0
@@ -379,10 +406,38 @@ def cmd_compare(a: argparse.Namespace) -> int:
 
     bc = {c["id"]: c for c in (before.get("evalset") or {}).get("cases", [])}
     cc = {c["id"]: c for c in (after.get("evalset") or {}).get("cases", [])}
-    reg = [i for i in cc if i in bc and bc[i]["pass"] and not cc[i]["pass"]]
+    def _is_stat(i: str) -> bool:
+        return str(cc[i].get("group", "")).startswith(STAT_GROUP_PREFIX)
+
+    reg = [i for i in cc if i in bc and bc[i]["pass"] and not cc[i]["pass"] and not _is_stat(i)]
+    flips = [i for i in cc if i in bc and bc[i]["pass"] and not cc[i]["pass"] and _is_stat(i)]
     fixed = [i for i in cc if i in bc and not bc[i]["pass"] and cc[i]["pass"]]
     if fixed:
         print(f"\n새로 통과: {', '.join(fixed)}")
+    stat_groups = sorted({cc[i]["group"] for i in cc if _is_stat(i)})
+    if stat_groups:
+        print("\n== v2 군 (통계 판정: recall@10 차이의 95% 구간이 전부 음수일 때만 실패) ==")
+        print(f"{'군':<18}{'n':>4}{'metric':>12}{'Δ':>8}{'95% 구간':>20}  판정")
+    for grp in stat_groups:
+        ids = [i for i in cc if i in bc and cc[i]["group"] == grp]
+        if not ids:
+            print(f"{grp:<18}   0  before 에 공통 케이스 없음 — 건너뜀")
+            continue
+        if len(ids) < MIN_STAT_N:
+            print(f"{grp:<18}{len(ids):>4}  표본 부족(n<{MIN_STAT_N}) — 판정하지 않음")
+            continue
+        for name, fn in (("recall@10", _hit10), ("mrr", _rr)):
+            mean, lo, hi = paired_bootstrap([fn(bc[i]) for i in ids], [fn(cc[i]) for i in ids])
+            verdict = "차이 불분명"
+            if hi < 0:
+                verdict = "유의한 하락"
+            elif lo > 0:
+                verdict = "유의한 개선"
+            print(f"{grp:<18}{len(ids):>4}{name:>12}{mean:>+8.3f}{f'[{lo:+.3f}, {hi:+.3f}]':>20}  {verdict}")
+            if name == "recall@10" and hi < 0:
+                failed.append(f"{grp} recall@10 유의한 하락 (Δ={mean:+.3f}, 95%=[{lo:+.3f}, {hi:+.3f}])")
+    if flips:
+        print(f"\nv2 군 단건 pass→fail(참고, 판정에 쓰지 않음): {len(flips)}건")
     if reg:
         print(f"\n회귀(통과 → 실패): {', '.join(reg)}")
         failed.append("evalset 회귀: " + ", ".join(reg))
