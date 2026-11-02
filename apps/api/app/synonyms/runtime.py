@@ -10,7 +10,15 @@ from app.synonyms.rules import clean_terms
 
 logger = logging.getLogger("citec.synonyms.runtime")
 
-_TTL_S = float(os.environ.get("SEARCH_SYNONYMS_TTL_S", "60") or 60)
+def _parse_ttl(raw: str | None) -> float:
+    try:
+        v = float(raw) if raw is not None and raw.strip() != "" else 60.0
+    except ValueError:
+        return 60.0
+    return v if v >= 0 else 60.0
+
+
+_TTL_S = _parse_ttl(os.environ.get("SEARCH_SYNONYMS_TTL_S"))
 _cache: tuple[float, list[list[str]]] | None = None
 
 
@@ -37,6 +45,9 @@ def runtime_groups() -> list[list[str]]:
     if _cache is not None and now - _cache[0] < _TTL_S:
         return _cache[1]
     prev = _cache[1] if _cache is not None else []
+    # Stale-while-revalidate: concurrent/re-entrant callers during a slow reload
+    # get the previous value instead of all hitting the DB.
+    _cache = (now, prev)
     try:
         groups = [g for g in (clean_terms(g) for g in _load()) if len(g) >= 2]
     except Exception as exc:  # noqa: BLE001 — search must never fail because of this
