@@ -29,6 +29,9 @@
 이전에 통과하던 evalset 불변식·정답 케이스가 실패로 바뀌면 "회귀"로 표시하고 실패.
 (개선은 표로만 보여주고 통과/실패 판정에 쓰지 않는다 — "개선됨"은 수치로 말한다.)
 v2_ 접두사 군은 케이스 단위 회귀 대신 recall@10 차이의 페어 부트스트랩 95% 구간으로 판정한다.
+v2_ 군의 케이스 id 집합이 before/after 에서 다르면(한쪽에만 있는 군 포함) 실패한다.
+공통 케이스가 MIN_STAT_N 미만이거나 공통 케이스가 없는 군은 안내문만 출력하고 판정하지 않는다(의도된 관대함).
+MRR 은 참고용 출력이며 판정에 쓰지 않는다(판정은 recall@10 뿐).
 
 정답 ID 를 코드에 하드코딩하지 않는다 — 모두 evalset/holdout 파일에 있다."""
 
@@ -414,12 +417,25 @@ def cmd_compare(a: argparse.Namespace) -> int:
     fixed = [i for i in cc if i in bc and not bc[i]["pass"] and cc[i]["pass"]]
     if fixed:
         print(f"\n새로 통과: {', '.join(fixed)}")
-    stat_groups = sorted({cc[i]["group"] for i in cc if _is_stat(i)})
+    def _grp_ids(cases: dict) -> dict[str, set[str]]:
+        out: dict[str, set[str]] = {}
+        for i, c in cases.items():
+            if str(c.get("group", "")).startswith(STAT_GROUP_PREFIX):
+                out.setdefault(c["group"], set()).add(i)
+        return out
+
+    b_grp, c_grp = _grp_ids(bc), _grp_ids(cc)
+    stat_groups = sorted(set(b_grp) | set(c_grp))
     if stat_groups:
         print("\n== v2 군 (통계 판정: recall@10 차이의 95% 구간이 전부 음수일 때만 실패) ==")
         print(f"{'군':<18}{'n':>4}{'metric':>12}{'Δ':>8}{'95% 구간':>20}  판정")
     for grp in stat_groups:
-        ids = [i for i in cc if i in bc and cc[i]["group"] == grp]
+        bset, cset = b_grp.get(grp, set()), c_grp.get(grp, set())
+        if bset != cset:
+            gone, extra = sorted(bset - cset), sorted(cset - bset)
+            print(f"{grp:<18}케이스 구성 불일치: before 에만 {len(gone)}건 {gone[:5]}, after 에만 {len(extra)}건 {extra[:5]}")
+            failed.append(f"v2 군 {grp} 케이스 구성이 before/after 에서 다름 — 같은 평가셋으로 다시 측정할 것")
+        ids = [i for i in cc if i in bc and i in bset and i in cset]
         if not ids:
             print(f"{grp:<18}   0  before 에 공통 케이스 없음 — 건너뜀")
             continue

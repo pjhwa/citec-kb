@@ -83,9 +83,24 @@ def test_small_sample_gets_no_verdict(tmp_path, capsys):
     assert "표본 부족" in capsys.readouterr().out
 
 
-def test_v2_group_missing_in_before_is_skipped(tmp_path, capsys):
-    before = _result("b", [])
-    before["evalset"]["cases"] = [c for c in before["evalset"]["cases"] if c["group"] != "v2_real"]
-    after = _result("a", [1] * 12)
-    assert _compare(tmp_path, before, after) == 0
-    assert "건너뜀" in capsys.readouterr().out
+def _drop_v2(res):
+    res["evalset"]["cases"] = [c for c in res["evalset"]["cases"] if c["group"] != "v2_real"]
+    return res
+
+
+def test_v2_group_missing_in_before_fails_without_crash(tmp_path, capsys):
+    assert _compare(tmp_path, _drop_v2(_result("b", [1])), _result("a", [1] * 12)) == 1
+    out = capsys.readouterr().out
+    assert "케이스 구성" in out and "건너뜀" in out
+
+
+def test_v2_group_only_in_before_fails(tmp_path):
+    assert _compare(tmp_path, _result("b", [1] * 12), _drop_v2(_result("a", [1]))) == 1
+
+
+def test_v2_after_drops_cases_fails(tmp_path):
+    assert _compare(tmp_path, _result("b", [1] * 12), _result("a", [1] * 10)) == 1
+
+
+def test_v2_after_adds_cases_fails(tmp_path):
+    assert _compare(tmp_path, _result("b", [1] * 10), _result("a", [1] * 12)) == 1
