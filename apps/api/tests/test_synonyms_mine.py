@@ -117,3 +117,78 @@ def test_build_messages_title_with_brackets_and_newlines_keeps_line_format():
     body = mine.build_messages([t])[0]["content"].split("티켓 목록:\n", 1)[1]
     assert len(body.splitlines()) == 1
     assert body.startswith("[T-9] ")
+
+
+def _t(i, text):
+    return mine.Ticket(i, "t", "", text)
+
+
+def test_df_trim_that_breaks_two_ticket_invariant_is_rejected():
+    tix = [_t("T-1", "alpha1x bravo2y 발생"), _t("T-2", "alpha1x gamma3z 발생")]
+    g = [{"terms": ["alpha1x", "bravo2y", "gamma3z"], "tickets": ["T-1", "T-2"], "reason": "x"}]
+    df = FakeDF({"alpha1x": 9999, "bravo2y": 10, "gamma3z": 10})
+    items, stats = mine.process_groups(g, tix, term_df=df, params=_params())
+    assert items == [] and stats["rej_df"] == 1 and stats["accepted"] == 0
+
+
+def test_term_df_called_once_per_distinct_term():
+    calls = []
+
+    def df(term):
+        calls.append(term)
+        return 10
+
+    g = [
+        {"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "x"},
+        {"terms": ["inode2x", "아이노드 고갈", "디스크 경고"], "tickets": ["T-1", "T-2", "T-3"], "reason": "x"},
+    ]
+    mine.process_groups(g, TICKETS, term_df=df, params=_params())
+    assert len(calls) == len(set(calls))
+
+
+def test_mine_batch_isolates_term_df_errors():
+    def chat(messages, **kw):
+        return json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "r"}]})
+
+    def boom(term):
+        raise RuntimeError("db down")
+
+    items, stats = mine.mine_batch(TICKETS, chat=chat, term_df=boom, params=_params())
+    assert items == [] and stats["proc_error"] == 1
+
+
+def test_mine_batch_counts_parse_fail():
+    df = FakeDF({})
+    _, s1 = mine.mine_batch(TICKETS, chat=lambda m, **kw: "죄송합니다 모르겠어요", term_df=df, params=_params())
+    _, s2 = mine.mine_batch(TICKETS, chat=lambda m, **kw: '{"groups": []}', term_df=df, params=_params())
+    assert s1["parse_fail"] == 1 and s2["parse_fail"] == 0
+
+
+def test_duplicate_groups_in_one_response_second_is_existing():
+    g = [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "x"}] * 2
+    items, stats = mine.process_groups(g, TICKETS, term_df=FakeDF({"inode2x": 5, "아이노드 고갈": 5}), params=_params())
+    assert len(items) == 1 and stats["rej_existing"] == 1
+
+
+def test_partial_overlap_with_static_group_is_accepted():
+    tix = [_t("T-1", "kernel panic 커널 패닉 kpanic77x"), _t("T-2", "kernel panic 커널 패닉 kpanic77x")]
+    g = [{"terms": ["kernel panic", "커널 패닉", "kpanic77x"], "tickets": ["T-1", "T-2"], "reason": "x"}]
+    df = FakeDF({"kernel panic": 9, "커널 패닉": 9, "kpanic77x": 9})
+    items, stats = mine.process_groups(g, tix, term_df=df, params=_params())
+    assert len(items) == 1 and stats["rej_static"] == 0
+
+
+def test_parse_response_input_hygiene():
+    raw = json.dumps({"groups": [{"terms": ["abc", None, 5, "def"], "tickets": ["[T-1]", " T-2 ", 3], "reason": None}]})
+    assert mine.parse_response(raw) == [{"terms": ["abc", "def"], "tickets": ["T-1", "T-2", "3"], "reason": ""}]
+    many = json.dumps({"groups": [{"terms": [f"term{i}" for i in range(30)], "tickets": [f"T-{i}" for i in range(50)]}]})
+    out = mine.parse_response(many)[0]
+    assert len(out["terms"]) == 12 and len(out["tickets"]) == 20
+
+
+def test_bracketed_ids_verify_end_to_end():
+    g = mine.parse_response(
+        json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["[T-1]", "[T-2]"], "reason": "r"}]})
+    )
+    items, _ = mine.process_groups(g, TICKETS, term_df=FakeDF({"inode2x": 5, "아이노드 고갈": 5}), params=_params())
+    assert len(items) == 1

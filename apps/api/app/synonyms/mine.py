@@ -25,7 +25,8 @@ SYSTEM_RULES = (
     "(한글↔영문, 약어↔풀네임, 표기 변형)을 찾아 JSON으로만 답하세요.\n"
     "규칙:\n"
     "- 각 용어는 인용한 티켓의 텍스트에 글자 그대로 등장해야 합니다 (추측·번역 금지).\n"
-    "- 한 묶음은 2~6개 용어, 한글 용어는 3자 이상.\n"
+    "- 한 묶음은 2~6개 용어, 한글 용어는 3자 이상, 영문 용어는 3자 이상.\n"
+    "- 용어에 조사/어미를 붙이지 말 것 (예: '메모리가' 대신 '메모리').\n"
     "- 제품명·고객명·사람 이름, 넓은 분류어(장애, 오류, 서버 등)는 제외.\n"
     "- 단순히 같이 자주 나오는 연관어는 동의어가 아닙니다.\n"
     "- 각 묶음에 근거 티켓 ID를 2개 이상 [대괄호] 안의 ID 그대로 적으세요.\n"
@@ -62,34 +63,53 @@ def build_messages(tickets: list[Ticket]) -> list[dict[str, str]]:
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 
 
-def parse_response(raw: str) -> list[dict[str, Any]]:
-    text = (raw or "").strip()
+_MAX_CITED = 20
+_MAX_TERMS_IN = 12
+
+
+def _clean_id(x: Any) -> str:
+    if isinstance(x, bool) or not isinstance(x, (str, int)):
+        return ""
+    return str(x).strip().strip("[]").strip()
+
+
+def _parse(raw: str) -> list[dict[str, Any]] | None:
+    """Parsed groups, or None when the text is unparseable / has the wrong shape."""
+    text = (raw or "").strip() if isinstance(raw, str) else ""
+    if not text:
+        return None
     m = _FENCE.search(text)
     if m:
         text = m.group(1).strip()
     if not text.startswith("{"):
         i, j = text.find("{"), text.rfind("}")
         if i < 0 or j <= i:
-            return []
+            return None
         text = text[i : j + 1]
     try:
         data = json.loads(text)
     except ValueError:
-        return []
+        return None
     groups = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(groups, list):
-        return []
+        return None
     out = []
     for g in groups:
         if isinstance(g, dict) and isinstance(g.get("terms"), list):
+            cited = g.get("tickets")
+            ids = [i for i in (_clean_id(x) for x in (cited if isinstance(cited, list) else [])) if i]
             out.append(
                 {
-                    "terms": [str(x) for x in g["terms"]],
-                    "tickets": [str(x) for x in (g.get("tickets") or [])],
+                    "terms": [x for x in g["terms"] if isinstance(x, str)][:_MAX_TERMS_IN],
+                    "tickets": ids[:_MAX_CITED],
                     "reason": str(g.get("reason") or "")[:300],
                 }
             )
     return out
+
+
+def parse_response(raw: str) -> list[dict[str, Any]]:
+    return _parse(raw) or []
 
 
 def _new_stats() -> dict[str, int]:
@@ -97,6 +117,8 @@ def _new_stats() -> dict[str, int]:
         "groups_in": 0,
         "accepted": 0,
         "llm_error": 0,
+        "proc_error": 0,
+        "parse_fail": 0,
         "rej_terms": 0,
         "rej_static": 0,
         "rej_existing": 0,
@@ -116,6 +138,13 @@ def process_groups(
     texts = {t.external_id: t.text for t in tickets}
     items: list[dict[str, Any]] = []
     seen = set(params.existing_keys)
+    df_cache: dict[str, int] = {}
+
+    def df_of(term: str) -> int:
+        if term not in df_cache:
+            df_cache[term] = term_df(term)
+        return df_cache[term]
+
     for g in groups:
         stats["groups_in"] += 1
         terms = clean_terms(g.get("terms") or [])
@@ -132,11 +161,26 @@ def process_groups(
         if static_covers(kept):
             stats["rej_static"] += 1
             continue
-        dfs = {t: term_df(t) for t in kept}
-        kept = [t for t in kept if params.df_min <= dfs[t] <= params.df_max]
-        if len(kept) < 2:
+        if terms_key(kept) in seen:  # cheap early reject, before any DF query
+            stats["rej_existing"] += 1
+            continue
+        dfs = {t: df_of(t) for t in kept}
+        trimmed = [t for t in kept if params.df_min <= dfs[t] <= params.df_max]
+        if len(trimmed) < 2:
             stats["rej_df"] += 1
             continue
+        if len(trimmed) != len(kept):
+            # trimming may have removed the terms that made each ticket count as evidence
+            again = verify_group(
+                trimmed, ticket_ids, texts, min_terms_per_ticket=params.min_terms_per_ticket
+            )
+            if again is None:
+                stats["rej_df"] += 1
+                continue
+            kept, ticket_ids = again
+            if static_covers(kept):
+                stats["rej_static"] += 1
+                continue
         key = terms_key(kept)
         if key in seen:
             stats["rej_existing"] += 1
@@ -164,14 +208,27 @@ def mine_batch(
     term_df: Callable[[str], int],
     params: Params,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    messages = build_messages(tickets)  # programming errors here must surface
     try:
-        raw = chat(build_messages(tickets), max_tokens=3000, temperature=0.1, timeout=180.0)
+        raw = chat(messages, max_tokens=3000, temperature=0.1, timeout=180.0)
     except Exception as exc:  # noqa: BLE001 — one failed batch must not stop the run
         logger.warning("synonym batch LLM failure: %s", exc)
         stats = _new_stats()
         stats["llm_error"] = 1
         return [], stats
-    return process_groups(parse_response(raw), tickets, term_df=term_df, params=params)
+    groups = _parse(raw)
+    stats0 = _new_stats()
+    if groups is None:
+        if isinstance(raw, str) and raw.strip():
+            logger.warning("synonym batch unparseable LLM output: %r", raw.strip()[:200])
+            stats0["parse_fail"] = 1
+        return [], stats0
+    try:
+        return process_groups(groups, tickets, term_df=term_df, params=params)
+    except Exception as exc:  # noqa: BLE001 — e.g. DB error from term_df; keep the run alive
+        logger.warning("synonym batch processing failure: %s", exc)
+        stats0["proc_error"] = 1
+        return [], stats0
 
 
 def iter_batches(tickets: list[Ticket], size: int) -> Iterator[tuple[int, list[Ticket]]]:
