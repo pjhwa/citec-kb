@@ -5,6 +5,7 @@ The rules never look at queries or the eval set.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Iterator
 from typing import Any
@@ -12,9 +13,15 @@ from typing import Any
 MIN_BODY_CHARS = 200
 SOURCE_TYPE = "confluence_map"
 
-_MEETING = re.compile(r"(미팅|회의|주간|주차|월간|scrum|스크럼|meeting)", re.I)
-_API = re.compile(r"^\s*(GET|POST|PUT|DELETE|PATCH)\s|^\s*/", re.I)
-_DATE = re.compile(r"^\W*(\d{4}[-./]\d{1,2}|\d{1,2}월|\d{2}-\d{2}-\d{2}|\d{6,8})")
+_MEETING = re.compile(
+    r"(미팅|회의(?!실)|주간|\d+\s*주차|월간|scrum|스크럼|\bmeeting\b)", re.I
+)
+# HTTP method is case-sensitive ("Patch 적용 가이드" is not an API); bare paths only for API-ish prefixes.
+_API = re.compile(r"^\s*(?:(?-i:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+/|/(?:v\d+|api|console)\b)")
+_DATE = re.compile(
+    r"^\W*(\d{4}[-./]\d{1,2}|\d{2,4}년|\d{1,2}월|\d{2}-\d{2}-\d{2}|\d{6,8})"
+)
+BATCH = 200
 
 
 def classify_title(title: str | None) -> str | None:
@@ -31,31 +38,55 @@ def classify_title(title: str | None) -> str | None:
     return None
 
 
-def select_documents(*, limit: int | None = None, seed: int | None = None) -> Iterator[dict[str, Any]]:
-    """Yield {id, external_id, title, body_md, rule} for active confluence_map rows.
-
-    Ordered by external_id (stable). With ``seed`` the order is a deterministic
-    hash order instead, so ``limit`` yields a reproducible random sample.
-    """
+def _list_candidates() -> list[tuple[Any, str, str]]:
+    """(id, external_id, title) of active confluence_map rows with enough body; short session."""
     from sqlalchemy import func, select
 
     from app.db.models import Document
     from app.db.session import session_scope
 
-    order = Document.external_id if seed is None else func.md5(func.concat(Document.external_id, str(int(seed))))
     stmt = (
-        select(Document.id, Document.external_id, Document.title, Document.body_md)
+        select(Document.id, Document.external_id, Document.title)
         .where(Document.source_type == SOURCE_TYPE, Document.status == "active")
         .where(func.length(Document.body_md) >= MIN_BODY_CHARS)
-        .order_by(order)
+        .order_by(Document.external_id)
     )
-    n = 0
     with session_scope() as session:
-        for did, ext, title, body in session.execute(stmt.execution_options(yield_per=500)):
-            rule = classify_title(title)
-            if rule is None:
-                continue
-            yield {"id": did, "external_id": ext, "title": title, "body_md": body or "", "rule": rule}
-            n += 1
-            if limit and n >= limit:
-                return
+        return [(r[0], r[1], r[2]) for r in session.execute(stmt).all()]
+
+
+def _fetch_bodies(ids: list[Any]) -> dict[Any, str]:
+    from sqlalchemy import select
+
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        rows = session.execute(select(Document.id, Document.body_md).where(Document.id.in_(ids))).all()
+    return {r[0]: r[1] or "" for r in rows}
+
+
+def select_documents(*, limit: int | None = None, seed: int | None = None) -> Iterator[dict[str, Any]]:
+    """Yield {id, external_id, title, body_md, rule} for active confluence_map rows.
+
+    Ordered by external_id (stable). With ``seed`` the order is a deterministic
+    hash order instead, so ``limit`` yields a reproducible random sample.
+    Candidates are classified from titles alone; bodies are fetched lazily in
+    small batches so no DB cursor/session stays open while the caller works.
+    """
+    matched = []
+    for did, ext, title in _list_candidates():
+        rule = classify_title(title)
+        if rule is not None:
+            matched.append({"id": did, "external_id": ext, "title": title, "rule": rule})
+    if seed is not None:
+        matched.sort(key=lambda m: hashlib.md5(f"{m['external_id']}{int(seed)}".encode()).hexdigest())
+    else:
+        matched.sort(key=lambda m: m["external_id"])
+    if limit is not None:
+        matched = matched[: max(int(limit), 0)]
+    for i in range(0, len(matched), BATCH):
+        chunk = matched[i : i + BATCH]
+        bodies = _fetch_bodies([m["id"] for m in chunk])
+        for m in chunk:
+            yield {**m, "body_md": bodies.get(m["id"], "")}

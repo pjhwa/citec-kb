@@ -39,7 +39,7 @@
 스펙은 "근거 없는 키워드 폐기"였다. 그런데 본문에 이미 있는 단어는 청크 FTS가 어차피 찾으므로, 어휘 간극을 메우는 것은 본문에 없는 현업 표현이다. 두 가지를 모두 저장하고 측정한다.
 - `grounded`: 본문에 근거가 확인된 키워드만 색인 (안전, 효과는 제한적일 수 있음)
 - `all`: summary + 모든 키워드 색인 (효과 크고 오탐 위험)
-`SEARCH_DOC_EXPANSION` = `off`(기본) / `grounded` / `all`. 근거가 3개 미만인 문서도 `all` 모드를 위해 보관하되 `grounded`에는 키워드가 비어 색인되지 않는다. 어느 모드를 운영에 쓸지는 평가 결과로 정한다.
+`SEARCH_DOC_EXPANSION` = `off`(기본) / `grounded` / `all`. 근거 있는 키워드가 3개 미만인 문서도(유효 키워드가 3개 이상이면) `all` 모드를 위해 보관하되 `grounded`에는 키워드가 비어 색인되지 않는다. 어느 모드를 운영에 쓸지는 평가 결과로 정한다.
 
 ---
 
@@ -47,7 +47,7 @@
 
 **Files:** Modify `docs/superpowers/specs/2026-11-03-doc-expansion-design.md` §4, §5
 
-- [ ] **Step 1:** §4 검증 항목을 위 "모드" 설명으로 바꾼다 (근거 없는 키워드를 버리는 대신 `grounded` 부분집합을 기록, 키워드 3개 미만 폐기 규칙은 "grounded 키워드 0개이면서 all 키워드도 3개 미만이면 문서 폐기"로 변경). §5에 `SEARCH_DOC_EXPANSION=off|grounded|all`을 쓴다.
+- [ ] **Step 1:** §4 검증 항목을 위 "모드" 설명으로 바꾼다 (근거 없는 키워드를 버리는 대신 `grounded` 부분집합을 기록, 키워드 3개 미만 폐기 규칙은 "유효 키워드가 3개 미만이거나 summary가 비면 문서 폐기"로 변경). §5에 `SEARCH_DOC_EXPANSION=off|grounded|all`을 쓴다.
 - [ ] **Step 2:** 커밋 `docs(spec): doc expansion grounded/all modes`.
 
 ---

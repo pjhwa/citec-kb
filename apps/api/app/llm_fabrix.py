@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from collections.abc import Iterator
 from typing import Any
 
@@ -110,20 +111,20 @@ def error_text(status: int, raw: str) -> str:
     return f"Fabrix HTTP {status}: {raw[:300]}"
 
 
-_LAST_EMPTY: dict[str, Any] | None = None
+_TLS = threading.local()  # per-thread: concurrent workers must not see each other's diagnostics
 
 
 def last_empty_info() -> dict[str, Any] | None:
     """Diagnostics of the most recent empty-content response (None if none since reset).
 
-    Never contains request text. Module-global: meant for single-threaded CLIs (synonym miner).
+    Never contains request text. Thread-local: each worker thread sees only its own last response.
     """
-    return dict(_LAST_EMPTY) if _LAST_EMPTY is not None else None
+    info = getattr(_TLS, "empty", None)
+    return dict(info) if info is not None else None
 
 
 def reset_empty_info() -> None:
-    global _LAST_EMPTY
-    _LAST_EMPTY = None
+    _TLS.empty = None
 
 
 def _cut(v: Any) -> str:
@@ -138,10 +139,9 @@ def parse_complete(data: Any) -> str:
         raise FabrixError(f"Fabrix status={status} responseCode={data.get('responseCode')}")
     text = str(data.get("content") or "")
     if not text:
-        global _LAST_EMPTY
         fb = data.get("filterBlockReason")
         fb = fb if isinstance(fb, dict) else {}
-        _LAST_EMPTY = {
+        info = {
             "finishReason": data.get("finishReason"),
             "truncated": data.get("truncated"),
             "filter_code": fb.get("resultCode"),
@@ -149,10 +149,11 @@ def parse_complete(data: Any) -> str:
         }
         for k, v in fb.items():
             if isinstance(v, str) and k not in ("resultCode", "resultMessage", "message"):
-                _LAST_EMPTY[f"filter_{k}"] = _cut(v)
+                info[f"filter_{k}"] = _cut(v)
         for k in ("filter_code", "filter_message"):
-            if _LAST_EMPTY[k] is not None:
-                _LAST_EMPTY[k] = _cut(_LAST_EMPTY[k])
+            if info[k] is not None:
+                info[k] = _cut(info[k])
+        _TLS.empty = info
         logger.warning(
             "fabrix empty content finishReason=%s truncated=%s filter=%s",
             data.get("finishReason"), data.get("truncated"), fb.get("resultCode"),
