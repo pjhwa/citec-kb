@@ -192,3 +192,115 @@ def test_bracketed_ids_verify_end_to_end():
     )
     items, _ = mine.process_groups(g, TICKETS, term_df=FakeDF({"inode2x": 5, "아이노드 고갈": 5}), params=_params())
     assert len(items) == 1
+
+
+def test_parse_created_year_filter():
+    from datetime import date
+
+    assert mine.created_on_or_after({"Created": "2025-03-01 10:00"}, date(2025, 1, 1))
+    assert not mine.created_on_or_after({"Created": "2023-03-01"}, date(2025, 1, 1))
+    assert mine.created_on_or_after({}, date(2025, 1, 1))  # unknown date -> include
+
+
+def _run_kw(tmp_path, chat, n=5):
+    tickets = [mine.Ticket(f"T-{i}", f"제목 {i}", "", f"OOM 메모리 부족 {i}") for i in range(n)]
+    return dict(
+        tickets=tickets, batch_size=2, chat=chat, term_df=lambda t: 10,
+        params=mine.Params(), run_id="r1", model="m",
+        out_path=str(tmp_path / "res.json"), max_batches=None,
+    )
+
+
+def test_run_mine_checkpoint_resume(tmp_path):
+    from app.synonyms import cli
+
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(1)
+        return json.dumps({"groups": []})
+
+    kw = _run_kw(tmp_path, chat)
+    res = cli.run_mine(**kw)
+    assert len(calls) == 3 and res["stats"]["batches_done"] == 3
+    calls.clear()
+    res2 = cli.run_mine(**kw)  # same out/run_id -> everything already checkpointed
+    assert calls == [] and res2["stats"]["batches_done"] == 3
+    assert json.loads((tmp_path / "res.json").read_text())["run_id"] == "r1"
+
+
+def test_run_mine_resumes_after_interruption(tmp_path):
+    from app.synonyms import cli
+
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(messages[0]["content"])
+        return json.dumps({"groups": []})
+
+    kw = _run_kw(tmp_path, chat)
+    cli.run_mine(**{**kw, "max_batches": 1})  # "interrupted" after batch 0
+    assert len(calls) == 1
+    calls.clear()
+    res = cli.run_mine(**kw)
+    assert len(calls) == 2 and res["stats"]["batches_done"] == 3
+    assert not any("[T-0]" in c for c in calls)  # batch 0 skipped
+
+
+def test_run_mine_ignores_truncated_progress_line(tmp_path):
+    from app.synonyms import cli
+
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(1)
+        return json.dumps({"groups": []})
+
+    kw = _run_kw(tmp_path, chat)
+    cli.run_mine(**{**kw, "max_batches": 2})
+    with open(kw["out_path"] + ".progress.jsonl", "a", encoding="utf-8") as fh:
+        fh.write('{"run_id": "r1", "batch": 2, "ite')  # killed mid-write
+    calls.clear()
+    res = cli.run_mine(**kw)
+    assert len(calls) == 1 and res["stats"]["batches_done"] == 3
+
+
+def test_run_mine_retries_failed_batches_on_resume(tmp_path):
+    from app.synonyms import cli
+
+    state = {"fail": True, "n": 0}
+
+    def chat(messages, **kw):
+        state["n"] += 1
+        if state["fail"]:
+            raise RuntimeError("boom")
+        return json.dumps({"groups": []})
+
+    kw = _run_kw(tmp_path, chat, n=2)
+    res = cli.run_mine(**kw)
+    assert res["stats"]["llm_error"] == 1 and res["stats"]["batches_done"] == 0
+    state["fail"] = False
+    res2 = cli.run_mine(**kw)
+    assert state["n"] == 2 and res2["stats"]["batches_done"] == 1
+
+
+def test_cli_import_missing_items(tmp_path, capsys):
+    from app.synonyms import cli
+
+    f = tmp_path / "bad.json"
+    f.write_text(json.dumps({"run_id": "x"}))
+    assert cli.main(["import", "--file", str(f)]) == 2
+    assert "items" in capsys.readouterr().err
+    f.write_text("not json")
+    assert cli.main(["import", "--file", str(f)]) == 2
+
+
+def test_cli_mine_help_exits_zero(capsys):
+    import pytest
+
+    from app.synonyms import cli
+
+    with pytest.raises(SystemExit) as e:
+        cli.main(["mine", "--help"])
+    assert e.value.code == 0
+    assert "--commit" in capsys.readouterr().out

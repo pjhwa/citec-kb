@@ -7,6 +7,7 @@ import logging
 import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any
 
 from app.synonyms.rules import (
@@ -234,3 +235,78 @@ def mine_batch(
 def iter_batches(tickets: list[Ticket], size: int) -> Iterator[tuple[int, list[Ticket]]]:
     for i in range(0, len(tickets), size):
         yield i // size, tickets[i : i + size]
+
+
+_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+
+
+def created_on_or_after(meta: dict[str, Any], cutoff: date) -> bool:
+    """Created date >= cutoff; tickets with an unparseable date are included."""
+    m = _DATE.search(str((meta or {}).get("Created") or ""))
+    if not m:
+        return True
+    try:
+        return date(int(m[1]), int(m[2]), int(m[3])) >= cutoff
+    except ValueError:
+        return True
+
+
+def load_tickets(*, since_years: float, limit: int | None = None) -> list[Ticket]:
+    """Active support_history tickets, ordered by external_id (stable batches)."""
+    from sqlalchemy import select
+
+    from app.db.models import Document, IssueFrame
+    from app.db.session import session_scope
+
+    cutoff = date.today() - timedelta(days=int(365 * since_years))
+    out: list[Ticket] = []
+    with session_scope() as session:
+        # issue_frames.document_id is UNIQUE, so the outer join cannot duplicate tickets.
+        rows = session.execute(
+            select(
+                Document.external_id, Document.title, Document.body_md,
+                Document.metadata_, IssueFrame.symptom,
+            )
+            .select_from(Document)
+            .outerjoin(IssueFrame, IssueFrame.document_id == Document.id)
+            .where(Document.source_type == "support_history", Document.status == "active")
+            .order_by(Document.external_id)
+        ).all()
+    for ext, title, body, meta, symptom in rows:
+        if not (title or "").strip() or not created_on_or_after(meta or {}, cutoff):
+            continue
+        sym = (symptom or "").strip() or (body or "").strip()[:200]
+        out.append(Ticket(ext, title.strip(), sym, f"{title}\n{body or ''}"))
+        if limit and len(out) >= limit:
+            break
+    return out
+
+
+def make_term_df() -> Callable[[str], int]:
+    """Active-chunk FTS document frequency (capped), same query as search._token_df."""
+    from sqlalchemy import func, select
+
+    from app.db.models import Chunk
+    from app.db.session import session_scope
+
+    cache: dict[str, int] = {}
+
+    def df(term: str) -> int:
+        key = term.lower()
+        if key in cache:
+            return cache[key]
+        with session_scope() as session:
+            # Cap 2000 (same as retrieval.search._RARE_DF_CAP): a count of 2000 means "at least 2000",
+            # which is always > Params.df_max (default 1500) and so is rejected as too common.
+            capped = (
+                select(Chunk.id)
+                .where(Chunk.is_active.is_(True))
+                .where(Chunk.tsv.op("@@")(func.plainto_tsquery("simple", term)))
+                .limit(2000)
+                .subquery()
+            )
+            n = int(session.scalar(select(func.count()).select_from(capped)) or 0)
+        cache[key] = n
+        return n
+
+    return df
