@@ -212,6 +212,24 @@
       <button type="button" id="btnAddSpace">추가</button>
     </div>
   </div>
+
+  <div class="card" style="margin-top:12px" id="synCard">
+    <div class="job-top">
+      <strong>동의어 후보 검수 (Fabrix 마이닝)</strong>
+      <span id="synTabs"></span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">승인된 그룹은 검색에 반영되기까지 최대 60초(워커별 캐시 TTL) 걸립니다.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="text" id="synNote" maxlength="1000" placeholder="메모 (선택, 결정 시 함께 저장)" style="flex:1;min-width:200px"/>
+      <button type="button" id="synBulkApprove">선택 승인</button>
+      <button type="button" class="ghost" id="synBulkReject">선택 거절</button>
+    </div>
+    <div id="synMsg" class="meta" style="margin-bottom:6px"></div>
+    <table class="tbl">
+      <thead><tr><th><input type="checkbox" id="synAll" title="전체 선택"/></th><th>id</th><th>용어</th><th>근거</th><th>사유</th><th>모델/run</th><th>결정</th><th></th></tr></thead>
+      <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
 </div>
 <script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
@@ -666,7 +684,139 @@ $("btnAddSpace").onclick = async () => {
   }
 };
 
-$("btnRefresh").onclick = () => refresh();
+// ---- 동의어 후보 검수 ----
+const SYN_API = "/v1/lexicon/synonym-candidates";
+const SYN_STATUSES = [["proposed", "제안"], ["approved", "승인"], ["rejected", "거절"], ["disabled", "비활성"]];
+const SYN_ACTIONS = {
+  proposed: [["approve", "승인", ""], ["reject", "거절", "ghost"]],
+  approved: [["disable", "비활성화", "ghost"]],
+  disabled: [["approve", "다시 승인", ""]],
+  rejected: [],
+};
+let synStatus = "proposed";
+let synTotals = {};
+
+// Pure: item -> <tr> HTML. Every API-supplied value goes through esc().
+function renderSynRow(it) {
+  const ev = it.evidence || {};
+  const df = ev.df && typeof ev.df === "object" ? ev.df : {};
+  const dfTxt = Object.keys(df).map((t) => esc(t) + ":" + esc(df[t])).join(" · ");
+  const tickets = Array.isArray(ev.tickets) ? ev.tickets : [];
+  const links = tickets.slice(0, 3).map((tid) =>
+    '<a class="link" target="_blank" rel="noopener" href="/doc.html?eid=' + encodeURIComponent(String(tid)) +
+    '&amp;st=support_history">' + esc(tid) + "</a>").join(", ");
+  const more = tickets.length > 3 ? " 외 " + (tickets.length - 3) : "";
+  const reason = String(ev.reason == null ? "" : ev.reason);
+  const reasonShort = reason.length > 80 ? reason.slice(0, 80) + "…" : reason;
+  const decided = it.decided_at || it.decided_by || it.note
+    ? esc(it.decided_by || "—") + " · " + fmtTs(it.decided_at) + (it.note ? '<br/><span class="meta">' + esc(it.note) + "</span>" : "")
+    : "—";
+  const btns = (SYN_ACTIONS[it.status] || []).map((a) =>
+    '<button type="button" class="' + a[2] + '" data-act="' + a[0] + '" data-id="' + esc(it.id) + '">' + a[1] + "</button>").join("");
+  const cb = it.status === "proposed"
+    ? '<input type="checkbox" class="synSel" data-id="' + esc(it.id) + '"/>' : "";
+  return "<tr><td>" + cb + "</td><td>" + esc(it.id) + "</td><td><strong>" +
+    (it.terms || []).map(esc).join(" | ") + "</strong></td><td>" +
+    (dfTxt ? '<div class="meta">df ' + dfTxt + "</div>" : "") +
+    "<div>티켓 " + tickets.length + "건 " + links + esc(more) + "</div></td>" +
+    '<td title="' + esc(reason) + '">' + esc(reasonShort) + "</td>" +
+    '<td class="meta">' + esc(it.model || "—") + "<br/>" + esc(it.run_id || "—") + "</td><td>" + decided +
+    "</td><td>" + btns + "</td></tr>";
+}
+
+function renderSynTabs() {
+  $("synTabs").innerHTML = SYN_STATUSES.map(([s, label]) =>
+    '<button type="button" class="' + (s === synStatus ? "" : "ghost") + '" data-tab="' + s + '">' +
+    label + (synTotals[s] != null ? " (" + esc(synTotals[s]) + ")" : "") + "</button>").join("");
+}
+
+async function synDetail(r) {
+  try {
+    const d = await r.json();
+    if (d && d.detail) return typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail);
+  } catch (e) { /* ignore */ }
+  return "HTTP " + r.status;
+}
+
+async function refreshSynonyms() {
+  const body = $("synBody");
+  try {
+    const r = await CitecAuth.apiFetch(SYN_API + "?status=" + encodeURIComponent(synStatus) + "&limit=200");
+    if (r.status === 401 || r.status === 403) {
+      body.innerHTML = '<tr><td colspan="8" class="meta">관리자 권한 필요</td></tr>';
+      return;
+    }
+    const d = await readJson(r, SYN_API);
+    if (!r.ok) throw new Error(await synDetail(r));
+    synTotals[synStatus] = d.total;
+    renderSynTabs();
+    const items = d.items || [];
+    $("synAll").checked = false;
+    body.innerHTML = items.length
+      ? items.map(renderSynRow).join("") +
+        (d.total > items.length ? '<tr><td colspan="8" class="meta">' + esc(items.length) + " / " + esc(d.total) + "건만 표시</td></tr>" : "")
+      : '<tr><td colspan="8" class="meta">후보 없음 — scripts/synonym_mine.sh로 마이닝 후 import</td></tr>';
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="8" class="meta">' + esc(String(e)) + "</td></tr>";
+  }
+}
+
+// returns {ok, text}
+async function synDecide(id, act) {
+  const note = $("synNote").value.trim();
+  const r = await CitecAuth.apiFetch(SYN_API + "/" + encodeURIComponent(id) + "/" + act, {
+    method: "POST",
+    body: note ? { note } : {},
+  });
+  if (r.status === 401 || r.status === 403) return { ok: false, text: "관리자 권한 필요" };
+  if (!r.ok) return { ok: false, text: await synDetail(r) };
+  return { ok: true, text: "" };
+}
+
+let synBusy = false;
+async function synRun(ids, act) {
+  if (synBusy || !ids.length) return;
+  synBusy = true;
+  const buttons = $("synCard").querySelectorAll("button");
+  buttons.forEach((b) => { b.disabled = true; });
+  let ok = 0;
+  const fails = [];
+  try {
+    for (const id of ids) {
+      $("synMsg").textContent = act + " 처리 중… " + (ok + fails.length + 1) + "/" + ids.length;
+      try {
+        const res = await synDecide(id, act);
+        if (res.ok) ok++; else fails.push("#" + id + ": " + res.text);
+      } catch (e) { fails.push("#" + id + ": " + String(e)); }
+    }
+  } finally {
+    $("synMsg").textContent = "완료 — 성공 " + ok + " · 실패 " + fails.length + (fails.length ? " (" + fails.join("; ") + ")" : "");
+    buttons.forEach((b) => { b.disabled = false; });
+    synBusy = false;
+  }
+  // totals of other tabs changed; drop stale counts except the one reloaded
+  synTotals = {};
+  await refreshSynonyms();
+}
+
+$("synCard").addEventListener("click", (ev) => {
+  const t = ev.target.closest("button");
+  if (!t) return;
+  if (t.dataset.tab) { synStatus = t.dataset.tab; $("synMsg").textContent = ""; refreshSynonyms(); }
+  else if (t.dataset.act && t.dataset.id) synRun([t.dataset.id], t.dataset.act);
+});
+$("synBulkApprove").onclick = () => synRun(selectedSynIds(), "approve");
+$("synBulkReject").onclick = () => synRun(selectedSynIds(), "reject");
+function selectedSynIds() {
+  return Array.from(document.querySelectorAll("#synBody .synSel:checked")).map((c) => c.dataset.id);
+}
+$("synAll").onchange = (ev) => {
+  document.querySelectorAll("#synBody .synSel").forEach((c) => { c.checked = ev.target.checked; });
+};
+renderSynTabs();
+refreshSynonyms();
+
+$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); };
 
 let _timer = null;
 function scheduleAuto() {
