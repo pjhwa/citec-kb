@@ -20,6 +20,10 @@ from app.synonyms.rules import (
 
 logger = logging.getLogger("citec.synonyms.mine")
 
+# make_term_df counts matching chunks only up to this cap (same as retrieval.search._RARE_DF_CAP);
+# a count equal to the cap means "at least this many", so Params.df_max must stay below it.
+DF_COUNT_CAP = 2000
+
 SYSTEM_RULES = (
     "당신은 IT 인프라 기술지원 티켓 검색용 동의어 사전 편집자입니다.\n"
     "아래 티켓 목록(제목/증상)에서, 같은 현상·개념을 가리키지만 표기가 다른 기술 용어 묶음"
@@ -252,7 +256,11 @@ def created_on_or_after(meta: dict[str, Any], cutoff: date) -> bool:
 
 
 def load_tickets(*, since_years: float, limit: int | None = None) -> list[Ticket]:
-    """Active support_history tickets, ordered by external_id (stable batches)."""
+    """Active support_history tickets, ordered by external_id (stable batches).
+
+    The Created window is applied in Python: tickets with an unparseable/missing
+    Created date are included, and memory is O(all active tickets), not O(window).
+    """
     from sqlalchemy import select
 
     from app.db.models import Document, IssueFrame
@@ -296,13 +304,13 @@ def make_term_df() -> Callable[[str], int]:
         if key in cache:
             return cache[key]
         with session_scope() as session:
-            # Cap 2000 (same as retrieval.search._RARE_DF_CAP): a count of 2000 means "at least 2000",
-            # which is always > Params.df_max (default 1500) and so is rejected as too common.
+            # Capped at DF_COUNT_CAP: a count equal to the cap means "at least that many",
+            # which is always > Params.df_max (enforced < cap by the CLI) -> rejected as too common.
             capped = (
                 select(Chunk.id)
                 .where(Chunk.is_active.is_(True))
                 .where(Chunk.tsv.op("@@")(func.plainto_tsquery("simple", term)))
-                .limit(2000)
+                .limit(DF_COUNT_CAP)
                 .subquery()
             )
             n = int(session.scalar(select(func.count()).select_from(capped)) or 0)
