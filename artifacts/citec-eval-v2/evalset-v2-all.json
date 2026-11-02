@@ -1,12 +1,13 @@
 {
-  "evalset_id": "evalset-v2-20261102-dev",
+  "evalset_id": "evalset-v2-20261102-all",
   "provenance": "실사용 질의(운영 mcp_access_log) + 합성 질의, 풀링 + LLM 보조 판정, 검수자 박재화 (2026-11-02). 모델: z-ai/glm-5.2",
   "caveats": [
     "풀링은 현재 시스템이 올린 문서 위주로 후보를 만들어 절대 recall이 부풀려질 수 있다 — 전/후 상대 비교로 본다.",
     "합성 질의는 제목 겹침률 필터로 편향을 완화했을 뿐 완전히 제거하지 못했다.",
     "LLM 판정은 후보 제안일 뿐이고 최종 판정은 사람의 O/△/X다.",
     "검수하지 않은(표시 안 됨·무표시) 후보는 비관련으로 간주된다 — 풀링 판정의 한계로 recall이 과대평가될 수 있다.",
-    "△(부분 관련)만 있고 O가 없는 질의는 정답 없음으로 제외된다."
+    "△(부분 관련)만 있고 O가 없는 질의는 정답 없음으로 제외된다.",
+    "dev/frozen 분할이 seed 문서 기준이라 군별로 치우쳐(vocab 15/4, pointer 1/7) 한 벌로 합쳤다. 동결 홀드아웃은 없다. 각 케이스의 split 필드는 원래 분할(출처)일 뿐이다. 새 frozen은 추가 질의를 검수해 따로 만든다."
   ],
   "cases": [
     {
@@ -493,6 +494,490 @@
       "seed_doc": {
         "external_id": "1724752860",
         "title": "LIMS1.0: (G1) → (SCP) 전환",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "r-033",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "OOM killer out of memory",
+      "filters": {},
+      "expect": [
+        "157895699",
+        "file_159701",
+        "file_159996",
+        "PISADBOR_02.02.50",
+        "file_159501",
+        "1657233374",
+        "1369848966",
+        "2012841126"
+      ],
+      "also_ok": [
+        "file_159503",
+        "file_159447"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 5
+    },
+    {
+      "id": "r-1124",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "MNGC GPU 서버 접속 느림",
+      "filters": {},
+      "expect": [
+        "2542092163",
+        "2542098833"
+      ],
+      "also_ok": [
+        "25100359259",
+        "2060993506",
+        "2215317004",
+        "26012560145",
+        "26011660047"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-1463",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "RAG 검색 답변 출처 최신성 검증",
+      "filters": {},
+      "expect": [
+        "1359093972"
+      ],
+      "also_ok": [
+        "2524820567"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2129",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "삼성카드 AI Agent 성능 개선 워크샵 GenOS",
+      "filters": {},
+      "expect": [
+        "2511371810",
+        "CITECTS-2638"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2180",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "아키랩 임대서버 GPU 서버",
+      "filters": {},
+      "expect": [
+        "CITECTS-850",
+        "CITECTS-1429"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2181",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "아키텍처 LAB 중계서버 접속",
+      "filters": {},
+      "expect": [
+        "CITECTS-1213",
+        "CITECTS-1201",
+        "CITECTS-1852",
+        "CITECTS-1202",
+        "CITECTS-1200",
+        "CITECTS-971"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2291",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "춘천 백업서버 VM 통신",
+      "filters": {},
+      "expect": [
+        "CITECTS-2345",
+        "1982649863"
+      ],
+      "also_ok": [
+        "2374125167",
+        "1574657209"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2325",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "호스트 failover HA 이중화전환",
+      "filters": {},
+      "expect": [
+        "25120759785",
+        "24101857827",
+        "25102359389",
+        "26040660788",
+        "26020960308",
+        "289434760",
+        "148548287"
+      ],
+      "also_ok": [
+        "26031360593",
+        "1522195875"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-436",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "TGW Transit Gateway",
+      "filters": {},
+      "expect": [
+        "2483153781",
+        "2077324011",
+        "1552553330",
+        "994663664",
+        "1584029390",
+        "1657081093",
+        "994663952",
+        "382667900"
+      ],
+      "also_ok": [
+        "2173312726",
+        "1418687675"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 2
+    },
+    {
+      "id": "r-584",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "3자 검증 QRB 품질조직",
+      "filters": {},
+      "expect": [
+        "2181470314",
+        "QRB_품질_인프라구축검증_PISA_FAQ",
+        "1844444536",
+        "2149896631"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-860",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "EKS Kubernetes 버전 업그레이드",
+      "filters": {},
+      "expect": [
+        "CITECTS-2606"
+      ],
+      "also_ok": [
+        "1650194020",
+        "499894133"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-977",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "GenOS",
+      "filters": {},
+      "expect": [
+        "2511371810",
+        "2513423563"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "s-vocab-4b63-007",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "가상화 호스트 분산 스위치 구성 방법",
+      "filters": {},
+      "expect": [
+        "1835601366",
+        "736518158"
+      ],
+      "also_ok": [
+        "200114976"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "736518158",
+        "title": "ESXi VSS VDS 구조와 SCP적용 사례",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-008",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "파일 전송 시 가상머신 네트워크 연결 끊김 현상",
+      "filters": {},
+      "expect": [
+        "1810724203",
+        "2471428644",
+        "2374125167",
+        "CITECTS-2171"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "736518158",
+        "title": "ESXi VSS VDS 구조와 SCP적용 사례",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-009",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "오라클 세션 꽉참 최대치 초과 에러",
+      "filters": {},
+      "expect": [
+        "381297721"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "381297721",
+        "title": "2_2.DOWN&ERR_DB_ResourceLimit(Oracle).xlsx",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-010",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "데이터베이스 접속 안됨 연결수 한도 초과",
+      "filters": {},
+      "expect": [
+        "1559482874",
+        "381297721"
+      ],
+      "also_ok": [
+        "CITECTS-2352"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "381297721",
+        "title": "2_2.DOWN&ERR_DB_ResourceLimit(Oracle).xlsx",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-001",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "데이터센터 바닥 발 빠져서 넘어진 사고",
+      "filters": {},
+      "expect": [
+        "614910758"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "614910758",
+        "title": "1월 3주차 팀 월요미팅",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-002",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "식비 마트에서 식자재 구매 비용 처리 불가",
+      "filters": {},
+      "expect": [
+        "614910758"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "614910758",
+        "title": "1월 3주차 팀 월요미팅",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-007",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "콘솔 위젯 목록 불러오는 api",
+      "filters": {},
+      "expect": [
+        "1073553172"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1073553172",
+        "title": "GET /console/api/support/widgets",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-008",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "대시보드 컴포넌트 정보 확인 방법",
+      "filters": {},
+      "expect": [
+        "1073553172"
+      ],
+      "also_ok": [
+        "1233225512"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1073553172",
+        "title": "GET /console/api/support/widgets",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-011",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "컨테이너 강제 퇴출 원인 확인",
+      "filters": {},
+      "expect": [
+        "1544812562"
+      ],
+      "also_ok": [
+        "736515803"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1544812562",
+        "title": "[Host] OS볼륨 90%이상 사용으로 인한 Pod Evicted 발생 조치 기록",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-012",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "노드 디스크 가득 차서 파드 내려감",
+      "filters": {},
+      "expect": [
+        "1544812562"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1544812562",
+        "title": "[Host] OS볼륨 90%이상 사용으로 인한 Pod Evicted 발생 조치 기록",
+        "source_type": "confluence_map"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-013",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "물리 랙 단위로 가상머신 분산 배치하는 기능 개발 현황",
+      "filters": {},
+      "expect": [
+        "PISASSCE_03.01.03",
+        "1158607633"
+      ],
+      "also_ok": [
+        "2175992813"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "frozen",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1158607633",
+        "title": "[GA1] Placement Group 개발",
         "source_type": "confluence_map"
       }
     }
