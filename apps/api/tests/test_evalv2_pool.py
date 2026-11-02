@@ -1,3 +1,8 @@
+import io
+import urllib.error
+
+import pytest
+
 from app.evalv2 import llmjson, pool
 
 
@@ -58,3 +63,79 @@ def test_pool_survives_search_failure_on_one_arm():
 
     out = pool.pool_candidates(search, "q", {}, top_n=3, max_pool=5)
     assert [c["external_id"] for c in out] == ["X"]
+
+
+def _boom(q, filters, multi_query, top_k):
+    raise RuntimeError("boom")
+
+
+def test_all_arms_failed_raises():
+    with pytest.raises(RuntimeError, match="all search arms failed"):
+        pool.pool_candidates(_boom, "q", {}, top_n=3, max_pool=5)
+
+
+def test_all_arms_failed_with_seed_returns_seeds_only():
+    seed = [{"external_id": "S1", "title": "s", "source_type": "x", "evidence_eligible": True}]
+    out = pool.pool_candidates(_boom, "q", {}, top_n=3, max_pool=5, extra=seed)
+    assert [c["external_id"] for c in out] == ["S1"]
+
+
+class _Resp:
+    def __init__(self, payload=b'{"results": [{"external_id": "A"}]}'):
+        self._p = payload
+
+    def read(self):
+        return self._p
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _http_err(code):
+    return urllib.error.HTTPError("http://x", code, "err", {}, io.BytesIO(b""))
+
+
+def test_rest_search_does_not_retry_4xx(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_open(req, timeout=None):
+        calls["n"] += 1
+        raise _http_err(400)
+
+    monkeypatch.setattr(pool.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(pool, "_sleep", lambda s: None)
+    with pytest.raises(RuntimeError):
+        pool.rest_search("http://x", attempts=3)("q", {}, True, 5)
+    assert calls["n"] == 1
+
+
+def test_rest_search_retries_5xx_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_open(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _http_err(503)
+        return _Resp()
+
+    monkeypatch.setattr(pool.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(pool, "_sleep", lambda s: None)
+    out = pool.rest_search("http://x", attempts=3)("q", {}, True, 5)
+    assert calls["n"] == 2 and out[0]["external_id"] == "A"
+
+
+def test_rest_search_does_not_retry_bad_json(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_open(req, timeout=None):
+        calls["n"] += 1
+        return _Resp(b"not json")
+
+    monkeypatch.setattr(pool.urllib.request, "urlopen", fake_open)
+    monkeypatch.setattr(pool, "_sleep", lambda s: None)
+    with pytest.raises(RuntimeError):
+        pool.rest_search("http://x", attempts=3)("q", {}, True, 5)
+    assert calls["n"] == 1

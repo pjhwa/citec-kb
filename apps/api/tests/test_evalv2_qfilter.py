@@ -66,3 +66,12 @@ def test_load_known_questions(tmp_path):
     e.write_text(json.dumps({"cases": [{"q": "평가셋 질의입니다"}]}), encoding="utf-8")
     known = qf.load_known_questions(str(h), [str(e)])
     assert qf.norm("홀드아웃 질문입니다") in known and qf.norm("평가셋 질의입니다") in known
+
+
+def test_sensitive_hints_phone_formats_and_rrn():
+    assert "phone" in qf.sensitive_hints("연락처 010 1234 5678 입니다")
+    assert "phone" in qf.sensitive_hints("연락처 010.1234.5678 입니다")
+    assert "phone" in qf.sensitive_hints("+82 10-1234-5678 로 문의")
+    assert "phone" in qf.sensitive_hints("대표번호 1588-1234 확인")
+    assert "rrn" in qf.sensitive_hints("주민번호 900101-1234567 포함")
+    assert qf.sensitive_hints("Linux OOM 원인") == []

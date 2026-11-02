@@ -1,4 +1,15 @@
-"""Pure query hygiene helpers for evalset v2 (no DB, no network)."""
+"""Pure query hygiene helpers for evalset v2 (no DB, no network).
+
+Known, accepted limitations:
+- extract_q cuts a query at the first " <key>=" of the other-keys list, so a query that itself
+  contains e.g. " path=" loses its tail.
+- _ID_ONLY also excludes things like ORA-12154 / ERP2024 (identifier lookups are a separate
+  gate group).
+- sensitive_hints are advisory only: human review of the sheet is mandatory; personal names
+  are undetectable by regex.
+- _tok_match's prefix rule over-flags short Hangul tokens (서버/서버실, 로그/로그인), which makes
+  too_easy conservative.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +31,10 @@ _HINTS = {
     "email": re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+"),
     "ip": re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}\b"),
     "phone": re.compile(r"\b0\d{1,2}-?\d{3,4}-?\d{4}\b"),
+    "phone_sep": re.compile(r"\b0\d{1,2}[ .]\d{3,4}[ .]\d{4}\b"),
+    "phone_intl": re.compile(r"\+82[- ]?\d{1,2}[- ]?\d{3,4}[- ]?\d{4}"),
+    "phone_rep": re.compile(r"\b1[5-9]\d{2}-\d{4}\b"),
+    "rrn": re.compile(r"\b\d{6}-[1-4]\d{6}\b"),
     "url": re.compile(r"https?://"),
     "long_digits": re.compile(r"\d{8,}"),
 }
@@ -77,7 +92,13 @@ def exclusion_reason(q: str, truncated: bool, known: set[str]) -> str | None:
 
 
 def sensitive_hints(q: str) -> list[str]:
-    return [name for name, pat in _HINTS.items() if pat.search(q or "")]
+    found: list[str] = []
+    for name, pat in _HINTS.items():
+        if pat.search(q or ""):
+            name = "phone" if name.startswith("phone") else name
+            if name not in found:
+                found.append(name)
+    return found
 
 
 def prepare_real(rows: list[dict[str, Any]], known: set[str]) -> tuple[list[dict[str, Any]], dict[str, int]]:

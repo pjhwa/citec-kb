@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +14,8 @@ logger = logging.getLogger("citec.evalv2.pool")
 
 # (arm name, multi_query). Only settings the REST /v1/search exposes.
 ARMS: tuple[tuple[str, bool], ...] = (("mq_on", True), ("mq_off", False))
+
+_sleep = time.sleep
 
 SearchFn = Callable[[str, dict, bool, int], list[dict[str, Any]]]
 
@@ -30,13 +34,18 @@ def pool_candidates(
     max_pool: int = 15,
     extra: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """Union of per-arm top-N results. Seeds are always kept, so the pool may exceed
+    ``max_pool`` when seeds alone exceed it. Raises RuntimeError if every arm failed and
+    there are no seeds (a silent empty pool would look like "no candidates")."""
     cands: dict[str, dict[str, Any]] = {}
+    succeeded = 0
     for name, mq in arms:
         try:
             results = search(q, filters or {}, mq, top_n)
         except Exception as exc:  # noqa: BLE001 — one failed arm must not drop the query
             logger.warning("pool arm %s failed for %r: %s", name, q[:40], exc)
             continue
+        succeeded += 1
         seen: set[str] = set()
         for rank, r in enumerate(results[:top_n], 1):
             eid = bare(r.get("external_id"))
@@ -49,6 +58,10 @@ def pool_candidates(
                 "evidence_eligible": r.get("evidence_eligible"), "arms": {},
             })
             c["arms"][name] = rank
+    if succeeded == 0:
+        if not any(bare(e.get("external_id")) for e in extra or []):
+            raise RuntimeError("all search arms failed")
+        logger.warning("all search arms failed for %r; returning seed docs only", q[:40])
     seeds: dict[str, dict[str, Any]] = {}
     for e in extra or []:
         eid = bare(e.get("external_id"))
@@ -77,7 +90,7 @@ def rest_search(base: str, *, timeout: float = 120.0, attempts: int = 2) -> Sear
     def _search(q: str, filters: dict, multi_query: bool, top_k: int) -> list[dict[str, Any]]:
         body = {"q": q, "top_k": top_k, "filters": {"status": "active", **(filters or {})}, "multi_query": multi_query}
         last: Exception | None = None
-        for _ in range(attempts):
+        for attempt in range(attempts):
             try:
                 req = urllib.request.Request(
                     base.rstrip("/") + "/v1/search", data=json.dumps(body).encode("utf-8"),
@@ -85,8 +98,16 @@ def rest_search(base: str, *, timeout: float = 120.0, attempts: int = 2) -> Sear
                 )
                 with urllib.request.urlopen(req, timeout=timeout) as r:
                     return json.loads(r.read()).get("results", [])
-            except Exception as exc:  # noqa: BLE001
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"search failed: {exc}") from exc
+            except urllib.error.HTTPError as exc:
                 last = exc
+                if exc.code < 500:
+                    break
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+                last = exc
+            if attempt < attempts - 1:
+                _sleep(1.0)
         raise RuntimeError(f"search failed: {last}")
 
     return _search
