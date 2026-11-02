@@ -20,6 +20,8 @@
 docker compose exec -T api python -m alembic current   # 20261102_0017 (head)
 ```
 
+> **주의 (롤백 순서)**: `git_pull_deploy.sh`의 자동 롤백은 코드만 되돌리고 DB는 되돌리지 않는다. 0017 적용 후 코드를 이전 커밋으로 롤백하면 api 기동 시 `alembic upgrade head`가 "Can't locate revision"으로 실패해 api가 올라오지 않는다. 0017을 지나 롤백해야 하면 **코드를 되돌리기 전에** 새 코드가 떠 있는 상태에서 `docker compose exec -T api python -m alembic downgrade 20261014_0016`을 먼저 실행한다. 마이그레이션 자체가 실패하면 api가 시작되지 않아 자동 롤백이 동작한다.
+
 ## 1. 소규모 시험 (운영, dry-run — DB 쓰기 없음)
 
 `--commit`이 없으면 DB에 쓰지 않고 JSON 파일만 만든다. LLM(Fabrix) 호출은 일어난다.
@@ -61,7 +63,7 @@ docker compose cp api:/tmp/syn-full1.json /tmp/syn-full1.json     # 컨테이너
    docker compose cp /tmp/syn-full1.json api:/tmp/syn-full1.json
    ./scripts/synonym_mine.sh import --file /tmp/syn-full1.json     # stdout: {"inserted":…,"skipped":…,"invalid":…}
    ```
-2. 개발 `.env`에 `SEARCH_SYNONYMS_INCLUDE_PROPOSED=1` 추가 (승인 전 `proposed` 후보까지 검색에 반영하는 **개발 전용** 플래그. 운영에는 쓰지 않는다). api는 `.env`를 `env_file`로 읽으므로 **`docker compose up -d api`로 컨테이너를 재생성해야 환경변수가 적용**된다 (`restart`만으로는 `.env` 변경이 반영되지 않는다). 런타임 그룹 캐시 TTL은 `SEARCH_SYNONYMS_TTL_S`(기본 60초)이므로, 이후 DB 상태를 바꾸면 TTL이 지나야(또는 approve/reject/disable을 받은 인스턴스는 즉시) 반영된다. 게이트 측정은 import 직후 TTL 이상 기다린 뒤 시작한다.
+2. 개발 `.env`에 `SEARCH_SYNONYMS_INCLUDE_PROPOSED=1` 추가 (승인 전 `proposed` 후보까지 검색에 반영하는 **개발 전용** 플래그. 운영에는 쓰지 않는다). api는 `.env`를 `env_file`로 읽으므로 **`docker compose up -d api`로 컨테이너를 재생성해야 환경변수가 적용**된다 (`restart`만으로는 `.env` 변경이 반영되지 않는다). 런타임 그룹 캐시 TTL은 `SEARCH_SYNONYMS_TTL_S`(기본 60초)이므로, 이후 DB 상태를 바꾸면 TTL이 지나야(또는 approve/reject/disable을 받은 워커 프로세스 하나는 즉시, 나머지 워커는 TTL 이내) 반영된다. 게이트 측정은 import 직후 TTL 이상 기다린 뒤 시작한다.
 3. 게이트 실행. 기준선은 `artifacts/citec-kb-retrieval-fix-20261028/` 의 최신 측정인 `after-latency-fix.json`이다 (명령 형식은 같은 디렉터리 README.md와 동일, 약 18분 소요):
    ```bash
    NO_COLOR=1 python3 -u scripts/verify/eval_retrieval_gate.py run --base-url http://localhost:8573 \
@@ -100,7 +102,7 @@ curl -s -X POST "$BASE/v1/lexicon/synonym-candidates/<id>/reject" -H "X-API-Key:
 - 상태 전이: `approve`는 proposed/disabled에서, `reject`는 proposed에서, `disable`은 approved에서만 가능 (그 외 409, 없는 id 404).
 - 권한: `import`/`approve`/`reject`/`disable`은 senior/admin. 목록 조회(GET)는 역할 제한 없음.
 - import 한도(REST): 항목 <= 2000개, 항목당 terms <= 20개이고 각 용어 <= 100자, `evidence`는 JSON 직렬화 8192자 이하, `run_id` <= 64자, `model` <= 128자. 한도를 넘으면 422. CLI `import`가 보내는 건 마이너 출력이라 보통 문제없다.
-- 승인 후 반영: 요청을 받은 인스턴스는 즉시, 다른 인스턴스/워커는 캐시 TTL(`SEARCH_SYNONYMS_TTL_S`, 기본 60초) 안에 반영된다.
+- 승인 후 반영: 요청을 받은 워커 프로세스 하나는 즉시, 나머지 워커는 캐시 TTL(`SEARCH_SYNONYMS_TTL_S`, 기본 60초) 안에 반영된다.
 
 ## 5. 승인 전/후 지연 측정 (운영)
 
@@ -137,6 +139,6 @@ sort -n "$OUT" | awk '{a[NR]=$1} END{printf "n=%d p50=%.3fs p95=%.3fs\n", NR, a[
 
 ## 6. 롤백
 
-- 그룹 단위 (즉시): `POST $BASE/v1/lexicon/synonym-candidates/<id>/disable` (approved -> disabled). 반영은 요청 받은 인스턴스는 즉시, 나머지는 TTL 이내. 전체를 끄려면 승인한 그룹을 모두 `disable`한다. DB 오류 시 검색은 자동으로 코드 그룹(`SYNONYM_GROUPS`)만 쓴다.
+- 그룹 단위 (즉시): `POST $BASE/v1/lexicon/synonym-candidates/<id>/disable` (approved -> disabled). 반영은 요청을 받은 워커 프로세스 하나는 즉시, 나머지 워커는 TTL 이내. 전체를 끄려면 승인한 그룹을 모두 `disable`한다. DB 오류 시 검색은 자동으로 코드 그룹(`SYNONYM_GROUPS`)만 쓴다.
 - 스키마: `docker compose exec -T api python -m alembic downgrade 20261014_0016` — `search_synonym_candidate` 테이블이 삭제된다. 코드에 정의된 동의어 그룹은 영향 없다 (런타임 병합은 DB 실패 시 코드 그룹으로 폴백). 다시 올리려면 `alembic upgrade head`.
 - 개발 flag 롤백: `.env`에서 `SEARCH_SYNONYMS_INCLUDE_PROPOSED` 제거 후 `docker compose up -d api`.
