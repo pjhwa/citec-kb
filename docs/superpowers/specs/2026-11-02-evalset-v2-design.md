@@ -1,7 +1,7 @@
 # 평가셋 v2 설계 (실사용 질의 + 풀링 판정)
 
 - 작성일: 2026-11-02
-- 상태: 설계 승인됨 (구현 계획 전)
+- 상태: 구현됨(도구) — 평가셋 생성 전
 - 관련: `scripts/verify/eval_retrieval_gate.py`, `artifacts/citec-kb-retrieval-fix-20261028/` (기존 evalset·README), `docs/CITEC_KB_REMAINING_WORK_BACKLOG_20261029.md`
 
 ## 1. 배경과 목표
@@ -53,14 +53,14 @@
 
 1. **풀링**: 질의마다 여러 설정(multi_query on/off 등)의 상위 10개를 합쳐 후보 풀을 만든다. 질의당 약 10~15개.
 2. **LLM 보조 판정**: 개발 서버 LLM이 후보별 관련도 0/1/2와 근거 문장을 제안한다. 근거 문장이 후보 문서 본문에 실제로 있는지 코드가 검증하고, 없으면 그 판정은 무시(미판정)한다.
-3. **사람 검수**: 질의당 후보 5~8개에 O/X만 표시한다. 질의당 1~2분, 전체 1~2시간.
-4. **검수 시트**: 서버 없이 쓰는 정적 HTML 한 장. O/X를 누르고 JSON으로 내려받는다. API 변경과 DB 쓰기가 없다.
+3. **사람 검수**: 질의당 후보 5~8개에 O/△/X를 표시한다. O = 직접 답함(`expect`), △ = 부분 관련(`also_ok`), X = 무관(제외). 표시하지 않은 후보는 무시한다. 질의당 1~2분, 전체 1~2시간.
+4. **검수 시트**: 서버 없이 쓰는 정적 HTML 한 장. O/△/X를 누르고 JSON으로 내려받는다. API 변경과 DB 쓰기가 없다.
 
 ## 5. 형식
 
 기존 `cases` 스키마와 같다: `id`, `group`, `kind: "search"`, `q`, `filters`, `expect`, `k`.
 
-- 관련도 2인 문서만 `expect`에 넣는다. 관련도 1은 `also_ok`에 따로 저장한다 (게이트는 무시).
+- 사람이 O로 표시한 문서만 `expect`에 넣는다. △(부분 관련)는 `also_ok`에 따로 저장한다 (게이트는 무시). LLM 관련도 0/1/2는 후보 제안일 뿐 라벨이 아니다.
 - 군 이름: `v2_real`, `v2_vocab`, `v2_pointer`, `v2_symptom`.
 - 각 케이스에 `source`(real/synthetic), `reviewed_on`, 분할(`split`: dev/frozen)을 기록한다.
 
@@ -68,7 +68,9 @@
 
 - 평가셋 군별로 recall@10과 MRR을 집계한다 (기존 통과 수·hit@3 유지).
 - `compare`가 전·후 차이의 **페어 부트스트랩 95% 구간**을 출력한다. 구간이 0을 포함하면 "차이 불분명"으로 표시한다.
-- 기존 홀드아웃·evalset 동작과 종료 코드 규칙은 바꾸지 않는다.
+- `v2_` 접두사 군은 **통계적으로 판정**한다: recall@10 차이의 95% 구간이 전부 음수일 때만 실패한다(케이스 단위 pass→fail은 참고 출력). 공통 케이스가 8건 미만인 군은 판정하지 않는다. MRR은 참고용이다.
+- v2 군의 케이스 id 집합이 before/after에서 다르면(한쪽에만 있는 군 포함) 게이트가 **실패**한다. 전/후는 같은 평가셋으로 측정해야 한다.
+- 기존 홀드아웃·evalset 군의 동작과 종료 코드 규칙(1 = 머지 금지)은 바꾸지 않는다.
 
 ## 7. 분할과 동결
 
@@ -97,7 +99,7 @@
 
 ## 11. 산출물
 
-- `scripts/eval/`: 후보 질의 생성, 풀링과 LLM 판정, 검수 시트 생성, 라벨 import
+- `apps/api/app/evalv2/` (`python -m app.evalv2.cli`; `scripts/eval/` 아님): 후보 질의 생성, 풀링과 LLM 판정, 검수 시트 생성, 라벨 import
 - `scripts/verify/eval_retrieval_gate.py`: 군별 recall@10/MRR, `compare`의 부트스트랩 구간
 - 운영 로그 추출 SQL과 런북 (`docs/EVALSET_V2_RUNBOOK_*.md`)
 - `artifacts/citec-eval-v2/`: 평가셋 JSON, README (출처·한계·분할)
