@@ -112,3 +112,59 @@ def test_evidence_min_length_and_case_insensitive():
     assert not judge.verify_evidence("Out of Memo", body)  # 11 chars
     assert judge.verify_evidence("Out of Memor", body)  # 12 chars
     assert judge.verify_evidence("OUT OF MEMORY KILLER", body)
+
+
+def _long_body(needle="핵심원인 방화벽 세션 테이블 포화 확인", at=5000, total=8000):
+    filler = "무관한 문장입니다 "
+    pre = (filler * 1000)[:at]
+    post = (filler * 1000)[: total - at - len(needle)]
+    return pre + needle + post
+
+
+def test_shown_window_picks_query_relevant_part():
+    body = _long_body()
+    w = judge.shown_window("방화벽 세션 포화", body)
+    assert "핵심원인 방화벽 세션 테이블 포화" in w and len(w) <= judge.EXCERPT_CHARS
+
+
+def test_shown_window_short_body_whole_and_no_match_head():
+    assert judge.shown_window("방화벽", "짧은   본문") == "짧은 본문"
+    body = _long_body()
+    assert judge.shown_window("zzzz qqqq", body) == judge._n(body)[: judge.EXCERPT_CHARS]
+
+
+def test_shown_window_tie_picks_earliest():
+    unit = "무관한 문장입니다 "
+    body = "방화벽 " + unit * 400 + "방화벽 " + unit * 400
+    w = judge.shown_window("방화벽", body)
+    assert w.startswith("방화벽")
+    assert w == judge._n(body)[: judge.EXCERPT_CHARS]
+
+
+def test_shown_window_fast_on_100k_body():
+    import time
+    body = ("무관한 문장입니다 서버 로그 " * 10000)[:100_000] + " 방화벽 세션 포화"
+    t = time.perf_counter()
+    w = judge.shown_window("방화벽 세션 포화 서버", body)
+    assert time.perf_counter() - t < 1.0  # generous; typically a few ms
+    assert "방화벽 세션 포화" in w or "서버" in w
+
+
+def test_prompt_contains_late_evidence_and_head_quote_rejected():
+    body = "맨앞 고유한 헤드 문장입니다 " + _long_body()
+    cands = [{"external_id": "L", "title": "t", "excerpt": body[:100]}]
+    prompts = []
+
+    def chat(messages, **kw):
+        prompts.append(messages[0]["content"])
+        return json.dumps({"judgments": [{"id": "c1", "grade": 2, "evidence": "맨앞 고유한 헤드 문장입니다"}]})
+
+    out = judge.judge_candidates(chat, "방화벽 세션 포화", cands, {"L": body})
+    assert "핵심원인 방화벽 세션 테이블 포화 확인" in prompts[0]
+    assert out["L"]["status"] == "unverified" and out["L"]["grade"] is None
+
+    def chat2(messages, **kw):
+        return json.dumps({"judgments": [{"id": "c1", "grade": 2, "evidence": "핵심원인 방화벽 세션 테이블 포화 확인"}]})
+
+    out2 = judge.judge_candidates(chat2, "방화벽 세션 포화", cands, {"L": body})
+    assert out2["L"]["status"] == "ok"

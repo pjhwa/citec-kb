@@ -7,6 +7,7 @@ empty/blocked response is retried once and then recorded as status "empty".
 
 from __future__ import annotations
 
+import bisect
 import re
 import time
 import unicodedata
@@ -14,6 +15,7 @@ from collections.abc import Callable
 from typing import Any
 
 from app.evalv2.llmjson import extract_json
+from app.evalv2.qfilter import _TOK, _tok_match, tokens
 
 MIN_EVIDENCE_LEN = 12
 EXCERPT_CHARS = 1200
@@ -35,6 +37,43 @@ def _n(s: str) -> str:
 
 _MARKER = re.compile(r"\[\s*c\d+\s*\]", re.I)
 _DOC_TAG = re.compile(r"<\s*/?\s*doc", re.I)
+
+
+def shown_window(query: str, body: str, size: int = EXCERPT_CHARS) -> str:
+    """Normalised ``size``-char window of ``body`` with the most distinct query tokens.
+
+    Short bodies are returned whole; ties pick the earliest window; no match -> the head.
+    """
+    text = _n(body)
+    if len(text) <= size:
+        return text
+    qtoks = sorted(tokens(query))
+    if not qtoks:
+        return text[:size]
+    cache: dict[str, tuple[int, ...]] = {}
+    hits: list[tuple[int, int]] = []  # (char position, query-token index)
+    for m in _TOK.finditer(text):
+        t = m.group(0).lower()
+        if len(t) < 2:
+            continue
+        idx = cache.get(t)
+        if idx is None:
+            idx = cache[t] = tuple(i for i, a in enumerate(qtoks) if _tok_match(a, t))
+        for i in idx:
+            hits.append((m.start(), i))
+    if not hits:
+        return text[:size]
+    positions = [h[0] for h in hits]
+    step = max(1, size // 4)
+    best_start, best_score, lo = 0, 0, 0
+    for start in range(0, len(text) - size + step, step):
+        start = min(start, len(text) - size)
+        lo = bisect.bisect_left(positions, start)
+        hi = bisect.bisect_left(positions, start + size)
+        score = len({h[1] for h in hits[lo:hi]})
+        if score > best_score:
+            best_start, best_score = start, score
+    return text[best_start : best_start + size]
 
 
 def shown_excerpt(text: str) -> str:
@@ -107,7 +146,7 @@ def judge_candidates(
     shown: dict[str, str] = {}
     for c in cands:
         eid = c["external_id"]
-        text = shown_excerpt(bodies.get(eid) or c.get("excerpt") or "")
+        text = shown_excerpt(shown_window(query, bodies.get(eid) or c.get("excerpt") or ""))
         shown[eid] = text
         shown_cands.append({**c, "excerpt": text})
     out: dict[str, dict[str, Any]] = {}
