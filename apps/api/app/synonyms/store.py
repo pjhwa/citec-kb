@@ -93,7 +93,10 @@ def list_candidates(
 
 
 def set_status(cid: int, action: str, *, decided_by: str, note: str | None = None) -> dict[str, Any]:
-    allowed, new_status = _TRANSITIONS[action]
+    try:
+        allowed, new_status = _TRANSITIONS[action]
+    except KeyError:
+        raise TransitionError(f"unknown action {action!r}") from None
     with session_scope() as session:
         r = session.get(SearchSynonymCandidate, cid)
         if r is None:

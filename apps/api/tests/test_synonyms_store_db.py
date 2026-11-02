@@ -81,3 +81,61 @@ def test_illegal_transition_raises():
         store.set_status(cid, "disable", decided_by="t")  # proposed -> disabled not allowed
     with pytest.raises(store.NotFound):
         store.set_status(999999, "approve", decided_by="t")
+
+
+def _one(terms=("OOM2x", "메모리 고갈")):
+    from app.synonyms import store
+
+    store.upsert_candidates([_item(list(terms))], run_id="r", model="m")
+    return store.list_candidates(status="proposed")["items"][0]["id"]
+
+
+def test_reject_path_and_no_approve_after_reject():
+    from app.synonyms import store
+
+    cid = _one()
+    assert store.set_status(cid, "reject", decided_by="t")["status"] == "rejected"
+    with pytest.raises(store.TransitionError):
+        store.set_status(cid, "approve", decided_by="t")
+    assert store.load_groups(include_proposed=True) == []
+
+
+def test_approve_from_disabled_works():
+    from app.synonyms import store
+
+    cid = _one()
+    store.set_status(cid, "approve", decided_by="t")
+    store.set_status(cid, "disable", decided_by="t")
+    assert store.set_status(cid, "approve", decided_by="t2")["status"] == "approved"
+    assert store.load_groups() == [["OOM2x", "메모리 고갈"]]
+
+
+def test_note_and_decision_metadata_stored_and_returned():
+    from app.synonyms import store
+
+    cid = _one()
+    row = store.set_status(cid, "approve", decided_by="alice", note="looks right")
+    assert row["note"] == "looks right"
+    assert row["decided_by"] == "alice"
+    assert row["decided_at"]
+    again = store.list_candidates(status="approved")["items"][0]
+    assert again["note"] == "looks right" and again["decided_by"] == "alice" and again["decided_at"]
+    # note is preserved when a later action passes none
+    row2 = store.set_status(cid, "disable", decided_by="bob")
+    assert row2["note"] == "looks right" and row2["decided_by"] == "bob"
+
+
+def test_existing_keys_returns_terms_key():
+    from app.synonyms import store
+    from app.synonyms.rules import terms_key
+
+    _one()
+    assert store.existing_keys() == {terms_key(["OOM2x", "메모리 고갈"])}
+
+
+def test_unknown_action_raises_transition_error():
+    from app.synonyms import store
+
+    cid = _one()
+    with pytest.raises(store.TransitionError):
+        store.set_status(cid, "explode", decided_by="t")
