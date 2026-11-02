@@ -1,0 +1,500 @@
+{
+  "evalset_id": "evalset-v2-20261102-dev",
+  "provenance": "실사용 질의(운영 mcp_access_log) + 합성 질의, 풀링 + LLM 보조 판정, 검수자 박재화 (2026-11-02). 모델: z-ai/glm-5.2",
+  "caveats": [
+    "풀링은 현재 시스템이 올린 문서 위주로 후보를 만들어 절대 recall이 부풀려질 수 있다 — 전/후 상대 비교로 본다.",
+    "합성 질의는 제목 겹침률 필터로 편향을 완화했을 뿐 완전히 제거하지 못했다.",
+    "LLM 판정은 후보 제안일 뿐이고 최종 판정은 사람의 O/△/X다.",
+    "검수하지 않은(표시 안 됨·무표시) 후보는 비관련으로 간주된다 — 풀링 판정의 한계로 recall이 과대평가될 수 있다.",
+    "△(부분 관련)만 있고 O가 없는 질의는 정답 없음으로 제외된다."
+  ],
+  "cases": [
+    {
+      "id": "r-1004",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "Hitachi HNAS AD 도메인 조인 실패",
+      "filters": {},
+      "expect": [
+        "CITECTS-993"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-1683",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "SWIM 장애 에스원 2026-10-22 모바일사원증 MDM",
+      "filters": {},
+      "expect": [
+        "24121058089",
+        "24070557389",
+        "23020249589",
+        "22122648788",
+        "23030250208"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-1711",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "Transit Gateway BGP 연동",
+      "filters": {},
+      "expect": [
+        "680290290",
+        "CITECTS-2028",
+        "CITECTS-2405",
+        "2009270863",
+        "2135727310",
+        "697624537"
+      ],
+      "also_ok": [
+        "1661127184",
+        "1902226286"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-1985",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "건진시스템",
+      "filters": {},
+      "expect": [
+        "2138063500",
+        "2145475426",
+        "2140228872"
+      ],
+      "also_ok": [
+        "2145475414",
+        "2105442243"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2021",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "도메인 컨트롤러 LDAP 응답 중단",
+      "filters": {},
+      "expect": [
+        "13112506221"
+      ],
+      "also_ok": [
+        "14120414590",
+        "516671494",
+        "395976485"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-2286",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "진단결과내 컨텐츠 취합",
+      "filters": {},
+      "expect": [
+        "file_81153"
+      ],
+      "also_ok": [
+        "680269942",
+        "599306077"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 1
+    },
+    {
+      "id": "r-251",
+      "group": "v2_real",
+      "kind": "search",
+      "q": "DCManager 자원 폐기 안내",
+      "filters": {},
+      "expect": [
+        "CITECTS-1462",
+        "CITECTS-1910"
+      ],
+      "also_ok": [
+        "CITECTS-1305",
+        "CITECTS-2303"
+      ],
+      "k": 10,
+      "source": "real",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "count": 2
+    },
+    {
+      "id": "s-vocab-4b63-001",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "하나 메모리 덤프 깨보는 법",
+      "filters": {},
+      "expect": [
+        "384469380"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "384469380",
+        "title": "3-2-4-5-1-1 RTE Dump 분석 방법",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-002",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "hana 런타임 덤프 분석 도구 사용법",
+      "filters": {},
+      "expect": [
+        "384469463",
+        "384469380"
+      ],
+      "also_ok": [
+        "134027443"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "384469380",
+        "title": "3-2-4-5-1-1 RTE Dump 분석 방법",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-003",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "솔라리스 랜카드 장애 발생 시 대기망 자동 전환 점검",
+      "filters": {},
+      "expect": [
+        "55767186"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "55767186",
+        "title": "(부품)Active Link Down - Solaris",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-004",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "네트워크 이중화 구간 메인 선단 끊김 시 예비 구간 인계 확인",
+      "filters": {},
+      "expect": [
+        "13112508022"
+      ],
+      "also_ok": [
+        "26071461245",
+        "24080257557"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "55767186",
+        "title": "(부품)Active Link Down - Solaris",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-005",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "솔라리스 서버 부하 발생 대기큐 확인 방법",
+      "filters": {},
+      "expect": [
+        "377915439"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "377915439",
+        "title": "1_2.DOWN&PERF_OS_CPU(Solaris)",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-006",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "프로세서 점유율 튐 시스템 콜 점검 명령어",
+      "filters": {},
+      "expect": [
+        "377915439"
+      ],
+      "also_ok": [
+        "file_80793",
+        "2192350404"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "377915439",
+        "title": "1_2.DOWN&PERF_OS_CPU(Solaris)",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-011",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "아마존 클라우드 방어 기능 네이버 것과 차이",
+      "filters": {},
+      "expect": [
+        "1653443017",
+        "516673877"
+      ],
+      "also_ok": [
+        "1653443098"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "516673877",
+        "title": "09-01-02. 보안 상품 비교",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-013",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "데이터베이스 멈춤 원인 분석용 내부 캐시 조회 방법",
+      "filters": {},
+      "expect": [
+        "381297351"
+      ],
+      "also_ok": [
+        "1559482874",
+        "file_159640"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "381297351",
+        "title": "3-2-2-5-17 Hang Analysis Cache 정보 수집 (11.x 이상)",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-014",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "오라클 버전 11부터 백그라운드 프로세스가 기록하는 교착 상태 진단 조회",
+      "filters": {},
+      "expect": [
+        "381297351"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "381297351",
+        "title": "3-2-2-5-17 Hang Analysis Cache 정보 수집 (11.x 이상)",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-015",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "코어당 문맥전환 횟수 기준값",
+      "filters": {},
+      "expect": [
+        "1612472127"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1612472127",
+        "title": "Windows - Context Switch",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-016",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "운영체제 쓰레드 교체 부하 평균 소요시간",
+      "filters": {},
+      "expect": [
+        "1612472127"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1612472127",
+        "title": "Windows - Context Switch",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-017",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "파이썬 버전 지원 안하는 버그",
+      "filters": {},
+      "expect": [
+        "502209769"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "502209769",
+        "title": "SG Python 3 지원버전 문제",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-018",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "하나 디비 띄우다가 고가용성 에러남",
+      "filters": {},
+      "expect": [
+        "502209769"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "502209769",
+        "title": "SG Python 3 지원버전 문제",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-019",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "오픈버추얼스위치 장애 확인 방법",
+      "filters": {},
+      "expect": [
+        "2025307831"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "2025307831",
+        "title": "OVN/OVS 이슈 Troubleshooting",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-vocab-4b63-020",
+      "group": "v2_vocab",
+      "kind": "search",
+      "q": "오픈버추얼네트워크 dhcp 할당 오류 점검",
+      "filters": {},
+      "expect": [
+        "2025307832",
+        "1836195170",
+        "1767118825",
+        "2025307833",
+        "13112508397",
+        "2025307831"
+      ],
+      "also_ok": [
+        "24070857407",
+        "23122755550",
+        "1764119895",
+        "CITECTS-1111",
+        "23062652768",
+        "1418687909"
+      ],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "2025307831",
+        "title": "OVN/OVS 이슈 Troubleshooting",
+        "source_type": "tech_repo"
+      }
+    },
+    {
+      "id": "s-pointer-4b63-005",
+      "group": "v2_pointer",
+      "kind": "search",
+      "q": "디비 버전업 후 프로시저 컴파일 오래 걸림",
+      "filters": {},
+      "expect": [
+        "1724752860"
+      ],
+      "also_ok": [],
+      "k": 10,
+      "source": "synthetic",
+      "split": "dev",
+      "reviewed_on": "2026-11-02",
+      "seed_doc": {
+        "external_id": "1724752860",
+        "title": "LIMS1.0: (G1) → (SCP) 전환",
+        "source_type": "confluence_map"
+      }
+    }
+  ]
+}
