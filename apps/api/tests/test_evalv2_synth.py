@@ -53,3 +53,48 @@ def test_generate_skips_docs_when_llm_fails_or_is_empty():
 
     assert synth.generate(boom, "vocab", [DOC], known=set(), id_prefix="s") == []
     assert synth.generate(lambda m, **k: "", "vocab", [DOC], known=set(), id_prefix="s") == []
+
+
+def test_id_prefix_is_seed_dependent_and_stable():
+    assert synth.id_prefix("vocab", "a") == synth.id_prefix("vocab", "a")
+    assert synth.id_prefix("vocab", "a") != synth.id_prefix("vocab", "b")
+    p = synth.id_prefix("pointer", "a")
+    assert p.startswith("s-pointer-") and len(p) == len("s-pointer-") + 4
+
+
+def test_vocab_prompt_asks_for_opposite_language_and_has_examples():
+    text = synth.build_messages("vocab", DOC)[0]["content"]
+    assert "영문" in text and "약어" in text and "나쁜 예" in text and "좋은 예" in text
+    for sl in ("pointer", "symptom"):
+        t = synth.build_messages(sl, DOC)[0]["content"]
+        assert "나쁜 예" in t and "좋은 예" in t and "발췌" in t
+
+
+def test_accept_queries_rejects_excerpt_copies():
+    title = "방화벽 정책 점검 절차"
+    excerpt = "세션 테이블 임계치 초과 시 신규 연결 거부 현상 확인 후 조치"
+    copy = "세션 테이블 임계치 초과 시 신규 연결 거부"
+    fresh = "새 연결이 갑자기 안 붙는 문제"
+    assert synth.accept_queries([copy, fresh], title, known=set(), seen=set(), excerpt=excerpt) == [fresh]
+    assert synth.accept_queries([copy], title, known=set(), seen=set()) == [copy]  # no excerpt -> no check
+
+
+def test_generate_stops_after_want_docs_docs_yield_queries():
+    docs = [dict(DOC, external_id=f"D{i}") for i in range(5)]
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(1)
+        return json.dumps({"queries": [f"망 장비 포트 증상 {len(calls)} 번째"]})
+
+    items = synth.generate(chat, "symptom", docs, known=set(), id_prefix="s", max_per_doc=1, want_docs=2)
+    assert len(items) == 2 and len(calls) == 2
+    # docs whose LLM output is rejected do not count toward want_docs
+    n = []
+
+    def flaky(messages, **kw):
+        n.append(1)
+        return "" if len(n) == 1 else json.dumps({"queries": [f"세션이 끊기는 증상 {len(n)}"]})
+
+    items = synth.generate(flaky, "symptom", docs, known=set(), id_prefix="s", max_per_doc=1, want_docs=2)
+    assert len(items) == 2 and len(n) == 3
