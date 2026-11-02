@@ -174,7 +174,7 @@ def _multi(monkeypatch, hits_per_query, filters=None):
 
     monkeypatch.setattr(mq_module, "hybrid_search", fake)
     monkeypatch.setattr(
-        mq_module, "expand_queries", lambda q, extra=None, max_queries=6: [q, q + " x"]
+        mq_module, "expand_queries", lambda q, extra=None, max_queries=6, restricted=False: [q, q + " x"]
     )
     req = SearchRequest(q="테스트", top_k=5, filters=filters or SearchFilters())
     return multi_hybrid_search(None, req, multi_query=True)[0]

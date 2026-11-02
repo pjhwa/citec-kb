@@ -99,7 +99,7 @@ def test_multi_hybrid_search_preserves_evidence_eligible_and_map_synced_at(monke
     monkeypatch.setattr(mq_module, "hybrid_search", fake_hybrid_search)
     # Avoid entity-alias expansion needing a live DB; a single query variant
     # is enough to exercise both SearchHit reconstruction sites.
-    monkeypatch.setattr(mq_module, "expand_queries", lambda q, extra=None, max_queries=6: [q])
+    monkeypatch.setattr(mq_module, "expand_queries", lambda q, extra=None, max_queries=6, restricted=False: [q])
 
     req = SearchRequest(q="테스트 문서")
     resp, _meta = multi_hybrid_search(None, req, multi_query=True)
