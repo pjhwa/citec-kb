@@ -688,3 +688,35 @@ class SearchSynonymCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class DocExpansion(Base):
+    """LLM-generated search expansion (summary + practitioner keywords) per document.
+
+    Ranking signal only: never returned as evidence, never feeds embeddings/graph.
+    """
+
+    __tablename__ = "doc_expansion"
+    __table_args__ = (
+        Index("ix_doc_expansion_tsv_all", "tsv_all", postgresql_using="gin"),
+        Index("ix_doc_expansion_tsv_grounded", "tsv_grounded", postgresql_using="gin"),
+    )
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    keywords: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=text("'{}'::varchar[]")
+    )
+    grounded: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=text("'{}'::varchar[]")
+    )
+    tsv_all: Mapped[Optional[Any]] = mapped_column(TSVECTOR)
+    tsv_grounded: Mapped[Optional[Any]] = mapped_column(TSVECTOR)
+    rule: Mapped[Optional[str]] = mapped_column(String(32))
+    model: Mapped[Optional[str]] = mapped_column(String(128))
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
