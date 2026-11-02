@@ -2,7 +2,11 @@
 
 stdout is exactly one JSON object; logs go to stderr.
 Exit codes: 0 ok, 2 usage / LLM backend 'none', 3 completed but some documents hit
-llm_error / parse_fail / empty_response.
+llm_error / parse_fail / empty_response / error
+(error = unexpected exception while generating or storing one document).
+--out is written even when the run is interrupted. The per-document progress file
+(<out>.progress.jsonl, `run` only) is append-only and is not consulted on rerun: a dry-run
+rerun regenerates everything, and only committed rows are skipped (resume works via the DB).
 LLM calls run in a thread pool; every DB read/write happens in the main thread and no DB
 session is held while a call is in flight. Without --commit nothing is written to the DB.
 """
@@ -27,8 +31,8 @@ from app.docexp.selection import select_documents
 
 logger = logging.getLogger("citec.docexp")
 
-OUTCOMES = ("ok", "discarded", "parse_fail", "llm_error", "empty_response")
-FAILURES = ("llm_error", "parse_fail", "empty_response")
+OUTCOMES = ("ok", "discarded", "parse_fail", "llm_error", "empty_response", "error")
+FAILURES = ("llm_error", "parse_fail", "empty_response", "error")
 
 
 def _write_json(path: str, data: Any) -> None:
@@ -105,44 +109,65 @@ def _generate(
     workers: int,
     skip_existing: bool,
     progress_path: str | None,
+    out_path: str | None = None,
 ) -> dict[str, Any]:
     stats = gen.new_stats()
     results: list[dict[str, Any]] = []
     total = skipped = committed = 0
     chunk_size = max(workers * 4, 50)
     progress = open(progress_path, "a", encoding="utf-8") if progress_path else None
+    pool = ThreadPoolExecutor(max_workers=max(workers, 1))
     try:
-        with ThreadPoolExecutor(max_workers=max(workers, 1)) as pool:
-            while True:
-                chunk = list(itertools.islice(docs_iter, chunk_size))
-                if not chunk:
-                    break
-                total += len(chunk)
-                if skip_existing:
-                    have = store.existing_ids([d["id"] for d in chunk])
-                    todo = [d for d in chunk if d["id"] not in have]
-                    skipped += len(chunk) - len(todo)
-                else:
-                    todo = chunk
-                futs = {pool.submit(gen.expand_one, d, chat=chat): d for d in todo}
-                for fut in as_completed(futs):
-                    doc = futs[fut]
+        while True:
+            chunk = list(itertools.islice(docs_iter, chunk_size))
+            if not chunk:
+                break
+            total += len(chunk)
+            if skip_existing:
+                have = store.existing_ids(
+                    [d["id"] for d in chunk], hashes={d["id"]: d.get("content_hash") for d in chunk}
+                )
+                todo = [d for d in chunk if d["id"] not in have]
+                skipped += len(chunk) - len(todo)
+            else:
+                todo = chunk
+            futs = {pool.submit(gen.expand_one, d, chat=chat): d for d in todo}
+            for fut in as_completed(futs):
+                doc = futs[fut]
+                try:
                     rec, st = fut.result()
-                    for k, v in st.items():
-                        stats[k] = stats.get(k, 0) + v
-                    if rec is None:
+                except Exception:  # noqa: BLE001 — one bad document must not stop the run
+                    logger.exception("docexp: generation failed for %s", doc.get("external_id"))
+                    stats["error"] = stats.get("error", 0) + 1
+                    continue
+                for k, v in st.items():
+                    stats[k] = stats.get(k, 0) + v
+                if rec is None:
+                    continue
+                if commit:
+                    try:
+                        store.upsert(
+                            doc["id"], rec, rule=doc["rule"], model=model, run_id=run_id,
+                            content_hash=doc.get("content_hash"),
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("docexp: store failed for %s", doc.get("external_id"))
+                        stats["ok"] -= 1
+                        stats["error"] = stats.get("error", 0) + 1
                         continue
-                    if commit:
-                        store.upsert(doc["id"], rec, rule=doc["rule"], model=model, run_id=run_id)
-                        committed += 1
-                    item = _public(doc, rec)
-                    results.append(item)
-                    if progress:
-                        progress.write(json.dumps(item, ensure_ascii=False) + "\n")
-                        progress.flush()
+                    committed += 1
+                item = _public(doc, rec)
+                results.append(item)
+                if progress:
+                    progress.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    progress.flush()
     finally:
+        # Normal path: every future is done. Ctrl-C: drop queued work, don't wait out running LLM calls.
+        pool.shutdown(wait=False, cancel_futures=True)
         if progress:
             progress.close()
+        if out_path:
+            _write_json(out_path, sorted(results, key=lambda r: r["external_id"]))
     results.sort(key=lambda r: r["external_id"])
     return {"stats": stats, "results": results, "total": total, "skipped": skipped, "committed": committed}
 
@@ -164,9 +189,8 @@ def _run_common(args: argparse.Namespace, *, limit: int | None, skip_existing: b
         workers=args.workers,
         skip_existing=skip_existing,
         progress_path=f"{out}.progress.jsonl" if (out and name == "run") else None,
+        out_path=out,
     )
-    if out:
-        _write_json(out, out_data["results"])
     stats = out_data["stats"]
     _emit(
         {

@@ -21,7 +21,7 @@ logger = logging.getLogger("citec.docexp.gen")
 
 BODY_CHARS = 4000
 SUMMARY_MAX = 300
-KEYWORDS_MAX = 12
+KEYWORDS_MAX = 10
 MIN_KEYWORDS = 3
 
 SYSTEM_RULES = (
@@ -39,6 +39,8 @@ SYSTEM_RULES = (
 _FENCE_TAG = re.compile(r"<(?=\s*/?\s*doc)", re.I)
 _SPLIT = re.compile(r"[()（）\[\]{}<>,;:\"'`]")
 _ALLOWED = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-/+]*$")
+# API paths ("/v1/orders", "GET /v1/items"): ASCII only, so the Korean 3-syllable rule is untouched.
+_API_PATH = re.compile(r"^(?:(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\s+)?/[0-9A-Za-z_.\-/{}:+]*[0-9A-Za-z]{2,}[0-9A-Za-z_.\-/{}:+]*$")
 _HANGUL = re.compile(r"[가-힣]")
 _ASCII_RUN = re.compile(r"[0-9A-Za-z]{2,}")
 
@@ -57,6 +59,8 @@ def valid_keyword(term: str) -> bool:
     t = norm_term(term)
     if is_valid_term(t):
         return True
+    if t and len(t) <= MAX_TERM_LEN and _API_PATH.match(t):
+        return True
     if not t or len(t) > MAX_TERM_LEN or len(t) < 3 or not _ALLOWED.match(t):
         return False
     return bool(_HANGUL.search(t)) and bool(_ASCII_RUN.search(t))
@@ -69,7 +73,9 @@ def new_stats() -> dict[str, int]:
         "parse_fail": 0,
         "llm_error": 0,
         "empty_response": 0,
+        "error": 0,
         "empty_retried": 0,
+        "transient_retried": 0,
         "empty_recovered": 0,
     }
 
@@ -145,17 +151,22 @@ def expand_one(
     from app import llm_fabrix
 
     raw: Any = ""
+    last_transient = False
     for attempt in range(max(0, int(empty_retries)) + 1):
         if attempt:
             sleep(2.0 * (2 ** (attempt - 1)) + jitter())  # 2s, 4s, 8s (+ jitter)
-            stats["empty_retried"] += 1
+            if not last_transient:
+                stats["empty_retried"] += 1
+        last_transient = False
         llm_fabrix.reset_empty_info()
         try:
             raw = chat(messages, max_tokens=700, temperature=0.2, timeout=120.0)
         except Exception as exc:  # noqa: BLE001 — one failed document must not stop the run
             if _transient(exc) and attempt < max(0, int(empty_retries)):
                 logger.info("docexp transient LLM failure, retrying: %s", exc)
+                stats["transient_retried"] += 1
                 raw = ""
+                last_transient = True
                 continue
             logger.warning("docexp LLM failure: %s", exc)
             stats["llm_error"] = 1

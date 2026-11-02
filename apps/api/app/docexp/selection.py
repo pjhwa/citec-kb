@@ -38,21 +38,28 @@ def classify_title(title: str | None) -> str | None:
     return None
 
 
-def _list_candidates() -> list[tuple[Any, str, str]]:
-    """(id, external_id, title) of active confluence_map rows with enough body; short session."""
+def _candidates_stmt() -> Any:
     from sqlalchemy import func, select
 
     from app.db.models import Document
-    from app.db.session import session_scope
 
-    stmt = (
-        select(Document.id, Document.external_id, Document.title)
+    # Same tech_relevant=irrelevant exclusion the default search applies to confluence_map.
+    tech = Document.metadata_["tech_relevant"].astext
+    return (
+        select(Document.id, Document.external_id, Document.title, Document.content_hash)
         .where(Document.source_type == SOURCE_TYPE, Document.status == "active")
         .where(func.length(Document.body_md) >= MIN_BODY_CHARS)
+        .where(tech.is_(None) | (tech != "irrelevant"))
         .order_by(Document.external_id)
     )
+
+
+def _list_candidates() -> list[tuple[Any, str, str, str | None]]:
+    """(id, external_id, title, content_hash) of active, non-irrelevant confluence_map rows with enough body; short session."""
+    from app.db.session import session_scope
+
     with session_scope() as session:
-        return [(r[0], r[1], r[2]) for r in session.execute(stmt).all()]
+        return [(r[0], r[1], r[2], r[3]) for r in session.execute(_candidates_stmt()).all()]
 
 
 def _fetch_bodies(ids: list[Any]) -> dict[Any, str]:
@@ -67,7 +74,7 @@ def _fetch_bodies(ids: list[Any]) -> dict[Any, str]:
 
 
 def select_documents(*, limit: int | None = None, seed: int | None = None) -> Iterator[dict[str, Any]]:
-    """Yield {id, external_id, title, body_md, rule} for active confluence_map rows.
+    """Yield {id, external_id, title, body_md, rule, content_hash} for active confluence_map rows.
 
     Ordered by external_id (stable). With ``seed`` the order is a deterministic
     hash order instead, so ``limit`` yields a reproducible random sample.
@@ -75,10 +82,10 @@ def select_documents(*, limit: int | None = None, seed: int | None = None) -> It
     small batches so no DB cursor/session stays open while the caller works.
     """
     matched = []
-    for did, ext, title in _list_candidates():
+    for did, ext, title, chash in _list_candidates():
         rule = classify_title(title)
         if rule is not None:
-            matched.append({"id": did, "external_id": ext, "title": title, "rule": rule})
+            matched.append({"id": did, "external_id": ext, "title": title, "rule": rule, "content_hash": chash})
     if seed is not None:
         matched.sort(key=lambda m: hashlib.md5(f"{m['external_id']}{int(seed)}".encode()).hexdigest())
     else:

@@ -10,7 +10,7 @@ from app.docexp import cli
 
 
 def _doc(i, body="OOM 발생으로 서버 다운 현상이 있었다. " * 20):
-    return {"id": f"id{i}", "external_id": f"ext{i}", "title": f"주간 회의 {i}", "body_md": body, "rule": "meeting"}
+    return {"id": f"id{i}", "external_id": f"ext{i}", "title": f"주간 회의 {i}", "body_md": body, "rule": "meeting", "content_hash": f"h{i}"}
 
 
 GOOD = json.dumps(
@@ -26,6 +26,8 @@ class Env:
         self.chat_calls = []
         self.bad_titles = set()
         self.empty_titles = set()
+        self.hash_calls = []
+        self.bad_upserts = set()
 
 
 @pytest.fixture
@@ -43,8 +45,13 @@ def env(monkeypatch):
 
     monkeypatch.setattr(cli, "_get_chat", lambda: (fake_chat, "test-model"))
     monkeypatch.setattr(cli, "select_documents", lambda limit=None, seed=None: iter(docs[:limit] if limit else docs))
-    monkeypatch.setattr(cli.store, "existing_ids", lambda ids: {i for i in ids if i in e.existing})
-    monkeypatch.setattr(cli.store, "upsert", lambda did, rec, **kw: e.upserts.append((did, rec, kw)))
+    monkeypatch.setattr(cli.store, "existing_ids", lambda ids, hashes=None: (e.hash_calls.append(hashes), {i for i in ids if i in e.existing})[1])
+    def fake_upsert(did, rec, **kw):
+        if did in e.bad_upserts:
+            raise RuntimeError("db down")
+        e.upserts.append((did, rec, kw))
+
+    monkeypatch.setattr(cli.store, "upsert", fake_upsert)
     e.docs = docs
     return e
 
@@ -129,3 +136,52 @@ def test_sample_writes_skimmable_list_and_stores_only_on_commit(env, capsys, tmp
 def test_count_by_rule(env, capsys):
     code, res = _run(capsys, "count")
     assert res["total"] == 5 and res["by_rule"]["meeting"]["docs"] == 5 and res["body_chars"] > 0
+
+
+def test_hash_passed_to_existing_ids_and_upsert(env, capsys, tmp_path):
+    _run(capsys, "run", "--commit", "--out", str(tmp_path / "o.json"))
+    assert env.hash_calls and env.hash_calls[0] == {f"id{i}": f"h{i}" for i in range(5)}
+    assert {d: kw["content_hash"] for d, _, kw in env.upserts} == {f"id{i}": f"h{i}" for i in range(5)}
+
+
+def test_upsert_failure_counts_error_continues_exit_3(env, capsys, tmp_path):
+    env.bad_upserts = {"id1"}
+    out = tmp_path / "o.json"
+    code, res = _run(capsys, "run", "--commit", "--out", str(out))
+    st = res["stats"]
+    assert code == 3 and st["error"] == 1 and st["ok"] == 4 and res["committed"] == 4
+    assert res["skipped_existing"] + sum(st.get(k, 0) for k in cli.OUTCOMES) == res["total"]
+    assert len(json.loads(out.read_text())) == 4
+
+
+def test_exception_inside_expand_one_counts_error_and_continues(env, monkeypatch, capsys, tmp_path):
+    real = cli.gen.parse_response
+    n = []
+
+    def boom(raw):
+        n.append(1)
+        if len(n) == 2:
+            raise ValueError("bad parse")
+        return real(raw)
+
+    monkeypatch.setattr(cli.gen, "parse_response", boom)
+    code, res = _run(capsys, "run", "--commit", "--workers", "1", "--out", str(tmp_path / "o.json"))
+    assert code == 3 and res["stats"]["error"] == 1 and res["stats"]["ok"] == 4 and len(env.upserts) == 4
+
+
+def test_out_written_on_keyboard_interrupt(env, capsys, tmp_path):
+    out = tmp_path / "o.json"
+    orig = cli.store.upsert
+
+    def interrupt(did, rec, **kw):
+        if did == "id2":
+            raise KeyboardInterrupt
+        return orig(did, rec, **kw)
+
+    cli.store.upsert = interrupt
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            cli.main(["run", "--commit", "--workers", "1", "--out", str(out)])
+    finally:
+        cli.store.upsert = orig
+    assert out.exists() and len(json.loads(out.read_text())) >= 2

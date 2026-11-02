@@ -5,28 +5,44 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal_column, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.db.models import DocExpansion
 from app.db.session import session_scope
 
 _ID_CHUNK = 1000
+_W_A = literal_column("'A'::\"char\"")
+_W_C = literal_column("'C'::\"char\"")
 
 
-def upsert(document_id: str, rec: dict[str, Any], *, rule: str | None, model: str | None, run_id: str | None) -> None:
+def upsert(
+    document_id: str,
+    rec: dict[str, Any],
+    *,
+    rule: str | None,
+    model: str | None,
+    run_id: str | None,
+    content_hash: str | None = None,
+) -> None:
     summary = rec.get("summary") or ""
     keywords = list(rec.get("keywords") or [])
     grounded = list(rec.get("grounded") or [])
-    all_text = " ".join([summary, *keywords]).strip()
+    # Keywords are the high-signal part (weight A, like a title); the summary is
+    # context (C). Without setweight ts_rank_cd bottoms out near 0.1 and the
+    # branch can never compete with body hits.
+    kw_text = " ".join(keywords)
     grounded_text = " ".join(grounded)
     values = {
         "document_id": document_id,
         "summary": summary,
         "keywords": keywords,
         "grounded": grounded,
-        "tsv_all": func.to_tsvector("simple", all_text),
-        "tsv_grounded": func.to_tsvector("simple", grounded_text),
+        "tsv_all": func.setweight(func.to_tsvector("simple", kw_text), _W_A).op("||")(
+            func.setweight(func.to_tsvector("simple", summary), _W_C)
+        ),
+        "tsv_grounded": func.setweight(func.to_tsvector("simple", grounded_text), _W_A),
+        "source_content_hash": content_hash,
         "rule": rule,
         "model": model,
         "run_id": run_id,
@@ -54,6 +70,7 @@ def get(document_id: str) -> dict[str, Any] | None:
             "rule": row.rule,
             "model": row.model,
             "run_id": row.run_id,
+            "source_content_hash": row.source_content_hash,
             "created_at": row.created_at,
         }
 
@@ -63,15 +80,24 @@ def count() -> int:
         return int(session.execute(select(func.count()).select_from(DocExpansion)).scalar_one())
 
 
-def existing_ids(ids: Iterable[str]) -> set[str]:
+def existing_ids(ids: Iterable[str], hashes: dict[str, str | None] | None = None) -> set[str]:
+    """Ids that already have an up-to-date expansion.
+
+    With ``hashes`` ({document_id: current content_hash}) a row whose
+    source_content_hash differs counts as missing so the run regenerates it.
+    """
     wanted = list(ids)
     found: set[str] = set()
     with session_scope() as session:
         for i in range(0, len(wanted), _ID_CHUNK):
             part = wanted[i : i + _ID_CHUNK]
-            found.update(
-                r[0] for r in session.execute(select(DocExpansion.document_id).where(DocExpansion.document_id.in_(part)))
-            )
+            for did, h in session.execute(
+                select(DocExpansion.document_id, DocExpansion.source_content_hash).where(
+                    DocExpansion.document_id.in_(part)
+                )
+            ):
+                if hashes is None or h == hashes.get(did):
+                    found.add(did)
     return found
 
 

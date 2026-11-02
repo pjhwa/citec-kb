@@ -32,6 +32,7 @@ def upgrade() -> None:
         sa.Column("rule", sa.String(32), nullable=True),
         sa.Column("model", sa.String(128), nullable=True),
         sa.Column("run_id", sa.String(64), nullable=True),
+        sa.Column("source_content_hash", sa.String(128), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
     )
     op.create_index("ix_doc_expansion_tsv_all", "doc_expansion", ["tsv_all"], postgresql_using="gin")

@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
-from sqlalchemy import Select, false, func, select, text
+from sqlalchemy import Select, false, func, select, text, true
 from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.orm import Session, aliased
 
@@ -605,6 +605,9 @@ def rare_token_variants(session: Session, q: str) -> list[str]:
     return out
 
 
+_EXPANSION_MAX_VARIANTS = 4
+
+
 def _expansion_mode() -> str:
     """SEARCH_DOC_EXPANSION: off (default) | grounded | all; anything else -> off."""
     v = (os.environ.get("SEARCH_DOC_EXPANSION") or "off").strip().lower()
@@ -672,40 +675,50 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
     # Optional doc-expansion branch (ranking signal only; nothing from
     # doc_expansion is ever returned). Matches the expansion tsvector and
     # credits the document's representative chunk: the active chunk with the
-    # lowest ordinal. Driven from doc_expansion (GIN) so the per-doc
-    # representative lookup is a correlated LIMIT 1 on only the matching docs,
-    # not a GROUP BY over every chunk. Skipped for rare AND-variants.
+    # lowest ordinal. Driven from doc_expansion (GIN): the top fts_limit matching
+    # rows are picked first, then a LATERAL LIMIT 1 lookup (chunks.document_id
+    # index) resolves the representative chunk for only those rows, so the
+    # cost does not grow with the number of matches or with all chunks. Stale rows (source_content_hash !=
+    # documents.content_hash) are ignored. Skipped for rare AND-variants, and
+    # run for at most the first _EXPANSION_MAX_VARIANTS other variants: later
+    # ones are single-token fallbacks whose expansion matches add latency
+    # for little recall. Contributions combine like the body loop (max plus a
+    # small bonus), never a plain sum.
     mode = _expansion_mode()
     ew = _expansion_weight()
     if mode != "off" and ew > 0:
         col = DocExpansion.tsv_all if mode == "all" else DocExpansion.tsv_grounded
         c2 = aliased(Chunk)
-        rep_id = (
-            select(c2.id)
-            .where(c2.document_id == DocExpansion.document_id, c2.is_active.is_(True))
-            .order_by(c2.ordinal, c2.id)
-            .limit(1)
-            .correlate(DocExpansion)
-            .scalar_subquery()
-        )
-        for v in variants:
-            if v in rare:
-                continue
+        exp_variants = [v for v in variants if v not in rare][:_EXPANSION_MAX_VARIANTS]
+        for v in exp_variants:
             w = _variant_weight(v)
             if w <= 0:
                 continue
             tsq = func.plainto_tsquery("simple", v)
             rank_expr = func.ts_rank_cd(col, tsq)
-            stmt = (
-                select(Chunk.id, rank_expr)
+            # Top fts_limit matching expansion rows first (filters, staleness)...
+            inner = (
+                select(DocExpansion.document_id.label("did"), rank_expr.label("rk"))
                 .select_from(DocExpansion)
-                .join(Chunk, Chunk.id == rep_id)
                 .join(Document, Document.id == DocExpansion.document_id)
                 .where(col.op("@@")(tsq))
+                .where(DocExpansion.source_content_hash == Document.content_hash)
             )
-            stmt = _apply_doc_filters(stmt, req.filters).order_by(rank_expr.desc(), Chunk.id).limit(req.fts_limit)
+            inner = _apply_doc_filters(inner, req.filters).order_by(rank_expr.desc(), DocExpansion.document_id)
+            m = inner.limit(req.fts_limit).subquery("m")
+            # ...then resolve the representative chunk only for those rows.
+            rep = (
+                select(c2.id.label("id"))
+                .where(c2.document_id == m.c.did, c2.is_active.is_(True))
+                .order_by(c2.ordinal, c2.id)
+                .limit(1)
+                .lateral("rep")
+            )
+            stmt = select(rep.c.id, m.c.rk).select_from(m).join(rep, true())
             for cid, rk in session.execute(stmt).all():
-                scored[cid] = scored.get(cid, 0.0) + ew * w * float(rk or 0.0)
+                contrib = ew * w * float(rk or 0.0)
+                prev = scored.get(cid, 0.0)
+                scored[cid] = contrib if contrib > prev else prev + 0.15 * contrib
 
     # Title / header ILIKE only for high-signal phrases (not bare Linux).
     # Synonym-group expansions and rare-token ANDs are body matches already

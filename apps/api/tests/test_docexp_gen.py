@@ -46,7 +46,7 @@ def test_validate_discards_when_too_few_keywords():
 def test_validate_caps_lengths():
     rec = gen.validate({"summary": "가" * 900, "keywords": [f"키워드{i}번" for i in range(30)]}, "키워드0번 " * 3)
     assert len(rec["summary"]) == 300 == gen.SUMMARY_MAX
-    assert len(rec["keywords"]) == 12 == gen.KEYWORDS_MAX
+    assert len(rec["keywords"]) == 10 == gen.KEYWORDS_MAX
 
 
 def test_expand_one_empty_retry_then_ok():
@@ -134,6 +134,7 @@ def test_expand_one_retries_transient_http_errors(msg):
     rec, st = gen.expand_one({"title": "t", "body_md": "OOM"}, chat=chat, sleep=sleeps.append, jitter=lambda: 0.0)
     assert rec and st["ok"] == 1 and st["llm_error"] == 0 and len(calls) == 3
     assert sleeps == [2.0, 4.0]
+    assert st["transient_retried"] == 2 and st["empty_retried"] == 0
 
 
 def test_expand_one_http_error_exhausted_and_non_transient():
@@ -165,3 +166,12 @@ def test_fabrix_empty_info_is_thread_local():
     t.start()
     t.join()
     assert seen["v"] is None
+
+
+def test_validate_accepts_api_path_keywords():
+    rec = gen.validate({"summary": "s", "keywords": ["/v1/orders", "GET /v1/items", "주문 조회", "OOM", "/a", "/행"]}, "")
+    assert rec["keywords"] == ["/v1/orders", "GET /v1/items", "주문 조회", "OOM"]
+
+
+def test_prompt_says_5_to_10_keywords():
+    assert "5~10" in gen.SYSTEM_RULES and gen.KEYWORDS_MAX == 10

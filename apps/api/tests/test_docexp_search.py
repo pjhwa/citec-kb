@@ -76,13 +76,13 @@ def _db():
     get_settings.cache_clear()
 
 
-def _add_doc(session, name, *, source_type="tech_repo", n_chunks=2, inactive0=False):
+def _add_doc(session, name, *, source_type="tech_repo", n_chunks=2, inactive0=False, body=None):
     from sqlalchemy import text as sql_text
 
     from app.db.models import Chunk, Document
 
     doc_id = f"{_PREFIX}:{name}"
-    body = f"plain body for {name}"
+    body = body or f"plain body for {name}"
     session.add(Document(
         id=doc_id, source_type=source_type, external_id=name, title=f"title {name}", body_md=body,
         metadata_={}, content_hash=hashlib.sha256(body.encode()).hexdigest(),
@@ -101,11 +101,16 @@ def _add_doc(session, name, *, source_type="tech_repo", n_chunks=2, inactive0=Fa
     return doc_id, ids
 
 
-def _expand(doc_id, keywords, grounded):
+def _expand(doc_id, keywords, grounded, *, summary="", content_hash=None):
+    from app.db.models import Document
+    from app.db.session import session_scope
     from app.docexp import store
 
-    store.upsert(doc_id, {"summary": "", "keywords": keywords, "grounded": grounded},
-                 rule="t", model="t", run_id="t")
+    if content_hash is None:
+        with session_scope() as session:
+            content_hash = session.get(Document, doc_id).content_hash
+    store.upsert(doc_id, {"summary": summary, "keywords": keywords, "grounded": grounded},
+                 rule="t", model="t", run_id="t", content_hash=content_hash)
 
 
 def _fts(q, **filters):
@@ -168,12 +173,56 @@ def test_source_type_filter_applies(_db, monkeypatch):
 def test_doc_without_expansion_unaffected_and_weight_zero_off(_db, monkeypatch):
     from app.db.session import session_scope
 
-    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
     with session_scope() as s:
-        d1, i1 = _add_doc(s, "zzplainuniq")
-        d2, i2 = _add_doc(s, "exp")
+        d1, i1 = _add_doc(s, "plain")          # no expansion; body "plain body for plain"
+        d2, i2 = _add_doc(s, "exp")            # body "plain body for exp"
     _expand(d2, [_KW], [])
-    res = _fts("zzplainuniq")
-    assert i1[0] in res and i2[0] not in res
+    monkeypatch.delenv("SEARCH_DOC_EXPANSION", raising=False)
+    off = _fts("plain")
+    assert i1[0] in off and i2[0] in off       # both bodies match "plain"
+    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
+    assert _fts("plain") == off                # expansion does not match -> identical result
     monkeypatch.setenv("SEARCH_DOC_EXPANSION_WEIGHT", "0")
     assert _fts(_KW) == []
+
+
+@db
+def test_stale_expansion_ignored(_db, monkeypatch):
+    from app.db.session import session_scope
+
+    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
+    with session_scope() as s:
+        d, ids = _add_doc(s, "b")
+    _expand(d, [_KW], [], content_hash="old-hash")
+    assert _fts(_KW) == []
+    _expand(d, [_KW], [])  # fresh hash
+    assert _fts(_KW) == [ids[0]]
+
+
+@db
+def test_competing_body_hit_does_not_hide_expansion_doc(_db, monkeypatch):
+    from app.db.session import session_scope
+
+    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
+    with session_scope() as s:
+        da, ia = _add_doc(s, "a", body="오라클 컴파일 오류 발생 시 확인 절차")
+        db_, ib = _add_doc(s, "b", body="월간 점검 회의록 안건 정리")
+    _expand(db_, ["프로시저 컴파일 지연", "오라클 DB"], [])
+    res = _fts("프로시저 컴파일 지연")
+    assert ib[0] in res and ia[0] in res
+
+
+@db
+def test_expansion_only_doc_enters_final_list_among_many_body_hits(_db, monkeypatch):
+    from app.db.session import session_scope
+
+    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
+    with session_scope() as s:
+        for n in range(60):
+            _add_doc(s, f"m{n}", n_chunks=1, body=f"컴파일 작업 로그 {n}번째 배치 결과 확인")
+        db_, ib = _add_doc(s, "target", n_chunks=1, body="월간 점검 회의록 안건 정리")
+    _expand(db_, ["프로시저 컴파일 지연"], [])
+    monkeypatch.delenv("SEARCH_DOC_EXPANSION")
+    assert ib[0] not in _fts("프로시저 컴파일 지연")
+    monkeypatch.setenv("SEARCH_DOC_EXPANSION", "all")
+    assert ib[0] in _fts("프로시저 컴파일 지연")  # fts_limit=40 < 60 body hits

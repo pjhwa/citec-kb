@@ -37,7 +37,7 @@ def test_informative_titles_not_selected(title):
     assert classify_title(title) is None
 
 
-ROWS = [(f"id{i}", f"ext{i:03d}", t) for i, t in enumerate(
+ROWS = [(f"id{i}", f"ext{i:03d}", t, f"h{i}") for i, t in enumerate(
     ["1월 1주차 미팅", "Oracle 가이드", "GET /v1/a", "2024년 3월 점검", "주차장 장애"] * 3)]
 
 
@@ -76,3 +76,13 @@ def test_select_documents_fetches_bodies_in_batches(fake_db, monkeypatch):
     monkeypatch.setattr(selection, "BATCH", 4)
     list(selection.select_documents())
     assert [len(x) for x in fake_db] == [4, 4, 1]
+
+
+def test_select_documents_yields_content_hash(fake_db):
+    docs = list(selection.select_documents())
+    assert all(d["content_hash"] == f"h{d['id'][2:]}" for d in docs)
+
+
+def test_candidates_stmt_excludes_irrelevant_and_selects_hash():
+    sql = str(selection._candidates_stmt().compile(compile_kwargs={"literal_binds": True}))
+    assert "tech_relevant" in sql and "irrelevant" in sql and "content_hash" in sql

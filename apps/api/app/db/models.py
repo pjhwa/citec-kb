@@ -717,6 +717,8 @@ class DocExpansion(Base):
     rule: Mapped[Optional[str]] = mapped_column(String(32))
     model: Mapped[Optional[str]] = mapped_column(String(128))
     run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    # documents.content_hash the expansion was generated from; a mismatch means stale.
+    source_content_hash: Mapped[Optional[str]] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

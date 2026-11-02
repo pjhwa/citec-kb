@@ -68,3 +68,30 @@ def test_existing_ids_and_stats(doc_id):
     assert store.existing_ids([doc_id, "nope"]) == {doc_id}
     st = store.stats()
     assert st["count"] == 1 and st["by_rule"] == {"api": 1} and st["grounded_ratio"]["0.5-1"] == 1
+
+
+def test_upsert_stores_hash_and_existing_ids_treats_mismatch_as_missing(doc_id):
+    from app.docexp import store
+
+    rec = {"summary": "s", "keywords": ["a1", "b2"], "grounded": []}
+    store.upsert(doc_id, rec, rule="api", model="m", run_id="r", content_hash="h")
+    assert store.get(doc_id)["source_content_hash"] == "h"
+    assert store.existing_ids([doc_id], hashes={doc_id: "h"}) == {doc_id}
+    assert store.existing_ids([doc_id], hashes={doc_id: "changed"}) == set()
+    assert store.existing_ids([doc_id]) == {doc_id}  # no hashes given: presence only
+
+
+def test_tsv_is_weighted_keywords_a_summary_c(doc_id):
+    from sqlalchemy import text
+
+    from app.db.session import session_scope
+    from app.docexp import store
+
+    rec = {"summary": "요약문 설명", "keywords": ["OOM", "서버 다운"], "grounded": ["OOM"]}
+    store.upsert(doc_id, rec, rule="api", model="m", run_id="r", content_hash="h")
+    with session_scope() as s:
+        allv, gv = s.execute(
+            text("select tsv_all::text, tsv_grounded::text from doc_expansion where document_id=:d"), {"d": doc_id}
+        ).one()
+    assert "'oom':1A" in allv and "'요약문':" in allv and allv.count("C") >= 1
+    assert "A" in gv and "C" not in gv and "'서버'" not in gv

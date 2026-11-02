@@ -27,7 +27,7 @@
 | `apps/api/app/docexp/cli.py` | `count` / `sample` / `run` / `stats` |
 | `apps/api/app/db/models.py` | `DocExpansion` 모델 추가 |
 | `apps/api/alembic/versions/20261103_0018_doc_expansion.py` | 테이블 + GIN 인덱스 |
-| `apps/api/app/retrieval/search.py` | `_expansion_mode/_weight`, `expansion_rows`, `fts_search` 분기 |
+| `apps/api/app/retrieval/search.py` | `_expansion_mode/_weight`, `fts_search` 분기 |
 | `apps/api/tests/test_docexp_*.py` | 단위 테스트 |
 | `docs/DOC_EXPANSION_RUNBOOK_20261103.md` | 실행·측정 절차 |
 
