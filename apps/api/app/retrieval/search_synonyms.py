@@ -22,9 +22,12 @@ SYNONYM_GROUPS: list[list[str]] = [
 ]
 
 
-def _compile(term: str) -> re.Pattern[str]:
+def compile_term(term: str) -> re.Pattern[str]:
     esc = r"\s+".join(re.escape(p) for p in term.split())
     return re.compile(rf"(?<![0-9A-Za-z가-힣]){esc}(?![0-9A-Za-z가-힣])", re.I)
+
+
+_compile = compile_term
 
 
 _PATTERNS: list[tuple[re.Pattern[str], int]] = [
