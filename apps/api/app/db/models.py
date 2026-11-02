@@ -658,3 +658,33 @@ class GraphRun(Base):
     # "full"(전체 문서 대상) | "partial"(--source-ids 디버그 실행) — latest_run을
     # "방금 완료된 전체 그래프 스냅샷"으로 오인하지 않게 구분한다(R02.5).
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default="full")
+
+
+class SearchSynonymCandidate(Base):
+    """LLM-proposed search synonym group awaiting human approval.
+
+    Search-only: never feeds lexicon_version / graph / embeddings.
+    """
+
+    __tablename__ = "search_synonym_candidate"
+    __table_args__ = (
+        UniqueConstraint("terms_key", name="uq_search_synonym_candidate_terms_key"),
+        Index("ix_search_synonym_candidate_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    terms: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    terms_key: Mapped[str] = mapped_column(String(1024), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="proposed")
+    # proposed | approved | rejected | disabled
+    evidence: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    run_id: Mapped[Optional[str]] = mapped_column(String(64))
+    model: Mapped[Optional[str]] = mapped_column(String(128))
+    decided_by: Mapped[Optional[str]] = mapped_column(String(128))
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    note: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
