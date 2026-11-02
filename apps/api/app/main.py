@@ -37,6 +37,7 @@ from app.routers import auth as auth_router  # noqa: E402
 from app.routers import insights as insights_router  # noqa: E402
 from app.routers import jobs as jobs_router  # noqa: E402
 from app.routers import lexicon as lexicon_router  # noqa: E402
+from app.routers import synonym_candidates as synonym_candidates_router  # noqa: E402
 from app.routers import ops as ops_router  # noqa: E402
 from app.routers import documents as documents_router  # noqa: E402
 from app.routers import tickets as tickets_router  # noqa: E402
@@ -108,6 +109,7 @@ app.include_router(citec_dashboard_router.router)
 app.include_router(confluence_router.router)
 app.include_router(confluence_map_router.router)
 app.include_router(lexicon_router.router)
+app.include_router(synonym_candidates_router.router)
 app.include_router(jobs_router.router)
 app.include_router(ops_router.router)
 app.include_router(insights_router.router)
