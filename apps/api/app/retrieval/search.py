@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import Select, false, func, select, text
 from sqlalchemy.dialects.postgresql import array as pg_array
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
-from app.db.models import Chunk, Document, Embedding
+from app.db.models import Chunk, DocExpansion, Document, Embedding
 from app.retrieval.identifiers import check_query_identifiers
 from app.retrieval.fusion import (
     RankedHit,
@@ -604,6 +605,21 @@ def rare_token_variants(session: Session, q: str) -> list[str]:
     return out
 
 
+def _expansion_mode() -> str:
+    """SEARCH_DOC_EXPANSION: off (default) | grounded | all; anything else -> off."""
+    v = (os.environ.get("SEARCH_DOC_EXPANSION") or "off").strip().lower()
+    return v if v in {"grounded", "all"} else "off"
+
+
+def _expansion_weight() -> float:
+    """SEARCH_DOC_EXPANSION_WEIGHT (default 0.5); invalid -> 0.5, <= 0 -> 0 (branch off)."""
+    try:
+        w = float(os.environ.get("SEARCH_DOC_EXPANSION_WEIGHT", "0.5"))
+    except ValueError:
+        w = 0.5
+    return max(w, 0.0)
+
+
 def fts_search(session: Session, req: SearchRequest) -> list[str]:
     """Return chunk ids ordered by FTS rank (best first).
 
@@ -652,6 +668,44 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
             else:
                 # small multi-variant bonus
                 scored[cid] = prev + 0.15 * contrib
+
+    # Optional doc-expansion branch (ranking signal only; nothing from
+    # doc_expansion is ever returned). Matches the expansion tsvector and
+    # credits the document's representative chunk: the active chunk with the
+    # lowest ordinal. Driven from doc_expansion (GIN) so the per-doc
+    # representative lookup is a correlated LIMIT 1 on only the matching docs,
+    # not a GROUP BY over every chunk. Skipped for rare AND-variants.
+    mode = _expansion_mode()
+    ew = _expansion_weight()
+    if mode != "off" and ew > 0:
+        col = DocExpansion.tsv_all if mode == "all" else DocExpansion.tsv_grounded
+        c2 = aliased(Chunk)
+        rep_id = (
+            select(c2.id)
+            .where(c2.document_id == DocExpansion.document_id, c2.is_active.is_(True))
+            .order_by(c2.ordinal, c2.id)
+            .limit(1)
+            .correlate(DocExpansion)
+            .scalar_subquery()
+        )
+        for v in variants:
+            if v in rare:
+                continue
+            w = _variant_weight(v)
+            if w <= 0:
+                continue
+            tsq = func.plainto_tsquery("simple", v)
+            rank_expr = func.ts_rank_cd(col, tsq)
+            stmt = (
+                select(Chunk.id, rank_expr)
+                .select_from(DocExpansion)
+                .join(Chunk, Chunk.id == rep_id)
+                .join(Document, Document.id == DocExpansion.document_id)
+                .where(col.op("@@")(tsq))
+            )
+            stmt = _apply_doc_filters(stmt, req.filters).order_by(rank_expr.desc(), Chunk.id).limit(req.fts_limit)
+            for cid, rk in session.execute(stmt).all():
+                scored[cid] = scored.get(cid, 0.0) + ew * w * float(rk or 0.0)
 
     # Title / header ILIKE only for high-signal phrases (not bare Linux).
     # Synonym-group expansions and rare-token ANDs are body matches already
