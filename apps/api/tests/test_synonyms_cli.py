@@ -196,3 +196,75 @@ def test_load_tickets_date_window(monkeypatch):
     assert [t.external_id for t in got] == ["B", "C"]
     assert got[0].symptom == "sym" and got[1].symptom == "body"
     assert [t.external_id for t in mine.load_tickets(since_years=1, limit=1)] == ["B"]
+
+
+# ---- empty / filter-blocked responses -----------------------------------------
+
+_GOOD = json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-0", "T-1"]}]})
+
+
+def test_empty_response_stat_and_not_checkpointed(tmp_path):
+    kw = _kw(tmp_path, lambda m, **k: "  \n", [T(0), T(1)])
+    res = cli.run_mine(**kw)
+    assert res["stats"]["empty_response"] == 1 and res["stats"]["batches_done"] == 0
+    assert res["items"] == [] and len(res["empty_samples"]) == 1
+    import os
+
+    prog = kw["out_path"] + ".progress.jsonl"
+    assert not os.path.exists(prog) or open(prog).read() == ""
+
+
+def test_mine_batch_empty_is_not_parse_success():
+    items, st = mine.mine_batch([T(0), T(1)], chat=lambda m, **k: "", term_df=lambda t: 10, params=mine.Params())
+    assert items == [] and st["empty_response"] == 1 and st["parse_fail"] == 0
+
+
+def test_main_empty_exit_3_warning_and_commit_skipped(env, capsys):
+    env.chat = lambda m, **kw: ""
+    assert cli.main(["mine", "--out", env.out, "--commit"]) == 3
+    data, err = _one_json(capsys)
+    assert "LLM returned empty content (possibly a content-filter block) — results are incomplete" in err
+    assert env.upserts == [] and data["commit"] is None and data["stats"]["empty_response"] >= 1
+    assert "empty_samples" in data
+
+
+def _marker_chat(calls):
+    def chat(messages, **kw):
+        txt = messages[0]["content"]
+        calls.append(txt)
+        if "BADMARK" in txt:
+            return ""
+        ids = [f"T-{i}" for i in range(40) if f"[T-{i}]" in txt]
+        return json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ids[:2]}]})
+
+    return chat
+
+
+def test_split_on_empty_isolates_bad_ticket(tmp_path):
+    ts = [T(i) for i in range(40)]
+    ts[13] = mine.Ticket("T-13", "BADMARK", "", "inode2x 아이노드 고갈 BADMARK")
+    calls = []
+    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40, split_on_empty=True))
+    assert len(res["blocked_chunks"]) == 1
+    chunk = res["blocked_chunks"][0]
+    assert "T-13" in chunk and 5 <= len(chunk) <= 10
+    assert all(isinstance(x, str) and x.startswith("T-") for x in chunk)
+    assert len(res["items"]) == 1  # other tickets' groups still mined
+    assert res["stats"]["empty_response"] == 1 and res["extra_calls"] == len(calls) - 1 >= 4
+
+
+def test_split_default_off_makes_no_extra_calls(tmp_path):
+    ts = [T(i) for i in range(40)]
+    ts[13] = mine.Ticket("T-13", "BADMARK", "", "x")
+    calls = []
+    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40))
+    assert len(calls) == 1 and "blocked_chunks" not in res
+
+
+def test_main_split_flag_prints_extra_calls(env, capsys):
+    env.chat = lambda m, **kw: ""
+    monkey_tickets = [T(i) for i in range(12)]
+    mine.load_tickets = lambda **kw: monkey_tickets  # env fixture's monkeypatch restores the original
+    assert cli.main(["mine", "--out", env.out, "--batch-size", "12", "--split-on-empty"]) == 3
+    data, err = _one_json(capsys)
+    assert "extra (billable) LLM calls" in err and data["blocked_chunks"] and data["extra_calls"] == 2

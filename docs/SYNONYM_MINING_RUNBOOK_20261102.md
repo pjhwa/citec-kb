@@ -33,7 +33,7 @@ docker compose exec -T api python -m alembic current   # 20261102_0017 (head)
 
 - stdout은 **JSON 객체 1개**: `{"run_id": …, "stats": {…}, "commit": null}`. 진행 로그는 stderr.
 - `--run-id`를 주지 않으면 `--out` 경로에서 파생된다. 같은 `--out`으로 다시 실행하면 이어서 진행(재개)한다.
-- 종료코드: `0` 정상, `2` 설정/입출력 오류(LLM 미설정, 쓰기 불가, import 파일 형식 오류), `3` **부분 실행**(`llm_error`/`proc_error`/`parse_fail` > 0).
+- 종료코드: `0` 정상, `2` 설정/입출력 오류(LLM 미설정, 쓰기 불가, import 파일 형식 오류), `3` **부분 실행**(`llm_error`/`proc_error`/`parse_fail`/`empty_response` > 0).
 
 결과 확인 (후보 내용은 컨테이너 안의 `--out` 파일에 있다):
 ```bash
@@ -44,7 +44,9 @@ docker compose exec -T api cat /tmp/syn-trial1.json | jq -r '.items[].terms | jo
 확인할 것: `stats`의 accepted 수, `rej_*` 분포, `llm_error`/`proc_error`/`parse_fail`, 후보 용어가 상식적인지.
 후보가 거의 없고 `rej_evidence`가 크면 한 티켓에 두 표현이 같이 나오지 않는 것이다 → `--min-terms-per-ticket 1`(허용값 1 또는 2, 기본 2)로 재시도. 재시도할 때는 다른 `--out`을 쓴다 (같은 `--out`이면 이전 체크포인트를 재사용한다).
 
-주요 옵션 (`mine --help`): `--since-years`(기본 2), `--limit-tickets`, `--batch-size`(기본 100), `--max-batches`, `--run-id`, `--min-terms-per-ticket {1,2}`, `--df-min`(기본 3), `--df-max`(기본 1500, **2000 미만**이어야 함 — DF는 2000에서 잘려 센다), `--out`(필수), `--commit`, `--allow-partial`.
+문제 해결 (빈 응답): `stats.empty_response>0` 이거나 종료코드 3 + stderr에 "empty content" = Fabrix 콘텐츠 필터 차단 가능성. 필터 코드는 결과의 `empty_samples`(`filter_code`)에 나온다. `--split-on-empty`로 차단 티켓이 있는 청크를 좁히고(`blocked_chunks`에 ID만 기록, 추가 호출은 과금됨), 필터 코드를 보고한다. 빈 응답 배치는 체크포인트되지 않으므로 재실행하면 재시도된다.
+
+주요 옵션 (`mine --help`): `--since-years`(기본 2), `--limit-tickets`, `--batch-size`(기본 100), `--max-batches`, `--run-id`, `--min-terms-per-ticket {1,2}`, `--df-min`(기본 3), `--df-max`(기본 1500, **2000 미만**이어야 함 — DF는 2000에서 잘려 센다), `--out`(필수), `--commit`, `--allow-partial`, `--split-on-empty`.
 
 ## 2. 전체 실행 (운영)
 ```bash

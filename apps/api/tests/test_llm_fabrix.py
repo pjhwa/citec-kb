@@ -137,3 +137,20 @@ def test_check_llm_probes_for_real(monkeypatch):
                         lambda **kw: real(transport=httpx.MockTransport(lambda r: httpx.Response(401, json={"message": "no"})), **kw))
     r = asyncio.run(llm.check_llm(S))
     assert not r["ok"] and not r["chat_supported"] and "401" in r["error"]
+
+
+def test_last_empty_info_set_on_empty_and_reset():
+    F.reset_empty_info()
+    assert F.last_empty_info() is None
+    assert F.parse_complete(NONSTREAM_OK) == "pong"
+    assert F.last_empty_info() is None
+    blocked = dict(NONSTREAM_EMPTY, finishReason="content_filter", truncated=False,
+                   filterBlockReason={"resultCode": "FR-201", "resultMessage": "x" * 500, "other": "y" * 300, "n": 5},
+                   prompt="SECRET REQUEST TEXT")
+    assert F.parse_complete(blocked) == ""
+    info = F.last_empty_info()
+    assert info["filter_code"] == "FR-201" and info["finishReason"] == "content_filter"
+    assert len(info["filter_message"]) == 200 and len(info["filter_other"]) == 200
+    assert "SECRET" not in json.dumps(info)
+    F.reset_empty_info()
+    assert F.parse_complete(NONSTREAM_EMPTY) == "" and F.last_empty_info()["filter_code"] is None

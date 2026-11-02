@@ -124,6 +124,7 @@ def _new_stats() -> dict[str, int]:
         "llm_error": 0,
         "proc_error": 0,
         "parse_fail": 0,
+        "empty_response": 0,
         "rej_terms": 0,
         "rej_static": 0,
         "rej_existing": 0,
@@ -212,8 +213,13 @@ def mine_batch(
     chat: Callable[..., str],
     term_df: Callable[[str], int],
     params: Params,
+    notes: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """notes: optional side channel; receives one info dict per empty LLM response."""
     messages = build_messages(tickets)  # programming errors here must surface
+    from app import llm_fabrix
+
+    llm_fabrix.reset_empty_info()
     try:
         raw = chat(messages, max_tokens=3000, temperature=0.1, timeout=180.0)
     except Exception as exc:  # noqa: BLE001 — one failed batch must not stop the run
@@ -221,8 +227,15 @@ def mine_batch(
         stats = _new_stats()
         stats["llm_error"] = 1
         return [], stats
-    groups = _parse(raw)
     stats0 = _new_stats()
+    if not (isinstance(raw, str) and raw.strip()):
+        info = llm_fabrix.last_empty_info() or {}
+        logger.warning("synonym batch: LLM returned empty content (filter=%s)", info.get("filter_code"))
+        stats0["empty_response"] = 1
+        if notes is not None:
+            notes.append(info)
+        return [], stats0
+    groups = _parse(raw)
     if groups is None:
         if isinstance(raw, str) and raw.strip():
             logger.warning("synonym batch unparseable LLM output: %r", raw.strip()[:200])
