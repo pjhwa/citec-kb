@@ -57,12 +57,24 @@ def test_transition_and_not_found_errors(monkeypatch):
     assert _client().post("/v1/lexicon/synonym-candidates/1/approve", json={}).status_code == 404
 
 
-def test_error_does_not_reset_cache(monkeypatch):
+@pytest.mark.parametrize(
+    "exc,code", [(store.NotFound("n"), 404), (store.TransitionError("t"), 409)]
+)
+def test_error_does_not_reset_cache(monkeypatch, exc, code):
     called = {}
-    monkeypatch.setattr(store, "set_status", _fake_set_status(exc=store.TransitionError("x")))
+    monkeypatch.setattr(store, "set_status", _fake_set_status(exc=exc))
     monkeypatch.setattr(rt, "reset_cache", lambda: called.setdefault("reset", True))
-    _client().post("/v1/lexicon/synonym-candidates/1/reject", json={})
-    assert "reset" not in called
+    res = _client().post("/v1/lexicon/synonym-candidates/1/reject", json={})
+    assert res.status_code == code and "reset" not in called
+
+
+@pytest.mark.parametrize("action", ["approve", "reject", "disable"])
+def test_decision_without_body_ok(monkeypatch, action):
+    seen = {}
+    monkeypatch.setattr(store, "set_status", _fake_set_status(seen=seen))
+    monkeypatch.setattr(rt, "reset_cache", lambda: None)
+    res = _client().post(f"/v1/lexicon/synonym-candidates/3/{action}")
+    assert res.status_code == 200 and seen["note"] is None and seen["action"] == action
 
 
 def _fake_upsert(seen=None):
@@ -109,12 +121,27 @@ def test_import_invalid_items_reported_not_error(monkeypatch):
     assert res.json() == {"inserted": 0, "skipped": 0, "invalid": 1}
 
 
+@pytest.mark.parametrize(
+    "item",
+    [
+        {"terms": [f"term{i}x" for i in range(21)]},
+        {"terms": ["a" * 101, "bbb"]},
+        {"terms": ["aaa", "bbb"], "evidence": {"k": "가" * 9000}},
+    ],
+)
+def test_import_item_limits_422(monkeypatch, item):
+    monkeypatch.setattr(store, "upsert_candidates", _fake_upsert())
+    res = _client().post("/v1/lexicon/synonym-candidates/import", json={"items": [item]})
+    assert res.status_code == 422
+
+
 @pytest.fixture
 def enforced(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "apikey")
     monkeypatch.setenv(
         "AUTH_TOKENS_JSON",
         '{"tok-v": {"sub": "v", "name": "V", "roles": ["viewer"]},'
+        ' "tok-s": {"sub": "s", "name": "Sen", "roles": ["viewer", "senior"]},'
         ' "tok-a": {"sub": "a", "name": "Adm", "roles": ["viewer", "admin"]}}',
     )
     get_settings.cache_clear()
@@ -131,11 +158,18 @@ def test_auth_enforced(monkeypatch, enforced):
     c = _client()
     base = "/v1/lexicon/synonym-candidates"
     imp = {"items": []}
-    for path, body in ((f"{base}/1/approve", {}), (f"{base}/import", imp)):
+    for path, body in (
+        (f"{base}/1/approve", {}),
+        (f"{base}/1/reject", {}),
+        (f"{base}/1/disable", {}),
+        (f"{base}/import", imp),
+    ):
         assert c.post(path, json=body).status_code == 401
         assert c.post(path, json=body, headers={"Authorization": "Bearer tok-v"}).status_code == 403
         assert c.post(path, json=body, headers={"Authorization": "Bearer tok-a"}).status_code == 200
     assert seen["decided_by"] == "Adm"
+    res = c.post(f"{base}/1/approve", json={}, headers={"Authorization": "Bearer tok-s"})
+    assert res.status_code == 200 and seen["decided_by"] == "Sen"
     assert c.get(base).status_code == 200  # list stays readable
 
 

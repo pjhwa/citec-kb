@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+import json
+from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
@@ -21,8 +22,15 @@ class DecisionBody(BaseModel):
 
 
 class ImportItem(BaseModel):
-    terms: list[str]
+    terms: list[Annotated[str, StringConstraints(max_length=100)]] = Field(max_length=20)
     evidence: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("evidence")
+    @classmethod
+    def _evidence_size(cls, v: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(v, ensure_ascii=False)) > 8192:
+            raise ValueError("evidence too large (max 8192 chars as JSON)")
+        return v
 
 
 class ImportBody(BaseModel):
@@ -63,7 +71,8 @@ def _decide(cid: int, action: str, body: DecisionBody, principal: Principal) -> 
 
 @router.post("/{cid}/approve")
 def approve(
-    cid: int, body: DecisionBody,
+    cid: int,
+    body: DecisionBody = Body(default_factory=DecisionBody),
     principal: Principal = Depends(require_roles(*_WRITE_ROLES)),
 ) -> dict[str, Any]:
     return _decide(cid, "approve", body, principal)
@@ -71,7 +80,8 @@ def approve(
 
 @router.post("/{cid}/reject")
 def reject(
-    cid: int, body: DecisionBody,
+    cid: int,
+    body: DecisionBody = Body(default_factory=DecisionBody),
     principal: Principal = Depends(require_roles(*_WRITE_ROLES)),
 ) -> dict[str, Any]:
     return _decide(cid, "reject", body, principal)
@@ -79,7 +89,8 @@ def reject(
 
 @router.post("/{cid}/disable")
 def disable(
-    cid: int, body: DecisionBody,
+    cid: int,
+    body: DecisionBody = Body(default_factory=DecisionBody),
     principal: Principal = Depends(require_roles(*_WRITE_ROLES)),
 ) -> dict[str, Any]:
     return _decide(cid, "disable", body, principal)

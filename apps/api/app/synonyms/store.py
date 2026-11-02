@@ -98,7 +98,7 @@ def set_status(cid: int, action: str, *, decided_by: str, note: str | None = Non
     except KeyError:
         raise TransitionError(f"unknown action {action!r}") from None
     with session_scope() as session:
-        r = session.get(SearchSynonymCandidate, cid)
+        r = session.get(SearchSynonymCandidate, cid, with_for_update=True)
         if r is None:
             raise NotFound(f"candidate {cid} not found")
         if r.status not in allowed:
