@@ -204,7 +204,7 @@ _GOOD = json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "ti
 
 
 def test_empty_response_stat_and_not_checkpointed(tmp_path):
-    kw = _kw(tmp_path, lambda m, **k: "  \n", [T(0), T(1)])
+    kw = _kw(tmp_path, lambda m, **k: "  \n", [T(0), T(1)], sleep=lambda s: None)
     res = cli.run_mine(**kw)
     assert res["stats"]["empty_response"] == 1 and res["stats"]["batches_done"] == 0
     assert res["items"] == [] and len(res["empty_samples"]) == 1
@@ -215,13 +215,13 @@ def test_empty_response_stat_and_not_checkpointed(tmp_path):
 
 
 def test_mine_batch_empty_is_not_parse_success():
-    items, st = mine.mine_batch([T(0), T(1)], chat=lambda m, **k: "", term_df=lambda t: 10, params=mine.Params())
-    assert items == [] and st["empty_response"] == 1 and st["parse_fail"] == 0
+    items, st = mine.mine_batch([T(0), T(1)], chat=lambda m, **k: "", term_df=lambda t: 10, params=mine.Params(), sleep=lambda s: None)
+    assert items == [] and st["empty_response"] == 1 and st["parse_fail"] == 0 and st["empty_retried"] == 3
 
 
 def test_main_empty_exit_3_warning_and_commit_skipped(env, capsys):
     env.chat = lambda m, **kw: ""
-    assert cli.main(["mine", "--out", env.out, "--commit"]) == 3
+    assert cli.main(["mine", "--out", env.out, "--commit", "--empty-retries", "0"]) == 3
     data, err = _one_json(capsys)
     assert "LLM returned empty content (possibly a content-filter block) — results are incomplete" in err
     assert env.upserts == [] and data["commit"] is None and data["stats"]["empty_response"] >= 1
@@ -244,7 +244,7 @@ def test_split_on_empty_isolates_bad_ticket(tmp_path):
     ts = [T(i) for i in range(40)]
     ts[13] = mine.Ticket("T-13", "BADMARK", "", "inode2x 아이노드 고갈 BADMARK")
     calls = []
-    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40, split_on_empty=True))
+    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40, split_on_empty=True, empty_retries=0))
     assert len(res["blocked_chunks"]) == 1
     chunk = res["blocked_chunks"][0]
     assert "T-13" in chunk and 5 <= len(chunk) <= 10
@@ -257,7 +257,7 @@ def test_split_default_off_makes_no_extra_calls(tmp_path):
     ts = [T(i) for i in range(40)]
     ts[13] = mine.Ticket("T-13", "BADMARK", "", "x")
     calls = []
-    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40))
+    res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40, empty_retries=0))
     assert len(calls) == 1 and "blocked_chunks" not in res
 
 
@@ -265,6 +265,106 @@ def test_main_split_flag_prints_extra_calls(env, capsys):
     env.chat = lambda m, **kw: ""
     monkey_tickets = [T(i) for i in range(12)]
     mine.load_tickets = lambda **kw: monkey_tickets  # env fixture's monkeypatch restores the original
-    assert cli.main(["mine", "--out", env.out, "--batch-size", "12", "--split-on-empty"]) == 3
+    assert cli.main(["mine", "--out", env.out, "--batch-size", "12", "--split-on-empty", "--empty-retries", "0"]) == 3
     data, err = _one_json(capsys)
     assert "extra (billable) LLM calls" in err and data["blocked_chunks"] and data["extra_calls"] == 2
+
+
+# ---- retry on empty -------------------------------------------------------------
+
+
+def _seq_chat(seq, calls):
+    it = iter(seq)
+
+    def chat(messages, **kw):
+        calls.append(1)
+        return next(it)
+
+    return chat
+
+
+def _mb(chat, **kw):
+    delays = []
+    kw.setdefault("sleep", delays.append)
+    kw.setdefault("jitter", lambda: 0.5)
+    items, st = mine.mine_batch([T(0), T(1)], chat=chat, term_df=lambda t: 10, params=mine.Params(), **kw)
+    return items, st, delays
+
+
+def test_retry_recovers_after_two_empties():
+    calls = []
+    items, st, delays = _mb(_seq_chat(["", " ", _GOOD], calls))
+    assert len(calls) == 3 and len(items) == 1
+    assert st["empty_retried"] == 2 and st["empty_recovered"] == 1 and st["empty_response"] == 0
+    assert delays == [2.5, 4.5] and delays == sorted(delays)
+
+
+def test_always_empty_makes_exactly_1_plus_retries_calls():
+    calls = []
+    items, st, delays = _mb(lambda m, **k: calls.append(1) or "")
+    assert len(calls) == 4 and items == []
+    assert st["empty_response"] == 1 and st["empty_retried"] == 3 and st["empty_recovered"] == 0
+    assert delays == [2.5, 4.5, 8.5]
+
+
+def test_empty_retries_zero_single_call():
+    calls = []
+    _, st, delays = _mb(lambda m, **k: calls.append(1) or "", empty_retries=0)
+    assert len(calls) == 1 and delays == [] and st["empty_response"] == 1 and st["empty_retried"] == 0
+
+
+def test_parse_fail_not_retried():
+    calls = []
+    _, st, delays = _mb(lambda m, **k: calls.append(1) or "garbage")
+    assert len(calls) == 1 and st["parse_fail"] == 1 and delays == []
+
+
+def test_llm_exception_not_retried():
+    calls = []
+
+    def chat(m, **k):
+        calls.append(1)
+        raise RuntimeError("x")
+
+    _, st, _ = _mb(chat)
+    assert len(calls) == 1 and st["llm_error"] == 1
+
+
+def test_run_mine_retry_stats_and_total_calls(tmp_path):
+    calls = []
+    kw = _kw(tmp_path, _seq_chat(["", _GOOD], calls), [T(0), T(1)], sleep=lambda s: None)
+    res = cli.run_mine(**kw)
+    assert res["stats"]["empty_retried"] == 1 and res["stats"]["empty_recovered"] == 1
+    assert res["stats"]["batches_done"] == 1 and res["total_llm_calls"] == 2
+    kw2 = _kw(tmp_path, lambda m, **k: "", [T(0), T(1)], sleep=lambda s: None, empty_retries=1,
+              out_path=str(tmp_path / "r2.json"))
+    res2 = cli.run_mine(**kw2)
+    assert res2["total_llm_calls"] == 2 and res2["stats"]["empty_response"] == 1
+
+
+def test_split_after_retries_counts_calls(tmp_path):
+    ts = [T(i) for i in range(12)]
+    res = cli.run_mine(**_kw(tmp_path, lambda m, **k: "", ts, batch_size=12, split_on_empty=True,
+                             empty_retries=1, sleep=lambda s: None))
+    # whole (2 calls) -> two halves of 6, each 2 calls; halves cannot split further
+    assert res["total_llm_calls"] == 6 and len(res["blocked_chunks"]) == 2
+
+
+def test_main_passes_empty_retries_flag(env, capsys, monkeypatch):
+    seen = []
+    orig = mine.mine_batch
+
+    def spy(*a, **kw):
+        seen.append(kw.get("empty_retries"))
+        kw["sleep"] = lambda s: None
+        return orig(*a, **kw)
+
+    monkeypatch.setattr(mine, "mine_batch", spy)
+    env.chat = lambda m, **kw: ""
+    assert cli.main(["mine", "--out", env.out, "--batch-size", "5", "--empty-retries", "2"]) == 3
+    data, err = _one_json(capsys)
+    assert seen == [2] and data["stats"]["empty_retried"] == 2 and data["total_llm_calls"] == 3
+    assert "still empty after 2 retries" in err
+    env.chat = lambda m, **kw: ""
+    cli.main(["mine", "--out", env.out + "b", "--batch-size", "5"])
+    assert seen[-1] == 3

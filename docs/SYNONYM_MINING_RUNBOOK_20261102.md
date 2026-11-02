@@ -46,7 +46,9 @@ docker compose exec -T api cat /tmp/syn-trial1.json | jq -r '.items[].terms | jo
 
 문제 해결 (빈 응답): `stats.empty_response>0` 이거나 종료코드 3 + stderr에 "empty content" = Fabrix 콘텐츠 필터 차단 가능성. 필터 코드는 결과의 `empty_samples`(`filter_code`)에 나온다. `--split-on-empty`로 차단 티켓이 있는 청크를 좁히고(`blocked_chunks`에 ID만 기록, 추가 호출은 과금됨), 필터 코드를 보고한다. 빈 응답 배치는 체크포인트되지 않으므로 재실행하면 재시도된다.
 
-주요 옵션 (`mine --help`): `--since-years`(기본 2), `--limit-tickets`, `--batch-size`(기본 100), `--max-batches`, `--run-id`, `--min-terms-per-ticket {1,2}`, `--df-min`(기본 3), `--df-max`(기본 1500, **2000 미만**이어야 함 — DF는 2000에서 잘려 센다), `--out`(필수), `--commit`, `--allow-partial`, `--split-on-empty`.
+Fabrix는 **동일한 요청을 확률적으로 차단**할 수 있다 (2026-11-02 관찰: resultCode FR-201, 메시지 없음, 같은 요청이 EMPTY/ok/EMPTY). 그래서 빈 응답은 기본 3회까지(2s/4s/8s + 지터) 자동 재시도한다(`--empty-retries N`, 0이면 끔; `--split-on-empty`는 재시도를 소진한 뒤에만 동작). 결과의 읽는 법: `stats.empty_retried` = 재시도 호출 수, `stats.empty_recovered` = 재시도로 복구된 배치 수, `stats.empty_response` = 재시도 후에도 비어 있는 배치 수(>0이면 종료코드 3), 최상위 `total_llm_calls` = 배치 + 재시도 + 분할 호출의 총합(비용). 차단 비율이 높으면 Fabrix 관리자에게 보고한다: resultCode=FR-201, filterLogId=None, 같은 요청이 ok/EMPTY로 번갈아 나옴.
+
+주요 옵션 (`mine --help`): `--since-years`(기본 2), `--limit-tickets`, `--batch-size`(기본 100), `--max-batches`, `--run-id`, `--min-terms-per-ticket {1,2}`, `--df-min`(기본 3), `--df-max`(기본 1500, **2000 미만**이어야 함 — DF는 2000에서 잘려 센다), `--out`(필수), `--commit`, `--allow-partial`, `--empty-retries`(기본 3), `--split-on-empty`.
 
 ## 2. 전체 실행 (운영)
 ```bash

@@ -35,11 +35,13 @@ SPLIT_MAX_DEPTH = 3
 
 def _mine_split(
     batch: list[mine.Ticket], *, depth: int, chat, term_df, params, notes: list, blocked: list, calls: list,
+    mine_kw: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """mine_batch; on an empty response retry as two halves (>= SPLIT_MIN_CHUNK, depth <= SPLIT_MAX_DEPTH)."""
     n_before = len(notes)
-    items, stats = mine.mine_batch(batch, chat=chat, term_df=term_df, params=params, notes=notes)
+    items, stats = mine.mine_batch(batch, chat=chat, term_df=term_df, params=params, notes=notes, **mine_kw)
     calls[0] += 1
+    calls[1] += int(stats.get("empty_retried", 0))
     if not stats.get("empty_response"):
         return items, stats
     half = len(batch) // 2
@@ -53,7 +55,7 @@ def _mine_split(
     for part in (batch[:half], batch[half:]):
         it, st = _mine_split(
             part, depth=depth + 1, chat=chat, term_df=term_df, params=params,
-            notes=notes, blocked=blocked, calls=calls,
+            notes=notes, blocked=blocked, calls=calls, mine_kw=mine_kw,
         )
         _merge_stats(total, st)
         for x in it:
@@ -76,6 +78,8 @@ def run_mine(
     out_path: str,
     max_batches: int | None,
     split_on_empty: bool = False,
+    empty_retries: int = 3,
+    sleep: Callable[[float], None] | None = None,
 ) -> dict[str, Any]:
     progress_path = out_path + ".progress.jsonl"
     saved: dict[int, dict[str, Any]] = {}  # later line wins
@@ -92,7 +96,10 @@ def run_mine(
     used: dict[int, dict[str, Any]] = {}  # batches that make up this result
     notes: list[dict[str, Any]] = []
     blocked: list[list[str]] = []
-    calls = [0]
+    calls = [0, 0]  # mine_batch invocations, retry calls
+    mine_kw: dict[str, Any] = {"empty_retries": empty_retries}
+    if sleep is not None:
+        mine_kw["sleep"] = sleep
     n_batches_run = 0
     partial_used: set[int] = set()
     failed: dict[str, int] = {}  # this run only; failed batches are not checkpointed -> retried on resume
@@ -109,11 +116,22 @@ def run_mine(
         if split_on_empty:
             items, stats = _mine_split(
                 batch, depth=0, chat=chat, term_df=term_df, params=params,
-                notes=notes, blocked=blocked, calls=calls,
+                notes=notes, blocked=blocked, calls=calls, mine_kw=mine_kw,
             )
-            n_batches_run += 1
         else:
-            items, stats = mine.mine_batch(batch, chat=chat, term_df=term_df, params=params, notes=notes)
+            items, stats = mine.mine_batch(
+                batch, chat=chat, term_df=term_df, params=params, notes=notes, **mine_kw
+            )
+            calls[0] += 1
+            calls[1] += int(stats.get("empty_retried", 0))
+        n_batches_run += 1
+        k = int(stats.get("empty_retried", 0))
+        if k:
+            print(
+                f"batch {idx}: " + (f"recovered after {k} retries" if not stats.get("empty_response")
+                                     else f"still empty after {k} retries"),
+                file=sys.stderr,
+            )
         if stats.get("llm_error") or stats.get("proc_error"):
             _merge_stats(failed, stats)
             print(f"batch {idx}: FAILED {stats}", file=sys.stderr)
@@ -151,6 +169,7 @@ def run_mine(
     result = {"run_id": run_id, "model": model, "items": items_all, "stats": stats_total}
     if stats_total.get("empty_response"):
         result["empty_samples"] = notes[:5]
+    result["total_llm_calls"] = calls[0] + calls[1]
     if split_on_empty:
         result["blocked_chunks"] = blocked
         extra = calls[0] - n_batches_run
@@ -188,6 +207,8 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--df-max", type=int, default=1500)
     m.add_argument("--out", required=True)
     m.add_argument("--commit", action="store_true", help="also insert accepted candidates as 'proposed'")
+    m.add_argument("--empty-retries", type=int, default=3,
+                   help="retries (2s/4s/8s backoff) when the LLM returns empty content; 0 disables")
     m.add_argument("--split-on-empty", action="store_true",
                    help="retry empty (content-filtered?) batches as halves down to >=5 tickets; extra billable calls")
     m.add_argument("--allow-partial", action="store_true", help="with --commit, commit even if some batches failed")
@@ -246,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         term_df=mine.make_term_df(), params=params,
         run_id=run_id, model=model,
         out_path=args.out, max_batches=args.max_batches,
-        split_on_empty=args.split_on_empty,
+        split_on_empty=args.split_on_empty, empty_retries=max(0, args.empty_retries),
     )
     stats = result["stats"]
     n_batches = -(-len(tickets) // args.batch_size)
@@ -273,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             commit = store.upsert_candidates(result["items"], run_id=result["run_id"], model=model)
     out = {"run_id": run_id, "stats": stats, "commit": commit}
-    for k in ("empty_samples", "blocked_chunks", "extra_calls"):
+    for k in ("empty_samples", "blocked_chunks", "extra_calls", "total_llm_calls"):
         if k in result:
             out[k] = result[k]
     print(json.dumps(out, ensure_ascii=False))

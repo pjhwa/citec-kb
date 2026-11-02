@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 import re
+import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -125,6 +127,8 @@ def _new_stats() -> dict[str, int]:
         "proc_error": 0,
         "parse_fail": 0,
         "empty_response": 0,
+        "empty_retried": 0,
+        "empty_recovered": 0,
         "rej_terms": 0,
         "rej_static": 0,
         "rej_existing": 0,
@@ -214,23 +218,37 @@ def mine_batch(
     term_df: Callable[[str], int],
     params: Params,
     notes: list[dict[str, Any]] | None = None,
+    empty_retries: int = 3,
+    sleep: Callable[[float], None] = time.sleep,
+    jitter: Callable[[], float] = lambda: random.uniform(0.0, 1.0),
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """notes: optional side channel; receives one info dict per empty LLM response."""
     messages = build_messages(tickets)  # programming errors here must surface
     from app import llm_fabrix
 
-    llm_fabrix.reset_empty_info()
-    try:
-        raw = chat(messages, max_tokens=3000, temperature=0.1, timeout=180.0)
-    except Exception as exc:  # noqa: BLE001 — one failed batch must not stop the run
-        logger.warning("synonym batch LLM failure: %s", exc)
-        stats = _new_stats()
-        stats["llm_error"] = 1
-        return [], stats
     stats0 = _new_stats()
-    if not (isinstance(raw, str) and raw.strip()):
+    raw: Any = ""
+    for attempt in range(max(0, int(empty_retries)) + 1):
+        if attempt:
+            sleep(2.0 * (2 ** (attempt - 1)) + jitter())  # 2s, 4s, 8s (+ jitter)
+            stats0["empty_retried"] += 1
+        llm_fabrix.reset_empty_info()
+        try:
+            raw = chat(messages, max_tokens=3000, temperature=0.1, timeout=180.0)
+        except Exception as exc:  # noqa: BLE001 — one failed batch must not stop the run
+            logger.warning("synonym batch LLM failure: %s", exc)
+            stats0["llm_error"] = 1
+            return [], stats0
+        if isinstance(raw, str) and raw.strip():
+            if attempt:
+                stats0["empty_recovered"] = 1
+            break
+    else:
         info = llm_fabrix.last_empty_info() or {}
-        logger.warning("synonym batch: LLM returned empty content (filter=%s)", info.get("filter_code"))
+        logger.warning(
+            "synonym batch: LLM returned empty content after %d retries (filter=%s)",
+            stats0["empty_retried"], info.get("filter_code"),
+        )
         stats0["empty_response"] = 1
         if notes is not None:
             notes.append(info)
@@ -242,7 +260,10 @@ def mine_batch(
             stats0["parse_fail"] = 1
         return [], stats0
     try:
-        return process_groups(groups, tickets, term_df=term_df, params=params)
+        items, st = process_groups(groups, tickets, term_df=term_df, params=params)
+        st["empty_retried"] = stats0["empty_retried"]
+        st["empty_recovered"] = stats0["empty_recovered"]
+        return items, st
     except Exception as exc:  # noqa: BLE001 — e.g. DB error from term_df; keep the run alive
         logger.warning("synonym batch processing failure: %s", exc)
         stats0["proc_error"] = 1
