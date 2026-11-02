@@ -30,23 +30,32 @@ def compile_term(term: str) -> re.Pattern[str]:
 _compile = compile_term
 
 
-_PATTERNS: list[tuple[re.Pattern[str], int]] = [
-    (_compile(t), gi) for gi, g in enumerate(SYNONYM_GROUPS) for t in g
-]
+_PAT_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _pat(term: str) -> re.Pattern[str]:
+    p = _PAT_CACHE.get(term)
+    if p is None:
+        if len(_PAT_CACHE) > 4096:
+            _PAT_CACHE.clear()
+        p = _PAT_CACHE[term] = compile_term(term)
+    return p
+
+
+def _all_groups() -> list[list[str]]:
+    from app.synonyms.runtime import runtime_groups
+
+    return SYNONYM_GROUPS + runtime_groups()
 
 
 def search_synonyms(q: str) -> list[str]:
-    """Other members of every group that has a member in ``q`` (query order)."""
-    hit: list[int] = []
-    for pat, gi in _PATTERNS:
-        if gi not in hit and pat.search(q or ""):
-            hit.append(gi)
+    """Other members of every group (code + approved DB) that has a member in ``q``."""
+    text = q or ""
+    groups = _all_groups()
+    hit = [gi for gi, g in enumerate(groups) if any(_pat(t).search(text) for t in g)]
     out: list[str] = []
     for gi in hit:
-        for t in SYNONYM_GROUPS[gi]:
-            if not _PATTERNS_BY_TERM[t].search(q) and t not in out:
+        for t in groups[gi]:
+            if not _pat(t).search(text) and t not in out:
                 out.append(t)
     return out
-
-
-_PATTERNS_BY_TERM = {t: _compile(t) for g in SYNONYM_GROUPS for t in g}
