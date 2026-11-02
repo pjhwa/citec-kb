@@ -82,3 +82,46 @@ def test_verify_group_relaxed_mode_counts_single_term_tickets():
 
 def test_verify_group_ignores_ids_outside_batch():
     assert verify_group(["OOM", "메모리 부족"], ["NOPE-1", "NOPE-2"], TEXTS) is None
+
+
+def test_verify_group_duplicate_cited_ids_count_once():
+    texts = {"T-1": "서버 OOM 발생. 메모리 부족으로 종료"}
+    assert verify_group(["OOM", "메모리 부족"], ["T-1", "T-1"], texts) is None
+
+
+def test_verify_group_case_duplicate_terms_count_as_one():
+    texts = {"T-1": "서버 OOM 발생", "T-2": "OOM killer 동작"}
+    assert verify_group(["OOM", "oom"], ["T-1", "T-2"], texts) is None
+    assert verify_group(["OOM", "oom"], ["T-1", "T-2"], texts, min_terms_per_ticket=1) is None
+
+
+def test_verify_group_relaxed_single_term_only_returns_none():
+    texts = {"T-1": "서버 OOM 발생", "T-2": "OOM killer 동작"}
+    assert verify_group(["OOM", "메모리 부족"], ["T-1", "T-2"], texts, min_terms_per_ticket=1) is None
+
+
+def test_verify_group_drops_term_seen_only_in_unverified_ticket():
+    texts = {
+        "T-1": "OOM 발생, 메모리 부족 알람",
+        "T-2": "Out of Memory 와 OOM 확인",
+        "T-3": "kernel panic 만 기록",
+    }
+    got = verify_group(["OOM", "메모리 부족", "Out of Memory", "kernel panic"], ["T-1", "T-2", "T-3"], texts)
+    assert got is not None
+    terms, verified = got
+    assert verified == ["T-1", "T-2"]
+    assert "kernel panic" not in terms
+
+
+def test_static_covers_empty_is_false():
+    assert not static_covers([])
+    assert not static_covers(["", "  "])
+
+
+def test_terms_key_ignores_empty_terms():
+    assert terms_key(["", "abc"]) == terms_key(["abc"])
+
+
+def test_mixed_term_with_only_two_hangul_chars_rejected():
+    # "k8s 장애" has just 2 Hangul chars -> rejected by the 1-2 char Korean rule
+    assert not is_valid_term("k8s 장애")

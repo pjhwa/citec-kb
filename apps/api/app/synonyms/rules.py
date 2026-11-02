@@ -45,7 +45,7 @@ def clean_terms(terms: list[str]) -> list[str]:
 
 
 def terms_key(terms: list[str]) -> str:
-    return "|".join(sorted({norm_term(t).lower() for t in terms}))
+    return "|".join(sorted({n for t in terms if (n := norm_term(t).lower())}))
 
 
 def term_present(text: str, term: str) -> bool:
@@ -67,8 +67,8 @@ def term_present(text: str, term: str) -> bool:
 
 def static_covers(terms: list[str]) -> bool:
     """True if every term already sits in one code-defined group."""
-    want = {norm_term(t).lower() for t in terms}
-    return any(want <= {norm_term(x).lower() for x in g} for g in SYNONYM_GROUPS)
+    want = {n for t in terms if (n := norm_term(t).lower())}
+    return bool(want) and any(want <= {norm_term(x).lower() for x in g} for g in SYNONYM_GROUPS)
 
 
 def verify_group(
@@ -87,6 +87,7 @@ def verify_group(
     never occur in a verified ticket are dropped, and >= 2 terms must remain.
     Returns ``(kept_terms, verified_ticket_ids)`` or None.
     """
+    terms = clean_terms(terms)
     verified: list[str] = []
     seen_terms: set[str] = set()
     for tid in dict.fromkeys(cited_ids or []):
