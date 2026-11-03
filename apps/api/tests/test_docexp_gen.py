@@ -175,3 +175,8 @@ def test_validate_accepts_api_path_keywords():
 
 def test_prompt_says_5_to_10_keywords():
     assert "5~10" in gen.SYSTEM_RULES and gen.KEYWORDS_MAX == 10
+
+
+def test_system_rules_forbid_personal_names():
+    assert "사람 이름" in gen.SYSTEM_RULES
+    assert "이메일" in gen.SYSTEM_RULES
