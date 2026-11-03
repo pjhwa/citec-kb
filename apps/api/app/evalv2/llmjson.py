@@ -16,6 +16,8 @@ def extract_json(raw: str | None) -> Any | None:
     m = _FENCE.search(text)
     if m:
         text = m.group(1).strip()
+    elif text.startswith("```"):  # opening fence never closed (e.g. cut off by max_tokens)
+        text = re.sub(r"^```[A-Za-z]*\s*", "", text)
     if not text.startswith(("{", "[")):
         starts = [i for i in (text.find("{"), text.find("[")) if i >= 0]
         if not starts:
@@ -27,5 +29,12 @@ def extract_json(raw: str | None) -> Any | None:
         text = text[i : j + 1]
     try:
         return json.loads(text)
+    except ValueError:
+        pass
+    # Unclosed fence / trailing prose containing braces: decode the first complete value only.
+    # A truncated (incomplete) object still fails here, so nothing partial is salvaged.
+    try:
+        val, _ = json.JSONDecoder().raw_decode(text)
+        return val
     except ValueError:
         return None

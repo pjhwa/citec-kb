@@ -95,3 +95,40 @@ def test_tsv_is_weighted_keywords_a_summary_c(doc_id):
         ).one()
     assert "'oom':1A" in allv and "'요약문':" in allv and allv.count("C") >= 1
     assert "A" in gv and "C" not in gv and "'서버'" not in gv
+
+
+def test_export_import_roundtrip(doc_id, tmp_path, capsys):
+    import json
+
+    from app.db.models import Document
+    from app.db.session import session_scope
+    from app.docexp import cli, store
+
+    rec = {"summary": "서버 메모리 부족", "keywords": ["OOM", "메모리 부족", "커널 로그"], "grounded": ["OOM"]}
+    store.upsert(doc_id, rec, rule="meeting", model="m", run_id="r1", content_hash="h")
+    out = tmp_path / "e.jsonl"
+    assert cli.main(["export", "--out", str(out)]) == 0
+    capsys.readouterr()
+    rows = [json.loads(x) for x in out.read_text().splitlines()]
+    assert len(rows) == 1 and rows[0]["source_type"] == "confluence_map" and rows[0]["content_hash"] == "h"
+    assert rows[0]["keywords"] == rec["keywords"] and rows[0]["run_id"] == "r1"
+
+    from app.db.models import DocExpansion
+
+    with session_scope() as s:
+        s.query(DocExpansion).delete()
+    assert cli.main(["import", "--in", str(out), "--commit"]) == 0
+    res = json.loads(capsys.readouterr().out)
+    assert res["written"] == 1
+    got = store.get(doc_id)
+    assert got["run_id"] == "import:r1" and got["source_content_hash"] == "h" and got["grounded"] == ["OOM"]
+    assert store.matches(doc_id, "OOM")
+    # hash drift -> skipped unless --ignore-hash
+    with session_scope() as s:
+        s.query(DocExpansion).delete()
+        s.query(Document).filter(Document.id == doc_id).update({"content_hash": "h2"})
+    cli.main(["import", "--in", str(out), "--commit"])
+    assert json.loads(capsys.readouterr().out)["hash_mismatch"] == 1 and store.get(doc_id) is None
+    cli.main(["import", "--in", str(out), "--commit", "--ignore-hash"])
+    capsys.readouterr()
+    assert store.get(doc_id)["source_content_hash"] == "h2"

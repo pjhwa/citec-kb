@@ -23,6 +23,7 @@ BODY_CHARS = 4000
 SUMMARY_MAX = 300
 KEYWORDS_MAX = 10
 MIN_KEYWORDS = 3
+MAX_TOKENS = 1000
 
 SYSTEM_RULES = (
     "당신은 IT 인프라 기술지원 문서 검색용 설명문 작성자입니다.\n"
@@ -73,6 +74,7 @@ def new_stats() -> dict[str, int]:
         "discarded": 0,
         "parse_fail": 0,
         "llm_error": 0,
+        "fatal": 0,
         "empty_response": 0,
         "error": 0,
         "empty_retried": 0,
@@ -137,6 +139,14 @@ def _transient(exc: Exception) -> bool:
     return isinstance(exc, LLMChatError) and ("HTTP 429" in msg or "HTTP 5" in msg)
 
 
+def _fatal(exc: Exception) -> bool:
+    """HTTP 401/402/403: credentials / quota problems that retrying cannot fix."""
+    from app.llm_chat import LLMChatError
+
+    msg = str(exc)
+    return isinstance(exc, LLMChatError) and any(f"HTTP {c}" in msg for c in (401, 402, 403))
+
+
 def expand_one(
     doc: dict[str, Any],
     *,
@@ -161,7 +171,7 @@ def expand_one(
         last_transient = False
         llm_fabrix.reset_empty_info()
         try:
-            raw = chat(messages, max_tokens=700, temperature=0.2, timeout=120.0)
+            raw = chat(messages, max_tokens=MAX_TOKENS, temperature=0.2, timeout=120.0)
         except Exception as exc:  # noqa: BLE001 — one failed document must not stop the run
             if _transient(exc) and attempt < max(0, int(empty_retries)):
                 logger.info("docexp transient LLM failure, retrying: %s", exc)
@@ -169,6 +179,10 @@ def expand_one(
                 raw = ""
                 last_transient = True
                 continue
+            if _fatal(exc):
+                logger.error("docexp fatal LLM failure: %s", exc)
+                stats["fatal"] = 1
+                return None, stats
             logger.warning("docexp LLM failure: %s", exc)
             stats["llm_error"] = 1
             return None, stats

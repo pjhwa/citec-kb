@@ -1,8 +1,9 @@
-"""CLI: python -m app.docexp.cli {count|sample|run|stats}
+"""CLI: python -m app.docexp.cli {count|sample|run|stats|export|import}
 
 stdout is exactly one JSON object; logs go to stderr.
 Exit codes: 0 ok, 2 usage / LLM backend 'none', 3 completed but some documents hit
-llm_error / parse_fail / empty_response / error
+llm_error / fatal / parse_fail / empty_response / error, 4 aborted after 3 consecutive fatal LLM
+results (HTTP 401/402/403; JSON gets "aborted")
 (error = unexpected exception while generating or storing one document).
 --out is written even when the run is interrupted. The per-document progress file
 (<out>.progress.jsonl, `run` only) is append-only and is not consulted on rerun: a dry-run
@@ -31,8 +32,10 @@ from app.docexp.selection import select_documents
 
 logger = logging.getLogger("citec.docexp")
 
-OUTCOMES = ("ok", "discarded", "parse_fail", "llm_error", "empty_response", "error")
-FAILURES = ("llm_error", "parse_fail", "empty_response", "error")
+OUTCOMES = ("ok", "discarded", "parse_fail", "llm_error", "fatal", "empty_response", "error")
+FAILURES = ("llm_error", "fatal", "parse_fail", "empty_response", "error")
+FATAL_ABORT_AFTER = 3
+EXIT_ABORTED = 4
 
 
 def _write_json(path: str, data: Any) -> None:
@@ -113,12 +116,13 @@ def _generate(
 ) -> dict[str, Any]:
     stats = gen.new_stats()
     results: list[dict[str, Any]] = []
-    total = skipped = committed = 0
+    total = skipped = committed = consecutive_fatal = 0
+    aborted: str | None = None
     chunk_size = max(workers * 4, 50)
     progress = open(progress_path, "a", encoding="utf-8") if progress_path else None
     pool = ThreadPoolExecutor(max_workers=max(workers, 1))
     try:
-        while True:
+        while aborted is None:
             chunk = list(itertools.islice(docs_iter, chunk_size))
             if not chunk:
                 break
@@ -142,6 +146,13 @@ def _generate(
                     continue
                 for k, v in st.items():
                     stats[k] = stats.get(k, 0) + v
+                consecutive_fatal = consecutive_fatal + 1 if st.get("fatal") else 0
+                if consecutive_fatal >= FATAL_ABORT_AFTER:
+                    aborted = f"{consecutive_fatal} consecutive fatal LLM errors (HTTP 401/402/403); stopped submitting"
+                    logger.error("docexp: %s", aborted)
+                    for f in futs:
+                        f.cancel()
+                    break
                 if rec is None:
                     continue
                 if commit:
@@ -169,7 +180,7 @@ def _generate(
         if out_path:
             _write_json(out_path, sorted(results, key=lambda r: r["external_id"]))
     results.sort(key=lambda r: r["external_id"])
-    return {"stats": stats, "results": results, "total": total, "skipped": skipped, "committed": committed}
+    return {"stats": stats, "results": results, "total": total, "skipped": skipped, "committed": committed, "aborted": aborted}
 
 
 def _run_common(args: argparse.Namespace, *, limit: int | None, skip_existing: bool, name: str) -> int:
@@ -192,8 +203,7 @@ def _run_common(args: argparse.Namespace, *, limit: int | None, skip_existing: b
         out_path=out,
     )
     stats = out_data["stats"]
-    _emit(
-        {
+    payload = {
             "command": name,
             "run_id": run_id,
             "model": model,
@@ -203,8 +213,12 @@ def _run_common(args: argparse.Namespace, *, limit: int | None, skip_existing: b
             "committed": out_data["committed"],
             "stats": stats,
             "out": out,
-        }
-    )
+    }
+    if out_data["aborted"]:
+        payload["aborted"] = out_data["aborted"]
+    _emit(payload)
+    if out_data["aborted"]:
+        return EXIT_ABORTED
     return 3 if any(stats.get(k, 0) for k in FAILURES) else 0
 
 
@@ -219,6 +233,116 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def cmd_stats(args: argparse.Namespace) -> int:
     _emit(store.stats())
+    return 0
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    """Stream doc_expansion (+ document identity) to JSONL; no LLM, constant memory."""
+    p = Path(args.out)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=f".{p.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            for row in store.iter_export():
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+                n += 1
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    _emit({"command": "export", "exported": n, "out": args.out})
+    return 0
+
+
+def _check_import_line(obj: Any) -> dict[str, Any] | None:
+    """Shape + gen.validate checks for one export line; None = invalid."""
+    if not isinstance(obj, dict):
+        return None
+    st, ext, summ, kws, gr = (obj.get(k) for k in ("source_type", "external_id", "summary", "keywords", "grounded"))
+    if not (isinstance(st, str) and st and isinstance(ext, str) and ext and isinstance(summ, str)):
+        return None
+    if not (isinstance(kws, list) and isinstance(gr, list)):
+        return None
+    if not all(isinstance(k, str) for k in kws) or not all(isinstance(k, str) for k in gr):
+        return None
+    if len(summ) > gen.SUMMARY_MAX or len(kws) > gen.KEYWORDS_MAX or not set(gr) <= set(kws):
+        return None
+    clean = gen.validate({"summary": summ, "keywords": kws}, None)
+    # Exported rows are already canonical: validation must neither drop nor split a keyword.
+    if clean is None or clean["keywords"] != kws or clean["summary"] != " ".join(summ.split()):
+        return None
+    return {"summary": clean["summary"], "keywords": kws, "grounded": list(gr)}
+
+
+def _iter_jsonl(path: str) -> Any:
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                yield line
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    counts = dict.fromkeys(
+        ("read", "invalid", "matched", "missing_doc", "hash_mismatch", "skipped_existing", "written", "would_write"), 0
+    )
+    batch: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+    def flush() -> None:
+        if not batch:
+            return
+        found = store.find_active_documents({(o["source_type"], o["external_id"]) for o, _ in batch})
+        cand: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
+        for obj, rec in batch:
+            doc = found.get((obj["source_type"], obj["external_id"]))
+            if doc is None:
+                counts["missing_doc"] += 1
+                continue
+            counts["matched"] += 1
+            if not args.ignore_hash and obj.get("content_hash") != doc["content_hash"]:
+                counts["hash_mismatch"] += 1
+                continue
+            cand.append((obj, rec, doc))
+        have = store.existing_ids([d["id"] for _, _, d in cand]) if args.skip_existing and cand else set()
+        for obj, rec, doc in cand:
+            if doc["id"] in have:
+                counts["skipped_existing"] += 1
+                continue
+            if not args.commit:
+                counts["would_write"] += 1
+                continue
+            try:
+                # --ignore-hash: the TARGET hash is stored, i.e. the old text is assumed equivalent
+                # (evaluation approximation only).
+                store.upsert(
+                    doc["id"], rec, rule=obj.get("rule"), model=obj.get("model"),
+                    run_id=f"import:{obj.get('run_id') or ''}", content_hash=doc["content_hash"],
+                )
+                counts["written"] += 1
+            except Exception:  # noqa: BLE001
+                logger.exception("docexp import: store failed for %s", obj.get("external_id"))
+                counts["invalid"] += 1
+        batch.clear()
+
+    for line in _iter_jsonl(args.in_path):
+        counts["read"] += 1
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            counts["invalid"] += 1
+            continue
+        rec = _check_import_line(obj)
+        if rec is None:
+            counts["invalid"] += 1
+            continue
+        batch.append((obj, rec))
+        if len(batch) >= 500:
+            flush()
+    flush()
+    _emit({"command": "import", "dry_run": not args.commit, "ignore_hash": args.ignore_hash, **counts})
     return 0
 
 
@@ -243,6 +367,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="regenerate documents that already have an expansion")
     common(p)
     p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("export")
+    p.add_argument("--out", required=True, help="JSONL output path")
+    p.set_defaults(fn=cmd_export)
+    p = sub.add_parser("import")
+    p.add_argument("--in", dest="in_path", required=True, help="JSONL produced by export")
+    p.add_argument("--ignore-hash", action="store_true", help="store the target document's hash even if the file's differs (evaluation approximation)")
+    p.add_argument("--skip-existing", action="store_true")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--dry-run", action="store_true", help="default")
+    g.add_argument("--commit", action="store_true")
+    p.set_defaults(fn=cmd_import)
     return ap
 
 

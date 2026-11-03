@@ -180,3 +180,41 @@ def test_prompt_says_5_to_10_keywords():
 def test_system_rules_forbid_personal_names():
     assert "사람 이름" in gen.SYSTEM_RULES
     assert "이메일" in gen.SYSTEM_RULES
+
+
+_J = '{\n "summary": "요약",\n "keywords": ["OOM", "메모리 부족", "커널 로그"]\n}'
+
+
+def test_parse_response_fenced_prose_and_unclosed_fence():
+    want = {"summary": "요약", "keywords": ["OOM", "메모리 부족", "커널 로그"]}
+    assert gen.parse_response(f"```json\n{_J}\n```") == want
+    assert gen.parse_response(f"```json\n{_J}\n") == want  # fence never closed, JSON complete
+    assert gen.parse_response(f"다음과 같습니다.\n{_J}\n참고: {{x}} 입니다") == want
+
+
+def test_parse_response_truncated_json_not_salvaged():
+    assert gen.parse_response('```json\n{\n "summary": "요약",\n "keywords": ["OOM", "메모') is None
+
+
+def test_max_tokens_is_1000():
+    seen = []
+
+    def chat(messages, **kw):
+        seen.append(kw["max_tokens"])
+        return '{"summary":"요약","keywords":["OOM","메모리 부족","커널 로그"]}'
+
+    gen.expand_one({"title": "t", "body_md": "b"}, chat=chat, sleep=lambda s: None)
+    assert seen == [1000]
+
+
+@pytest.mark.parametrize("code", [401, 402, 403])
+def test_fatal_http_not_retried(code):
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(1)
+        raise llm_chat.LLMChatError(f"LLM HTTP {code}: nope")
+
+    rec, st = gen.expand_one({"title": "t", "body_md": "b"}, chat=chat, sleep=lambda s: None)
+    assert rec is None and st["fatal"] == 1 and st["llm_error"] == 0 and len(calls) == 1
+    assert gen.new_stats()["fatal"] == 0

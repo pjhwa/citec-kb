@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from sqlalchemy import func, literal_column, select
+from sqlalchemy import func, literal_column, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from app.db.models import DocExpansion
+from app.db.models import DocExpansion, Document
 from app.db.session import session_scope
 
 _ID_CHUNK = 1000
@@ -132,3 +132,46 @@ def stats() -> dict[str, Any]:
         else:
             buckets["1"] += 1
     return {"count": len(rows), "by_rule": by_rule, "grounded_ratio": buckets}
+
+
+def iter_export(batch: int = 500) -> Iterable[dict[str, Any]]:
+    """Every expansion joined with its document, keyset-paged by document_id (one short session per batch)."""
+    last = ""
+    while True:
+        with session_scope() as session:
+            rows = session.execute(
+                select(
+                    DocExpansion.document_id, Document.external_id, Document.source_type, Document.title,
+                    Document.content_hash, DocExpansion.summary, DocExpansion.keywords,
+                    DocExpansion.grounded, DocExpansion.rule, DocExpansion.model, DocExpansion.run_id,
+                )
+                .join(Document, Document.id == DocExpansion.document_id)
+                .where(DocExpansion.document_id > last)
+                .order_by(DocExpansion.document_id)
+                .limit(batch)
+            ).all()
+        if not rows:
+            return
+        for r in rows:
+            yield {
+                "external_id": r.external_id, "source_type": r.source_type, "title": r.title,
+                "content_hash": r.content_hash, "summary": r.summary, "keywords": list(r.keywords or []),
+                "grounded": list(r.grounded or []), "rule": r.rule, "model": r.model, "run_id": r.run_id,
+            }
+        last = rows[-1].document_id
+
+
+def find_active_documents(keys: Iterable[tuple[str, str]]) -> dict[tuple[str, str], dict[str, Any]]:
+    """{(source_type, external_id): {id, content_hash}} for active documents."""
+    wanted = list(keys)
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    with session_scope() as session:
+        for i in range(0, len(wanted), _ID_CHUNK):
+            part = wanted[i : i + _ID_CHUNK]
+            for r in session.execute(
+                select(Document.id, Document.source_type, Document.external_id, Document.content_hash).where(
+                    tuple_(Document.source_type, Document.external_id).in_(part), Document.status == "active"
+                )
+            ):
+                out[(r.source_type, r.external_id)] = {"id": r.id, "content_hash": r.content_hash}
+    return out
