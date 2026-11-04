@@ -1852,6 +1852,12 @@ async def kb_register_failure_bucket(
     ev_warning = data.get("evidence_ref_warning")
     if ev_warning:
         lines.append(f"경고: {ev_warning}")
+    ev_note = data.get("evidence_ref_note")
+    if ev_note:
+        lines.append(f"안내: {ev_note}")
+    cb_warning = data.get("created_by_warning")
+    if cb_warning:
+        lines.append(f"경고: {cb_warning}")
     return "\n".join(lines)
 
 

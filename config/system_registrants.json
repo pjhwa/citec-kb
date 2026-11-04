@@ -1,0 +1,4 @@
+{
+  "note": "failure bucket 시스템 등록자 허용 목록. created_by 형식은 <시스템>@<판>(예: insight-ops@v1.4). 여기 있는 시스템 이름만 registrant_kind=system으로 분류된다. ToolBox 도구는 신청이 들어오면 한 줄씩 추가한다.",
+  "systems": ["insight-ops", "agent-room"]
+}

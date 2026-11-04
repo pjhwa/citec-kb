@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import threading
+from pathlib import Path
 from typing import Any, Optional
 
 from datetime import datetime, timezone
@@ -13,6 +17,7 @@ from app.db.models import Document, FailureBucket
 from app.db.session import session_scope
 from app.failure_buckets.draft import bucket_draft, compute_confidence
 from app.failure_buckets.match import rank_buckets
+from app.settings import get_settings
 from app.taxonomy import _FB_DOMAIN_TO_CORPUS_DOMAIN
 
 logger = logging.getLogger("citec.failure_buckets")
@@ -151,12 +156,79 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
 
 _DUPLICATE_SCORE_THRESHOLD = 0.75
 
+# ── system registrants (created_by = "<system>@<version>") ────────────────
+_SYSTEM_CREATED_BY_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
+# "<name>@<version-ish>": a version starts with an optional v and a digit. Used only to
+# decide whether an unlisted name@x value looks like an attempted system registrant
+# (vs. a human email such as someone@example.com, which gets no warning).
+_VERSIONISH_RE = re.compile(r"^v?\d")
+_registrants_lock = threading.Lock()
+_registrants_cache: tuple[tuple[float, int] | None, frozenset[str]] = (None, frozenset())
+
+
+def _system_registrants() -> frozenset[str]:
+    """System names from config/system_registrants.json (mtime/size cached).
+
+    A missing or malformed file yields an empty set (nobody is classified as a
+    system) — registration itself must never fail on this soft convention.
+    """
+    global _registrants_cache
+    path = Path(get_settings().config_dir) / "system_registrants.json"
+    try:
+        st = path.stat()
+        key: tuple[float, int] | None = (st.st_mtime, st.st_size)
+    except OSError:
+        return frozenset()
+    with _registrants_lock:
+        if _registrants_cache[0] == key:
+            return _registrants_cache[1]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            names = frozenset(str(n).strip() for n in (data.get("systems") or []) if str(n).strip())
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to load %s", path)
+            names = frozenset()
+        _registrants_cache = (key, names)
+        return names
+
+
+def classify_registrant(created_by: Optional[str]) -> tuple[str, Optional[str]]:
+    """Return (registrant_kind, warning). Never rejects.
+
+    system: matches `<name>@<version>` AND <name> is on the allowlist.
+    human:  everything else; a warning is added only when the value looks like an
+            attempted system registrant (bad format, or unlisted name with a
+            version-like suffix).
+    """
+    value = (created_by or "").strip()
+    if "@" not in value:
+        return "human", None
+    if not _SYSTEM_CREATED_BY_RE.match(value):
+        return "human", (
+            f"created_by='{value}'가 '<시스템>@<판>' 형식"
+            "(^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$)과 다릅니다. 시스템 등록자는 예: insight-ops@v1.4"
+        )
+    name, version = value.split("@", 1)
+    if name in _system_registrants():
+        return "system", None
+    if _VERSIONISH_RE.match(version):
+        return "human", (
+            f"created_by='{value}'의 시스템 이름 '{name}'이 허용 목록(config/system_registrants.json)에 없습니다. "
+            "KB 담당자에게 등록을 신청하세요. 현재는 사람 등록(registrant_kind=human)으로 처리됩니다."
+        )
+    return "human", None
+
 # evidence_ref soft-format check (warning only, not a rejection — see
 # multi-plugin design doc §11 "운영 마찰을 줄이기 위한 의도적 선택" and the
 # analysis doc §B-3: kept as a warning because retroactively rejecting the
 # existing legacy:pre-migration rows would be a breaking change, and because
 # new prefixes will legitimately appear as new plugins register buckets).
-_EVIDENCE_REF_PREFIXES = ("capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:")
+_EVIDENCE_REF_PREFIXES = (
+    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "agent-room:",
+)
+# Accepted without a warning, but a human may not be able to open them later
+# (insight: needs an insight-ops login; agent-room: vanishes with the room).
+_RESTRICTED_EVIDENCE_PREFIXES = ("insight:", "agent-room:")
 
 
 def create_bucket(
@@ -229,6 +301,17 @@ def create_bucket(
             f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
             f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
             "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
+        )
+
+    kind, created_by_warning = classify_registrant(created_by)
+    result["registrant_kind"] = kind
+    if created_by_warning:
+        result["created_by_warning"] = created_by_warning
+
+    if ref_check.startswith(_RESTRICTED_EVIDENCE_PREFIXES) and "confluence:" not in ref_check:
+        result["evidence_ref_note"] = (
+            "열람 제약 있음(insight:는 insight-ops 로그인 필요, agent-room:은 방 삭제 시 근거 소실). "
+            "결과 보고서를 Confluence에 올리고 confluence:<page id>를 병기하길 권장합니다."
         )
 
     return result
