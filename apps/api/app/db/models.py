@@ -722,3 +722,31 @@ class DocExpansion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class DocExpansionEmbedding(Base):
+    """Embedding of a document's expansion text (summary + keywords). Ranking signal only."""
+
+    __tablename__ = "doc_expansion_embedding"
+    __table_args__ = (
+        Index(
+            "ix_doc_expansion_embedding_hnsw",
+            "vector",
+            postgresql_using="hnsw",
+            postgresql_with={"m": 16, "ef_construction": 64},
+            postgresql_ops={"vector": "vector_cosine_ops"},
+        ),
+    )
+
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    model: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default="intfloat/multilingual-e5-base"
+    )
+    vector: Mapped[Any] = mapped_column(Vector(EMBEDDING_DIM), nullable=False)
+    # documents.content_hash the expansion text was generated from; a mismatch means stale.
+    source_content_hash: Mapped[Optional[str]] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

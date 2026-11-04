@@ -1,4 +1,4 @@
-"""CLI: python -m app.docexp.cli {count|sample|run|stats|export|import}
+"""CLI: python -m app.docexp.cli {count|sample|run|stats|export|import|embed}
 
 stdout is exactly one JSON object; logs go to stderr.
 Exit codes: 0 ok, 2 usage / LLM backend 'none', 3 completed but some documents hit
@@ -346,6 +346,14 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_embed(args: argparse.Namespace) -> int:
+    from app.docexp import embed
+
+    res = embed.embed_all(commit=args.commit, force=args.force, limit=args.limit)
+    _emit({"command": "embed", "dry_run": not args.commit, **res})
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="python -m app.docexp.cli", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -378,6 +386,11 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--dry-run", action="store_true", help="default")
     g.add_argument("--commit", action="store_true")
     p.set_defaults(fn=cmd_import)
+    p = sub.add_parser("embed")
+    p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--force", action="store_true", help="re-embed rows that already have a fresh vector")
+    p.add_argument("--commit", action="store_true", help="write to doc_expansion_embedding (default: dry run)")
+    p.set_defaults(fn=cmd_embed)
     return ap
 
 
