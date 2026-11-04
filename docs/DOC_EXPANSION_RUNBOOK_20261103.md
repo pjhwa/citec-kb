@@ -131,3 +131,9 @@ docker compose exec -T api python -m app.docexp.cli import --in /tmp/docexp-expo
 - vocab 정답의 상당수는 `tech_repo`/`incident_reports`라 대상 규칙(제목 정보량이 낮은 `confluence_map`)에 해당하지 않는다. 규칙은 평가셋에 맞춰 바꾸지 않는다.
 - 결정: `SEARCH_DOC_EXPANSION`은 off로 둔다. 운영에는 `doc_expansion` 테이블만 있고 검색 동작은 바뀌지 않는다. 후속 후보: 확장문의 벡터 경로 반영(임베딩 재생성 필요), 확장 분기만 OR 계열 매칭으로 완화(오탐 위험).
 - 정리가 필요하면 §6의 롤백(`alembic downgrade 20261102_0017`)으로 테이블을 제거한다.
+
+### 9.1 추가 실험: 확장 분기 OR 매칭 (2026-11-04, 코드는 되돌림)
+
+- 변경: 확장 분기에서 질의 토큰(최대 8개)을 `plainto_tsquery`들의 OR(`||`)로 묶은 쿼리 하나를 사용(`all` 모드). 기존 분기는 앞 4개 변형(대부분 단일 토큰)을 개별 실행하므로 이미 일부 OR이다.
+- 결과(`artifacts/citec-eval-v2/v2all-or-all.json`): recall@10 변화 없음(pointer 0.125, vocab 0.368, real 1.00). MRR은 pointer -0.062, vocab -0.035, real -0.091로 하락(구간이 0을 포함). 1위였던 정답이 밀림(r-436 1→8, s-vocab-007 1→3).
+- 결론: 렉시컬 경로에서 매칭 방식을 바꿔도 recall이 오르지 않는다. 사용하지 않을 분기라 코드는 커밋하지 않았다. 남은 후보는 확장문의 벡터 경로 반영(임베딩 재생성 필요)이다.
