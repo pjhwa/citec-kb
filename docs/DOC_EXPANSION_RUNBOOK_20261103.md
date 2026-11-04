@@ -137,3 +137,10 @@ docker compose exec -T api python -m app.docexp.cli import --in /tmp/docexp-expo
 - 변경: 확장 분기에서 질의 토큰(최대 8개)을 `plainto_tsquery`들의 OR(`||`)로 묶은 쿼리 하나를 사용(`all` 모드). 기존 분기는 앞 4개 변형(대부분 단일 토큰)을 개별 실행하므로 이미 일부 OR이다.
 - 결과(`artifacts/citec-eval-v2/v2all-or-all.json`): recall@10 변화 없음(pointer 0.125, vocab 0.368, real 1.00). MRR은 pointer -0.062, vocab -0.035, real -0.091로 하락(구간이 0을 포함). 1위였던 정답이 밀림(r-436 1→8, s-vocab-007 1→3).
 - 결론: 렉시컬 경로에서 매칭 방식을 바꿔도 recall이 오르지 않는다. 사용하지 않을 분기라 코드는 커밋하지 않았다. 남은 후보는 확장문의 벡터 경로 반영(임베딩 재생성 필요)이다.
+
+### 9.2 추가 실험: 확장문 임베딩(벡터 경로) (2026-11-04)
+
+- 구현: `doc_expansion_embedding`(마이그레이션 0019), `docexp embed`, `SEARCH_DOC_EXPANSION_VEC=on` + 가중치. 확장 벡터 top-N의 대표 청크를 RRF 세 번째 리스트로 합쳤다. 개발 서버에서 15,335건 임베딩(약 2시간).
+- 결과(46건, `artifacts/citec-eval-v2/v2all-vec-{0.5,1.0}.json`): recall@10 변화 없음(pointer 0.125, vocab 0.368, real 1.00). MRR은 pointer -0.062, real -0.044(0.5)/-0.055(1.0), vocab 0/-0.035로 하락(구간은 0 포함). 1위였던 정답이 밀림(r-436 1→6~8, s-pointer-013 1→2). p50 지연은 9.2~9.8초로 기능 off 측정(8.4초)보다 약간 높았다.
+- 판정: 사전에 정한 성공 기준(pointer/vocab recall@10 +0.10 또는 새로 top-10에 진입, v2_real MRR 하락 없음) 미달. 실패.
+- 종합: 렉시컬(AND/OR)과 벡터 모두 확장문으로 recall을 올리지 못했다. 병목은 확장 신호가 아니라 정답 문서가 후보 풀이나 상위 10위에 들어오지 못하는 다른 지점일 가능성이 크다.
