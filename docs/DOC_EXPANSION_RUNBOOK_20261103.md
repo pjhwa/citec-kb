@@ -121,3 +121,13 @@ docker compose exec -T api python -m app.docexp.cli import --in /tmp/docexp-expo
 `--ignore-hash`는 개발·운영 본문이 조금 달라도 외부 ID가 같으면 가져온다(평가용 근사). 개발에 남아 있는 OpenRouter 생성분(약 2.6천 건)은 `--skip-existing`을 주지 않으면 운영 결과로 덮어쓴다.
 
 이후 측정은 §5와 같다.
+
+## 9. 측정 결과 (2026-11-04): 효과 없음, 운영 미적용
+
+- 조건: 개발 서버, 운영 Fabrix로 생성한 확장 20,669건 중 개발에 있는 문서 15,313건을 `import --ignore-hash`로 적용. 평가셋 `evalset-v2-all.json`(46건). 결과 파일 `artifacts/citec-eval-v2/v2all-{off,grounded,all}.json`.
+- recall@10은 `off`/`grounded`/`all` 모두 동일: v2_pointer 0.125, v2_vocab 0.368, v2_real 1.00. 게이트는 통과했으나 이는 회귀가 없다는 뜻이며 개선은 없다.
+- v2_real MRR 0.731 → 0.679(grounded) / 0.675(all). 구간이 0을 포함해 통계적으로 불분명하나 1위 정답 일부가 밀렸다. p50 지연은 모드와 무관하게 비슷했다.
+- 원인: 정답 문서에 확장 데이터가 있어도(pointer 4건 확인, 해시 일치, 내용 양호) 효과가 없다. 검색이 `plainto_tsquery("simple")`로 질의 단어를 모두 AND로 맞추고 형태소 분석이 없어, 단어 하나(예: "콘솔" vs "console", "바닥·넘어진" vs "전도")가 어긋나면 매칭이 끊긴다. 합성 질의가 정답 단어를 피하도록 만들어져 어휘 간극이 크다.
+- vocab 정답의 상당수는 `tech_repo`/`incident_reports`라 대상 규칙(제목 정보량이 낮은 `confluence_map`)에 해당하지 않는다. 규칙은 평가셋에 맞춰 바꾸지 않는다.
+- 결정: `SEARCH_DOC_EXPANSION`은 off로 둔다. 운영에는 `doc_expansion` 테이블만 있고 검색 동작은 바뀌지 않는다. 후속 후보: 확장문의 벡터 경로 반영(임베딩 재생성 필요), 확장 분기만 OR 계열 매칭으로 완화(오탐 위험).
+- 정리가 필요하면 §6의 롤백(`alembic downgrade 20261102_0017`)으로 테이블을 제거한다.
