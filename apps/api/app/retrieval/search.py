@@ -12,7 +12,7 @@ from sqlalchemy import Select, false, func, select, text, true
 from sqlalchemy.dialects.postgresql import array as pg_array
 from sqlalchemy.orm import Session, aliased
 
-from app.db.models import Chunk, DocExpansion, DocExpansionEmbedding, Document, Embedding
+from app.db.models import Chunk, DocExpansion, Document, Embedding
 from app.retrieval.identifiers import check_query_identifiers
 from app.retrieval.fusion import (
     RankedHit,
@@ -760,59 +760,6 @@ def fts_search(session: Session, req: SearchRequest) -> list[str]:
     return ordered[: req.fts_limit]
 
 
-def _expansion_vec_on() -> bool:
-    """SEARCH_DOC_EXPANSION_VEC: off (default) | on."""
-    return (os.environ.get("SEARCH_DOC_EXPANSION_VEC") or "off").strip().lower() == "on"
-
-
-def _expansion_vec_weight() -> float:
-    """SEARCH_DOC_EXPANSION_VEC_WEIGHT (default 0.5); invalid -> 0.5, <= 0 -> 0 (list off)."""
-    try:
-        w = float(os.environ.get("SEARCH_DOC_EXPANSION_VEC_WEIGHT", "0.5"))
-    except ValueError:
-        w = 0.5
-    return max(w, 0.0)
-
-
-def expansion_vector_search(
-    session: Session,
-    req: SearchRequest,
-    query_vector: Optional[list[float]],
-) -> list[str]:
-    """Representative chunk ids of documents whose expansion vector is closest to the query.
-
-    Ranking signal only (nothing from doc_expansion is returned). The top vec_limit
-    expansion rows are picked first (HNSW), then the lowest-ordinal active chunk of
-    each is resolved. Stale rows (source_content_hash != documents.content_hash)
-    are ignored.
-    """
-    if not query_vector:
-        return []
-    try:
-        session.execute(text("SET LOCAL hnsw.iterative_scan = relaxed_order"))
-    except Exception:  # noqa: BLE001
-        logger.debug("hnsw.iterative_scan not available", exc_info=True)
-    c2 = aliased(Chunk)
-    dist = DocExpansionEmbedding.vector.cosine_distance(query_vector)
-    inner = (
-        select(DocExpansionEmbedding.document_id.label("did"), dist.label("d"))
-        .select_from(DocExpansionEmbedding)
-        .join(Document, Document.id == DocExpansionEmbedding.document_id)
-        .where(DocExpansionEmbedding.source_content_hash == Document.content_hash)
-    )
-    inner = _apply_doc_filters(inner, req.filters).order_by(dist, DocExpansionEmbedding.document_id)
-    m = inner.limit(req.vec_limit).subquery("m")
-    rep = (
-        select(c2.id.label("id"))
-        .where(c2.document_id == m.c.did, c2.is_active.is_(True))
-        .order_by(c2.ordinal, c2.id)
-        .limit(1)
-        .lateral("rep")
-    )
-    stmt = select(rep.c.id).select_from(m).join(rep, true()).order_by(m.c.d, m.c.did)
-    return list(session.scalars(stmt).all())
-
-
 def vector_search(
     session: Session,
     req: SearchRequest,
@@ -925,17 +872,10 @@ def hybrid_search(
         fts_w = 1.35
         vec_w = 0.55 if vec_ids else 0.0
 
-    lists, weights = [fts_ids, vec_ids], [fts_w, vec_w]
-    exp_w = _expansion_vec_weight()
-    if _expansion_vec_on() and exp_w > 0:
-        exp_ids = expansion_vector_search(session, req, query_vector)
-        if exp_ids:
-            lists.append(exp_ids)
-            weights.append(exp_w)
     fused = reciprocal_rank_fusion(
-        lists,
+        [fts_ids, vec_ids],
         k=req.rrf_k,
-        weights=weights,
+        weights=[fts_w, vec_w],
     )
     if not fused and fts_ids:
         fused = {cid: 1.0 / (req.rrf_k + i) for i, cid in enumerate(fts_ids, start=1)}
