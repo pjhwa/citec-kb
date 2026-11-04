@@ -70,6 +70,7 @@ def normalize_match_filters(
 STATUS_ACTIVE = "active"
 STATUS_RETIRED = "retired"
 STATUS_TEST = "test"
+TEST_SUFFIX = "-test"
 
 # Retire reasons shorter than this are rejected — a retire without a stated
 # reason can't be audited later.
@@ -231,6 +232,36 @@ _EVIDENCE_REF_PREFIXES = (
 _RESTRICTED_EVIDENCE_PREFIXES = ("insight:", "agent-room:")
 
 
+def _annotate_registration(
+    result: dict[str, Any], *, fb_domain: str, evidence_ref: str, created_by: Optional[str]
+) -> None:
+    """Soft-convention feedback on a registration response (never rejects)."""
+    if fb_domain not in _known_fb_domains():
+        result["fb_domain_warning"] = (
+            f"fb_domain='{fb_domain}'는 references/failure-bucket-domains.md에 없는 새 값입니다. "
+            "오타가 아니라면 문서에 추가해 주세요."
+        )
+
+    ref_check = evidence_ref.strip().lower()
+    if not ref_check.startswith(_EVIDENCE_REF_PREFIXES):
+        result["evidence_ref_warning"] = (
+            f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
+            f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
+            "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
+        )
+
+    kind, created_by_warning = classify_registrant(created_by)
+    result["registrant_kind"] = kind
+    if created_by_warning:
+        result["created_by_warning"] = created_by_warning
+
+    if ref_check.startswith(_RESTRICTED_EVIDENCE_PREFIXES) and "confluence:" not in ref_check:
+        result["evidence_ref_note"] = (
+            "열람 제약 있음(insight:는 insight-ops 로그인 필요, agent-room:은 방 삭제 시 근거 소실). "
+            "결과 보고서를 Confluence에 올리고 confluence:<page id>를 병기하길 권장합니다."
+        )
+
+
 def create_bucket(
     *,
     bucket_name: str,
@@ -248,6 +279,36 @@ def create_bucket(
 ) -> dict[str, Any]:
     fb_domain = fb_domain.strip().lower()
     environment = (environment or "").strip().lower() or None
+    # Trial registration: created_by ending in "-test" (e.g. sos-analyzer@v0.1-test) is stored
+    # as status="test" — hidden from list/match/search/graph/aggregates like a retired row.
+    if status == STATUS_ACTIVE and (created_by or "").strip().lower().endswith(TEST_SUFFIX):
+        status = STATUS_TEST
+
+    # Idempotent registration: same created_by + evidence_ref + bucket_name among live rows
+    # (same status class) returns the existing row instead of a duplicate, so a retry after a
+    # network timeout is safe. Best-effort (no DB unique constraint: legacy rows may collide).
+    if created_by:
+        with session_scope() as session:
+            existing_id = session.scalar(
+                select(FailureBucket.id)
+                .where(
+                    FailureBucket.created_by == created_by,
+                    FailureBucket.evidence_ref == evidence_ref.strip(),
+                    FailureBucket.bucket_name == bucket_name.strip(),
+                    FailureBucket.status == status,
+                )
+                .order_by(FailureBucket.created_at)
+                .limit(1)
+            )
+        if existing_id:
+            existing = get_bucket(existing_id)
+            if existing is not None:
+                existing["already_registered"] = True
+                _annotate_registration(
+                    existing, fb_domain=fb_domain, evidence_ref=evidence_ref, created_by=created_by
+                )
+                return existing
+
     dup_candidates = match_buckets(
         observed_signals=discriminating_signals,
         symptom=symptom,
@@ -280,6 +341,7 @@ def create_bucket(
     if result is None:
         raise RuntimeError(f"failure_bucket {bucket_id} vanished after create")
     result["index"] = index
+    result["already_registered"] = False
 
     top_dup = dup_candidates[0] if dup_candidates else None
     if top_dup and top_dup.get("confidence", 0.0) >= _DUPLICATE_SCORE_THRESHOLD:
@@ -289,30 +351,7 @@ def create_bucket(
             "confidence": top_dup.get("confidence"),
         }
 
-    if fb_domain not in _known_fb_domains():
-        result["fb_domain_warning"] = (
-            f"fb_domain='{fb_domain}'는 references/failure-bucket-domains.md에 없는 새 값입니다. "
-            "오타가 아니라면 문서에 추가해 주세요."
-        )
-
-    ref_check = evidence_ref.strip().lower()
-    if not ref_check.startswith(_EVIDENCE_REF_PREFIXES):
-        result["evidence_ref_warning"] = (
-            f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
-            f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
-            "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
-        )
-
-    kind, created_by_warning = classify_registrant(created_by)
-    result["registrant_kind"] = kind
-    if created_by_warning:
-        result["created_by_warning"] = created_by_warning
-
-    if ref_check.startswith(_RESTRICTED_EVIDENCE_PREFIXES) and "confluence:" not in ref_check:
-        result["evidence_ref_note"] = (
-            "열람 제약 있음(insight:는 insight-ops 로그인 필요, agent-room:은 방 삭제 시 근거 소실). "
-            "결과 보고서를 Confluence에 올리고 confluence:<page id>를 병기하길 권장합니다."
-        )
+    _annotate_registration(result, fb_domain=fb_domain, evidence_ref=evidence_ref, created_by=created_by)
 
     return result
 
