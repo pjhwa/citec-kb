@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+from datetime import datetime, timezone
+
 from sqlalchemy import func, select
 
-from app.db.models import FailureBucket
+from app.db.models import Document, FailureBucket
 from app.db.session import session_scope
 from app.failure_buckets.draft import bucket_draft, compute_confidence
 from app.failure_buckets.match import rank_buckets
@@ -60,9 +62,26 @@ def normalize_match_filters(
     return dom, env
 
 
+STATUS_ACTIVE = "active"
+STATUS_RETIRED = "retired"
+STATUS_TEST = "test"
+
+# Retire reasons shorter than this are rejected — a retire without a stated
+# reason can't be audited later.
+MIN_RETIRE_REASON_LEN = 8
+
+
+class BucketRetiredError(Exception):
+    """Raised when a write (refine) targets a retired bucket."""
+
+
 def _to_dict(row: FailureBucket) -> dict[str, Any]:
     return {
         "id": row.id,
+        "status": row.status or STATUS_ACTIVE,
+        "retired_at": row.retired_at.isoformat() if row.retired_at else None,
+        "retired_by": row.retired_by,
+        "retire_reason": row.retire_reason,
         "document_id": row.document_id,
         "bucket_name": row.bucket_name,
         "fb_domain": row.fb_domain,
@@ -108,6 +127,14 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
         if row and row.document_id != doc_id:
             row.document_id = doc_id
             session.flush()
+        # kb_search/kb_query/kb_ask only return Document.status == 'active', and the
+        # ingest upsert revives 'archived' docs. So a non-active bucket (retired/test)
+        # must have its mirror re-archived after every upsert.
+        if row and (row.status or STATUS_ACTIVE) != STATUS_ACTIVE:
+            doc = session.get(Document, doc_id)
+            if doc is not None:
+                doc.status = "archived"
+                session.flush()
 
     try:
         emb = embed_pending_chunks(document_id=doc_id, batch_size=16)
@@ -145,6 +172,7 @@ def create_bucket(
     protocol: Optional[str] = None,
     environment: Optional[str] = None,
     created_by: Optional[str] = None,
+    status: str = STATUS_ACTIVE,
 ) -> dict[str, Any]:
     fb_domain = fb_domain.strip().lower()
     environment = (environment or "").strip().lower() or None
@@ -169,6 +197,7 @@ def create_bucket(
             root_cause=root_cause or "",
             recommended_action=recommended_action or "",
             created_by=created_by,
+            status=status,
         )
         session.add(row)
         session.flush()
@@ -219,11 +248,14 @@ def list_buckets(
     min_confidence: float = 0.0,
     limit: int = 20,
     offset: int = 0,
+    include_retired: bool = False,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     with session_scope() as session:
         stmt = select(FailureBucket).order_by(FailureBucket.created_at.desc())
+        if not include_retired:
+            stmt = stmt.where(FailureBucket.status == STATUS_ACTIVE)
         if fb_domain:
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
@@ -256,6 +288,8 @@ def refine_bucket(
         row = session.get(FailureBucket, bucket_id)
         if not row:
             raise KeyError(bucket_id)
+        if row.status == STATUS_RETIRED:
+            raise BucketRetiredError(bucket_id)
 
         if add_signal and add_signal not in (row.discriminating_signals or []):
             row.discriminating_signals = [*(row.discriminating_signals or []), add_signal]
@@ -301,7 +335,7 @@ def match_buckets(
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
     with session_scope() as session:
-        stmt = select(FailureBucket)
+        stmt = select(FailureBucket).where(FailureBucket.status == STATUS_ACTIVE)
         if fb_domain:
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
@@ -320,3 +354,85 @@ def match_buckets(
         rows = list(session.scalars(stmt).all())
         dicts = [_to_dict(r) for r in rows]
     return rank_buckets(observed_signals, symptom, dicts, top_k=top_k)
+
+
+def _set_mirror_status(session, row: FailureBucket, status: str) -> None:
+    if row.document_id:
+        doc = session.get(Document, row.document_id)
+        if doc is not None:
+            doc.status = status
+
+
+def retire_bucket(bucket_id: str, *, reason: str, retired_by: Optional[str]) -> dict[str, Any]:
+    """Soft-hide a bucket: row kept, hidden from list/match/search/graph/aggregates.
+
+    Search exclusion reuses Document.status='archived' (the mirror document), which
+    every search path already filters. Idempotent: an already-retired bucket is
+    returned unchanged (original reason/actor preserved).
+    """
+    reason = (reason or "").strip()
+    if len(reason) < MIN_RETIRE_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_RETIRE_REASON_LEN} characters")
+    with session_scope() as session:
+        row = session.get(FailureBucket, bucket_id)
+        if not row:
+            raise KeyError(bucket_id)
+        if row.status != STATUS_RETIRED:
+            row.status = STATUS_RETIRED
+            row.retired_at = datetime.now(timezone.utc)
+            row.retired_by = retired_by
+            row.retire_reason = reason
+            _set_mirror_status(session, row, "archived")
+            session.flush()
+    result = get_bucket(bucket_id)
+    assert result is not None
+    return result
+
+
+def restore_bucket(bucket_id: str) -> dict[str, Any]:
+    """Undo retire (or promote a -test row): status=active, mirror searchable again."""
+    with session_scope() as session:
+        row = session.get(FailureBucket, bucket_id)
+        if not row:
+            raise KeyError(bucket_id)
+        was_active = row.status == STATUS_ACTIVE
+        row.status = STATUS_ACTIVE
+        row.retired_at = None
+        row.retired_by = None
+        row.retire_reason = None
+        _set_mirror_status(session, row, "active")
+        session.flush()
+    if not was_active:
+        # Re-run the index so a mirror missing its chunks/embeddings is rebuilt;
+        # cheap no-op when the content hash is unchanged.
+        _index_bucket(bucket_id)
+    result = get_bucket(bucket_id)
+    assert result is not None
+    return result
+
+
+def retire_batch(
+    *, created_by_prefix: str, reason: str, retired_by: Optional[str], dry_run: bool = True
+) -> dict[str, Any]:
+    """Retire every non-retired bucket whose created_by starts with the prefix."""
+    prefix = (created_by_prefix or "").strip()
+    if len(prefix) < 3:
+        raise ValueError("created_by_prefix must be at least 3 characters")
+    reason = (reason or "").strip()
+    if len(reason) < MIN_RETIRE_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_RETIRE_REASON_LEN} characters")
+    like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with session_scope() as session:
+        ids = [
+            r[0]
+            for r in session.execute(
+                select(FailureBucket.id)
+                .where(FailureBucket.created_by.like(like, escape="\\"))
+                .where(FailureBucket.status != STATUS_RETIRED)
+                .order_by(FailureBucket.created_at)
+            ).all()
+        ]
+    if not dry_run:
+        for bid in ids:
+            retire_bucket(bid, reason=reason, retired_by=retired_by)
+    return {"dry_run": dry_run, "matched": len(ids), "ids": ids, "retired": 0 if dry_run else len(ids)}

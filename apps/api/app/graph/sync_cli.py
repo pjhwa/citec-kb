@@ -125,7 +125,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.source_ids
             else [row[0] for row in session.execute(select(Document.id)).all()]
         )
-        bucket_ids = [row[0] for row in session.execute(select(FailureBucket.id)).all()]
+        bucket_ids = [
+            row[0]
+            for row in session.execute(select(FailureBucket.id).where(FailureBucket.status == "active")).all()
+        ]
 
     if args.dry_run:
         print(json.dumps({"documents": len(doc_ids), "failure_buckets": len(bucket_ids)}))
@@ -209,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
 
             all_buckets: list[dict] = []
             with session_scope() as session:
-                for b in session.scalars(select(FailureBucket)).all():
+                for b in session.scalars(select(FailureBucket).where(FailureBucket.status == "active")).all():
                     all_buckets.append(
                         {
                             "id": b.id,

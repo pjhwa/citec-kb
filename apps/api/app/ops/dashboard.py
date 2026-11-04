@@ -327,15 +327,27 @@ def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
 
     rows = list(
         session.execute(
-            select(FailureBucket).order_by(FailureBucket.updated_at.desc()).limit(limit)
+            select(FailureBucket)
+            .where(FailureBucket.status == "active")
+            .order_by(FailureBucket.updated_at.desc())
+            .limit(limit)
         ).scalars()
     )
     domain_counts = dict(
         session.execute(
-            select(FailureBucket.fb_domain, func.count()).group_by(FailureBucket.fb_domain)
+            select(FailureBucket.fb_domain, func.count())
+            .where(FailureBucket.status == "active")
+            .group_by(FailureBucket.fb_domain)
+        ).all()
+    )
+    status_counts = dict(
+        session.execute(
+            select(FailureBucket.status, func.count()).group_by(FailureBucket.status)
         ).all()
     )
     return {
+        "retired_count": int(status_counts.get("retired", 0)),
+        "test_count": int(status_counts.get("test", 0)),
         "by_domain": {k: int(v) for k, v in domain_counts.items()},
         "recent": [
             {
