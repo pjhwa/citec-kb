@@ -74,7 +74,7 @@ def post_failure_bucket(
         raise HTTPException(status_code=400, detail="fb_domain required")
     if not body.evidence_ref.strip():
         raise HTTPException(status_code=400, detail="evidence_ref required")
-    return create_bucket(
+    result = create_bucket(
         bucket_name=body.bucket_name,
         fb_domain=body.fb_domain,
         symptom=body.symptom,
@@ -87,6 +87,15 @@ def post_failure_bucket(
         environment=body.environment,
         created_by=body.created_by or principal.name,
     )
+    # Auth on + API-key caller: the token name is the authenticated identity. A body
+    # created_by that differs is allowed (not rejected) but flagged.
+    if principal.auth_via == "apikey" and body.created_by and body.created_by != principal.name:
+        note = (
+            f"created_by='{body.created_by}'가 인증된 토큰 이름('{principal.name}')과 다릅니다. "
+            "토큰 이름과 같은 값을 쓰세요."
+        )
+        result["created_by_warning"] = f"{result['created_by_warning']} / {note}" if result.get("created_by_warning") else note
+    return result
 
 
 @router.get("/failure-buckets")

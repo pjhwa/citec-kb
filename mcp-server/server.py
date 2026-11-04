@@ -26,6 +26,9 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
+# Optional X-API-Key (system-registrant token, see docs/AUTH_ENABLEMENT.md). Unset → no header
+# is sent, which keeps AUTH_MODE=off deployments unchanged.
+CITEC_KB_API_KEY = os.environ.get("CITEC_KB_API_KEY", "").strip()
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -43,6 +46,8 @@ def _headers(tool: Optional[str] = None) -> dict[str, str]:
         h["X-Citec-Tool"] = tool
     if CITEC_KB_TOKEN:
         h["Authorization"] = f"Bearer {CITEC_KB_TOKEN}"
+    if CITEC_KB_API_KEY:
+        h["X-API-Key"] = CITEC_KB_API_KEY
     return h
 
 
