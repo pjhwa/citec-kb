@@ -237,10 +237,15 @@ verdict: `helpful` | `not_helpful` | `resolved` | `failed` | `edited`
 | Method | Path | 설명 |
 |--------|------|------|
 | POST | `/v1/failure-buckets` | 신규 버킷 등록 (bucket_name, symptom, discriminating_signals, counter_signals, root_cause, recommended_action, **fb_domain**(필수), **evidence_ref**(필수), protocol, created_by) — 즉시 색인. 응답에 `possible_duplicate_of`(선택) 포함 가능 |
-| GET | `/v1/failure-buckets` | 목록 (**fb_domain**, protocol, min_confidence, limit, offset 필터) |
-| GET | `/v1/failure-buckets/{id}` | 단건 상세 |
+| GET | `/v1/failure-buckets` | 목록 (**fb_domain**, protocol, min_confidence, limit, offset 필터). **기본으로 활성(`status=active`)만** — `include_retired=true`면 retired·`-test`(`status=test`) 포함 |
+| GET | `/v1/failure-buckets/{id}` | 단건 상세. retire된 건도 조회되며 `status`, `retired_at`, `retired_by`, `retire_reason` 포함 |
 | POST | `/v1/failure-buckets/{id}/refine` | 신호 추가 + 확인(confirm=true)/반박(confirm=false) — 신뢰도 자동 재계산 |
-| POST | `/v1/failure-buckets/match` | observed_signals[] + symptom + **fb_domain**(선택) → 후보 버킷 순위 |
+| POST | `/v1/failure-buckets/match` | observed_signals[] + symptom + **fb_domain**(선택) → 후보 버킷 순위. 활성 버킷만 대상 |
+| POST | `/v1/failure-buckets/{id}/retire` | 숨김(삭제 아님). 본문 `{reason}` 8자 이상. 롤 `senior`/`admin`. 멱등 |
+| POST | `/v1/failure-buckets/{id}/restore` | retire 복구(또는 `-test` 승격). 롤 `senior`/`admin`. 멱등 |
+| POST | `/v1/failure-buckets/retire-batch` | `{created_by_prefix(3자+), reason, dry_run=true}` — 시험 방 일괄 정리. 롤 `admin` |
+
+등록 응답에는 `status`, `registrant_kind`, `already_registered`와 (해당 시) `possible_duplicate_of`, `created_by_warning`, `evidence_ref_warning`, `evidence_ref_note`가 붙는다. `created_by`가 `-test`로 끝나면 `status="test"`로 저장되어 목록·매칭·검색에서 제외된다. 쓰기 호출은 `AUTH_MODE`가 켜지면 `X-API-Key`가 필요하다(현재 off — [AUTH_ENABLEMENT.md](./AUTH_ENABLEMENT.md)). ToolBox 도구 연동: [FAILURE_BUCKET_TOOLBOX_INTEGRATION.md](./FAILURE_BUCKET_TOOLBOX_INTEGRATION.md).
 
 > `source_type=failure_bucket`은 `data/raw/` 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.
 > `fb_domain`은 플러그인/진단 영역 파셋(`network`/`cluster`/`windows`, …) 이며 코퍼스 전역
@@ -273,6 +278,8 @@ docker compose up -d --build mcp   # http://localhost:8577
 | `kb_match_failure_bucket` | `POST /v1/failure-buckets/match` |
 | `kb_list_failure_buckets` | `GET /v1/failure-buckets` |
 | `kb_get_failure_bucket` | `GET /v1/failure-buckets/{id}` |
+| `kb_retire_failure_bucket` | `POST /v1/failure-buckets/{id}/retire` |
+| `kb_restore_failure_bucket` | `POST /v1/failure-buckets/{id}/restore` |
 
 Claude Desktop 예시: `mcp-server/claude_desktop_config.example.json`
 

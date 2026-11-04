@@ -73,7 +73,7 @@ citec-kb MCP가 연결돼 있는지 불확실하면 `kb_health()`로 먼저 확�
 | 특정 티켓 CITECTS-#### | `kb_ticket` |
 | 공수/비용 추정 | `kb_capacity_estimate` |
 | CI-TEC 11개 도메인 반복장애/커버리지 갭 | `kb_citec_domain_catalog`(먼저) → `kb_citec_recurring_patterns` / `kb_citec_failure_bucket_coverage` |
-| 진단 패턴(네트워크/클러스터 등) 매칭·등록 | `kb_match_failure_bucket` → 없으면 `kb_register_failure_bucket`, 맞았으면 `kb_refine_failure_bucket(confirm=True)` |
+| 진단 패턴(네트워크/클러스터 등) 매칭·등록 | `kb_match_failure_bucket` → 없으면 `kb_register_failure_bucket`, 맞았으면 `kb_refine_failure_bucket(confirm=True)` (등록 응답에 `possible_duplicate_of`가 오면 재등록 말고 refine). 잘못 등록했으면 새로 덮지 말고 `kb_retire_failure_bucket`(숨김, `kb_restore_failure_bucket`으로 복구) |
 | 1차 후보를 찾은 뒤 연관 컴포넌트/문서/과거 장애를 더 깊이 | `kb_graph_explore`(검색 대체재 아님 — 이 표의 다른 도구로 1차 후보를 먼저 찾은 다음 단계로만 쓸 것) |
 | 뭘 써야 할지 모름 | `kb_tools_help` |
 

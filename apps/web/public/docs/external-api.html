@@ -521,12 +521,12 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td>GET</td>
 <td><code>/v1/failure-buckets</code></td>
-<td>목록 (<strong>fb_domain</strong>, protocol, min_confidence, limit, offset 필터)</td>
+<td>목록 (<strong>fb_domain</strong>, protocol, min_confidence, limit, offset 필터). <strong>기본으로 활성(<code>status=active</code>)만</strong> — <code>include_retired=true</code>면 retired·<code>-test</code>(<code>status=test</code>) 포함</td>
 </tr>
 <tr>
 <td>GET</td>
 <td><code>/v1/failure-buckets/{id}</code></td>
-<td>단건 상세</td>
+<td>단건 상세. retire된 건도 조회되며 <code>status</code>, <code>retired_at</code>, <code>retired_by</code>, <code>retire_reason</code> 포함</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -536,10 +536,26 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td>POST</td>
 <td><code>/v1/failure-buckets/match</code></td>
-<td>observed_signals[] + symptom + <strong>fb_domain</strong>(선택) → 후보 버킷 순위</td>
+<td>observed_signals[] + symptom + <strong>fb_domain</strong>(선택) → 후보 버킷 순위. 활성 버킷만 대상</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets/{id}/retire</code></td>
+<td>숨김(삭제 아님). 본문 <code>{reason}</code> 8자 이상. 롤 <code>senior</code>/<code>admin</code>. 멱등</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets/{id}/restore</code></td>
+<td>retire 복구(또는 <code>-test</code> 승격). 롤 <code>senior</code>/<code>admin</code>. 멱등</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/failure-buckets/retire-batch</code></td>
+<td><code>{created_by_prefix(3자+), reason, dry_run=true}</code> — 시험 방 일괄 정리. 롤 <code>admin</code></td>
 </tr>
 </tbody>
 </table></div>
+<p>등록 응답에는 <code>status</code>, <code>registrant_kind</code>, <code>already_registered</code>와 (해당 시) <code>possible_duplicate_of</code>, <code>created_by_warning</code>, <code>evidence_ref_warning</code>, <code>evidence_ref_note</code>가 붙는다. <code>created_by</code>가 <code>-test</code>로 끝나면 <code>status="test"</code>로 저장되어 목록·매칭·검색에서 제외된다. 쓰기 호출은 <code>AUTH_MODE</code>가 켜지면 <code>X-API-Key</code>가 필요하다(현재 off — <a href="./AUTH_ENABLEMENT.md">AUTH_ENABLEMENT.md</a>). ToolBox 도구 연동: <a href="./FAILURE_BUCKET_TOOLBOX_INTEGRATION.md">FAILURE_BUCKET_TOOLBOX_INTEGRATION.md</a>.</p>
 <blockquote>
 <p><code>source_type=failure_bucket</code>은 <code>data/raw/</code> 파일 스캔 대상이 아니라 API/MCP로 실시간 등재되는 카테고리입니다.<br>
 <code>fb_domain</code>은 플러그인/진단 영역 파셋(<code>network</code>/<code>cluster</code>/<code>windows</code>, …) 이며 코퍼스 전역<br>
@@ -607,6 +623,14 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <tr>
 <td><code>kb_get_failure_bucket</code></td>
 <td><code>GET /v1/failure-buckets/{id}</code></td>
+</tr>
+<tr>
+<td><code>kb_retire_failure_bucket</code></td>
+<td><code>POST /v1/failure-buckets/{id}/retire</code></td>
+</tr>
+<tr>
+<td><code>kb_restore_failure_bucket</code></td>
+<td><code>POST /v1/failure-buckets/{id}/restore</code></td>
 </tr>
 </tbody>
 </table></div>

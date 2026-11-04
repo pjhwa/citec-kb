@@ -30,6 +30,10 @@
       <a href="#6-anti-patterns">6. 하지 말아야 할 것 (Anti-patterns)</a>
       <a href="#7-referencescitec-kb-integrationmd">7. 새 플러그인용 스켈레톤 — references/citec-kb-integration.md</a>
       <a href="#8">8. 체크리스트 (요약)</a>
+      <a href="#9-retire-restore">9. 되돌리기 — retire / restore</a>
+      <a href="#10">10. 시스템 등록자 — 자동 등록 시스템이 붙을 때</a>
+      <a href="#11">11. 인증</a>
+      <a href="#12-toolbox">12. ToolBox 도구 연동</a>
     </nav>
   </aside>
   <main class="main">
@@ -47,6 +51,7 @@
     <section>
       <div class="section-card">
 <h1 id="citec-kb-failure_bucket">진단 플러그인 개발 지침 — citec-kb <code>failure_bucket</code> 자가개선 루프 연동</h1>
+<p><strong>버전:</strong> 2026-11-04.1 · <strong>갱신:</strong> 2026-11-04 (되돌리기(retire)·시스템 등록자·인증·ToolBox 연동 추가 — §9~§12)</p>
 <p><strong>대상:</strong> <code>packet-capture-rca</code>처럼 특정 진단 영역(패킷/Pacemaker·Corosync 클러스터/Windows<br>
 이벤트로그·AD 복제 등)을 분석하는 새 Claude Code 스킬·플러그인을 만드는 개발자.<br>
 <strong>목적:</strong> 매 플러그인이 각자 방식으로 citec-kb를 쓰지 않고, 같은 규약으로 과거 확인된 실패<br>
@@ -64,6 +69,7 @@
 <code>kb_similar_incident</code>(citec-kb에 동기화된 지원이력 사본)로 확인하고, 정식 지원 티켓 자체의<br>
   조회/생성/갱신은 <code>jira-mcp</code>(<code>citec-mcp-workbench</code> 스킬 영역)로 한다. 이 문서는 오직<br>
 <code>failure_bucket</code>(구조화된 실패 패턴 라이브러리) 하나만 다룬다.</li>
+<li><strong>삭제는 없다. retire(숨김)만 있다.</strong> 잘못 등록한 건을 지우는 API는 없고, 숨기고 복구하는 <code>retire</code>/<code>restore</code>만 있다(§9).</li>
 <li>승인/리뷰 워크플로는 없다. 등록은 즉시 검색에 노출되고, 운영 대시보드로 사후 가시성만 제공된다.<br>
   따라서 §4의 "근거 없는 등록 금지" 원칙이 실질적인 유일한 품질 게이트다 — 가볍게 여기지 않는다.</li>
 </ul>
@@ -83,6 +89,8 @@
 <li><strong>근거 없는 등록/확정을 금지한다.</strong> 실제로 관찰되지 않은 신호를 지어내지 않는다. 확신이 서지<br>
    않으면 등록을 보류하거나 조건부/추정 수준으로만 보고한다. 등록할 때는 반드시 §4의<br>
 <code>evidence_ref</code>를 구체적으로 남긴다 — "확정된 내용"이라는 부서 방침을 지키는 유일한 기계적 장치다.</li>
+<li><strong>잘못 등록했으면 retire한다. 새로 등록해서 덮지 않는다.</strong> 덮어 등록하면 틀린 건이 검색에 그대로<br>
+   남는다. 되돌리기는 §9.</li>
 </ol>
 <hr>
 <h2 id="2-fb_domain">2. <code>fb_domain</code> — 내 플러그인의 도메인 값 정하기</h2>
@@ -178,7 +186,9 @@
 대상이다. 이 재조회는 1회로 끝내지 않는다.</p>
 <h3 id="3-3">3-3. 분석 종료 시점 — 되먹임 (정확히 하나)</h3>
 <ul>
-<li><strong>완전히 새로운 패턴</strong> →</li>
+<li><strong>완전히 새로운 패턴</strong> → 등록 <strong>직전</strong>에 <code>kb_match_failure_bucket</code>을 한 번 더 호출해 같은 패턴이 이미<br>
+  있는지 확인한다. 있으면 등록하지 않고 <code>kb_refine_failure_bucket</code>으로 처리한다. 확인 후에도 새<br>
+  패턴이면:</li>
 </ul>
 <p><code>kb_register_failure_bucket(
     bucket_name="&lt;증상+원인 형태의 짧은 이름&gt;",
@@ -191,9 +201,10 @@
     evidence_ref="&lt;원자료를 가리키는 구체적 포인터 — §4&gt;",
     source_plugin="&lt;plugin-name&gt;@&lt;version&gt;"
   )</code></p>
-<p>응답에 <code>possible_duplicate_of</code>가 포함돼 있으면, 등록은 이미 됐더라도 그 버킷을<br>
-<code>kb_get_failure_bucket</code>으로 열어 실제로 같은 패턴인지 확인한다. 같은 패턴이면 이번 등록 대신<br>
-<code>kb_refine_failure_bucket(confirm=true)</code>을 썼어야 한다는 뜻이니, 다음부터는 등록 전<br>
+<p>응답에 <code>possible_duplicate_of</code>가 포함돼 있으면(서버가 막지는 않는다), 등록은 이미 됐더라도 그<br>
+  버킷을 <code>kb_get_failure_bucket</code>으로 열어 실제로 같은 패턴인지 확인한다. 같은 패턴이면 <strong>재등록하지<br>
+  말고</strong> 그 버킷에 <code>kb_refine_failure_bucket(confirm=true)</code>을 하고, 이번에 잘못 등록된 건은 retire를<br>
+  요청한다(§9). 다음부터는 등록 전<br>
 <code>kb_match_failure_bucket</code>을 더 폭넓게(신호를 다양하게 바꿔가며) 먼저 돌린다.</p>
 <ul>
 <li><strong>기존 버킷이 맞았음</strong> → <code>kb_refine_failure_bucket(bucket_id=, confirm=true, add_signal=&lt;새로
@@ -237,8 +248,22 @@
 <td>SWIM 장애번호</td>
 <td><code>swim:INC00123456</code></td>
 </tr>
+<tr>
+<td>insight-ops 보고서</td>
+<td><code>insight:ISS-…#report=…</code> — ⚠ insight-ops 로그인이 있어야 열린다</td>
+</tr>
+<tr>
+<td>agent-room 사건</td>
+<td><code>agent-room:&lt;방&gt;/&lt;사건&gt;…</code> — ⚠ 방을 지우면 근거가 사라진다</td>
+</tr>
 </tbody>
 </table></div>
+<p><strong><code>insight:</code>/<code>agent-room:</code>은 열람 제약이 있다.</strong> 알려진 접두어라 <code>evidence_ref_warning</code>은 붙지 않지만,<br>
+이 둘만 쓰고 <code>confluence:</code>를 병기하지 않으면 응답에 <code>evidence_ref_note</code>(경고가 아닌 안내: "열람 제약<br>
+있음. confluence: 병기 권장")가 붙는다. 등록은 거부되지 않는다. 권장은 결과 보고서를 Confluence에<br>
+올리고 <code>confluence:&lt;page id&gt;</code>를 쓰는 것이다 — 한 문자열에 둘 다 적어도 된다<br>
+(<code>insight:ISS-1#report=r1 confluence:2412784426</code>). 파일이 일정 기간 뒤 삭제되는 도구의 결과물도 같은<br>
+이유로 영구 위치(Confluence)에 두고 가리킨다.</p>
 <p>이 필드가 없으면(또는 형식이 자유 서술이면) <strong>등록을 보류</strong>하고 사용자에게 "이 신호를 어떤 원자료<br>
 어느 지점에서 확인했는지" 되묻는다.</p>
 <hr>
@@ -280,6 +305,10 @@ appliance LB + k8s pod 같은 조합이 텍스트에 이미 드러나 있는 경
 <li>이미 존재하는 버킷과 사실상 동일한 패턴을 이름만 바꿔 중복 등록하는 것 — 먼저<br>
 <code>kb_match_failure_bucket</code>/<code>kb_list_failure_buckets(fb_domain=)</code>로 기존 버킷 유무를 반드시 확인.</li>
 <li><code>fb_domain</code>을 비우거나 즉흥적으로 새 문자열을 짓는 것 — §2 절차를 따른다.</li>
+<li>잘못 등록한 건을 <strong>retire하지 않고 새로 등록해서 덮는 것</strong> — §9.</li>
+<li>열람할 수 없는 근거(로그인 필요·곧 삭제될 파일·방 삭제 시 소실)만 <code>evidence_ref</code>에 쓰는 것 — §4.</li>
+<li><code>possible_duplicate_of</code>를 무시하고 그대로 두는 것, 또는 재등록하는 것.</li>
+<li>시스템(자동) 등록인데 <code>created_by</code>를 <code>&lt;시스템&gt;@&lt;판&gt;</code> 형식 없이 비우거나 사람 이름으로 쓰는 것 — §10.</li>
 <li>"유사 사례가 있었는지" 확인이나 패턴 등록/정제를 <code>jira-mcp</code>로 하는 것 — §0 참고.</li>
 </ul>
 <hr>
@@ -300,7 +329,19 @@ fb_domain&gt;&quot;을 항상 채운다.
 - phase &lt;P&gt;(보고 작성 후) — kb_register_failure_bucket 또는 kb_refine_failure_bucket 중 정확히 하나
 
 ## 좋은 신호 작성 기준 / evidence_ref 형식
-(본 가이드 §4/§5에서 이 도메인에 맞는 예시로 구체화)
+(본 가이드 §4/§5에서 이 도메인에 맞는 예시로 구체화. insight:/agent-room:만 쓰지 말고 confluence: 병기)
+
+## 되돌리기 (retire)
+잘못 등록했으면 새로 덮지 않고 KB 담당자(senior 이상)에게 bucket id와 사유(8자 이상)로 retire를 요청한다.
+(본 가이드 §9)
+
+## 시스템 등록자
+자동 등록이면 created_by=&quot;&lt;시스템&gt;@&lt;판&gt;&quot;(시험은 -test 접미). 응답의 registrant_kind,
+created_by_warning, possible_duplicate_of(→ refine), already_registered를 처리한다. (본 가이드 §10)
+
+## 인증 헤더
+CITEC_KB_API_KEY 환경 변수가 있을 때만 X-API-Key를 붙인다. 없으면 헤더 없이 호출한다.
+(본 가이드 §11)
 
 ## 하지 말아야 할 것
 (본 가이드 §6 그대로)
@@ -315,6 +356,140 @@ fb_domain&gt;&quot;을 항상 채운다.
 <code>kb_refine_failure_bucket</code>(confirm=true/false) 중 하나</li>
 <li>☐ <code>possible_duplicate_of</code> 응답이 오면 확인 후 필요 시 등록 대신 refine으로 정정</li>
 <li>☐ <code>fb_domain</code>이 <code>references/failure-bucket-domains.md</code>에 있는 값인지 확인 (새 값이면 §2 절차)</li>
+<li>☐ 등록 직전 <code>kb_match_failure_bucket</code>을 한 번 더 호출하고, <code>possible_duplicate_of</code>가 오면 재등록 대신 refine</li>
+<li>☐ 잘못 등록한 건은 새로 덮지 않고 retire를 요청 (§9)</li>
+<li>☐ <code>evidence_ref</code>가 사람이 나중에 열 수 있는 위치인가 (<code>insight:</code>/<code>agent-room:</code>만 쓰지 않고 <code>confluence:</code> 병기)</li>
+<li>☐ 자동 등록이면 <code>created_by</code>가 <code>&lt;시스템&gt;@&lt;판&gt;</code> 형식이고 허용 목록에 있는가 (§10)</li>
+<li>☐ 시험은 <code>-test</code> 접미로 하고, 같은 키 재시도는 <code>already_registered</code>로 처리 (§12)</li>
+<li>☐ 인증 헤더는 환경 변수가 있을 때만 붙인다 (§11)</li>
+</ul>
+<hr>
+<h2 id="9-retire-restore">9. 되돌리기 — retire / restore</h2>
+<p><strong>삭제가 아니라 숨김이다.</strong> 행은 남고, 기본 조회에서만 빠진다. 잘못 숨겼으면 restore로 복구한다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>호출</th>
+<th>롤</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>POST /v1/failure-buckets/{id}/retire</code></td>
+<td><code>senior</code>, <code>admin</code></td>
+<td>본문 <code>{"reason": "…"}</code> — <strong>8자 이상 필수</strong>. 이미 retired면 200과 현재 상태(멱등, 처음 사유 유지). 없는 id는 404</td>
+</tr>
+<tr>
+<td><code>POST /v1/failure-buckets/{id}/restore</code></td>
+<td><code>senior</code>, <code>admin</code></td>
+<td><code>status=active</code>로 복구, <code>retired_*</code> 비움. 멱등. (<code>-test</code> 시험 행에 쓰면 운영으로 <strong>승격</strong>된다)</td>
+</tr>
+<tr>
+<td><code>POST /v1/failure-buckets/retire-batch</code></td>
+<td><code>admin</code></td>
+<td>본문 <code>{"created_by_prefix": "…", "reason": "…", "dry_run": true}</code> — 시험 방 정리용. <strong>기본 dry_run</strong>: 대상 건수와 id만 반환. <code>created_by_prefix</code>는 3자 이상</td>
+</tr>
+<tr>
+<td>MCP</td>
+<td>—</td>
+<td><code>kb_retire_failure_bucket(bucket_id=, reason=)</code>, <code>kb_restore_failure_bucket(bucket_id=)</code>, <code>kb_list_failure_buckets(include_retired=true)</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><code>author</code>(시스템 등록자 포함)는 retire할 수 없다 — 자기 등록건을 스스로 지우지 못하게 한 의도다. 잘못 등록했다면<br>
+KB 담당자에게 bucket id와 사유를 보내 요청한다. (<code>AUTH_MODE=off</code>인 동안은 모든 호출이 통과한다.)</p>
+<pre><code class="language-bash">curl -s -X POST $KB/v1/failure-buckets/&lt;id&gt;/retire -H 'Content-Type: application/json' \
+  -d '{&quot;reason&quot;:&quot;잘못 등록된 시험 건&quot;}'
+curl -s -X POST $KB/v1/failure-buckets/&lt;id&gt;/restore
+</code></pre>
+<p><strong>retire된 bucket의 조회 동작</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>경로</th>
+<th>동작</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>목록 <code>GET /v1/failure-buckets</code></td>
+<td>기본 제외. <code>?include_retired=true</code>로 포함(retired·<code>-test</code>)</td>
+</tr>
+<tr>
+<td><code>POST /v1/failure-buckets/match</code></td>
+<td>항상 제외</td>
+</tr>
+<tr>
+<td><code>GET /v1/failure-buckets/{id}</code></td>
+<td><strong>조회된다.</strong> <code>status</code>, <code>retired_at</code>, <code>retired_by</code>, <code>retire_reason</code> 포함</td>
+</tr>
+<tr>
+<td><code>refine</code></td>
+<td>409 <code>"retired: restore 후 사용"</code></td>
+</tr>
+<tr>
+<td>등록 시 <code>possible_duplicate_of</code> 탐색</td>
+<td>retired 제외</td>
+</tr>
+<tr>
+<td><code>kb_search</code>·<code>kb_query</code>·<code>kb_ask</code></td>
+<td>제외(검색 문서가 archived 처리됨)</td>
+</tr>
+<tr>
+<td><code>kb_graph_explore</code> 이웃</td>
+<td>제외(조회 시점에 PG 상태로 거름). 그래프 앵커로 직접 지정하면 조회된다</td>
+</tr>
+<tr>
+<td>대시보드·<code>failure-bucket-coverage</code> 집계</td>
+<td>제외. 대시보드에는 <code>retired_count</code>/<code>test_count</code>가 따로 보인다</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>시험 방 일괄 정리 절차:</strong> (1) dry_run으로 대상 확인 — <code>{"created_by_prefix":"agent-room@","reason":"시험 방 정리"}</code><br>
+→ <code>matched</code>와 <code>ids</code>가 의도한 건인지 본다 (2) 같은 본문에 <code>"dry_run": false</code>를 더해 실행. (3) 필요하면 개별<br>
+<code>restore</code>.</p>
+<hr>
+<h2 id="10">10. 시스템 등록자 — 자동 등록 시스템이 붙을 때</h2>
+<p>사람이 아닌 시스템(insight-ops, agent-room, ToolBox 도구 등)이 서버에서 자동 등록하는 경우의 규칙이다.</p>
+<ul>
+<li><strong><code>created_by</code> 형식:</strong> <code>&lt;시스템&gt;@&lt;판&gt;</code> — 예: <code>insight-ops@v1.4</code>, <code>agent-room@v0.9</code>.<br>
+  (<code>^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$</code>)</li>
+<li><strong>허용 목록:</strong> 시스템 이름이 KB의 <code>config/system_registrants.json</code>에 있어야 <code>registrant_kind: "system"</code>이<br>
+  된다. 초기값은 <code>insight-ops</code>, <code>agent-room</code>. 목록에 없으면 <code>"human"</code>이고, 형식이 어긋나거나(<code>@</code>가 있는데<br>
+  패턴과 다름) 목록에 없는 시스템 이름이면 <code>created_by_warning</code>이 붙는다. <strong>거부하지 않는다.</strong> 사람 이름이나<br>
+  이메일(<code>someone@example.com</code>)에는 경고가 없다.</li>
+<li><strong>중복 처리:</strong> 응답에 <code>possible_duplicate_of</code>가 있으면 재등록하지 않고 refine으로 처리한다. 서버가 막지는<br>
+  않는다.</li>
+<li><strong>멱등:</strong> 같은 <code>created_by</code> + <code>evidence_ref</code> + <code>bucket_name</code>의 활성 bucket이 이미 있으면 새 행 없이 기존<br>
+  행을 <code>already_registered: true</code>와 200으로 돌려준다. 타임아웃 뒤 재시도가 안전하다.</li>
+<li><strong>과다 등록 가시화:</strong> 서버는 일일 상한을 강제하지 않는다. 대신 운영 대시보드(<code>/v1/ops/dashboard</code>의<br>
+<code>failure_buckets.created_by_24h</code>)에 <code>created_by</code>별 최근 24시간 등록 건수가 나온다.</li>
+</ul>
+<hr>
+<h2 id="11">11. 인증</h2>
+<ul>
+<li><strong>현재 <code>AUTH_MODE=off</code>.</strong> 켜는 시점은 KB가 공지한다.</li>
+<li>켜지면 <strong>쓰기</strong>(등록·refine)에 <code>X-API-Key</code> 헤더가 필요하다. <strong>읽기(<code>GET</code>)와 <code>match</code>는 열려 있다.</strong></li>
+<li>시스템 토큰은 <strong><code>author</code> 롤 하나</strong>다(retire/restore/retire-batch는 불가). 토큰 이름은 <code>created_by</code>와 같은<br>
+  값으로 발급된다. 본문 <code>created_by</code>가 토큰 이름과 다르면 거부되지 않고 <code>created_by_warning</code>이 붙는다.</li>
+<li><strong>호출 코드는 토큰이 없어도 동작해야 한다:</strong> 환경 변수(예: <code>CITEC_KB_API_KEY</code>)에 값이 있을 때만 헤더를 붙인다.<br>
+  꺼진 지금과 켜진 뒤 모두 코드 변경이 필요 없다.</li>
+<li>토큰 요청·발급·회수 절차: <a href="./AUTH_ENABLEMENT.md">AUTH_ENABLEMENT.md</a>.</li>
+</ul>
+<hr>
+<h2 id="12-toolbox">12. ToolBox 도구 연동</h2>
+<p>CI-TEC ToolBox 도구가 서버에서 REST로 직접 붙을 때는 <a href="./FAILURE_BUCKET_TOOLBOX_INTEGRATION.md">FAILURE_BUCKET_TOOLBOX_INTEGRATION.md</a>를<br>
+본다. 이 가이드와 겹치는 규칙(§2 <code>fb_domain</code>, §4 <code>evidence_ref</code>, §5 신호)은 링크로만 참조한다. 요약:</p>
+<ul>
+<li><strong>신청:</strong> 도구 담당자가 신청서(도구 이름, 제안 <code>created_by</code>, <code>fb_domain</code>, 등록 방식, 하루 예상 건수,<br>
+<code>evidence_ref</code> 접두어와 열람 방법, 토큰 이름)를 접수한다. 도구별 값은 KB가 미리 정하지 않으며, 접수되면 KB<br>
+  담당자가 허용 목록과 도메인 문서에 추가한다.</li>
+<li><strong>시험 등록 <code>-test</code>:</strong> <code>created_by</code>가 <code>-test</code>로 끝나면(<code>sos-analyzer@v0.1-test</code>) <code>status="test"</code>로 저장되어<br>
+  운영 목록·매칭·검색·그래프·집계에 나오지 않는다. 상세 조회와 <code>include_retired=true</code> 목록에서는 보인다. 정리는<br>
+  admin이 <code>retire-batch</code>로 한다.</li>
+<li><strong>멱등 등록:</strong> 같은 키 재시도는 <code>already_registered: true</code>.</li>
+<li>도구의 본 기능은 KB 호출 실패와 무관하게 끝나야 한다.</li>
 </ul>
       </div>
     </section>
