@@ -1,0 +1,979 @@
+{
+  "label": "v2bf-all",
+  "base_url": "http://localhost:8573",
+  "git_sha": "1c6a5582261f",
+  "measured_at_utc": "2026-11-04T12:40:30+00:00",
+  "api_health": {
+    "status": "ok",
+    "api_build_sha": null
+  },
+  "evalset": {
+    "evalset_id": "evalset-v2-20261102-all",
+    "groups": {
+      "v2_pointer": {
+        "n": 8,
+        "hit_at_3": 0.125,
+        "recall_at_5": 0.125,
+        "recall_at_10": 0.125,
+        "mrr": 0.125,
+        "pointer_only_top5_ratio": 0.1,
+        "p50_latency_ms": 9796.5,
+        "p95_latency_ms": 18764.8,
+        "median_bytes": 26169,
+        "errors": 0,
+        "passed": 1,
+        "cases": 8
+      },
+      "v2_real": {
+        "n": 19,
+        "hit_at_3": 0.7368,
+        "recall_at_5": 0.8947,
+        "recall_at_10": 0.9474,
+        "mrr": 0.6333,
+        "pointer_only_top5_ratio": 0.1579,
+        "p50_latency_ms": 4521.9,
+        "p95_latency_ms": 11144.8,
+        "median_bytes": 27056,
+        "errors": 0,
+        "passed": 18,
+        "cases": 19
+      },
+      "v2_vocab": {
+        "n": 19,
+        "hit_at_3": 0.2632,
+        "recall_at_5": 0.3684,
+        "recall_at_10": 0.4211,
+        "mrr": 0.1943,
+        "pointer_only_top5_ratio": 0.0,
+        "p50_latency_ms": 9769.6,
+        "p95_latency_ms": 11256.6,
+        "median_bytes": 26260,
+        "errors": 0,
+        "passed": 8,
+        "cases": 19
+      }
+    },
+    "cases": [
+      {
+        "id": "r-1004",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 5,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "file_80893",
+          "file_81180",
+          "2532504145",
+          "460629426",
+          "CITECTS-993"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 18162.2,
+        "status": 200,
+        "bytes": 27056,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-1683",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "24121058089",
+          "1123341862",
+          "24070557389",
+          "23020249589",
+          "1298233006"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 5475.8,
+        "status": 200,
+        "bytes": 29670,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-1711",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1661127184",
+          "680290290",
+          "1962234284",
+          "CITECTS-2028",
+          "2009270863"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 3973.8,
+        "status": 200,
+        "bytes": 24886,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-1985",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1760314747",
+          "2145475426",
+          "2140228872",
+          "2138063500",
+          "1914221090"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1059.8,
+        "status": 200,
+        "bytes": 26822,
+        "pointer_top5": 1.0
+      },
+      {
+        "id": "r-2021",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 4,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "14120414590",
+          "26080761299",
+          "516671494",
+          "13112506221",
+          "CITECTS-468"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4007.7,
+        "status": 200,
+        "bytes": 27840,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-2286",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "file_81153",
+          "file_159796",
+          "file_159795",
+          "file_159757",
+          "file_159772"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1322.9,
+        "status": 200,
+        "bytes": 25023,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-251",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "CITECTS-1462",
+          "CITECTS-1910",
+          "CITECTS-1305",
+          "CITECTS-2303",
+          "1552552991"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4883.4,
+        "status": 200,
+        "bytes": 27366,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-001",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1517146839",
+          "file_159339",
+          "2412778880",
+          "161706206",
+          "file_81105"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4265.3,
+        "status": 200,
+        "bytes": 25146,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-002",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "file_159417",
+          "file_160032",
+          "file_160034",
+          "file_159418",
+          "file_160031"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 7121.4,
+        "status": 200,
+        "bytes": 22487,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-003",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1552553330",
+          "25110459505",
+          "20101237152",
+          "14021611779",
+          "24082257625"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4520.4,
+        "status": 200,
+        "bytes": 29093,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-004",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 8,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "26071461245",
+          "24080257557",
+          "file_80793",
+          "file_159767",
+          "file_159777"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 6130.6,
+        "status": 200,
+        "bytes": 26418,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-005",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1552553330",
+          "986000883",
+          "337999723",
+          "file_160071",
+          "278841966"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10968.6,
+        "status": 200,
+        "bytes": 24398,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-006",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1650191834",
+          "file_80793",
+          "2192350404",
+          "file_80847",
+          "1880430256"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9601.5,
+        "status": 200,
+        "bytes": 26956,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-011",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1653443017",
+          "1650179826",
+          "2254635605",
+          "459881638",
+          "1880429955"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 18873.2,
+        "status": 200,
+        "bytes": 26260,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-013",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "775509081",
+          "file_81097",
+          "1559482874",
+          "file_159640",
+          "file_158990"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10487.3,
+        "status": 200,
+        "bytes": 27741,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-014",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 5,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1878128678",
+          "2516509377",
+          "file_158954",
+          "2336584409",
+          "381297351"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10642.9,
+        "status": 200,
+        "bytes": 26865,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-015",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "file_160072",
+          "2110844529",
+          "1612472127",
+          "295866601",
+          "1233225554"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9966.5,
+        "status": 200,
+        "bytes": 23296,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-016",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "file_159162",
+          "61355972",
+          "file_159163",
+          "61372708",
+          "file_159794"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9769.6,
+        "status": 200,
+        "bytes": 22542,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-017",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "PISASFZS_02.03.01",
+          "PISASGSG_02.04.01",
+          "PISAN3CN_06.02.01",
+          "PISAOWIN_01.03.05",
+          "PISAOWIN_06.02.01"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4079.1,
+        "status": 200,
+        "bytes": 22461,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-018",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "19090833399",
+          "1185277761",
+          "file_159135",
+          "18010530709",
+          "1986101973"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 3947.7,
+        "status": 200,
+        "bytes": 25203,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-019",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "337999723",
+          "13112506032",
+          "278841966",
+          "13112507214",
+          "13112507143"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 6475.4,
+        "status": 200,
+        "bytes": 25835,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-020",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "24070857407",
+          "2025307832",
+          "1764119895",
+          "CITECTS-1111",
+          "23122755550"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 5145.0,
+        "status": 200,
+        "bytes": 26759,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-005",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "2378541127",
+          "2199327236",
+          "CITECTS-1406",
+          "2396734131",
+          "740627842"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4478.3,
+        "status": 200,
+        "bytes": 25888,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-033",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "157895699",
+          "PISADBOR_02.02.50",
+          "22041243848",
+          "CITECTS-1572",
+          "2532880798"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 7050.0,
+        "status": 200,
+        "bytes": 26216,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "r-1124",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 6,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "25100359259",
+          "1524527737",
+          "1063269289",
+          "26011660047",
+          "26012560145"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4513.1,
+        "status": 200,
+        "bytes": 28596,
+        "pointer_top5": 0.4
+      },
+      {
+        "id": "r-1463",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1443529300",
+          "1185277761",
+          "59080068",
+          "2542682635",
+          "772679050"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4119.9,
+        "status": 200,
+        "bytes": 22954,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "r-2129",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "2511371810",
+          "CITECTS-2638",
+          "1880430374",
+          "205963844",
+          "1922385729"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4521.9,
+        "status": 200,
+        "bytes": 28398,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-2180",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 2,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "2542098833",
+          "CITECTS-1429",
+          "CITECTS-1201",
+          "1944158344",
+          "CITECTS-1386"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 4308.4,
+        "status": 200,
+        "bytes": 27403,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-2181",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "CITECTS-1213",
+          "CITECTS-1201",
+          "CITECTS-1852",
+          "CITECTS-1202",
+          "CITECTS-1200"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9823.4,
+        "status": 200,
+        "bytes": 27713,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-2291",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 4,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "537066611",
+          "1954495733",
+          "416515434",
+          "CITECTS-2345",
+          "1552553330"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10173.6,
+        "status": 200,
+        "bytes": 24553,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-2325",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "25120759785",
+          "289434760",
+          "24101857827",
+          "25102359389",
+          "26031360593"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 11144.8,
+        "status": 200,
+        "bytes": 29628,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "r-436",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "1609198953",
+          "1464032402",
+          "2483153781",
+          "2077324011",
+          "1552553330"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1681.1,
+        "status": 200,
+        "bytes": 23381,
+        "pointer_top5": 0.4
+      },
+      {
+        "id": "r-584",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "2149896631",
+          "QRB_품질_인프라구축검증_PISA_FAQ",
+          "1844444536",
+          "CITECTS-647",
+          "CITECTS-990"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10040.8,
+        "status": 200,
+        "bytes": 30154,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "r-860",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "CITECTS-2606",
+          "1650194020",
+          "1655537901",
+          "1800304648",
+          "499894133"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 5116.3,
+        "status": 200,
+        "bytes": 24489,
+        "pointer_top5": 0.4
+      },
+      {
+        "id": "r-977",
+        "group": "v2_real",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "file_159256",
+          "file_159303",
+          "2511371810",
+          "331111991",
+          "2091442676"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 1076.6,
+        "status": 200,
+        "bytes": 24412,
+        "pointer_top5": 0.2
+      },
+      {
+        "id": "s-vocab-4b63-007",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 3,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "200114976",
+          "2175992825",
+          "736518158",
+          "1224011833",
+          "464856474"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10254.3,
+        "status": 200,
+        "bytes": 24387,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-008",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "2471428644",
+          "CITECTS-702",
+          "13112509429",
+          "15091016344",
+          "CITECTS-2171"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 11256.6,
+        "status": 200,
+        "bytes": 28467,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-009",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1878128678",
+          "1883099150",
+          "file_158956",
+          "file_158954",
+          "13112506388"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10160.8,
+        "status": 200,
+        "bytes": 28384,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-vocab-4b63-010",
+        "group": "v2_vocab",
+        "kind": "search",
+        "rank": 5,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "775509081",
+          "24121658099",
+          "PISADBOR_01.02.12",
+          "1944158344",
+          "1559482874"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10099.6,
+        "status": 200,
+        "bytes": 26953,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-001",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "18041030912",
+          "2542682638",
+          "19090833399",
+          "22110147488",
+          "20081336450"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9197.9,
+        "status": 200,
+        "bytes": 29176,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-002",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "531734869",
+          "1664617259",
+          "15013014880",
+          "1880430819",
+          "1857577010"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 18764.8,
+        "status": 200,
+        "bytes": 28226,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-007",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "1307028082",
+          "1166746635",
+          "813290035",
+          "1316437856",
+          "1462487493"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9716.8,
+        "status": 200,
+        "bytes": 23575,
+        "pointer_top5": 0.4
+      },
+      {
+        "id": "s-pointer-4b63-008",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "337999723",
+          "1233234488",
+          "2029378274",
+          "278841966",
+          "1552552991"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10753.1,
+        "status": 200,
+        "bytes": 23673,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-011",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "218064697",
+          "1729143318",
+          "2539402664",
+          "19010331757",
+          "337999723"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 10264.4,
+        "status": 200,
+        "bytes": 26450,
+        "pointer_top5": 0.4
+      },
+      {
+        "id": "s-pointer-4b63-012",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": null,
+        "pass": false,
+        "k": 10,
+        "top": [
+          "20111937508",
+          "1298233006",
+          "CITECTS-882",
+          "1702230989",
+          "2060983286"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9794.1,
+        "status": 200,
+        "bytes": 28482,
+        "pointer_top5": 0.0
+      },
+      {
+        "id": "s-pointer-4b63-013",
+        "group": "v2_pointer",
+        "kind": "search",
+        "rank": 1,
+        "pass": true,
+        "k": 10,
+        "top": [
+          "PISASSCE_03.01.03",
+          "619215481",
+          "2175992813",
+          "file_159781",
+          "PISAVSOS_03.01.07"
+        ],
+        "forbid_rank": null,
+        "latency_ms": 9796.5,
+        "status": 200,
+        "bytes": 22509,
+        "pointer_top5": 0.0
+      }
+    ]
+  }
+}
