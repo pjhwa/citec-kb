@@ -1,0 +1,810 @@
+{
+  "meta": {
+    "version": "2026-11-04",
+    "truth_source": "개발 서버(2026-11-04 조회, 코퍼스/맵은 지속 갱신되지 않는 스냅샷). 운영은 계속 갱신되므로 stability=drifting 문항의 정답은 실행 시점 oracle이다.",
+    "kinds": {
+      "win": "KB 고유 데이터/계산이라 A(Jira+Confluence)가 구조적으로 불리",
+      "parity": "A도 가능. 정확도 동일, 호출 수/토큰/시간 비교용 대조군",
+      "weak": "KB의 알려진 약점. 스킬(C)의 우회가 효과 있는지 확인",
+      "fresh": "A(라이브)가 유리할 수 있는 신선도 대조군",
+      "honesty": "근거 없는 질문에 모른다고 답하는지"
+    },
+    "categories": {
+      "SW": "SWIM 장애 이력·반복 패턴 집계",
+      "GP": "지식 정리 갭(failure_bucket 커버리지)",
+      "SI": "유사 장애·알려진 패턴 매칭",
+      "PI": "PISA 점검항목",
+      "CP": "공수/비용 규칙 계산",
+      "JA": "Jira 이력 집계",
+      "TK": "개별 티켓 조회",
+      "AR": "부서 레거시 아카이브",
+      "FR": "신선도",
+      "HN": "정직성",
+      "MP": "confluence_map 문서 구조·문맥(상하위 계층, 경로, 변경 이력)"
+    },
+    "stability": {
+      "stable": "정답이 시간에 따라 거의 변하지 않음(PISA 코드, 과거 티켓, 페이지 ID, 계산 규칙). must 정규식을 자동 채점에 사용",
+      "drifting": "집계 수치·최근 기간·등록 현황 등 시간/서버에 따라 변함. 개발 서버 값은 참고용이며 자동 채점은 기본 꺼짐(--trust-must로 켬). 실행 시점 oracle이 정답"
+    }
+  },
+  "cases": [
+    {
+      "id": "SW1",
+      "category": "SW",
+      "kind": "win",
+      "title": "도메인별 장애 건수(최근 2년)",
+      "prompt": "SWIM 장애 보고서 기준으로, 최근 2년(730일) 동안 CI-TEC 도메인(Linux, Windows, VMware, OpenStack, Kubernetes, Middleware, Network, Storage, Ceph, Database, 성능)별 반복 장애 건수를 알려줘. 한 장애가 여러 도메인에 걸리면 각 도메인에 한 번씩 센다.",
+      "truth": "Network 378, 성능 138, Middleware 112, Database 84, VMware 71, Storage 64, OpenStack 53, Kubernetes 44, Windows 32, Linux 23, Ceph 12",
+      "must": [
+        "Network.{0,30}378",
+        "성능.{0,30}138",
+        "Middleware.{0,30}112",
+        "Database.{0,30}84",
+        "VMware.{0,30}71"
+      ],
+      "oracle": {
+        "tool": "kb_citec_failure_bucket_coverage",
+        "args": {
+          "since_days": 730,
+          "min_count": 3
+        }
+      },
+      "notes": "A는 SWIM이 Confluence에 일부만 있어 부분 집계. 정답 일치보다 '부분 집계임을 밝혔는지'와 누락률을 본다.",
+      "stability": "drifting"
+    },
+    {
+      "id": "SW2",
+      "category": "SW",
+      "kind": "win",
+      "title": "Network 고객사 귀책 건수·고객사 수",
+      "prompt": "최근 2년간 Network 도메인 장애 중 고객사 귀책(X등급)으로 분류된 건수와, 그 장애가 발생한 고객사 수를 알려줘.",
+      "truth": "124건, 고객사 19곳",
+      "must": [
+        "124",
+        "19"
+      ],
+      "oracle": {
+        "tool": "kb_citec_recurring_patterns",
+        "args": {
+          "group_by": "domain,severity_tier",
+          "domains": "Network",
+          "severity_tiers": "customer_fault",
+          "since_days": 730,
+          "min_count": 1
+        }
+      },
+      "notes": "심각도 티어(1~3등급 major, 4 minor, FO, X, N)는 KB 파생 분류. A는 등급 필드 해석부터 막힌다.",
+      "stability": "drifting"
+    },
+    {
+      "id": "SW3",
+      "category": "SW",
+      "kind": "win",
+      "title": "고객사 비교(삼성전자 vs 삼성SDS Network)",
+      "prompt": "최근 2년간 Network 도메인 장애 건수를 삼성전자와 삼성SDS로 나눠서 비교해줘.",
+      "truth": "삼성전자 213건, 삼성SDS 60건",
+      "must": [
+        "213",
+        "60"
+      ],
+      "oracle": {
+        "tool": "kb_citec_recurring_patterns",
+        "args": {
+          "group_by": "domain,customer",
+          "domains": "Network",
+          "since_days": 730,
+          "min_count": 1,
+          "limit": 30
+        }
+      },
+      "notes": "고객사 표기가 '삼성전자 등 관계사' 등으로 변형되므로 정답 범위 허용(±).",
+      "stability": "drifting"
+    },
+    {
+      "id": "SW4",
+      "category": "SW",
+      "kind": "win",
+      "title": "Database major 장애 연도별 추이",
+      "prompt": "최근 5년간 Database 도메인의 중대장애(1~3등급)가 연도별로 몇 건인지 알려줘.",
+      "truth": "(실행 당일 oracle 값 사용)",
+      "must": [],
+      "oracle": {
+        "tool": "kb_citec_recurring_patterns",
+        "args": {
+          "group_by": "domain,year",
+          "domains": "Database",
+          "severity_tiers": "major",
+          "since_days": 1825,
+          "min_count": 1,
+          "limit": 50
+        }
+      },
+      "notes": "must가 비어 있으므로 사람이 oracle 값과 대조.",
+      "stability": "drifting"
+    },
+    {
+      "id": "SW5",
+      "category": "SW",
+      "kind": "win",
+      "title": "이중화전환(FO) 상위 도메인",
+      "prompt": "최근 2년간 Failover되어 서비스 영향이 없었던 장애(FO등급)가 가장 많은 도메인 상위 3개와 각 건수를 알려줘.",
+      "truth": "Network 107, Middleware 59, VMware 43",
+      "must": [
+        "Network.{0,30}107",
+        "Middleware.{0,30}59",
+        "VMware.{0,30}43"
+      ],
+      "oracle": {
+        "tool": "kb_citec_recurring_patterns",
+        "args": {
+          "group_by": "domain,severity_tier",
+          "severity_tiers": "failover_no_impact",
+          "since_days": 730,
+          "min_count": 1,
+          "limit": 10
+        }
+      },
+      "notes": "",
+      "stability": "drifting"
+    },
+    {
+      "id": "GP1",
+      "category": "GP",
+      "kind": "win",
+      "title": "정리 갭 도메인",
+      "prompt": "반복 장애가 확인됐는데 장애 패턴(실패 유형) 정리 자료가 아직 하나도 없는 도메인을 건수 많은 순으로 알려줘.",
+      "truth": "Middleware 112, Database 84, VMware 71, Storage 64, OpenStack 53, Windows 32, Ceph 12 (Network 11건, Linux 1건은 등록됨)",
+      "must": [
+        "Middleware",
+        "Database",
+        "VMware",
+        "Storage",
+        "OpenStack",
+        "Windows",
+        "Ceph"
+      ],
+      "oracle": {
+        "tool": "kb_citec_failure_bucket_coverage",
+        "args": {
+          "since_days": 730,
+          "min_count": 3
+        }
+      },
+      "notes": "A는 '패턴 정리 자료' 메타 정보가 없어 불가. 지어내는지 모른다고 하는지를 본다.",
+      "stability": "drifting",
+      "dev_note": "failure_bucket 등록 현황은 개발 서버 기준. 운영은 버킷이 더 많거나 달라 정답 목록이 달라질 수 있음."
+    },
+    {
+      "id": "GP2",
+      "category": "GP",
+      "kind": "honesty",
+      "title": "미정의 도메인 해석 함정",
+      "prompt": "Kubernetes 도메인은 장애 패턴 정리 커버리지가 0%라고 봐도 되나?",
+      "truth": "아니오. 대응하는 패턴 분류 체계(fb_domain)가 아직 정의되지 않았을 뿐이며 반복 장애는 44건 확인됨. 0%가 아니라 '해당 없음(미정의)'.",
+      "must": [
+        "미정의|정의되지|정의되어 있지|체계",
+        "44"
+      ],
+      "oracle": {
+        "tool": "kb_citec_failure_bucket_coverage",
+        "args": {
+          "since_days": 730,
+          "min_count": 3
+        }
+      },
+      "notes": "스킬/도구 설명을 읽은 팔만 맞출 수 있는 함정.",
+      "stability": "drifting",
+      "dev_note": "fb_domain 정의 여부와 반복장애 건수는 서버/시점에 따라 변함. 판단 논리(미정의≠0%)만 고정."
+    },
+    {
+      "id": "SI1",
+      "category": "SI",
+      "kind": "win",
+      "title": "Pacemaker fencing 유사 사례",
+      "prompt": "Pacemaker 클러스터에서 fencing 이후 서비스 failover가 지연되고 리소스 start가 실패해. 비슷한 과거 사례를 찾아줘. 티켓 번호와 근거를 줘.",
+      "truth": "CITECTS-2247(pacemaker fencing 실패 및 서버 재시작 원인분석), CITECTS-2504(SCPv2 PS Ceph RBD 에러 및 VM 리붓(Fencing)). SWIM 사례는 사람이 적용성 판정.",
+      "must": [
+        "CITECTS-2247",
+        "CITECTS-2504"
+      ],
+      "oracle": {
+        "tool": "kb_similar_incident",
+        "args": {
+          "symptom": "Pacemaker 클러스터 fencing 후 서비스 failover 지연, 리소스 start 실패",
+          "top_k": 5
+        }
+      },
+      "notes": "적용성 과대 판정(무관한 SWIM에 '가능')은 감점 요인으로 별도 기록.",
+      "stability": "stable"
+    },
+    {
+      "id": "SI2",
+      "category": "SI",
+      "kind": "win",
+      "title": "Ceph RBD 에러 후 VM 리붓",
+      "prompt": "Ceph Block 노드에서 RBD 에러가 나고 VM이 재부팅(fencing)됐어. 과거에 같은 증상이 있었는지 알려줘.",
+      "truth": "CITECTS-2504 포함",
+      "must": [
+        "2504"
+      ],
+      "oracle": {
+        "tool": "kb_similar_incident",
+        "args": {
+          "symptom": "Ceph Block Control Node RBD 에러 및 VM 리붓(Fencing) 발생",
+          "top_k": 5
+        }
+      },
+      "notes": "",
+      "stability": "stable"
+    },
+    {
+      "id": "SI3",
+      "category": "SI",
+      "kind": "win",
+      "title": "L4 VIP 신규연결 지연 패턴",
+      "prompt": "L4 로드밸런서 VIP로 들어오는 신규 연결의 5~10%만 지연되거나 실패하고 backend 서버는 정상이야. 이미 알려진 장애 패턴이 있어? 확신도도 같이 말해줘.",
+      "truth": "등록 패턴: 'L4 LB VIP 신규연결 5~10% 지연/실패 — 이분화된 SYN-ACK 패턴(반환경로 유실형/고정 4초 지연형), backend는 건강'. confidence 0.25(낮음) → 단정 금지.",
+      "must": [
+        "SYN-ACK|이분화|4초",
+        "낮|0\\.25|불확실|확정"
+      ],
+      "oracle": {
+        "tool": "kb_list_failure_buckets",
+        "args": {
+          "fb_domain": "network",
+          "limit": 20
+        }
+      },
+      "notes": "낮은 confidence를 단정으로 바꾸면 감점.",
+      "stability": "drifting",
+      "dev_note": "개발 서버에 등록된 버킷 기준. 운영 버킷 목록은 oracle로 확인 후 해당 패턴이 없으면 문항을 교체."
+    },
+    {
+      "id": "SI4",
+      "category": "SI",
+      "kind": "win",
+      "title": "NSX LB SNAT 즉시 RST",
+      "prompt": "NSX 로드밸런서의 SNAT 환경에서 backend로 가는 연결이 즉시 RST로 끊겨. 알려진 원인 패턴이 있어?",
+      "truth": "등록 패턴: 'NSX LB SNAT-backend stale-ACK 즉시 RST (연결 시퀀스 상태 오조회)', confidence 0.833, onprem",
+      "must": [
+        "stale-ACK|stale ACK|시퀀스"
+      ],
+      "oracle": {
+        "tool": "kb_list_failure_buckets",
+        "args": {
+          "fb_domain": "network",
+          "limit": 20
+        }
+      },
+      "notes": "",
+      "stability": "drifting",
+      "dev_note": "개발 서버에 등록된 버킷 기준. 운영 버킷 목록은 oracle로 확인 후 해당 패턴이 없으면 문항을 교체."
+    },
+    {
+      "id": "PI1",
+      "category": "PI",
+      "kind": "win",
+      "title": "Linux OOM 점검항목",
+      "prompt": "Linux OOM(Out of Memory) 관련 PISA 점검항목 코드와 제목을 알려줘.",
+      "truth": "PISAOLNX_02.01.02",
+      "must": [
+        "PISAOLNX_02\\.01\\.02"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "Linux OOM",
+          "section": "checkitem",
+          "limit": 5
+        }
+      },
+      "notes": "공식 항목은 KB에만 완전. A는 Confluence에 일부만 있어 '없음' 오답 가능.",
+      "stability": "stable"
+    },
+    {
+      "id": "PI2",
+      "category": "PI",
+      "kind": "weak",
+      "title": "Linux inode 점검항목",
+      "prompt": "Linux 파일시스템 inode 사용률 점검항목 코드를 알려줘.",
+      "truth": "PISAOLNX_04.04.03 (알려진 약점: kb_search는 8위. kb_list_checkitems(q='inode') 우회 필요)",
+      "must": [
+        "PISAOLNX_04\\.04\\.03"
+      ],
+      "oracle": {
+        "tool": "kb_list_checkitems",
+        "args": {
+          "q": "inode"
+        }
+      },
+      "notes": "B는 틀릴 가능성, C는 스킬 우회로 맞아야 함.",
+      "stability": "stable"
+    },
+    {
+      "id": "PI3",
+      "category": "PI",
+      "kind": "weak",
+      "title": "한국어 증상 문장 → 점검항목",
+      "prompt": "메모리가 부족해서 프로세스가 강제로 종료되는 경우, 어떤 PISA 점검항목을 봐야 해?",
+      "truth": "PISAOLNX_02.01.02 계열 (알려진 약점: 증상 문장 검색은 일반 문서가 채움)",
+      "must": [
+        "PISAOLNX_02\\.01\\.02"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "메모리 부족으로 프로세스가 강제 종료됨",
+          "section": "checkitem",
+          "limit": 5
+        }
+      },
+      "notes": "",
+      "stability": "stable"
+    },
+    {
+      "id": "PI4",
+      "category": "PI",
+      "kind": "parity",
+      "title": "점검항목 코드로 상세 조회",
+      "prompt": "PISAOLNX_02.01.02 점검항목의 점검 기준과 조치 방법을 요약해줘.",
+      "truth": "(oracle 원문 기준)",
+      "must": [],
+      "oracle": {
+        "tool": "kb_get_checkitem",
+        "args": {
+          "code": "PISAOLNX_02.01.02"
+        }
+      },
+      "notes": "A는 Confluence에 해당 페이지가 있으면 가능. 원문 충실도 비교.",
+      "stability": "stable"
+    },
+    {
+      "id": "PI5",
+      "category": "PI",
+      "kind": "win",
+      "title": "Tibero 파일시스템 모니터링 항목",
+      "prompt": "Tibero DB의 파일시스템(Datafile, Archivelog 등) 모니터링 PISA 점검항목을 알려줘.",
+      "truth": "PISADBTB_06.03.08",
+      "must": [
+        "PISADBTB_06\\.03\\.08"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "Tibero 파일시스템 모니터링",
+          "section": "checkitem",
+          "limit": 5
+        }
+      },
+      "notes": "",
+      "stability": "stable"
+    },
+    {
+      "id": "CP1",
+      "category": "CP",
+      "kind": "win",
+      "title": "전체 분야 공수·비용(1안, 7일)",
+      "prompt": "PISA 점검을 1안 기준 7일로 수행할 때, AIX 20대, HP-UX 20대, Solaris 20대, Linux 20대, Windows 20대, Web/WAS 5개, DBMS 5개, 가상화 5대, 스토리지 5대, 네트워크 10대의 총 공수(M/M)와 비용을 계산해줘. 산출 근거도 보여줘.",
+      "truth": "총 130 단위, 2.5 M/M, 16,900 (KRW 표기, 분야당 0.25 M/M)",
+      "must": [
+        "2\\.5",
+        "16[,]?900"
+      ],
+      "oracle": {
+        "tool": "kb_capacity_estimate",
+        "args": {
+          "period_days": 7,
+          "basis": "1안"
+        }
+      },
+      "notes": "KB는 LLM 없이 규칙으로 계산(결정적). A는 FAQ 문서를 찾아 LLM이 직접 계산 → 산술/규칙 오류 가능.",
+      "stability": "stable"
+    },
+    {
+      "id": "CP2",
+      "category": "CP",
+      "kind": "win",
+      "title": "기간 변경 시 공수",
+      "prompt": "같은 조건(1안)에서 점검 기간을 14일로 늘리면 총 공수와 비용은 어떻게 돼?",
+      "truth": "(실행 당일 oracle 값 사용)",
+      "must": [],
+      "oracle": {
+        "tool": "kb_capacity_estimate",
+        "args": {
+          "period_days": 14,
+          "basis": "1안"
+        }
+      },
+      "notes": "스케일 규칙(scale, scale_note) 해석 확인.",
+      "stability": "drifting"
+    },
+    {
+      "id": "CP3",
+      "category": "CP",
+      "kind": "win",
+      "title": "단일 분야 공수",
+      "prompt": "Linux 서버 20대를 1주일 점검하는 데 필요한 공수와 비용은?",
+      "truth": "0.25 M/M, 2,000",
+      "must": [
+        "0\\.25",
+        "2[,]?000"
+      ],
+      "oracle": {
+        "tool": "kb_capacity_estimate",
+        "args": {
+          "period_days": 7,
+          "basis": "1안"
+        }
+      },
+      "notes": "",
+      "stability": "stable"
+    },
+    {
+      "id": "JA1",
+      "category": "JA",
+      "kind": "parity",
+      "title": "올해 component별 건수",
+      "prompt": "올해(2026년) 기술지원 Jira 티켓을 component별로 건수와 비중을 알려줘.",
+      "truth": "총 278건: 기술지원 196(70.5%), 장애지원 31, 수명업무 15, 추진과제 9, 진단컨설팅 8",
+      "must": [
+        "278",
+        "196",
+        "31"
+      ],
+      "oracle": {
+        "tool": "kb_analytics",
+        "args": {
+          "group_by": "component",
+          "relative": "올해"
+        }
+      },
+      "notes": "A는 JQL로 가능. 호출 수와 정확도 비교.",
+      "stability": "drifting"
+    },
+    {
+      "id": "JA2",
+      "category": "JA",
+      "kind": "parity",
+      "title": "SCP 비중",
+      "prompt": "올해 티켓 중 제목에 SCP가 들어간 비중은 몇 %야?",
+      "truth": "137/278 = 49.28%",
+      "must": [
+        "137",
+        "49"
+      ],
+      "oracle": {
+        "tool": "kb_entity_share",
+        "args": {
+          "entity": "SCP",
+          "relative": "올해"
+        }
+      },
+      "notes": "정의(제목/ID/본문 앞 1500자)가 KB와 다르면 수치가 달라질 수 있음 — 정의를 밝혔는지 확인.",
+      "stability": "drifting"
+    },
+    {
+      "id": "JA3",
+      "category": "JA",
+      "kind": "parity",
+      "title": "월별 장애지원 추이",
+      "prompt": "올해 장애지원 건수를 월별로 보여줘.",
+      "truth": "총 31건: 05월 6, 07월 5, 09월 5, 08월 4, 01월 3, 06월 3, 02월 2, 04월 2, 03월 1",
+      "must": [
+        "31",
+        "6"
+      ],
+      "oracle": {
+        "tool": "kb_query",
+        "args": {
+          "q": "올해 월별 장애지원 건수 추이"
+        }
+      },
+      "notes": "",
+      "stability": "drifting"
+    },
+    {
+      "id": "JA4",
+      "category": "JA",
+      "kind": "parity",
+      "title": "2026년 9월 기술지원 목록",
+      "prompt": "2026년 9월 기술지원 티켓 목록을 알려줘. 건수도.",
+      "truth": "25건 (component=기술지원). 전체 component는 38건",
+      "must": [
+        "25"
+      ],
+      "oracle": {
+        "tool": "kb_list_tickets",
+        "args": {
+          "date_from": "2026-09-01",
+          "date_to": "2026-09-30"
+        }
+      },
+      "notes": "component 범위(기술지원 25 vs 전체 38)를 구분해서 답하는지.",
+      "stability": "drifting"
+    },
+    {
+      "id": "TK1",
+      "category": "TK",
+      "kind": "parity",
+      "title": "티켓 번호로 요약",
+      "prompt": "CITECTS-2247 티켓 내용을 요약해줘.",
+      "truth": "(oracle 원문 기준)",
+      "must": [
+        "fencing"
+      ],
+      "oracle": {
+        "tool": "kb_ticket",
+        "args": {
+          "external_id": "CITECTS-2247"
+        }
+      },
+      "notes": "A는 Jira 직접 조회로 동등. 효율 비교.",
+      "stability": "stable"
+    },
+    {
+      "id": "AR1",
+      "category": "AR",
+      "kind": "win",
+      "title": "레거시 장애목록 검색",
+      "prompt": "2018년 8월 8일 이벤트 기간에 DB 성능개선 작업 중 인덱스를 삭제해서 난 장애 이력이 있어? 있다면 어떤 문서에 있는지 알려줘.",
+      "truth": "dept_archive '전체장애목록-2016-2021-패치'(file_80892)에 해당 행 존재(장애 ID 18080831223 부근). 신뢰도 weak 문서이므로 원문 확인 필요.",
+      "must": [
+        "전체장애목록|file_80892|18080831223"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "이벤트 시 DB성능개선 작업 중 인덱스 삭제 작업 Operation오류",
+          "section": "dept_archive",
+          "limit": 5
+        }
+      },
+      "notes": "부서 아카이브(1,111건)는 Jira/Confluence에 없는 파일 자료.",
+      "stability": "stable"
+    },
+    {
+      "id": "FR1",
+      "category": "FR",
+      "kind": "fresh",
+      "title": "최근 7일 수정 문서",
+      "prompt": "최근 7일 동안 수정되거나 새로 생긴 Confluence 문서 목록을 알려줘.",
+      "truth": "(실행 시점 oracle 값 사용) 개발 서버는 수집이 멈춰 0건이었으나 운영은 계속 갱신됨. 라이브가 더 최신일 수 있어 동기화 지연을 밝히는지 확인.",
+      "must": [],
+      "oracle": {
+        "tool": "kb_recent_changes",
+        "args": {
+          "relative": "최근 7일",
+          "change_type": "all"
+        }
+      },
+      "notes": "A 유리 가능성. B/C가 '수집 지연 가능성'을 밝히는지 확인.",
+      "stability": "drifting",
+      "dev_note": "개발 서버는 수집이 멈춰 있어 0건이었음. 운영 값은 oracle로 확인."
+    },
+    {
+      "id": "HN1",
+      "category": "HN",
+      "kind": "honesty",
+      "title": "미래 기간 질문",
+      "prompt": "2027년 상반기 삼성전자 Network 장애 건수는 몇 건이야?",
+      "truth": "미래 시점이라 데이터 없음. 추정이라면 근거를 밝히고 사실로 단정하지 않아야 함.",
+      "must": [
+        "없|아직|미래|도래|예측|추정"
+      ],
+      "oracle": null,
+      "notes": "숫자를 사실처럼 제시하면 0점.",
+      "stability": "stable"
+    },
+    {
+      "id": "MP1",
+      "category": "MP",
+      "kind": "parity",
+      "title": "증상=제목 KDB 페이지 찾기",
+      "prompt": "vCenter에서 'vSphere UI Health Alarm on Datacenters changed from Green to Yellow' 알람이 떴어. 이 알람을 다룬 Confluence 문서(KDB)를 찾아서 페이지 ID와 어느 팀 문서인지 알려줘.",
+      "truth": "페이지 557085068 '[HV] VMware : ( VCENTER ) Alarm vSphere UI Health Alarm on Datacenters changed from Green to Yellow', 경로 MSP인프라기술그룹 Home > 문제 해결 문서 (KDB)",
+      "must": [
+        "557085068",
+        "MSP인프라기술그룹"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "VMware vCenter Alarm changed from Green to Yellow",
+          "section": "confluence_map",
+          "limit": 6
+        }
+      },
+      "notes": "제목에 에러 문자열이 그대로 있어 A(CQL title~)도 찾을 수 있음. 정확도 동등, 호출 수와 '소속 팀 경로' 제시 여부 비교. 맵 결과는 pointer-only이므로 본문 내용을 지어내면 감점.",
+      "stability": "stable"
+    },
+    {
+      "id": "MP2",
+      "category": "MP",
+      "kind": "win",
+      "title": "상위 경로·소속 폴더 파악",
+      "prompt": "Confluence 페이지 557085068이 어느 공간의 어떤 폴더 아래에 있는지 상위 경로를 알려줘.",
+      "truth": "MSP인프라기술그룹 Home > 문제 해결 문서 (KDB) > 해당 페이지 (상위 폴더 id 271492877)",
+      "must": [
+        "문제 해결 문서",
+        "271492877|KDB"
+      ],
+      "oracle": {
+        "tool": "kb_graph_explore",
+        "args": {
+          "anchor_type": "document",
+          "anchor_value": "557085068"
+        }
+      },
+      "notes": "A는 getPageByID(expand=ancestors)로 가능. 호출 1~2회 비교.",
+      "stability": "stable"
+    },
+    {
+      "id": "MP3",
+      "category": "MP",
+      "kind": "win",
+      "title": "폴더 내 형제 문서 전수 열거",
+      "prompt": "Confluence 페이지 557085068이 속한 '문제 해결 문서 (KDB)' 폴더에 문서가 총 몇 건 있는지 알려줘. 그리고 제목이 [STG]로 시작하는 문서와 [HW]로 시작하는 문서의 건수도 구분해줘.",
+      "truth": "폴더 하위 문서 약 321~322건(kb_graph_explore 연관 문서 322건 = 상위 폴더 1 + 하위). [STG]/[HW]/[HV] 접두별 건수는 oracle 전수 집계로 확정.",
+      "must": [
+        "32[0-3]"
+      ],
+      "oracle": {
+        "tool": "kb_graph_explore",
+        "args": {
+          "anchor_type": "document",
+          "anchor_value": "557085068",
+          "documents_offset": 0
+        }
+      },
+      "notes": "KB는 50건씩 7페이지(offset 재호출), A는 getChildren 페이지네이션 반복. 정답은 접두별 건수를 직접 세어 확정. 전수 열거를 중간에 포기하고 일부만 센 뒤 전체라고 단정하면 감점.",
+      "stability": "drifting"
+    },
+    {
+      "id": "MP4",
+      "category": "MP",
+      "kind": "fresh",
+      "title": "최근 수정 페이지(공간·경로·버전)",
+      "prompt": "최근 30일 동안 Openstack101 공간에서 수정된 Confluence 페이지 중 Neutron 관련 이슈 분석 문서를 경로와 함께 알려줘.",
+      "truth": "(실행 시점 oracle 값 사용) 운영 맵의 최신 수정 시각과 라이브 조회 결과의 차이가 동기화 지연. 개발 서버값은 참고하지 않는다.",
+      "must": [
+        "SDSOS-31700|SDSOS-29800"
+      ],
+      "oracle": {
+        "tool": "kb_recent_changes",
+        "args": {
+          "relative": "최근 30일",
+          "change_type": "all",
+          "space_key": "Openstack101",
+          "title_contains": "NEUTRON"
+        }
+      },
+      "notes": "신선도 측정 문항. 같은 조건을 A/D(라이브)와 B/C(맵)가 답한 뒤, 라이브에만 있고 맵에 없는 페이지 비율과 맵 최신 modified 시각 차이를 기록한다.",
+      "stability": "drifting",
+      "dev_note": "개발 서버 맵은 2026-10-06 이후 갱신되지 않음(스냅샷). 이 문항은 개발 결과를 기대값으로 쓰지 않고 운영의 동기화 지연을 측정한다."
+    },
+    {
+      "id": "MP5",
+      "category": "MP",
+      "kind": "weak",
+      "title": "크롤 범위 밖 페이지(커버리지 갭)",
+      "prompt": "OpenStack Neutron L3 에이전트 장애 트러블슈팅 Confluence 문서를 찾아줘.",
+      "truth": "Confluence에는 Openstack101 1857584042, DevOps001 2125218057가 존재(docs/CITEC_KB_MAP_COVERAGE_GAP.md). 개발 서버 맵 검색은 못 찾았음(2026-11-04). 운영은 root 추가 배포·재크롤 여부에 따라 다름 — oracle로 판정.",
+      "must": [
+        "1857584042|2125218057"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "OpenStack Neutron L3 에이전트 장애 트러블슈팅",
+          "section": "confluence_map",
+          "limit": 6
+        }
+      },
+      "notes": "맵은 선별 서브트리만 크롤. A/D는 전체 CQL로 찾을 수 있음. B/C가 못 찾았을 때 '없다'가 아니라 '맵 범위 밖일 수 있다'고 말하는지 본다.",
+      "stability": "drifting",
+      "dev_note": "개발 서버는 root 추가 이후 재크롤을 하지 않았을 수 있음. 운영에서는 이미 해결됐을 수 있으므로 oracle 결과로 판정."
+    },
+    {
+      "id": "MP6",
+      "category": "MP",
+      "kind": "win",
+      "title": "한 번의 호출로 KDB + 레거시 자료",
+      "prompt": "서버 HW에서 'CPU Uncorrectable Machine Check Exception'이 발생했어. 관련 Confluence KDB와 과거 부서 자료를 같이 찾아줘.",
+      "truth": "KDB 페이지 282394732, 305293208 ([HW] (CPU) Uncorrectable Machine Check Exception) + 레거시 dept_archive 자료(file_159582, file_159659 등)",
+      "must": [
+        "282394732|305293208"
+      ],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "서버 HW CPU Uncorrectable Machine Check Exception 조치",
+          "limit": 6
+        }
+      },
+      "notes": "A는 Confluence만. 레거시 파일 자료를 함께 제시하는지가 차이.",
+      "stability": "stable"
+    },
+    {
+      "id": "MP7",
+      "category": "MP",
+      "kind": "honesty",
+      "title": "포인터 문서의 본문을 지어내는가",
+      "prompt": "[HW] CPU Uncorrectable Machine Check Exception KDB 문서에 적힌 조치 방법을 단계별로 요약해줘.",
+      "truth": "맵 항목이 제목·경로만 있는 포인터(evidence_grade=C)이면 B/C는 '본문 미확인, 원문 확인 필요'라고 밝혀야 함. 본문이 실제로 있으면 그 내용만 요약. A/D는 라이브로 본문을 읽고 요약.",
+      "must": [],
+      "oracle": {
+        "tool": "kb_get_document",
+        "args": {
+          "path": "confluence_map/305293208.md"
+        }
+      },
+      "notes": "사람이 채점: oracle 원문에 본문이 있는지 먼저 확인. 본문 없는데 조치 단계를 쓰면 0점(환각), '미확인'이라 밝히면 정직성 1.",
+      "stability": "stable"
+    },
+    {
+      "id": "MP8",
+      "category": "MP",
+      "kind": "weak",
+      "title": "티켓에서 유관 Confluence 문서 찾기",
+      "prompt": "CITECTS-2247(pacemaker fencing 실패 및 서버 재시작 원인분석)과 관련된 Confluence 문서를 찾아줘.",
+      "truth": "티켓→페이지 직접 연결은 그래프에 없음(kb_graph_explore status=isolated, 2026-11-04). 검색으로 pacemaker/fencing 관련 map·tech_repo 페이지를 찾아야 함. 연결이 없다는 사실을 밝히고 검색 결과로 대체했는지 확인.",
+      "must": [],
+      "oracle": {
+        "tool": "kb_search",
+        "args": {
+          "query": "pacemaker fencing",
+          "section": "confluence_map",
+          "limit": 5
+        }
+      },
+      "notes": "기존 평가(그래프 확장 recall 개선 0건)와 일치하는 약점. 그래프로 관련 문서를 안다고 단정하면 감점.",
+      "stability": "drifting",
+      "dev_note": "그래프 배치 시점이 서버마다 다름(개발 마지막 배치 2026-10-14). 운영 결과를 기준으로 재판정."
+    },
+    {
+      "id": "FR2",
+      "category": "FR",
+      "kind": "fresh",
+      "stability": "drifting",
+      "title": "최근 3일 수정 페이지 포착률(동기화 지연)",
+      "prompt": "Openstack101 공간에서 최근 3일 이내에 수정되었거나 새로 생긴 Confluence 페이지를 모두 알려줘. 각 페이지의 제목, 경로, 마지막 수정 시각을 포함해.",
+      "truth": "(실행 시점) A/D의 라이브 결과 또는 사람이 Confluence에서 lastModified로 조회한 목록이 기준. B/C는 그중 몇 %를 포착했는지, 맵의 최신 수정 시각이 라이브보다 얼마나 늦은지로 평가.",
+      "must": [],
+      "oracle": {
+        "tool": "kb_recent_changes",
+        "args": {
+          "relative": "최근 3일",
+          "change_type": "all",
+          "space_key": "Openstack101"
+        }
+      },
+      "notes": "포착률 = (B/C가 제시한 페이지 ∩ 라이브 목록) / 라이브 목록. 맵이 모르는 변경을 '없다'고 단정하면 감점. 동기화 시점 이후 변경은 반영되지 않는다고 밝히면 정직성 1.",
+      "dev_note": "개발 서버는 수집이 멈춰 있어 이 문항을 개발에서 검증하지 않는다. 운영에서만 의미가 있다."
+    }
+  ],
+  "env_probes": [
+    {
+      "id": "stats",
+      "tool": "kb_stats",
+      "args": {}
+    },
+    {
+      "id": "graph_status",
+      "tool": "kb_graph_status",
+      "args": {}
+    },
+    {
+      "id": "map_latest",
+      "tool": "kb_recent_changes",
+      "args": {
+        "relative": "최근 3일",
+        "change_type": "all"
+      }
+    },
+    {
+      "id": "health",
+      "tool": "kb_health",
+      "args": {}
+    }
+  ]
+}
