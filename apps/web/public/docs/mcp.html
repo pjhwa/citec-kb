@@ -41,7 +41,7 @@
       <p class="lead">Claude / Cursor용 kb_search · kb_ask · kb_query</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/MCP.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-28</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-20</div></div>
       </div>
     </header>
     <section>
@@ -124,6 +124,11 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 <td><code>kb_ticket</code></td>
 <td>티켓 전체 본문</td>
 <td><code>GET /v1/tickets/{id}</code></td>
+</tr>
+<tr>
+<td><strong><code>kb_recent_changes</code></strong></td>
+<td>Confluence(map/docs/tech_repo) 최근 수정·신규 문서 목록 (<code>relative</code>·<code>date_from</code>/<code>date_to</code>, <code>change_type</code>, <code>space_key</code>)</td>
+<td><code>GET /v1/documents/recent-changes</code></td>
 </tr>
 </tbody>
 </table></div>
@@ -213,16 +218,28 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 </tr>
 <tr>
 <td><code>kb_list_failure_buckets</code></td>
-<td>등록된 버킷 목록. <code>fb_domain</code> 선택 필터</td>
+<td>등록된 버킷 목록. <code>fb_domain</code> 선택 필터. 기본은 활성(active)만 — <code>include_retired=true</code>면 retire·시험(<code>-test</code>) 포함</td>
 <td><code>GET /v1/failure-buckets</code></td>
 </tr>
 <tr>
 <td><code>kb_get_failure_bucket</code></td>
-<td>버킷 상세(신호/원인/조치)</td>
+<td>버킷 상세(신호/원인/조치). retire된 건도 조회되며 <code>status</code>/사유가 보인다</td>
 <td><code>GET /v1/failure-buckets/{id}</code></td>
+</tr>
+<tr>
+<td><code>kb_retire_failure_bucket</code></td>
+<td><strong>[쓰기]</strong> 잘못 등록한 버킷을 되돌림(<code>bucket_id</code>, <code>reason</code> 8자 이상). <strong>삭제가 아니라 숨김</strong> — 목록·매칭·<code>kb_search</code>·그래프 이웃·집계에서 빠진다. <code>senior</code> 이상(인증 켜진 경우)</td>
+<td><code>POST /v1/failure-buckets/{id}/retire</code></td>
+</tr>
+<tr>
+<td><code>kb_restore_failure_bucket</code></td>
+<td><strong>[쓰기]</strong> retire된 버킷(또는 <code>-test</code> 시험 등록)을 활성으로 복구</td>
+<td><code>POST /v1/failure-buckets/{id}/restore</code></td>
 </tr>
 </tbody>
 </table></div>
+<p>잘못 등록했으면 새로 등록해서 덮지 말고 retire한다. 등록 응답의 <code>registrant_kind</code>, <code>created_by_warning</code>, <code>evidence_ref_note</code>는 안내이며 거부가 아니다.<br>
+MCP 서버는 환경 변수 <code>CITEC_KB_API_KEY</code>가 있을 때만 <code>X-API-Key</code>를 보낸다(<a href="./AUTH_ENABLEMENT.md">AUTH_ENABLEMENT.md</a>).</p>
 <p><code>fb_domain</code> 값 목록은 <a href="../references/failure-bucket-domains.md">failure-bucket-domains.md</a> 참고.<br>
 플러그인 개발자용 상세 지침은 <a href="./FAILURE_BUCKET_PLUGIN_GUIDE.md">FAILURE_BUCKET_PLUGIN_GUIDE.md</a>.</p>
 <h3 id="_7">문서 업로드 (쓰기)</h3>

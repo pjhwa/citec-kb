@@ -377,6 +377,7 @@ def failure_bucket_coverage(
                     select(func.count())
                     .select_from(FailureBucket)
                     .where(FailureBucket.fb_domain == fb_domain)
+                    .where(FailureBucket.status == "active")
                 )
                 or 0
             )

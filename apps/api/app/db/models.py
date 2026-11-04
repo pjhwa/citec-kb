@@ -391,6 +391,7 @@ class FailureBucket(Base):
         Index("ix_failure_buckets_fb_domain", "fb_domain"),
         Index("ix_failure_buckets_fb_domain_protocol", "fb_domain", "protocol"),
         Index("ix_failure_buckets_environment", "environment"),
+        Index("ix_failure_buckets_status", "status"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
@@ -420,6 +421,12 @@ class FailureBucket(Base):
     counter_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     evidence_grade: Mapped[str] = mapped_column(String(8), nullable=False, server_default="machine")
     created_by: Mapped[Optional[str]] = mapped_column(String(128))
+    # active | retired | test. Every read path filters `status == 'active'` so any
+    # other value (retired, test) is hidden by default. Never hard-deleted.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="active", default="active")
+    retired_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    retired_by: Mapped[Optional[str]] = mapped_column(String(128))
+    retire_reason: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

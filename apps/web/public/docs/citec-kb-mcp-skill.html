@@ -20,6 +20,7 @@
       <a href="#1">1. 절대 규칙 (매번 지킬 것)</a>
       <a href="#2-evidence_grade">2. 신뢰도 규칙 — evidence_grade (반드시 확인)</a>
       <a href="#3-1">3. 도구 선택 — 1초 결정표</a>
+      <a href="#31-kb_graph_explore" style="padding-left:20px;font-size:12px">3.1 kb_graph_explore 쓸 때 추가로 챙길 것</a>
       <a href="#4">4. 금지 패턴</a>
       <a href="#5">5. 답변 형식 (권장)</a>
       <a href="#6">6. 더 깊이 볼 때</a>
@@ -35,7 +36,7 @@
       <p class="lead">AI가 citec-kb를 MCP로 검색할 때 따를 압축 지시문 — evidence_grade 신뢰도 규칙 포함</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/CITEC_KB_MCP_SKILL.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">-</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-12</div></div>
       </div>
     </header>
     <section>
@@ -164,7 +165,11 @@ description: &gt;
 </tr>
 <tr>
 <td>진단 패턴(네트워크/클러스터 등) 매칭·등록</td>
-<td><code>kb_match_failure_bucket</code> → 없으면 <code>kb_register_failure_bucket</code>, 맞았으면 <code>kb_refine_failure_bucket(confirm=True)</code></td>
+<td><code>kb_match_failure_bucket</code> → 없으면 <code>kb_register_failure_bucket</code>, 맞았으면 <code>kb_refine_failure_bucket(confirm=True)</code> (등록 응답에 <code>possible_duplicate_of</code>가 오면 재등록 말고 refine). 잘못 등록했으면 새로 덮지 말고 <code>kb_retire_failure_bucket</code>(숨김, <code>kb_restore_failure_bucket</code>으로 복구)</td>
+</tr>
+<tr>
+<td>1차 후보를 찾은 뒤 연관 컴포넌트/문서/과거 장애를 더 깊이</td>
+<td><code>kb_graph_explore</code>(검색 대체재 아님 — 이 표의 다른 도구로 1차 후보를 먼저 찾은 다음 단계로만 쓸 것)</td>
 </tr>
 <tr>
 <td>뭘 써야 할지 모름</td>
@@ -172,6 +177,17 @@ description: &gt;
 </tr>
 </tbody>
 </table></div>
+<hr>
+<h3 id="31-kb_graph_explore">3.1 <code>kb_graph_explore</code> 쓸 때 추가로 챙길 것</h3>
+<ul>
+<li><code>exclude_page_ids</code>/<code>exclude_subtree_ids</code>/<code>exclude_source_types</code>(쉼표구분)로<br>
+  평가/검증 보고서 같은 걸 결과에서 뺄 수 있다 — 일반 업무 질문에는 비워 둔다.</li>
+<li>카테고리당 최대 50건까지 페이지로 끊긴다. 응답이 "N건 중 X-Y건 표시"이고<br>
+  Y&lt;N이면 다 본 게 아니다 — <code>documents_offset</code>/<code>components_offset</code>/<br>
+<code>failure_buckets_offset</code>을 응답이 알려주는 다음 값으로 올려 재호출한다.</li>
+<li><code>as_of</code>는 그래프의 마지막 배치 동기화 날짜(최대 ~1일 지연) — 최종 사실<br>
+  확인은 반드시 <code>kb_search</code>/<code>kb_get_document</code>로 원문을 열어서.</li>
+</ul>
 <hr>
 <h2 id="4">4. 금지 패턴</h2>
 <ul>

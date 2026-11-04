@@ -327,15 +327,40 @@ def recent_failure_buckets(session, limit: int = 10) -> dict[str, Any]:
 
     rows = list(
         session.execute(
-            select(FailureBucket).order_by(FailureBucket.updated_at.desc()).limit(limit)
+            select(FailureBucket)
+            .where(FailureBucket.status == "active")
+            .order_by(FailureBucket.updated_at.desc())
+            .limit(limit)
         ).scalars()
     )
     domain_counts = dict(
         session.execute(
-            select(FailureBucket.fb_domain, func.count()).group_by(FailureBucket.fb_domain)
+            select(FailureBucket.fb_domain, func.count())
+            .where(FailureBucket.status == "active")
+            .group_by(FailureBucket.fb_domain)
+        ).all()
+    )
+    status_counts = dict(
+        session.execute(
+            select(FailureBucket.status, func.count()).group_by(FailureBucket.status)
+        ).all()
+    )
+    # Per-registrant volume over the last 24h (all statuses): the server does not cap
+    # registrations, so over-registration is made visible here instead.
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    who = func.coalesce(FailureBucket.created_by, "(none)").label("who")
+    created_24h = dict(
+        session.execute(
+            select(who, func.count())
+            .where(FailureBucket.created_at >= since)
+            .group_by(who)
+            .order_by(func.count().desc())
         ).all()
     )
     return {
+        "created_by_24h": {k: int(v) for k, v in created_24h.items()},
+        "retired_count": int(status_counts.get("retired", 0)),
+        "test_count": int(status_counts.get("test", 0)),
         "by_domain": {k: int(v) for k, v in domain_counts.items()},
         "recent": [
             {

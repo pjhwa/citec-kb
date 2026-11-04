@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import re
+import threading
+from pathlib import Path
 from typing import Any, Optional
+
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 
-from app.db.models import FailureBucket
+from app.db.models import Document, FailureBucket
 from app.db.session import session_scope
 from app.failure_buckets.draft import bucket_draft, compute_confidence
 from app.failure_buckets.match import rank_buckets
+from app.settings import get_settings
 from app.taxonomy import _FB_DOMAIN_TO_CORPUS_DOMAIN
 
 logger = logging.getLogger("citec.failure_buckets")
@@ -60,9 +67,27 @@ def normalize_match_filters(
     return dom, env
 
 
+STATUS_ACTIVE = "active"
+STATUS_RETIRED = "retired"
+STATUS_TEST = "test"
+TEST_SUFFIX = "-test"
+
+# Retire reasons shorter than this are rejected — a retire without a stated
+# reason can't be audited later.
+MIN_RETIRE_REASON_LEN = 8
+
+
+class BucketRetiredError(Exception):
+    """Raised when a write (refine) targets a retired bucket."""
+
+
 def _to_dict(row: FailureBucket) -> dict[str, Any]:
     return {
         "id": row.id,
+        "status": row.status or STATUS_ACTIVE,
+        "retired_at": row.retired_at.isoformat() if row.retired_at else None,
+        "retired_by": row.retired_by,
+        "retire_reason": row.retire_reason,
         "document_id": row.document_id,
         "bucket_name": row.bucket_name,
         "fb_domain": row.fb_domain,
@@ -108,6 +133,14 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
         if row and row.document_id != doc_id:
             row.document_id = doc_id
             session.flush()
+        # kb_search/kb_query/kb_ask only return Document.status == 'active', and the
+        # ingest upsert revives 'archived' docs. So a non-active bucket (retired/test)
+        # must have its mirror re-archived after every upsert.
+        if row and (row.status or STATUS_ACTIVE) != STATUS_ACTIVE:
+            doc = session.get(Document, doc_id)
+            if doc is not None:
+                doc.status = "archived"
+                session.flush()
 
     try:
         emb = embed_pending_chunks(document_id=doc_id, batch_size=16)
@@ -124,12 +157,109 @@ def _index_bucket(bucket_id: str) -> dict[str, Any]:
 
 _DUPLICATE_SCORE_THRESHOLD = 0.75
 
+# ── system registrants (created_by = "<system>@<version>") ────────────────
+_SYSTEM_CREATED_BY_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
+# "<name>@<version-ish>": a version starts with an optional v and a digit. Used only to
+# decide whether an unlisted name@x value looks like an attempted system registrant
+# (vs. a human email such as someone@example.com, which gets no warning).
+_VERSIONISH_RE = re.compile(r"^v?\d")
+_registrants_lock = threading.Lock()
+_registrants_cache: tuple[tuple[float, int] | None, frozenset[str]] = (None, frozenset())
+
+
+def _system_registrants() -> frozenset[str]:
+    """System names from config/system_registrants.json (mtime/size cached).
+
+    A missing or malformed file yields an empty set (nobody is classified as a
+    system) — registration itself must never fail on this soft convention.
+    """
+    global _registrants_cache
+    path = Path(get_settings().config_dir) / "system_registrants.json"
+    try:
+        st = path.stat()
+        key: tuple[float, int] | None = (st.st_mtime, st.st_size)
+    except OSError:
+        return frozenset()
+    with _registrants_lock:
+        if _registrants_cache[0] == key:
+            return _registrants_cache[1]
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            names = frozenset(str(n).strip() for n in (data.get("systems") or []) if str(n).strip())
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to load %s", path)
+            names = frozenset()
+        _registrants_cache = (key, names)
+        return names
+
+
+def classify_registrant(created_by: Optional[str]) -> tuple[str, Optional[str]]:
+    """Return (registrant_kind, warning). Never rejects.
+
+    system: matches `<name>@<version>` AND <name> is on the allowlist.
+    human:  everything else; a warning is added only when the value looks like an
+            attempted system registrant (bad format, or unlisted name with a
+            version-like suffix).
+    """
+    value = (created_by or "").strip()
+    if "@" not in value:
+        return "human", None
+    if not _SYSTEM_CREATED_BY_RE.match(value):
+        return "human", (
+            f"created_by='{value}'가 '<시스템>@<판>' 형식"
+            "(^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$)과 다릅니다. 시스템 등록자는 예: insight-ops@v1.4"
+        )
+    name, version = value.split("@", 1)
+    if name in _system_registrants():
+        return "system", None
+    if _VERSIONISH_RE.match(version):
+        return "human", (
+            f"created_by='{value}'의 시스템 이름 '{name}'이 허용 목록(config/system_registrants.json)에 없습니다. "
+            "KB 담당자에게 등록을 신청하세요. 현재는 사람 등록(registrant_kind=human)으로 처리됩니다."
+        )
+    return "human", None
+
 # evidence_ref soft-format check (warning only, not a rejection — see
 # multi-plugin design doc §11 "운영 마찰을 줄이기 위한 의도적 선택" and the
 # analysis doc §B-3: kept as a warning because retroactively rejecting the
 # existing legacy:pre-migration rows would be a breaking change, and because
 # new prefixes will legitimately appear as new plugins register buckets).
-_EVIDENCE_REF_PREFIXES = ("capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:")
+_EVIDENCE_REF_PREFIXES = (
+    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "agent-room:",
+)
+# Accepted without a warning, but a human may not be able to open them later
+# (insight: needs an insight-ops login; agent-room: vanishes with the room).
+_RESTRICTED_EVIDENCE_PREFIXES = ("insight:", "agent-room:")
+
+
+def _annotate_registration(
+    result: dict[str, Any], *, fb_domain: str, evidence_ref: str, created_by: Optional[str]
+) -> None:
+    """Soft-convention feedback on a registration response (never rejects)."""
+    if fb_domain not in _known_fb_domains():
+        result["fb_domain_warning"] = (
+            f"fb_domain='{fb_domain}'는 references/failure-bucket-domains.md에 없는 새 값입니다. "
+            "오타가 아니라면 문서에 추가해 주세요."
+        )
+
+    ref_check = evidence_ref.strip().lower()
+    if not ref_check.startswith(_EVIDENCE_REF_PREFIXES):
+        result["evidence_ref_warning"] = (
+            f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
+            f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
+            "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
+        )
+
+    kind, created_by_warning = classify_registrant(created_by)
+    result["registrant_kind"] = kind
+    if created_by_warning:
+        result["created_by_warning"] = created_by_warning
+
+    if ref_check.startswith(_RESTRICTED_EVIDENCE_PREFIXES) and "confluence:" not in ref_check:
+        result["evidence_ref_note"] = (
+            "열람 제약 있음(insight:는 insight-ops 로그인 필요, agent-room:은 방 삭제 시 근거 소실). "
+            "결과 보고서를 Confluence에 올리고 confluence:<page id>를 병기하길 권장합니다."
+        )
 
 
 def create_bucket(
@@ -145,9 +275,40 @@ def create_bucket(
     protocol: Optional[str] = None,
     environment: Optional[str] = None,
     created_by: Optional[str] = None,
+    status: str = STATUS_ACTIVE,
 ) -> dict[str, Any]:
     fb_domain = fb_domain.strip().lower()
     environment = (environment or "").strip().lower() or None
+    # Trial registration: created_by ending in "-test" (e.g. sos-analyzer@v0.1-test) is stored
+    # as status="test" — hidden from list/match/search/graph/aggregates like a retired row.
+    if status == STATUS_ACTIVE and (created_by or "").strip().lower().endswith(TEST_SUFFIX):
+        status = STATUS_TEST
+
+    # Idempotent registration: same created_by + evidence_ref + bucket_name among live rows
+    # (same status class) returns the existing row instead of a duplicate, so a retry after a
+    # network timeout is safe. Best-effort (no DB unique constraint: legacy rows may collide).
+    if created_by:
+        with session_scope() as session:
+            existing_id = session.scalar(
+                select(FailureBucket.id)
+                .where(
+                    FailureBucket.created_by == created_by,
+                    FailureBucket.evidence_ref == evidence_ref.strip(),
+                    FailureBucket.bucket_name == bucket_name.strip(),
+                    FailureBucket.status == status,
+                )
+                .order_by(FailureBucket.created_at)
+                .limit(1)
+            )
+        if existing_id:
+            existing = get_bucket(existing_id)
+            if existing is not None:
+                existing["already_registered"] = True
+                _annotate_registration(
+                    existing, fb_domain=fb_domain, evidence_ref=evidence_ref, created_by=created_by
+                )
+                return existing
+
     dup_candidates = match_buckets(
         observed_signals=discriminating_signals,
         symptom=symptom,
@@ -169,6 +330,7 @@ def create_bucket(
             root_cause=root_cause or "",
             recommended_action=recommended_action or "",
             created_by=created_by,
+            status=status,
         )
         session.add(row)
         session.flush()
@@ -179,6 +341,7 @@ def create_bucket(
     if result is None:
         raise RuntimeError(f"failure_bucket {bucket_id} vanished after create")
     result["index"] = index
+    result["already_registered"] = False
 
     top_dup = dup_candidates[0] if dup_candidates else None
     if top_dup and top_dup.get("confidence", 0.0) >= _DUPLICATE_SCORE_THRESHOLD:
@@ -188,19 +351,7 @@ def create_bucket(
             "confidence": top_dup.get("confidence"),
         }
 
-    if fb_domain not in _known_fb_domains():
-        result["fb_domain_warning"] = (
-            f"fb_domain='{fb_domain}'는 references/failure-bucket-domains.md에 없는 새 값입니다. "
-            "오타가 아니라면 문서에 추가해 주세요."
-        )
-
-    ref_check = evidence_ref.strip().lower()
-    if not ref_check.startswith(_EVIDENCE_REF_PREFIXES):
-        result["evidence_ref_warning"] = (
-            f"evidence_ref='{evidence_ref.strip()}'가 알려진 포인터 형식"
-            f"({', '.join(_EVIDENCE_REF_PREFIXES)})과 다릅니다. "
-            "사람이 나중에 열어 확인할 수 있는 구체적 포인터인지(자유 서술이 아닌지) 확인해 주세요."
-        )
+    _annotate_registration(result, fb_domain=fb_domain, evidence_ref=evidence_ref, created_by=created_by)
 
     return result
 
@@ -219,11 +370,14 @@ def list_buckets(
     min_confidence: float = 0.0,
     limit: int = 20,
     offset: int = 0,
+    include_retired: bool = False,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     with session_scope() as session:
         stmt = select(FailureBucket).order_by(FailureBucket.created_at.desc())
+        if not include_retired:
+            stmt = stmt.where(FailureBucket.status == STATUS_ACTIVE)
         if fb_domain:
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
@@ -256,6 +410,8 @@ def refine_bucket(
         row = session.get(FailureBucket, bucket_id)
         if not row:
             raise KeyError(bucket_id)
+        if row.status == STATUS_RETIRED:
+            raise BucketRetiredError(bucket_id)
 
         if add_signal and add_signal not in (row.discriminating_signals or []):
             row.discriminating_signals = [*(row.discriminating_signals or []), add_signal]
@@ -301,7 +457,7 @@ def match_buckets(
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
     with session_scope() as session:
-        stmt = select(FailureBucket)
+        stmt = select(FailureBucket).where(FailureBucket.status == STATUS_ACTIVE)
         if fb_domain:
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
         if protocol:
@@ -320,3 +476,85 @@ def match_buckets(
         rows = list(session.scalars(stmt).all())
         dicts = [_to_dict(r) for r in rows]
     return rank_buckets(observed_signals, symptom, dicts, top_k=top_k)
+
+
+def _set_mirror_status(session, row: FailureBucket, status: str) -> None:
+    if row.document_id:
+        doc = session.get(Document, row.document_id)
+        if doc is not None:
+            doc.status = status
+
+
+def retire_bucket(bucket_id: str, *, reason: str, retired_by: Optional[str]) -> dict[str, Any]:
+    """Soft-hide a bucket: row kept, hidden from list/match/search/graph/aggregates.
+
+    Search exclusion reuses Document.status='archived' (the mirror document), which
+    every search path already filters. Idempotent: an already-retired bucket is
+    returned unchanged (original reason/actor preserved).
+    """
+    reason = (reason or "").strip()
+    if len(reason) < MIN_RETIRE_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_RETIRE_REASON_LEN} characters")
+    with session_scope() as session:
+        row = session.get(FailureBucket, bucket_id)
+        if not row:
+            raise KeyError(bucket_id)
+        if row.status != STATUS_RETIRED:
+            row.status = STATUS_RETIRED
+            row.retired_at = datetime.now(timezone.utc)
+            row.retired_by = retired_by
+            row.retire_reason = reason
+            _set_mirror_status(session, row, "archived")
+            session.flush()
+    result = get_bucket(bucket_id)
+    assert result is not None
+    return result
+
+
+def restore_bucket(bucket_id: str) -> dict[str, Any]:
+    """Undo retire (or promote a -test row): status=active, mirror searchable again."""
+    with session_scope() as session:
+        row = session.get(FailureBucket, bucket_id)
+        if not row:
+            raise KeyError(bucket_id)
+        was_active = row.status == STATUS_ACTIVE
+        row.status = STATUS_ACTIVE
+        row.retired_at = None
+        row.retired_by = None
+        row.retire_reason = None
+        _set_mirror_status(session, row, "active")
+        session.flush()
+    if not was_active:
+        # Re-run the index so a mirror missing its chunks/embeddings is rebuilt;
+        # cheap no-op when the content hash is unchanged.
+        _index_bucket(bucket_id)
+    result = get_bucket(bucket_id)
+    assert result is not None
+    return result
+
+
+def retire_batch(
+    *, created_by_prefix: str, reason: str, retired_by: Optional[str], dry_run: bool = True
+) -> dict[str, Any]:
+    """Retire every non-retired bucket whose created_by starts with the prefix."""
+    prefix = (created_by_prefix or "").strip()
+    if len(prefix) < 3:
+        raise ValueError("created_by_prefix must be at least 3 characters")
+    reason = (reason or "").strip()
+    if len(reason) < MIN_RETIRE_REASON_LEN:
+        raise ValueError(f"reason must be at least {MIN_RETIRE_REASON_LEN} characters")
+    like = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with session_scope() as session:
+        ids = [
+            r[0]
+            for r in session.execute(
+                select(FailureBucket.id)
+                .where(FailureBucket.created_by.like(like, escape="\\"))
+                .where(FailureBucket.status != STATUS_RETIRED)
+                .order_by(FailureBucket.created_at)
+            ).all()
+        ]
+    if not dry_run:
+        for bid in ids:
+            retire_bucket(bid, reason=reason, retired_by=retired_by)
+    return {"dry_run": dry_run, "matched": len(ids), "ids": ids, "retired": 0 if dry_run else len(ids)}

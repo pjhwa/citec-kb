@@ -29,6 +29,7 @@
       <a href="#42-kb_search-wiki_search" style="padding-left:20px;font-size:12px">4.2 kb_search / wiki_search</a>
       <a href="#43-kb_get_document-wiki_get_document" style="padding-left:20px;font-size:12px">4.3 kb_get_document / wiki_get_document</a>
       <a href="#44-kb_list_tickets-period-listing" style="padding-left:20px;font-size:12px">4.4 kb_list_tickets — period listing</a>
+      <a href="#44b-kb_recent_changes-recently-modified-added-confluence-pages" style="padding-left:20px;font-size:12px">4.4b kb_recent_changes — recently modified / added Confluence pages</a>
       <a href="#45-kb_analytics" style="padding-left:20px;font-size:12px">4.5 kb_analytics</a>
       <a href="#46-kb_entity_share" style="padding-left:20px;font-size:12px">4.6 kb_entity_share</a>
       <a href="#47-kb_title_tokens" style="padding-left:20px;font-size:12px">4.7 kb_title_tokens</a>
@@ -41,10 +42,12 @@
       <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
       <a href="#414b-ci-tec-domain-recurring-pattern-tools" style="padding-left:20px;font-size:12px">4.14b CI-TEC domain / recurring-pattern tools</a>
       <a href="#415-failure-buckets-networkclusterwindows" style="padding-left:20px;font-size:12px">4.15 Failure buckets (다중 플러그인 진단 지식 — network/cluster/windows 등)</a>
+      <a href="#416-kb_graph_explore" style="padding-left:20px;font-size:12px">4.16 kb_graph_explore — 지식그래프 연관 탐색</a>
+      <a href="#417-kb_graph_status" style="padding-left:20px;font-size:12px">4.17 kb_graph_status — 지식그래프 동기화 상태 상세 조회</a>
       <a href="#5-time-expressions-relative">5. Time expressions (relative)</a>
       <a href="#6-source-types-path-conventions">6. Source types &amp; path conventions</a>
       <a href="#61-evidence_grade-how-much-to-trust-a-hit-before-you-even-open-it" style="padding-left:20px;font-size:12px">6.1 evidence_grade — how much to trust a hit, before you even open it</a>
-      <a href="#62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-ranks-last" style="padding-left:20px;font-size:12px">6.2 Structured-copy overlap (tech_repo ⊇ some confluence_map pages) — confluence_map ranks last</a>
+      <a href="#62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-is-cited-last-citation-priority-not-a-search-rank-rule" style="padding-left:20px;font-size:12px">6.2 Structured-copy overlap (tech_repo ⊇ some confluence_map pages) — confluence_map is cited last (citation priority, not a search-rank rule)</a>
       <a href="#63-ci-tec-domain-taxonomy-recurring-pattern-tools" style="padding-left:20px;font-size:12px">6.3 CI-TEC domain taxonomy &amp; recurring-pattern tools</a>
       <a href="#7-rest-quick-reference-if-not-using-mcp">7. REST quick reference (if not using MCP)</a>
       <a href="#71-search-rag" style="padding-left:20px;font-size:12px">7.1 Search &amp; RAG</a>
@@ -61,12 +64,15 @@
       <a href="#scenario-f-rag-narrative" style="padding-left:20px;font-size:12px">Scenario F — RAG narrative</a>
       <a href="#scenario-g-confluence-confluence_map-hit-c-grade" style="padding-left:20px;font-size:12px">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (confluence_map hit, C-grade)</a>
       <a href="#scenario-h-ci-tec-failure_bucket" style="padding-left:20px;font-size:12px">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</a>
+      <a href="#scenario-i-failure_bucket" style="padding-left:20px;font-size:12px">Scenario I — "이 failure_bucket과 관련된 다른 장애·문서가 더 있나?"</a>
       <a href="#9-anti-patterns-avoid">9. Anti-patterns (avoid)</a>
       <a href="#10-output-format-suggested-for-user-facing-answers">10. Output format suggested for user-facing answers</a>
       <a href="#11-reliability-notes-retrieval">11. Reliability notes (retrieval)</a>
       <a href="#12-mcp-client-setup-short">12. MCP client setup (short)</a>
       <a href="#13-quick-checklist-for-the-agent-before-final-answer">13. Quick checklist for the agent (before final answer)</a>
       <a href="#14-versioning">14. Versioning</a>
+      <a href="#b-phase-retrieval-changes-2026-10-29">B-phase retrieval changes (2026-10-29)</a>
+      <a href="#c-kb_ask-generation-failure-transparency-2026-10-29">C: kb_ask generation-failure transparency (2026-10-29)</a>
     </nav>
   </aside>
   <main class="main">
@@ -78,7 +84,7 @@
       <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-07</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-29</div></div>
       </div>
     </header>
     <section>
@@ -219,6 +225,10 @@
 <tr>
 <td>Period list</td>
 <td><code>kb_list_tickets</code> (not N full-text searches)</td>
+</tr>
+<tr>
+<td>"What changed in Confluence recently?"</td>
+<td><code>kb_recent_changes</code> (not N searches)</td>
 </tr>
 <tr>
 <td>Counts / breakdown</td>
@@ -401,12 +411,12 @@
 <tr>
 <td><code>section</code></td>
 <td>str</td>
-<td>→ <code>source_type</code>: <code>support_history</code>, <code>incident_reports</code>, <code>tech_repo</code>, <code>tuning_ai</code>, <code>checkitems</code>, <code>confluence_docs</code>, <code>dept_archive</code>, …</td>
+<td>→ <code>source_type</code>: <code>support_history</code>, <code>incident_reports</code>, <code>tech_repo</code>, <code>tuning_ai</code>, <code>checkitem</code>, <code>confluence_docs</code>, <code>confluence_map</code>, <code>dept_archive</code>, <code>failure_bucket</code>, <code>insight</code>. Common aliases (<code>checkitems</code>, <code>incident</code>, <code>insights</code>, …) are normalised server-side; an unknown value returns HTTP 400 with the allowed list instead of silently returning 0 hits</td>
 </tr>
 <tr>
 <td><code>area</code></td>
 <td>str</td>
-<td>→ domain filter (<code>os</code>, <code>dbms</code>, <code>network</code>, <code>cloud</code>, <code>storage</code>, …)</td>
+<td>→ domain filter (<code>os</code>, <code>dbms</code>, <code>network</code>, <code>cloud</code>, <code>storage</code>, …); case-insensitive. A value no document has adds a warning line instead of an unexplained empty result</td>
 </tr>
 <tr>
 <td><code>category</code></td>
@@ -416,7 +426,7 @@
 <tr>
 <td><code>limit</code></td>
 <td>int</td>
-<td>1–50</td>
+<td>1–50 (<code>&lt; 1</code> is rejected; <code>&gt; 50</code> is clamped and the header says so)</td>
 </tr>
 <tr>
 <td><code>environment</code></td>
@@ -444,6 +454,7 @@
 <ul>
 <li>Existence questions: prefer full NL in <code>query</code> (and/or <code>kb_query</code>); avoid only <code>SCP</code> or only <code>Multi-AZ</code>.  </li>
 <li>After hits: always use printed <code>path</code> for <code>kb_get_document</code>.</li>
+<li>The result header now carries <code>trust=</code> (<code>strong|medium|weak|empty</code>) and <code>exact_tokens=</code>. If the query contains a document-ID-like token (<code>CITECTS-####</code>, <code>ISS-…</code>, <code>PISA…_nn.nn</code>, <code>confluence_&lt;id&gt;</code>, or a 9+ digit SWIM/page id) that exists in <strong>no</strong> active document, a <code>[경고] 질의의 식별자 … 는 코퍼스에서 찾지 못했습니다</code> line is added (<code>missing_identifiers</code> in the JSON) and <code>trust</code> is lowered to <code>weak</code> when <em>all</em> such tokens are missing. Treat the listed hits as unrelated similar documents and verify the number with <code>kb_ticket</code>.</li>
 </ul>
 <h3 id="43-kb_get_document-wiki_get_document">4.3 <code>kb_get_document</code> / <code>wiki_get_document</code></h3>
 <div class="table-wrap"><table>
@@ -494,6 +505,55 @@
 </table></div>
 <p><strong>API:</strong> <code>GET /v1/tickets?...</code></p>
 <p>Use this instead of inventing lists from memory. Combine with <code>kb_ticket</code> for full body.</p>
+<h3 id="44b-kb_recent_changes-recently-modified-added-confluence-pages">4.4b <code>kb_recent_changes</code> — recently modified / added Confluence pages</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Arg</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>relative</code> / <code>date_from</code> / <code>date_to</code></td>
+<td>See §5; default last 7 days (KST)</td>
+</tr>
+<tr>
+<td><code>change_type</code></td>
+<td><code>modified</code> (default) = Confluence edit time; <code>added</code> = first time <strong>KB</strong> saw it; <code>all</code> = either</td>
+</tr>
+<tr>
+<td><code>source_types</code></td>
+<td>comma list of <code>confluence_map,confluence_docs,tech_repo</code> (default all three)</td>
+</tr>
+<tr>
+<td><code>space_key</code></td>
+<td>e.g. <code>DevOps001</code>, <code>LOOKIN</code>, <code>TechRepo</code> (case-insensitive)</td>
+</tr>
+<tr>
+<td><code>title_contains</code></td>
+<td>literal, case-insensitive substring</td>
+</tr>
+<tr>
+<td><code>include_folders</code></td>
+<td>default false — hides <code>confluence_map</code> folder ("이정표") pages</td>
+</tr>
+<tr>
+<td><code>limit</code> / <code>offset</code></td>
+<td>pagination (limit ≤ 200)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>API:</strong> <code>GET /v1/documents/recent-changes?...</code></p>
+<p>Caveats the agent must relay:<br>
+- <code>modified</code> uses <code>source_modified_at</code> (Confluence <code>version.when</code>). KB lags Confluence by up to<br>
+  ~2 h (<code>confluence_sync</code>) / several hours (<code>map_sync</code>).<br>
+- <code>added</code> is <strong>not</strong> the Confluence creation date — it is <code>documents.created_at</code>, the time the<br>
+  KB first ingested the page. Bulk-ingested history shares one timestamp, so only use short,<br>
+  recent ranges.<br>
+- Pages without <code>source_modified_at</code> (a small fraction) are excluded from <code>modified</code>; the header<br>
+  line reports the count (<code>missing_modified_at</code>).<br>
+- This lists metadata only; use <code>kb_get_document</code> for the body.</p>
 <h3 id="45-kb_analytics">4.5 <code>kb_analytics</code></h3>
 <div class="table-wrap"><table>
 <thead>
@@ -533,9 +593,10 @@
 <strong>Never</strong> invent counts—only report returned buckets.</p>
 <h3 id="46-kb_entity_share">4.6 <code>kb_entity_share</code></h3>
 <p>Share of tickets matching <code>entity</code> in a period.<br>
-<strong>API:</strong> <code>GET /v1/analytics/entity_share</code></p>
+<strong>API:</strong> <code>GET /v1/analytics/entity_share</code><br>
+<code>matched</code> = documents in the same source type and period whose title / ID / first 1,500 body characters contain the entity string (same definition as <code>kb_analytics(entity=…)</code>); <code>total</code> = <strong>all</strong> documents in that source type and period (the denominator, not a count of the entity). <code>matched &lt;= total</code> always holds.</p>
 <h3 id="47-kb_title_tokens">4.7 <code>kb_title_tokens</code></h3>
-<p>Title token frequency (optional <code>component</code>).<br>
+<p>Title token frequency (optional <code>component</code>). Output header shows <code>document_n</code> (titles scanned) and <code>unique_tokens</code>; each row has count and share.<br>
 <strong>API:</strong> <code>GET /v1/analytics/title_tokens</code></p>
 <h3 id="48-kb_similar_incident">4.8 <code>kb_similar_incident</code></h3>
 <div class="table-wrap"><table>
@@ -610,19 +671,114 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <code>cluster</code>, <code>windows</code>)으로 구분되며 목록은 <a href="../references/failure-bucket-domains.md">failure-bucket-domains.md</a><br>
 가 정본이다. 플러그인 개발자용 상세 지침은 <a href="./FAILURE_BUCKET_PLUGIN_GUIDE.md">FAILURE_BUCKET_PLUGIN_GUIDE.md</a>.</p>
 <ul>
-<li><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)</code> — 새 실패 패턴 등록, 즉시 검색 노출. <code>fb_domain</code>/<code>evidence_ref</code>는 필수(빈 값이면 400) — <code>evidence_ref</code>는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(<code>CITECTS-2481</code>, <code>capture:....pcapng#frame=4821</code> 등)여야 한다(알려진 접두어와 다르면 응답에 <code>evidence_ref_warning</code>). 응답에 <code>possible_duplicate_of</code>가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 <code>kb_refine_failure_bucket</code>으로 정정한다</li>
+<li><code>kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)</code> — 새 실패 패턴 등록, 즉시 검색 노출. <code>fb_domain</code>/<code>evidence_ref</code>는 필수(빈 값이면 400) — <code>evidence_ref</code>는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(<code>CITECTS-2481</code>, <code>capture:....pcapng#frame=4821</code> 등)여야 한다(알려진 접두어와 다르면 응답에 <code>evidence_ref_warning</code>). 응답에 <code>possible_duplicate_of</code>가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 <code>kb_refine_failure_bucket</code>으로 정정한다. 등록 응답의 <code>registrant_kind</code>(<code>system</code>|<code>human</code>), <code>created_by_warning</code>, <code>evidence_ref_note</code>(<code>insight:</code>/<code>agent-room:</code>만 쓴 경우 "열람 제약 있음, <code>confluence:</code> 병기 권장")는 거부가 아닌 안내이고, 같은 <code>created_by</code>+<code>evidence_ref</code>+<code>bucket_name</code> 재시도는 <code>already_registered: true</code>로 기존 행을 돌려준다</li>
 <li><code>kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)</code> — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다. <code>environment</code>를 채우면 다른 환경으로 태깅된 버킷은 후보에서 제외(태그 없는 버킷은 계속 후보에 남음)</li>
 <li><code>kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)</code> — 확인/반박 시 신뢰도 자동 재계산 (self-improving). <code>environment</code>는 미지정 시 기존 값 유지, 지정 시 덮어씀 — 등록 시점에 몰랐던 환경을 나중에 소급 태깅할 때 사용</li>
-<li><code>kb_list_failure_buckets(fb_domain=, protocol=, environment=)</code> / <code>kb_get_failure_bucket(bucket_id=)</code></li>
+<li><code>kb_list_failure_buckets(fb_domain=, protocol=, environment=, include_retired=)</code> / <code>kb_get_failure_bucket(bucket_id=)</code> — <strong>목록과 match는 기본으로 활성(active) 버킷만</strong> 돌려준다. retire된 건과 <code>-test</code> 시험 등록은 <code>include_retired=true</code> 목록과 <code>kb_get_failure_bucket</code>(상세)에서만 보인다</li>
+<li><code>kb_retire_failure_bucket(bucket_id=, reason=)</code> / <code>kb_restore_failure_bucket(bucket_id=)</code> — <strong>[쓰기]</strong> 되돌리기. 삭제가 아니라 숨김(검색·매칭·그래프 이웃·집계에서 제외)이며 restore로 복구된다. <code>reason</code> 8자 이상, <code>senior</code> 이상(인증 켜진 경우). 잘못 등록했으면 새로 등록해서 덮지 않는다</li>
 </ul>
 <p><code>environment</code>(csp|msp|onprem|hybrid)는 <code>fb_domain</code>/<code>protocol</code>과 직교하는 별도 축이다 — 이<br>
 패턴이 특정 배포 환경에서만 성립한다고 원자료로 확인됐을 때만 채운다(근거 없는 값 금지). 값은<br>
 <a href="../references/corpus-taxonomy.md">corpus-taxonomy.md</a>가 코퍼스 전역에서 이미 쓰는 4개 값과 동일.</p>
 <p><strong>API:</strong> <code>POST /v1/failure-buckets</code>, <code>POST /v1/failure-buckets/{id}/refine</code>,<br>
-<code>POST /v1/failure-buckets/match</code>, <code>GET /v1/failure-buckets[/{id}]</code></p>
+<code>POST /v1/failure-buckets/match</code>, <code>GET /v1/failure-buckets[/{id}]</code>,<br>
+<code>POST /v1/failure-buckets/{id}/retire|restore</code>, <code>POST /v1/failure-buckets/retire-batch</code></p>
 <p>분석 중 이미 알려진 패턴인지 먼저 <code>kb_match_failure_bucket</code>으로 확인하고,<br>
 새 패턴이면 <code>kb_register_failure_bucket</code>으로 등록, 기존 패턴이 맞았거나 틀렸으면<br>
 <code>kb_refine_failure_bucket(confirm=True/False)</code>로 되먹임한다.</p>
+<h3 id="416-kb_graph_explore">4.16 <code>kb_graph_explore</code> — 지식그래프 연관 탐색</h3>
+<p><code>kb_match_failure_bucket</code>/<code>kb_similar_incident</code>로 1차 후보를 찾은 <strong>다음 단계</strong>로 쓴다 —<br>
+검색의 대체재가 아니라 "찾은 것의 주변을 더 깊이 파는" 용도다.</p>
+<ul>
+<li><code>kb_graph_explore(anchor_type=, anchor_value=)</code> — <code>anchor_type</code>은 <code>failure_bucket</code>/<br>
+<code>document</code>/<code>component</code>/<code>symptom_text</code> 중 하나. 2hop까지 순회하며, 범용 컴포넌트<br>
+  (<code>Network</code>/<code>Storage</code> 등 degree 수천 이상)는 항상 제외하고 응답에 <code>제외된 범용
+  컴포넌트</code>로만 표시한다.</li>
+<li>응답의 <code>as_of</code>는 그래프의 마지막 배치 동기화 날짜다 — <strong>실시간이 아니다</strong>(최대 ~1일<br>
+  지연 가능). 최종 사실 확인은 <code>kb_search</code>/<code>kb_get_document</code>로.</li>
+<li><code>component</code>/<code>symptom_text</code> 입력은 기존 lexicon 사전으로 변형어("넷앱"→<code>NetApp</code>)까지<br>
+  해석한다.</li>
+<li>응답 상단의 <code>해석된 앵커:</code>(component/document/failure_bucket)나 <code>매칭된 컴포넌트:</code>(symptom_text)로<br>
+  입력이 실제 무엇으로 해석됐는지 확인한다. <code>component</code>는 lexicon에 없으면 대소문자 무시<br>
+  매칭까지 시도한다. 카테고리별 전체 후보는 최대 50건씩 페이지로 끊긴다 — 응답이<br>
+  "N건 중 X-Y건 표시"면 전부 본 게 아니다, <code>documents_offset</code>/<code>components_offset</code>/<br>
+<code>failure_buckets_offset</code>을 다음 시작 위치로 올려 재호출해야 끝까지 확인할 수 있다.<br>
+  정답이 50건 뒤에 숨어 있을 수 있으니, 특히 document 앵커에서 결과가 많으면 끝까지<br>
+  확인할 것.</li>
+<li><code>exclude_page_ids</code>/<code>exclude_subtree_ids</code>/<code>exclude_source_types</code>(쉼표구분)로 평가·검증<br>
+  보고서 등 결과에서 빼야 할 페이지/하위트리/source_type을 걸러낼 수 있다(일반 업무<br>
+  질문에는 보통 비워 둔다).</li>
+<li>응답 맨 첫 줄 <code>status:</code>를 가장 먼저 본다(모든 분기가 이 줄로 시작한다 —<br>
+  2026-10-13 이전에는 앵커를 못 찾았을 때만 예외적으로 이 줄 없이 문장만<br>
+  돌아왔는데, 지금은 그 분기도 고쳐졌다) — <code>found</code>(결과 있음)/<code>not_found</code><br>
+  (앵커 자체가 그래프에 없음)/<code>no_match</code>(symptom_text에서<br>
+  알려진 컴포넌트를 못 찾음)/<code>isolated</code>(앵커는 있는데 연관 항목이 0건)/<code>filtered</code><br>
+  (앵커 자신 또는 그 모든 수집본이 exclude_* 조건에 걸려 의도적으로 안 보여줌)/<br>
+<code>backend_error</code>(그래프 저장소 장애 — 나중에 다시 시도)/<code>invalid_request</code><br>
+  (anchor_type/anchor_value 자체가 잘못됨). 문장을 해석해서 성공/실패를 추측하지 말고<br>
+  이 값으로 판단한다.</li>
+<li>결과 줄의 <code>[Nhop 경로]</code>는 anchor부터 그 노드까지의 <strong>전체 경로</strong>다(마지막 관계 하나가<br>
+  아니다). <code>PARENT_OF</code>는 계층 의미가 있어 <code>↑</code>(anchor가 그 쪽의 자식 — 즉 위로 올라가는<br>
+  방향)/<code>↓</code>(anchor가 그 쪽의 부모 — 아래로 내려가는 방향)로, 나머지 관계(<code>REFERENCES</code>/<br>
+<code>HAS_COMPONENT</code> 등)는 방향만 있는 <code>→</code>/<code>←</code>로 표시한다. 2hop이면 중간 노드 id/이름이<br>
+  경로 중간에 같이 나온다(예: <code>↑PARENT_OF confluence_map:338017591 ↓PARENT_OF</code>는<br>
+  "anchor의 부모"를 거쳐 그 부모의 또 다른 자식(형제)에 도달했다는 뜻).</li>
+<li><code>document</code> 앵커는 같은 Confluence 페이지를 여러 source(confluence_map/confluence_docs/<br>
+  tech_repo)가 각각 수집한 "사본" 중 어느 쪽으로 걸어도 같은 계층·관계를 찾는다 — 내부적으로<br>
+  모든 사본에 대해 탐색해 병합하며, <code>anchor.resolved_id</code>는 그중 결정적으로 고른 대표<br>
+  문서를 보여준다.</li>
+<li>"연관 문서" 결과도 같은 이유로 같은 페이지의 여러 수집본이 하나로 묶여 나온다 —<br>
+  그 문서의 <code>copies</code>에 나머지 수집본 id가 담기고, 결과 줄에는 <code>copies=N</code>으로 표시된다<br>
+  (<code>documents_total</code>도 묶인 뒤의 수). <code>_EN</code> 접미사(한영 체크항목) 등 다른 source_type은<br>
+  절대 묶지 않는다.</li>
+<li><code>archived</code>가 true면 비활성화된(삭제/이동 등으로 더 이상 유효하지 않은) 원문이다 —<br>
+  결론에 그대로 쓰지 말고 <code>kb_search</code>로 현재 유효한 문서인지 다시 확인한다. 기본<br>
+  동작(F05, 2026-10-14)은 archived 문서를 "연관 문서" 결과에서 아예 뺀다 — 과거<br>
+  이력/감사 목적으로 비활성 문서까지 보고 싶으면 <code>include_archived=true</code>를 명시한다.<br>
+  단 이 옵션은 결과 목록 표시만 바꾼다 — archived 문서가 다른 두 문서 사이의 중간<br>
+  경로(bridge)로 쓰이는 순회 자체는 막지 않는다(알려진 한계).</li>
+<li>대표 사본(<code>anchor.resolved_id</code>)이 <code>exclude_source_types</code>로 제외되면, 응답에<br>
+<code>representative_excluded=true</code>와 <code>traversal_start_ids</code>(실제로 탐색이 시작된<br>
+  사본 id 목록)가 같이 나온다 — <code>resolved_id</code>만 보고 "이 사본으로 탐색했다"고<br>
+  오해하지 말 것.</li>
+<li><code>failure_bucket</code> 앵커는 앵커 자신의 <code>evidence_reasons</code>(resolved/<br>
+  external_artifact/legacy_missing/target_not_ingested/unresolved_reference<br>
+  건수)도 함께 돌아온다. 전부 0이고 <code>isolated</code>여도 "원인 불명"으로 단정하지 말고<br>
+  이 사유 분해부터 확인한다 — 아직 이 값을 채우는 배치가 돈 적 없으면 <code>unknown</code><br>
+  으로 명시된다.</li>
+<li>응답에 <code>freshness</code>(마지막으로 "완료된" 전체 배치의 run_id/generation/완료<br>
+  시각/상태, 그리고 지금 새 전체 배치가 진행 중인지)가 <code>as_of</code>와 별개로 포함된다 —<br>
+<code>as_of</code>(MAX(synced_at))만으로는 "지금 보이는 그래프가 깨끗한 단일 스냅샷인지,<br>
+  부분 실행/진행 중인 배치가 섞인 건지" 구분이 안 되기 때문. freshness가 "지금 새<br>
+  전체 배치가 진행 중"을 가리키면 이번 응답이 혼합 상태일 수 있음을 염두에 둔다.</li>
+<li>결과 줄의 "원문: kb_get_document(path='…')"가 실제 호출할 경로다. <code>confluence_map</code><br>
+  결과의 <code>snapshot</code> 표시는 "KB가 크롤 시점에 저장한 사본"이라는 뜻이다(2026-10 이후 크롤된<br>
+  공간은 본문 전체가 들어 있지만 근거 등급은 C — §6.1). Confluence 현재 버전 확인은<br>
+<code>confluence-mcp</code>(있으면)로 따로 해야 한다.</li>
+</ul>
+<p><strong>API:</strong> <code>POST /v1/graph/explore</code></p>
+<h3 id="417-kb_graph_status">4.17 <code>kb_graph_status</code> — 지식그래프 동기화 상태 상세 조회</h3>
+<p><code>kb_graph_explore</code>의 <code>freshness</code> 한 줄 요약보다 더 자세한 근거가 필요할 때 먼저<br>
+부른다 — 인자 없음.</p>
+<ul>
+<li><code>latest_run</code>/<code>latest_full_completed_run</code>: 가장 최근 run과, 그중 "scope=full이고<br>
+  완료된" run을 분리해서 보여준다. <code>--source-ids</code> 디버그 실행처럼 scope=partial인<br>
+  행이 가장 최근이어도 <code>latest_full_completed_run</code>은 그걸 가리키지 않는다.</li>
+<li><code>latest_run.liveness</code>: <code>status=running</code>인 행이 실제로 지금도 advisory lock을<br>
+  쥐고 있는지 <code>pg_locks</code>로 직접 확인한 결과다(<code>running</code>/<code>stalled</code>/<code>likely_dead</code>/<br>
+<code>unknown</code>). <code>status=running</code>인데 <code>liveness.state=likely_dead</code>/<code>stalled</code>면,<br>
+  그 run은 실제로는 멈췄거나 죽은 것이다 — "진행 중" 문구만 보고 기다리지 말 것<br>
+  (하드킬, 컨테이너 재시작 중 cron과 겹침 등으로 실제로 발생한다).</li>
+<li><code>read_state</code>: <code>consistent</code>(마지막 완료된 full run 기준 깨끗한 스냅샷) /<br>
+<code>mixed</code>(지금 새 full run이 진행 중이거나, 마지막 완료가 일부 실패 포함) /<br>
+<code>unknown</code>(완료된 full run 자체가 아직 없음).</li>
+<li><code>neo4j_generation</code>(우리가 쓴 generation 마커) vs <code>neo4j_store_identity</code>(Neo4j<br>
+  자신의 db.info() 식별자, 물리적으로 다른 저장소인지 구분) — 둘은 다른 질문에<br>
+  답한다. <code>generation_matches</code>는 전자만 비교한다.</li>
+<li><code>api_build_sha</code>/<code>contract_version</code>: 배포 파이프라인이 채워준 실제 배포 커밋(없으면<br>
+  정직하게 <code>"unknown"</code>)과 이 응답 "모양" 자체의 버전.</li>
+</ul>
+<p><strong>API:</strong> <code>GET /v1/graph/status</code></p>
 <hr>
 <h2 id="5-time-expressions-relative">5. Time expressions (<code>relative</code>)</h2>
 <p>Supported via <code>parse_relative_range</code> (Korean phrases). Common values:</p>
@@ -774,7 +930,10 @@ It is <strong>not a relevance score</strong> — it is a statement about how dir
 <code>confluence_map</code>, you may quote its body, but flag it as unverified/C-grade<br>
 unless you've also opened the live page or found an A-grade copy of the<br>
 same <code>page_id</code> elsewhere.</p>
-<h3 id="62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-ranks-last">6.2 Structured-copy overlap (<code>tech_repo</code> ⊇ some <code>confluence_map</code> pages) — <code>confluence_map</code> ranks last</h3>
+<p><code>kb_graph_explore</code>가 반환하는 문서 결과의 <code>evidence_grade</code>도 이 등급 체계를 그대로<br>
+재사용한다 — 그래프 자체는 구조(관계)만 저장하고, 신뢰도 판단 기준은 항상 이 절의<br>
+Postgres 값이 유일한 출처다.</p>
+<h3 id="62-structured-copy-overlap-tech_repo-some-confluence_map-pages-confluence_map-is-cited-last-citation-priority-not-a-search-rank-rule">6.2 Structured-copy overlap (<code>tech_repo</code> ⊇ some <code>confluence_map</code> pages) — <code>confluence_map</code> is cited last (citation priority, not a search-rank rule)</h3>
 <p>A handful of pages exist under <strong>both</strong> <code>tech_repo</code> (or <code>confluence_docs</code>)<br>
 <em>and</em> <code>confluence_map</code> with the same Confluence <code>external_id</code> — both were<br>
 crawled from the same live page under two different root configs. When<br>
@@ -917,7 +1076,7 @@ POST /api/query
 <h3 id="scenario-g-confluence-confluence_map-hit-c-grade">Scenario G — "이 Confluence 페이지에 뭐라고 적혀 있나?" (<code>confluence_map</code> hit, C-grade)</h3>
 <ol>
 <li><code>kb_search(query="…", section="confluence_map")</code> → hit's body is usually the real page text now (§6.1), but carries <code>evidence_grade="C"</code>.</li>
-<li>Check if the same <code>external_id</code>/page_id also appears under <code>tech_repo</code> or <code>confluence_docs</code> in the same search (or re-search without <code>section</code> filter) — if so, <strong>prefer that A-grade copy</strong> for the answer (§6.2); <code>confluence_map</code> ranks last when both exist.</li>
+<li>Check if the same <code>external_id</code>/page_id also appears under <code>tech_repo</code> or <code>confluence_docs</code> in the same search (or re-search without <code>section</code> filter) — if so, <strong>prefer that A-grade copy</strong> for the answer (§6.2); <code>confluence_map</code> is the lowest <em>citation</em> priority when both exist. In search ranking, unfiltered queries only apply a mild score demotion (×<code>SEARCH_POINTER_FACTOR</code>, default 0.85) to pointer-only map rows; <code>section=confluence_map</code> disables it. It is not an exclusion rule — add <code>section</code> or <code>exclude_source_types</code> if you need map rows gone.</li>
 <li>If <code>confluence_map</code> is the only copy: you can answer from its body, but say the source is an unverified C-grade index entry rather than presenting it with the same confidence as an A-grade document. If the body looks like just a breadcrumb (no real paragraphs), it predates full-body capture — open the live <code>URL</code>/<code>source_uri</code> instead of guessing from the title.</li>
 </ol>
 <h3 id="scenario-h-ci-tec-failure_bucket">Scenario H — "어느 CI-TEC 도메인에서 반복 장애가 제일 많은가, 그 중 failure_bucket 정리 안 된 건?"</h3>
@@ -925,6 +1084,19 @@ POST /api/query
 <li><code>kb_citec_domain_catalog()</code> — confirm the 11 domain names.</li>
 <li><code>kb_citec_recurring_patterns(group_by="domain", since_days=730, min_count=3)</code> — report counts straight from the response, don't re-tally.</li>
 <li><code>kb_citec_failure_bucket_coverage(since_days=730, min_count=3)</code> — cite only domains with <code>status="gap"</code> as "정리 필요"; <code>no_fb_domain_defined</code> means the vocabulary doesn't cover that domain yet, not 0% coverage — say so if asked.</li>
+</ol>
+<h3 id="scenario-i-failure_bucket">Scenario I — "이 failure_bucket과 관련된 다른 장애·문서가 더 있나?"</h3>
+<ol>
+<li><code>kb_get_failure_bucket(bucket_id="FB-12")</code>로 버킷 확인 (<code>FB-12</code>는 예시 — 실제<br>
+<code>bucket_id</code>는 UUID 형식).</li>
+<li><code>kb_graph_explore(anchor_type="failure_bucket", anchor_value="FB-12")</code>로 2hop 연관<br>
+   문서/컴포넌트/failure bucket 탐색. 과거 장애 <em>티켓</em>은 "연관 문서"에 섞여 나온다 —<br>
+   "연관 failure bucket 0건"은 등록 패턴이 연결되지 않았다는 뜻일 뿐 과거 장애가 없다는<br>
+   뜻이 아니다(<code>kb_similar_incident</code>로 교차 확인).</li>
+<li>범용 컴포넌트가 "제외된 범용 컴포넌트"에 뜨면 — 그건 애초에 의미 없는 결과이니<br>
+   무시하고, 나머지 구체적 컴포넌트/문서로만 답변 구성.</li>
+<li><code>as_of</code>가 비어 있거나(아직 백필 전) 2일 이상 지났으면 응답에 그 사실을 한 줄<br>
+   명시(신선도 캐비엇).</li>
 </ol>
 <hr>
 <h2 id="9-anti-patterns-avoid">9. Anti-patterns (avoid)</h2>
@@ -1054,6 +1226,20 @@ POST /api/query
 <h2 id="14-versioning">14. Versioning</h2>
 <p>This guide tracks MCP tools as of <strong>kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help</strong> and <code>kb_search</code> → <code>/v1/search</code> (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools. <strong>2026-10-08 correction</strong>: §6.1/§6.2 originally said <code>confluence_map</code> body_md is pointer-only with no real content — that was only true before the 2026-10-01 full-body capture round; most production <code>confluence_map</code> rows now carry the real page text, but <code>evidence_grade="C"</code> and the "rank below tech_repo/confluence_docs on the same page_id" rule are unchanged by policy, not by content availability).<br>
 If a tool name is missing in the live server, call <code>kb_tools_help</code> or fall back to <code>kb_query</code> + REST in <a href="./EXTERNAL_API.md">EXTERNAL_API.md</a>.</p>
+<h2 id="b-phase-retrieval-changes-2026-10-29">B-phase retrieval changes (2026-10-29)</h2>
+<ul>
+<li><strong>B1</strong> — With <code>section=checkitem</code> or <code>area</code>/domain set, the <code>PISAOLNX</code> code-prefix expansion is no longer generated (it matched every Linux checkitem), and the +0.015 <code>PISAOLNX</code> bump applies only when neither is set. Search-only synonym groups (<code>retrieval/search_synonyms.py</code>: <code>OOM</code>↔<code>Out of Memory</code>↔<code>메모리 부족</code>↔<code>oom-killer</code>, <code>kernel panic</code>↔<code>커널 패닉</code>, <code>failover</code>↔<code>페일오버</code>, <code>deadlock</code>↔<code>데드락</code>, <code>memory leak</code>↔<code>메모리 누수</code>, <code>k8s</code>↔<code>Kubernetes</code>↔<code>쿠버네티스</code>) widen FTS. They are not in the graph lexicon, so no graph backfill is needed. 1–2 character Korean terms (펜싱, 넷앱) are intentionally excluded.</li>
+<li><strong>B2</strong> — Unfiltered search multiplies pointer-only (<code>confluence_map</code>) scores by <code>SEARCH_POINTER_FACTOR</code> (default 0.85; <code>1.0</code> turns it off).</li>
+<li><strong>B3</strong> — Sentence-like queries (≥4 content tokens) also search an AND of the two/three corpus-rarest tokens, ranked ahead of the single-token pool when selective.</li>
+<li><strong>B4</strong> — <code>YYYY년 M월</code> and <code>YYYY년 M월부터 N월까지</code> route to <code>time_scoped_list</code> (same count as <code>/v1/tickets</code> with the same component). A year in a free-text query is a soft score bump for <code>support_history</code>, never a filter. A component word such as <code>기술지원</code> narrows the list (25 of 38 in 2026-09 on dev).</li>
+</ul>
+<h2 id="c-kb_ask-generation-failure-transparency-2026-10-29">C: <code>kb_ask</code> generation-failure transparency (2026-10-29)</h2>
+<ul>
+<li><code>/v1/chat</code>, <code>/api/query</code> results now carry <code>generation_status</code>: <code>ok</code> | <code>failed_snippet_fallback</code> | <code>empty_snippet_fallback</code> | <code>not_attempted</code> (early abstain). A failed generation is never <code>trust</code> medium/strong and its snippet-fallback <code>[C#]</code> markers are not counted as citations (<code>citations_used=[]</code>).</li>
+<li>MCP <code>kb_ask</code>/<code>wiki_ask</code> first line on failure: <code>[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status=…, 사유: …)</code>. The <code>[스니펫 요약]</code> prefix is unchanged. Fallback text and the source list show one entry per document.</li>
+<li><strong>Fabrix chat adapter (2026-10-29):</strong> <code>apps/api/app/llm_fabrix.py</code> implements <code>POST {COMPANY_ENDPOINT_URL}/openapi/chat/v1/messages</code> (non-stream and SSE). Answer text is taken only from <code>CHUNK</code> events — <code>THINK</code> events carry the model's reasoning and are dropped. Reasoning shares <code>max_new_tokens</code>, so the adapter adds <code>FABRIX_THINK_HEADROOM</code> (default 2048) to the caller's answer budget. <code>check_llm</code> now makes a real tiny non-stream + stream call (cached 60 s): <code>chat_supported</code> / <code>chat_stream_supported</code> are measured, not hardcoded. Errors surface Fabrix's <code>errorCode</code> and <code>detailMessage</code> as the <code>llm_error</code> reason.</li>
+<li>With the adapter, production <code>kb_ask</code> should return <code>generation_status=ok</code> with a generated answer; any failure still falls back to the transparent snippet summary above.</li>
+</ul>
       </div>
     </section>
   </main>

@@ -1,0 +1,10 @@
+{
+  "note": "예시 파일. 실제 토큰은 scripts/issue_system_token.py 로 발급해 config/auth.json 에 넣는다(키=토큰 문자열).",
+  "tokens": {
+    "<scripts/issue_system_token.py 가 만든 토큰>": {
+      "sub": "insight-ops@v1.4",
+      "name": "insight-ops@v1.4",
+      "roles": ["author"]
+    }
+  }
+}

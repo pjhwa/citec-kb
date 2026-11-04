@@ -59,8 +59,13 @@ CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·
 | `kb_register_failure_bucket` | 실패 버킷(장애 패턴) 등록 — 판별 신호 포함. `fb_domain`/`evidence_ref` 필수, `source_plugin` 권장 | `POST /v1/failure-buckets` |
 | `kb_refine_failure_bucket` | 신호 추가/확인/반박, 신뢰도 자동 재계산 | `POST /v1/failure-buckets/{id}/refine` |
 | `kb_match_failure_bucket` | 관찰 신호로 후보 버킷 순위화. `fb_domain` 선택 필터 | `POST /v1/failure-buckets/match` |
-| `kb_list_failure_buckets` | 등록된 버킷 목록. `fb_domain` 선택 필터 | `GET /v1/failure-buckets` |
-| `kb_get_failure_bucket` | 버킷 상세(신호/원인/조치) | `GET /v1/failure-buckets/{id}` |
+| `kb_list_failure_buckets` | 등록된 버킷 목록. `fb_domain` 선택 필터. 기본은 활성(active)만 — `include_retired=true`면 retire·시험(`-test`) 포함 | `GET /v1/failure-buckets` |
+| `kb_get_failure_bucket` | 버킷 상세(신호/원인/조치). retire된 건도 조회되며 `status`/사유가 보인다 | `GET /v1/failure-buckets/{id}` |
+| `kb_retire_failure_bucket` | **[쓰기]** 잘못 등록한 버킷을 되돌림(`bucket_id`, `reason` 8자 이상). **삭제가 아니라 숨김** — 목록·매칭·`kb_search`·그래프 이웃·집계에서 빠진다. `senior` 이상(인증 켜진 경우) | `POST /v1/failure-buckets/{id}/retire` |
+| `kb_restore_failure_bucket` | **[쓰기]** retire된 버킷(또는 `-test` 시험 등록)을 활성으로 복구 | `POST /v1/failure-buckets/{id}/restore` |
+
+잘못 등록했으면 새로 등록해서 덮지 말고 retire한다. 등록 응답의 `registrant_kind`, `created_by_warning`, `evidence_ref_note`는 안내이며 거부가 아니다.
+MCP 서버는 환경 변수 `CITEC_KB_API_KEY`가 있을 때만 `X-API-Key`를 보낸다([AUTH_ENABLEMENT.md](./AUTH_ENABLEMENT.md)).
 
 `fb_domain` 값 목록은 [failure-bucket-domains.md](../references/failure-bucket-domains.md) 참고.
 플러그인 개발자용 상세 지침은 [FAILURE_BUCKET_PLUGIN_GUIDE.md](./FAILURE_BUCKET_PLUGIN_GUIDE.md).

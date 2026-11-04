@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 
-from app.db.models import Document, GraphRun
+from app.db.models import Document, FailureBucket, GraphRun
 from app.db.session import session_scope
 from app.doc_access import attach_document_access
 from app.graph.explore import (
@@ -149,6 +149,26 @@ _ENRICHMENT_COLUMNS = (
     Document.external_id,
     Document.metadata_["space_key"].astext,
 )
+
+
+def _drop_inactive_buckets(buckets: list[dict]) -> list[dict]:
+    """Hide neighbor failure buckets that are retired/test in PG.
+
+    Neo4j nodes can outlive a retire until the next graph sync, so the read path
+    filters by the PG status (source of truth). Buckets absent from PG are kept
+    — only a known non-active status hides a node.
+    """
+    ids = sorted({b["id"] for b in buckets if b.get("id")})
+    if not ids:
+        return buckets
+    with session_scope() as session:
+        hidden = {
+            r[0]
+            for r in session.execute(
+                select(FailureBucket.id).where(FailureBucket.id.in_(ids), FailureBucket.status != "active")
+            ).all()
+        }
+    return [b for b in buckets if b.get("id") not in hidden]
 
 
 def _fetch_document_enrichment(document_ids: list[str]) -> dict[str, dict]:
@@ -460,7 +480,7 @@ def graph_explore(body: GraphExploreBody) -> dict[str, Any]:
     # 복수 앵커(symptom_text가 여러 component에 매칭된 경우) 결과 병합 시 중복 제거
     merged["documents"] = dedup_by_key(merged["documents"], "id")
     merged["components"] = dedup_by_key(merged["components"], "canonical_name")
-    merged["failure_buckets"] = dedup_by_key(merged["failure_buckets"], "id")
+    merged["failure_buckets"] = _drop_inactive_buckets(dedup_by_key(merged["failure_buckets"], "id"))
     merged["excluded_hub_components"] = sorted(set(merged["excluded_hub_components"]))
 
     # 동일 Confluence 페이지의 다른 소스 수집본을 하나의 논리 후보로 묶는다

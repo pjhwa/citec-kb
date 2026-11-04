@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -54,13 +55,49 @@ ANON_RESTRICTED = Principal(
 )
 
 
+# Token-table cache. Keyed by (auth.json mtime_ns+size+inode or None, AUTH_TOKENS_JSON raw)
+# so issuing/revoking a token (editing the file) takes effect on the next request
+# without a restart, and unchanged config is never re-read/re-parsed per request.
+# A missing/unparseable file never falls back to an older cache entry: the key is
+# different, the rebuild yields an empty file contribution, so a revoked token can't
+# survive a corrupted file.
+_token_cache_lock = threading.Lock()
+_token_cache: tuple[object, dict[str, Principal]] | None = None
+_token_table_builds = 0  # test instrumentation: how many times the table was rebuilt
+
+
+def _token_cache_key() -> tuple[object, str]:
+    settings = get_settings()
+    path = Path(settings.config_dir) / "auth.json"
+    try:
+        st = path.stat()
+        file_key: object = (str(path), st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        file_key = (str(path), None, None, None)
+    return file_key, getattr(settings, "auth_tokens_json", None) or ""
+
+
 def _load_token_table() -> dict[str, Principal]:
+    """Map raw token string → Principal (cached; see _token_cache above)."""
+    global _token_cache
+    key = _token_cache_key()
+    with _token_cache_lock:
+        if _token_cache is not None and _token_cache[0] == key:
+            return _token_cache[1]
+        table = _build_token_table()
+        _token_cache = (key, table)
+        return table
+
+
+def _build_token_table() -> dict[str, Principal]:
     """Map raw token string → Principal.
 
     Sources (later overrides earlier):
       1. config/auth.json  { "tokens": { "<token>": {sub,name,roles} } }
       2. AUTH_TOKENS_JSON env (same shape or flat token→roles)
     """
+    global _token_table_builds
+    _token_table_builds += 1
     settings = get_settings()
     table: dict[str, Principal] = {}
 

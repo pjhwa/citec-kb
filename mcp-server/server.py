@@ -26,6 +26,9 @@ MCP_PORT = int(os.environ.get("MCP_PORT", "8100"))
 MCP_TRANSPORT = os.environ.get("MCP_TRANSPORT", "streamable-http").strip().lower()
 # Optional bearer for AUTH_MODE=apikey|oidc later
 CITEC_KB_TOKEN = os.environ.get("CITEC_KB_TOKEN", "").strip()
+# Optional X-API-Key (system-registrant token, see docs/AUTH_ENABLEMENT.md). Unset → no header
+# is sent, which keeps AUTH_MODE=off deployments unchanged.
+CITEC_KB_API_KEY = os.environ.get("CITEC_KB_API_KEY", "").strip()
 
 mcp = FastMCP(
     "citec-kb-mcp",
@@ -43,6 +46,8 @@ def _headers(tool: Optional[str] = None) -> dict[str, str]:
         h["X-Citec-Tool"] = tool
     if CITEC_KB_TOKEN:
         h["Authorization"] = f"Bearer {CITEC_KB_TOKEN}"
+    if CITEC_KB_API_KEY:
+        h["X-API-Key"] = CITEC_KB_API_KEY
     return h
 
 
@@ -1558,8 +1563,10 @@ async def kb_tools_help() -> str:
   kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)
   kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)
   kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)
-  kb_list_failure_buckets(fb_domain=, protocol=, environment=, min_confidence=)
+  kb_list_failure_buckets(fb_domain=, protocol=, environment=, min_confidence=, include_retired=)
   kb_get_failure_bucket(bucket_id=)
+  kb_retire_failure_bucket(bucket_id=, reason=)  [쓰기] 삭제가 아니라 숨김 — 잘못 등록했으면 새로 덮지 말고 retire
+  kb_restore_failure_bucket(bucket_id=)          [쓰기] retire 복구
                   environment: csp|msp|onprem|hybrid — fb_domain/protocol과 직교하는 별도 축.
                   캡처/로그로 실제 확인됐을 때만 채운다(근거 없는 값 금지). 미지정 시 기존
                   동작 그대로(등록은 environment=null, 매칭/목록은 필터 없음, refine은 기존
@@ -1850,6 +1857,12 @@ async def kb_register_failure_bucket(
     ev_warning = data.get("evidence_ref_warning")
     if ev_warning:
         lines.append(f"경고: {ev_warning}")
+    ev_note = data.get("evidence_ref_note")
+    if ev_note:
+        lines.append(f"안내: {ev_note}")
+    cb_warning = data.get("created_by_warning")
+    if cb_warning:
+        lines.append(f"경고: {cb_warning}")
     return "\n".join(lines)
 
 
@@ -1948,10 +1961,15 @@ async def kb_list_failure_buckets(
     environment: str = "",
     min_confidence: float = 0.0,
     limit: int = 20,
+    include_retired: bool = False,
 ) -> str:
     """등록된 실패 버킷 목록. fb_domain 예: network|cluster|windows, protocol 예: TCP|TLS|HTTP,
-    environment 예: csp|msp|onprem|hybrid"""
+    environment 예: csp|msp|onprem|hybrid
+    기본은 활성(active) 버킷만 보여준다. include_retired=True면 retire된 버킷과 시험(-test) 등록도 함께
+    보여준다(status 필드로 구분)."""
     params: dict[str, Any] = {"limit": min(max(limit, 1), 200), "min_confidence": min_confidence}
+    if include_retired:
+        params["include_retired"] = "true"
     if fb_domain.strip():
         params["fb_domain"] = fb_domain.strip()
     if protocol.strip():
@@ -1974,10 +1992,57 @@ async def kb_list_failure_buckets(
             f"- {it.get('bucket_name')} (id={it.get('id')}) fb_domain={it.get('fb_domain')} "
             f"protocol={it.get('protocol')} environment={it.get('environment')} "
             f"confidence={it.get('confidence')}"
+            + (f" status={it.get('status')}" if it.get("status") not in (None, "active") else "")
         )
     if not items:
         lines.append("(결과 없음)")
     return "\n".join(lines)
+
+
+@mcp.tool()
+async def kb_retire_failure_bucket(bucket_id: str, reason: str) -> str:
+    """[쓰기] 잘못 등록된 실패 버킷을 되돌린다(retire). 삭제가 아니라 '숨김'이며 kb_restore_failure_bucket으로
+    복구된다. retire된 버킷은 목록·매칭·kb_search·그래프 이웃·집계에서 빠지고, kb_get_failure_bucket으로만
+    조회된다. reason은 8자 이상 필수(감사용). senior 이상 권한이 필요하다(인증 켜진 경우).
+    새로 등록해서 덮지 말고 retire를 쓴다."""
+    bucket_id = (bucket_id or "").strip()
+    reason = (reason or "").strip()
+    if not bucket_id:
+        return "오류: bucket_id 가 비어 있습니다."
+    if len(reason) < 8:
+        return "오류: reason 은 8자 이상이어야 합니다."
+    try:
+        async with _client() as client:
+            resp = await client.post(f"/v1/failure-buckets/{bucket_id}/retire", json={"reason": reason})
+            if resp.status_code == 404:
+                return f"오류: 실패 버킷을 찾을 수 없습니다: {bucket_id}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return (
+        f"retire됨: {data.get('bucket_name')} (id={data.get('id')}) status={data.get('status')} "
+        f"retired_by={data.get('retired_by')} — 복구는 kb_restore_failure_bucket"
+    )
+
+
+@mcp.tool()
+async def kb_restore_failure_bucket(bucket_id: str) -> str:
+    """[쓰기] retire된 실패 버킷(또는 시험 등록)을 활성(active)으로 복구한다. 다시 검색·매칭 대상이 된다.
+    이미 활성이면 변화 없이 현재 상태를 돌려준다. senior 이상 권한이 필요하다(인증 켜진 경우)."""
+    bucket_id = (bucket_id or "").strip()
+    if not bucket_id:
+        return "오류: bucket_id 가 비어 있습니다."
+    try:
+        async with _client() as client:
+            resp = await client.post(f"/v1/failure-buckets/{bucket_id}/restore")
+            if resp.status_code == 404:
+                return f"오류: 실패 버킷을 찾을 수 없습니다: {bucket_id}"
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    return f"복구됨: {data.get('bucket_name')} (id={data.get('id')}) status={data.get('status')}"
 
 
 @mcp.tool()
@@ -1995,8 +2060,15 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
+    status_line = ""
+    if data.get("status") not in (None, "active"):
+        status_line = (
+            f"status={data.get('status')} retired_at={data.get('retired_at')} "
+            f"retired_by={data.get('retired_by')} reason={data.get('retire_reason')}\n"
+        )
     return (
         f"# {data.get('bucket_name')} (id={data.get('id')})\n"
+        f"{status_line}"
         f"fb_domain={data.get('fb_domain')} protocol={data.get('protocol')} "
         f"environment={data.get('environment')} "
         f"confidence={data.get('confidence')} "

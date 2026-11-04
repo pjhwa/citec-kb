@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>인증 개시 절차서 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css" />
+<link rel="stylesheet" href="/css/docs.css" />
+<script src="/js/nav.js"></script>
+</head>
+<body>
+<div class="top" id="topNav" data-page="doc"></div>
+<div class="page">
+  <aside class="sidebar">
+    <div class="brand">CI-TEC Knowledge · Docs</div>
+    <h1>인증 개시 절차서 (AUTH_MODE=apikey)</h1>
+    <nav class="nav">
+      <a href="#auth_modeapikey">인증 개시 절차서 (AUTH_MODE=apikey)</a>
+      <a href="#1">1. 켜기 전에 알아둘 동작</a>
+      <a href="#2">2. 개시 순서</a>
+      <a href="#3">3. 롤백</a>
+      <a href="#4">4. 토큰 회수·교체 (재시작 불필요)</a>
+      <a href="#5">5. 주의</a>
+    </nav>
+  </aside>
+  <main class="main">
+    <header class="hero">
+      <div class="badge-row">
+        <span class="badge blue">Reference Doc</span>
+      </div>
+      <h1>인증 개시 절차서 (AUTH_MODE=apikey)</h1>
+      <p class="lead">AUTH_MODE=apikey 개시·롤백·토큰 발급/회수</p>
+      <div class="meta-grid">
+        <div class="meta-card"><div class="label">원본</div><div class="value">docs/AUTH_ENABLEMENT.md</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
+      </div>
+    </header>
+    <section>
+      <div class="section-card">
+<h1 id="auth_modeapikey">인증 개시 절차서 (AUTH_MODE=apikey)</h1>
+<p><strong>현재 상태: <code>AUTH_MODE=off</code></strong> (코드 기본값과 <code>docker-compose.yml</code> 기본값 모두). 이 문서는 운영자가 켜는 시점에 따를 절차이며,<br>
+켜기 전까지 어떤 호출도 달라지지 않는다. 켜는 시점은 KB 담당자가 공지한다.</p>
+<h2 id="1">1. 켜기 전에 알아둘 동작</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>호출</th>
+<th>인증 켜진 뒤</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>읽기: <code>GET /v1/failure-buckets</code>, <code>GET …/{id}</code>, <code>POST …/match</code>, 검색</td>
+<td><strong>토큰 없이 열려 있음</strong> (현재 동작 그대로)</td>
+</tr>
+<tr>
+<td>쓰기: <code>POST /v1/failure-buckets</code>, <code>…/refine</code></td>
+<td><code>author</code>·<code>senior</code>·<code>admin</code></td>
+</tr>
+<tr>
+<td><code>POST …/{id}/retire</code>, <code>…/restore</code></td>
+<td><code>senior</code>·<code>admin</code></td>
+</tr>
+<tr>
+<td><code>POST …/retire-batch</code></td>
+<td><code>admin</code></td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>시스템 토큰(insight-ops, agent-room, ToolBox 도구)은 <strong><code>author</code> 롤 하나</strong>만 받는다. 그래서 자기 등록건을 스스로 retire할 수 없다.</li>
+<li><code>senior</code>/<code>admin</code>은 사람이 쓴다(<code>--allow-privileged</code>로만 발급).</li>
+<li>토큰 이름은 <code>created_by</code>와 같은 값(<code>&lt;시스템&gt;@&lt;판&gt;</code>)으로 발급한다. 본문 <code>created_by</code>가 토큰 이름과 다르면 거부하지 않고 응답에 <code>created_by_warning</code>이 붙는다.</li>
+<li>인증이 켜진 상태에서 토큰이 없거나 틀린 쓰기는 401, 롤이 모자라면 403이다.</li>
+</ul>
+<h2 id="2">2. 개시 순서</h2>
+<ol>
+<li><strong>토큰 발급</strong> (운영 서버, 저장소 루트):<br>
+<code>bash
+   python3 scripts/issue_system_token.py --name insight-ops@v1.4      # 토큰이 stdout에 한 번만 출력됨
+   python3 scripts/issue_system_token.py --name agent-room@v0.9</code><br>
+   - <code>config/auth.json</code>에 <code>{토큰: {sub, name, roles:[author]}}</code>로 추가된다. 기존 항목은 보존된다. 쓰기는 임시 파일 후 rename이라 서버가 반쯤 쓰인 파일을 읽지 않는다.<br>
+   - 파일 권한이 느슨하면 스크립트가 경고한다. <code>chmod 600 config/auth.json</code>.</li>
+<li><strong>각 시스템에 토큰 전달</strong>: 보안 채널로. 받는 쪽은 환경 변수(예: <code>CITEC_KB_API_KEY</code>)로 보관하고 값이 있을 때만 <code>X-API-Key</code> 헤더를 붙인다.</li>
+<li><strong><code>AUTH_MODE=apikey</code> 설정</strong>: <code>.env</code>의 <code>AUTH_MODE=apikey</code>.</li>
+<li><strong>API 컨테이너 재시작</strong>(재빌드 불필요): <code>docker compose up -d api</code>. <code>AUTH_MODE</code>는 프로세스 환경 변수라 재시작이 필요하다.</li>
+<li><strong>확인</strong> (아래 <code>$KB</code>는 API base URL):<br>
+<code>bash
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST $KB/v1/failure-buckets -H 'Content-Type: application/json' -d '{}'   # 401
+   curl -s -o /dev/null -w '%{http_code}\n' $KB/v1/failure-buckets                                                   # 200 (읽기는 열려 있음)
+   curl -s -X POST $KB/v1/failure-buckets/match -H 'Content-Type: application/json' -d '{"observed_signals":["x"]}'   # 200
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST $KB/v1/failure-buckets -H "X-API-Key: $TOKEN" \
+        -H 'Content-Type: application/json' -d @body-test.json                                                          # 200 (created_by는 -test 접미로 시험)</code></li>
+</ol>
+<h2 id="3">3. 롤백</h2>
+<p><code>.env</code>에서 <code>AUTH_MODE=off</code>로 되돌리고 <code>docker compose up -d api</code>. 모든 호출이 이전처럼 통과한다. 토큰 파일은 그대로 두어도 무해하다(off 모드는 토큰 표를 읽지 않는다).</p>
+<h2 id="4">4. 토큰 회수·교체 (재시작 불필요)</h2>
+<p>서버는 <code>config/auth.json</code>의 mtime/크기/inode가 바뀌면 <strong>다음 요청부터</strong> 새 표를 읽는다.</p>
+<pre><code class="language-bash">python3 scripts/issue_system_token.py --revoke insight-ops@v1.4           # 즉시 401
+python3 scripts/issue_system_token.py --name insight-ops@v1.4 --rotate    # 기존 토큰 폐기 + 새 토큰
+</code></pre>
+<ul>
+<li>같은 이름이 이미 있으면 <code>--rotate</code> 없이는 발급하지 않는다.</li>
+<li><code>config/auth.json</code>을 읽을 수 없거나 JSON이 깨지면 <strong>파일의 모든 토큰이 거부</strong>된다(회수한 토큰이 캐시에 남지 않게 하기 위한 의도적 동작). 로그에 <code>failed to load …/auth.json</code>이 남는다. <code>AUTH_TOKENS_JSON</code> 환경 변수의 토큰은 이 영향을 받지 않는다.</li>
+</ul>
+<h2 id="5">5. 주의</h2>
+<ul>
+<li><code>config/auth.json</code>은 <code>.gitignore</code>에 올렸지만, <strong>이미 git이 추적 중인 파일이라 ignore가 적용되지 않는다.</strong> 운영자가 <code>git rm --cached config/auth.json</code>으로 추적을 끊을지 결정한다(배포가 이 파일을 저장소에서 가져가는지 확인 후). 토큰 값을 커밋하지 않는다. 형식 예시는 <code>config/auth.json.example</code>.</li>
+<li>토큰을 로그·티켓·채팅에 남기지 않는다. 유출 시 즉시 <code>--revoke</code>.</li>
+</ul>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
