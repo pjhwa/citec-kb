@@ -36,16 +36,26 @@ def _make_client(monkeypatch, mode: str):
     return TestClient(app)
 
 
+def _teardown(monkeypatch):
+    _cleanup()
+    # Restore env first, then drop the cached Settings that captured AUTH_MODE/tokens —
+    # otherwise later tests in the same process would inherit apikey mode.
+    monkeypatch.undo()
+    from app.settings import get_settings
+
+    get_settings.cache_clear()
+
+
 @pytest.fixture()
 def apikey_client(monkeypatch):
     yield _make_client(monkeypatch, "apikey")
-    _cleanup()
+    _teardown(monkeypatch)
 
 
 @pytest.fixture()
 def off_client(monkeypatch):
     yield _make_client(monkeypatch, "off")
-    _cleanup()
+    _teardown(monkeypatch)
 
 
 def _cleanup():
