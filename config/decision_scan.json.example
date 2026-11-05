@@ -4,5 +4,7 @@
   "detectors": ["fb_confirm", "deadline", "bucket_gap"],
   "gap_since_days": 365,
   "gap_min_count": 3,
-  "deadline_soon_days": 60
+  "deadline_soon_days": 60,
+  "llm_refine": false,
+  "llm_max_per_run": 20
 }

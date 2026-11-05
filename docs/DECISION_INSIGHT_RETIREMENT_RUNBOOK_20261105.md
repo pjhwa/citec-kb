@@ -31,7 +31,7 @@
 
 - **주제 스캔 예약:** `scripts/decision_scan_cron.sh`(스캔+낡음 스캔 작업을 큐에 넣음). 호스트 crontab에 직접 추가한다(자동 설치 안 함):
   `30 6 * * * /home/citec/dev/citec-kb/scripts/decision_scan_cron.sh >> /home/citec/dev/citec-kb/logs/cron_decision_scan.log 2>&1`.
-  인증을 켠 뒤에는 `API_TOKEN`(admin)이 필요하다. 상한·탐지기는 `config/decision_scan.json`(예시 파일 참고). 먼저 `POST /v1/decisions/_scan-topics?dry_run=true`로 무엇이 올라올지 본다.
+  인증을 켠 뒤에는 `API_TOKEN`(admin)이 필요하다. 상한·탐지기는 `config/decision_scan.json`(예시 파일 참고). 먼저 `POST /v1/decisions/_scan-topics?dry_run=true`로 무엇이 올라올지 본다. `llm_refine: true`로 질문 문구만 LLM이 다듬게 할 수 있다(기본 꺼짐, LLM 설정 필요, dry-run에서는 호출 안 함).
 - 마이그레이션 `0023`(`decisions.source_key/source_ref`, 부분 유일 인덱스)은 0021·0022와 같은 절차로 적용한다. `downgrade`는 두 컬럼과 인덱스만 제거한다.
 
 ## 4. 롤백
