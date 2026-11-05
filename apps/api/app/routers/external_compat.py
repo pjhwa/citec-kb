@@ -557,6 +557,19 @@ def api_wiki_stats() -> dict[str, Any]:
         insights = int(
             session.scalar(select(func.count()).select_from(Insight)) or 0
         )
+    from app.db.models import Decision
+
+    with session_scope() as session:
+        dec_by_status = dict(session.execute(
+            select(Decision.status, func.count()).group_by(Decision.status)).all())
+    decisions = {
+        "by_status": dec_by_status,
+        "searchable_active_documents": int(by_type.get("confirmed_decision", 0)),
+        "definition": (
+            "by_status = decisions 테이블 행을 상태별로 센 값(제안 포함). "
+            "searchable_active_documents = 검색에 노출되는 확정 문서(source_type=confirmed_decision, status=active) 수 — "
+            "판정된 결정만 문서가 되므로 보통 confirmed+needs_recheck 합과 같다."),
+    }
     # wiki-qa used section names; include both
     sections = dict(by_type)
     if "checkitem" in sections and "checkitems" not in sections:
@@ -568,6 +581,7 @@ def api_wiki_stats() -> dict[str, Any]:
         "sections": sections,
         "synthesis": insights,
         "insights": insights,
+        "decisions": decisions,
         "backend": "citec-kb",
     }
 
