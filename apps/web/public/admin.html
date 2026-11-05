@@ -439,6 +439,7 @@
         <button type="button" role="tab" data-tab="k-synrev" aria-selected="false">동의어 검수 <span class="cnt" id="cntSynProposed" hidden>0</span></button>
         <button type="button" role="tab" data-tab="k-synmine" aria-selected="false">동의어 마이닝 <span class="tdot" id="tdMine"></span></button>
         <button type="button" role="tab" data-tab="k-reg" aria-selected="false">시스템 등록자</button>
+        <button type="button" role="tab" data-tab="k-scan" aria-selected="false">확정 주제 스캔</button>
       </div>
       <div class="tab-panel" id="k-bucket" role="tabpanel">
         <div class="card" id="fbCard">
@@ -524,6 +525,36 @@
       <button type="button" id="regAdd">추가</button>
       <span id="regMsg" class="meta"></span>
     </div>
+  </div></div>
+      <div class="tab-panel" id="k-scan" role="tabpanel" hidden><div class="card" id="scanCard">
+    <div class="job-top"><strong>확정 주제 자동 도출 (사람 확정 큐)</strong><span id="scanSource" class="badge na">…</span></div>
+    <p class="meta" style="margin:2px 0 10px">
+      규칙이 사람이 확정할 주제를 찾아 <a href="/decisions.html">확정 큐</a>에 <b>제안</b>으로만 올립니다(판정은 사람만). 'LLM 문구 다듬기'를 켜면 질문·선택지 문구만 LLM이 고치며,
+      선택지 key·근거·숫자/날짜가 바뀌면 거부하고 규칙 문구를 씁니다. 설정 저장은 admin 권한, 미리보기·실행은 senior 이상입니다.
+      기본값은 <code>config/decision_scan.json</code>, 저장하면 <code>data/decision_scan.json</code>이 우선합니다.
+    </p>
+    <div class="form-grid">
+      <label class="field">1회 최대 신규<input type="number" id="scMaxNew" min="0" max="200"/></label>
+      <label class="field">대기 제안 상한<input type="number" id="scMaxOpen" min="0" max="500"/></label>
+      <label class="field">공백 판단 기간(일)<input type="number" id="scGapDays" min="1" max="3650"/></label>
+      <label class="field">공백 최소 건수<input type="number" id="scGapMin" min="1" max="1000"/></label>
+      <label class="field">기한 임박 기준(일)<input type="number" id="scSoon" min="0" max="3650"/></label>
+      <label class="field">LLM 1회 최대 건수<input type="number" id="scLlmMax" min="0" max="100"/></label>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0">
+      <label class="toggle"><input type="checkbox" class="scDet" value="fb_confirm"/> 실패 버킷 확정</label>
+      <label class="toggle"><input type="checkbox" class="scDet" value="deadline"/> 제목 기한</label>
+      <label class="toggle"><input type="checkbox" class="scDet" value="bucket_gap"/> 버킷 공백</label>
+      <label class="toggle"><input type="checkbox" id="scLlm"/> LLM 문구 다듬기 (LLM 호출 비용 발생)</label>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button type="button" id="scSave">설정 저장</button>
+      <button type="button" class="ghost" id="scDry">미리보기 (규칙)</button>
+      <button type="button" class="ghost" id="scPrev">미리보기 (LLM 문구 포함)</button>
+      <button type="button" class="ghost" id="scRun">지금 실행</button>
+      <span id="scMsg" class="meta"></span>
+    </div>
+    <div id="scOut" class="stack" style="gap:10px;margin-top:14px"></div>
   </div></div>
     </section>
 
@@ -1336,6 +1367,95 @@ $("regCard").addEventListener("click", async (ev) => {
   await regMutate("DELETE", REG_API + "/" + encodeURIComponent(b.dataset.name));
 });
 
+/* ---- 확정 주제 스캔 ---- */
+const SCAN_API = "/v1/decisions/_scan-topics";
+const SCAN_CFG = "/v1/decisions/_scan-config";
+const SC_NUM = { max_new_per_run: "scMaxNew", max_open_server_proposals: "scMaxOpen", gap_since_days: "scGapDays",
+  gap_min_count: "scGapMin", deadline_soon_days: "scSoon", llm_max_per_run: "scLlmMax" };
+function scDenied(r) {
+  if (r.status === 401 || r.status === 403) { $("scMsg").textContent = "권한 필요 (로그인 후 senior/admin 역할 필요)"; return true; }
+  return false;
+}
+async function scErr(r) {
+  try { const j = await r.json(); return typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch (e) { return "HTTP " + r.status; }
+}
+function renderScanCfg(d) {
+  const c = d.config;
+  Object.entries(SC_NUM).forEach(([k, id]) => { $(id).value = c[k]; });
+  document.querySelectorAll(".scDet").forEach((el) => { el.checked = (c.detectors || []).includes(el.value); });
+  $("scLlm").checked = !!c.llm_refine;
+  badge($("scSource"), d.source === "override" ? true : null, d.source === "override" ? "data/ 오버라이드" : "config 기본값");
+  $("scMsg").textContent = d.updated_by ? "마지막 변경: " + d.updated_by + " · " + fmtTs(d.updated_at) : "";
+}
+async function refreshScanCfg() {
+  try {
+    const r = await CitecAuth.apiFetch(SCAN_CFG);
+    if (scDenied(r)) return;
+    if (!r.ok) { $("scMsg").textContent = await scErr(r); return; }
+    renderScanCfg(await r.json());
+  } catch (e) { $("scMsg").textContent = String(e); }
+}
+function scanPayload() {
+  const body = {};
+  Object.entries(SC_NUM).forEach(([k, id]) => { body[k] = Number($(id).value); });
+  body.detectors = Array.from(document.querySelectorAll(".scDet")).filter((el) => el.checked).map((el) => el.value);
+  body.llm_refine = $("scLlm").checked;
+  return body;
+}
+function scOptList(opts) {
+  return '<ul style="margin:4px 0 0 18px;padding:0">' + opts.filter((o) => o.key !== "NEI" && o.key !== "OTHER")
+    .map((o) => '<li><b>' + esc(o.label) + '</b> <span class="meta">' + esc(o.summary || "") + '</span></li>').join("") + '</ul>';
+}
+function renderScanResult(d, kind) {
+  const det = Object.entries(d.detected || {}).map(([k, v]) => k + " " + v).join(", ") || "없음";
+  let h = '<div class="meta">탐지: ' + esc(det) + ' · 이미 등록: ' + d.already_known + ' · 상한으로 보류: ' + d.skipped_by_cap +
+    (kind === "run" ? ' · <b>등록 ' + d.created_count + '건</b> (LLM 문구 ' + (d.llm_refined || 0) + '건)' : '') + '</div>';
+  const errs = Object.entries(d.errors || {});
+  if (errs.length) h += '<div class="meta" style="color:var(--bad)">오류: ' + errs.map(([k, v]) => esc(k + " — " + v)).join("; ") + '</div>';
+  const prev = d.llm_preview;
+  const rows = d.would_create || [];
+  if (kind === "run") {
+    h += (d.created || []).map((c) => '<div>· <a href="/decision.html?id=' + encodeURIComponent(c.id) + '">' + esc(c.source_key) + '</a></div>').join("");
+  } else if (prev) {
+    h += prev.map((p) => '<div class="card" style="padding:10px"><div class="meta">' + esc(p.detector) + ' · <code>' + esc(p.source_key) + '</code> · ' +
+      (p.adopted ? '<span class="badge ok">LLM 문구 채택 가능</span>' : '<span class="badge bad">거부: ' + esc(p.reason) + '</span>') + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:6px">' +
+      '<div><div class="meta">규칙 문구</div><div>' + esc(p.rule.question) + '</div>' + scOptList(p.rule.options) + '</div>' +
+      (p.llm ? '<div><div class="meta">LLM 문구</div><div>' + esc(p.llm.question) + '</div>' + scOptList(p.llm.options) + '</div>' : '') +
+      '</div></div>').join("") || '<span class="meta">등록할 신규 주제가 없습니다.</span>';
+  } else {
+    h += rows.map((r) => '<div>· [' + esc(r.stakes) + '] ' + esc(r.question) + ' <span class="meta">' + esc(r.detector) + '</span></div>').join("") ||
+      '<span class="meta">등록할 신규 주제가 없습니다.</span>';
+  }
+  $("scOut").innerHTML = h;
+}
+async function scanCall(qs, kind, busy) {
+  $("scMsg").textContent = busy; $("scOut").innerHTML = "";
+  ["scSave", "scDry", "scPrev", "scRun"].forEach((id) => { $(id).disabled = true; });
+  try {
+    const r = await CitecAuth.apiFetch(SCAN_API + qs, { method: "POST" });
+    if (scDenied(r)) return;
+    if (!r.ok) { $("scMsg").textContent = await scErr(r); return; }
+    renderScanResult(await r.json(), kind);
+    $("scMsg").textContent = "";
+  } catch (e) { $("scMsg").textContent = String(e); }
+  finally { ["scSave", "scDry", "scPrev", "scRun"].forEach((id) => { $(id).disabled = false; }); }
+}
+$("scSave").onclick = async () => {
+  const r = await CitecAuth.apiFetch(SCAN_CFG, { method: "PUT", body: scanPayload() });
+  if (scDenied(r)) return;
+  if (!r.ok) { $("scMsg").textContent = await scErr(r); return; }
+  renderScanCfg(await r.json());
+  $("scMsg").textContent = "저장됨 · " + $("scMsg").textContent;
+};
+$("scDry").onclick = () => scanCall("?dry_run=true", "dry", "미리보기 중…");
+$("scPrev").onclick = () => scanCall("?dry_run=true&llm_preview=true", "dry", "LLM 호출 중… (건수에 따라 시간이 걸립니다)");
+$("scRun").onclick = () => {
+  if (!confirm("저장된 설정으로 지금 스캔해 확정 큐에 제안을 등록합니다. 계속할까요?")) return;
+  scanCall("", "run", "등록 중…");
+};
+refreshScanCfg();
+
 function cronClass(st) {
   return st === "ok" ? "ok" : st === "failed" || st === "missed" ? "bad" : st === "running" ? "warn" : "na";
 }
@@ -1431,7 +1551,7 @@ $("tokCard").addEventListener("click", async (ev) => {
 });
 refreshTokens();
 
-$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); refreshBuckets(); refreshMining(); refreshSynCounts(); refreshBackups(); if (!$("u-api").hidden) refreshApiUsage(); };
+$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshScanCfg(); refreshCron(); refreshTokens(); refreshBuckets(); refreshMining(); refreshSynCounts(); refreshBackups(); if (!$("u-api").hidden) refreshApiUsage(); };
 
 let _timer = null;
 function scheduleAuto() {

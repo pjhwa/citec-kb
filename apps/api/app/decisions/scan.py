@@ -62,14 +62,9 @@ class Proposal:
 
 
 def load_config() -> dict[str, Any]:
-    cfg = dict(DEFAULTS)
-    try:
-        p = Path(get_settings().config_dir) / "decision_scan.json"
-        if p.exists():
-            cfg.update(json.loads(p.read_text()))
-    except Exception:  # noqa: BLE001 — 설정 오류가 스캔을 막지 않게 기본값
-        pass
-    return cfg
+    from app.decisions import scan_config
+
+    return scan_config.effective(DEFAULTS)
 
 
 # ---------------------------------------------------------------- detectors
