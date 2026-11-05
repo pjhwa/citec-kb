@@ -1,0 +1,11 @@
+trust strong
+1 tech_repo 531734869 | 08-01-03. 주요 RDB Managed Service 비교/분석 2022 통합 | A
+2 checkitem PISAOLNX_03.01.04 | [PISAOLNX_03.01.04] 사용자 정보 | A
+3 tech_repo 1365725609 | Survey 작성 (한글/영문) | A
+4 checkitem PISAOLNX_06.01.07#EN | [PISAOLNX_06.01.07] Event Message | A
+5 dept_archive file_159766 | LINUX-재분류 | B
+6 confluence_map 1930835440 | 25년용 09. Backup | C
+7 checkitem PISAOLNX_03.01.02 | [PISAOLNX_03.01.02] 호스트 명 참조 파일 | A
+8 confluence_map 1930830085 | 25년용 03. Object | C
+9 tech_repo 634853277 | 03-05-01. DaaS 서비스 비교 | A
+10 checkitem PISAOLNX_04.01.04#EN | [PISAOLNX_04.01.04] Tasks Utilization | A
