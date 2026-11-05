@@ -1,6 +1,7 @@
 """Periodic topic scan: derive questions a human should confirm and register them in the queue.
 
-Rule-based only (no LLM, no external calls — the server is air-gapped). Every proposal carries a
+Rule-based detection (the LLM never decides which topics exist). Optional `llm_refine` rewords the
+question/options of proposals about to be created (decisions/refine.py). Every proposal carries a
 `source_key` (unique) so a re-run never re-proposes a topic, and verbatim quotes from the
 pinned source so the same evidence gate as any proposal applies. Proposals are only *proposals*
 (status=proposed, created_by_kind=server_job); a human decides in /decisions.html.
@@ -37,7 +38,8 @@ from app.settings import get_settings
 FB_CONFIRMED_CONFIDENCE = 0.7
 SCAN_ACTOR = "decision-scan"
 DEFAULTS = {"max_new_per_run": 20, "max_open_server_proposals": 60, "detectors": ["fb_confirm", "deadline", "bucket_gap"],
-            "gap_since_days": 365, "gap_min_count": 3, "deadline_soon_days": 60}
+            "gap_since_days": 365, "gap_min_count": 3, "deadline_soon_days": 60,
+            "llm_refine": False, "llm_max_per_run": 20}
 
 _DEADLINE_RE = re.compile(
     r"((?:19|20)\d{2})[.\-/]\s?0?(\d{1,2})[.\-/]\s?0?(\d{1,2})\s*(?:일)?\s*(까지|이후|종료|제공|사용|지원|만료)")
@@ -223,7 +225,13 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None) -> dict
     new.sort(key=lambda p: (0 if p.stakes == "high" else 1, rank[p.detector]))
     todo = new[:limit]
     created: list[dict[str, Any]] = []
+    refined = 0
     if not dry_run:
+        if cfg.get("llm_refine"):  # 1단계: 문구만 다듬는다(근거·선택지 key는 불변). 실패하면 규칙 문구.
+            from app.decisions import refine
+
+            for p in todo[: int(cfg["llm_max_per_run"])]:
+                refined += int(refine.refine(p))
         for p in todo:
             try:
                 d = svc.create_decision(
@@ -242,7 +250,7 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None) -> dict
         "dry_run": dry_run, "detected": by_det, "already_known": len(found) - len(new),
         "would_create": [{"detector": p.detector, "source_key": p.source_key, "question": p.question, "stakes": p.stakes}
                          for p in todo] if dry_run else None,
-        "created": created, "created_count": len(created),
+        "created": created, "created_count": len(created), "llm_refined": refined,
         "skipped_by_cap": max(0, len(new) - len(todo)), "open_server_proposals_before": open_server,
         "caps": {"max_new_per_run": cap_new, "max_open_server_proposals": cfg["max_open_server_proposals"]},
         "errors": errors,
