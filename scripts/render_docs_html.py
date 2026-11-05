@@ -39,6 +39,7 @@ DOCS = [
     ("FAILURE_BUCKET_PLUGIN_GUIDE.md", "failure-bucket-plugin-guide.html", "실패 버킷 플러그인 개발 지침", "다중 진단 플러그인의 failure_bucket 연동 규약 (fb_domain·evidence_ref·source_plugin)"),
     ("FAILURE_BUCKET_TOOLBOX_INTEGRATION.md", "failure-bucket-toolbox-integration.html", "ToolBox 도구 failure bucket 연동", "ToolBox 도구 개발자용 — 호출 순서·등록 필드·시험(-test)·멱등·신청서"),
     ("AUTH_ENABLEMENT.md", "auth-enablement.html", "인증 개시 절차서", "AUTH_MODE=apikey 개시·롤백·토큰 발급/회수"),
+    ("BACKUP_RESTORE.md", "backup-restore.html", "백업·복구 운영 가이드", "정기 백업 등록, 화면에서 백업 요청, 보관 정책, 복구 절차"),
     ("IMPLEMENTATION_PLAN.md", "implementation-plan.html", "구현 계획", "PR DAG · 백로그 · API 계약 · 게이트 G0–G6"),
     ("MCP.md", "mcp.html", "MCP 서버", "Claude / Cursor용 kb_search · kb_ask · kb_query"),
     ("OIDC_IDP_SETUP.md", "oidc-idp-setup.html", "OIDC / IdP 연동 가이드", "Keycloak 및 외부 IdP 연동 모드"),

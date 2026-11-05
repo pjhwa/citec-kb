@@ -218,3 +218,113 @@ def ops_cron(principal: Principal = Depends(require_roles("admin"))) -> dict[str
         "snapshot_stale": age > _CRON_STALE_SEC,
         **data,
     }
+
+
+# ---------------------------------------------------------------- backups (host script <-> admin page)
+
+_BACKUP_SNAPSHOT_STALE_SEC = 5 * 60   # the host runner refreshes the status every minute
+_BACKUP_WARN_H, _BACKUP_BAD_H = 30, 54  # daily schedule: one missed night warns, two is a problem
+
+
+def _backup_files():
+    from pathlib import Path
+
+    d = Path(get_settings().data_dir)
+    return d / "backup_status.json", d / "backup_requests"
+
+
+def _read_json_file(path):
+    import json
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _backup_warnings(st: dict[str, Any], snap_age: int) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    sets = st.get("sets") or []
+    if not sets:
+        out.append({"level": "bad", "text": "완료된 백업이 하나도 없습니다."})
+    else:
+        try:
+            fin = datetime.fromisoformat(sets[0].get("finished_at"))
+            age_h = (datetime.now(timezone.utc) - fin.astimezone(timezone.utc)).total_seconds() / 3600
+            if age_h > _BACKUP_BAD_H:
+                out.append({"level": "bad", "text": f"마지막 성공 백업이 {age_h:.0f}시간 전입니다."})
+            elif age_h > _BACKUP_WARN_H:
+                out.append({"level": "warn", "text": f"마지막 성공 백업이 {age_h:.0f}시간 전입니다(하루 1회 예정)."})
+        except (TypeError, ValueError):
+            pass
+    last = st.get("last_run") or {}
+    if last and last.get("ok") is False:
+        out.append({"level": "bad", "text": "마지막 백업 시도가 실패했습니다: " + str(last.get("error") or "원인 불명")})
+    disk = st.get("disk") or {}
+    if disk.get("total"):
+        free_pct = 100 * disk["free"] / disk["total"]
+        if free_pct < 10:
+            out.append({"level": "bad", "text": f"백업 디스크 여유가 {free_pct:.0f}%뿐입니다."})
+        elif free_pct < 20:
+            out.append({"level": "warn", "text": f"백업 디스크 여유가 {free_pct:.0f}%입니다."})
+    if snap_age > _BACKUP_SNAPSHOT_STALE_SEC:
+        out.append({"level": "warn", "text": "호스트 백업 러너의 상태 갱신이 멈췄습니다(crontab의 process-requests가 도는지 확인). 지금 백업 요청은 처리되지 않을 수 있습니다."})
+    return out
+
+
+def _recent_requests(req_dir) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    pending = None
+    for p in sorted(req_dir.glob("*.json")) if req_dir.is_dir() else []:
+        r = _read_json_file(p)
+        if isinstance(r, dict):
+            pending = r
+            break
+    done = []
+    dd = req_dir / "done"
+    for p in sorted(dd.glob("*.json"), reverse=True)[:5] if dd.is_dir() else []:
+        r = _read_json_file(p)
+        if isinstance(r, dict):
+            done.append(r)
+    return pending, done
+
+
+@router.get("/backups")
+def ops_backups(principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    """Backup sets and health, from data/backup_status.json (written on the host by scripts/backup_manager.py)."""
+    status_file, req_dir = _backup_files()
+    st = _read_json_file(status_file)
+    if not isinstance(st, dict):
+        return {
+            "available": False,
+            "hint": "data/backup_status.json 없음 — 호스트 crontab에 scripts/backup_manager.py를 등록하세요 (docs/BACKUP_RESTORE.md).",
+        }
+    age = max(0, int(datetime.now(timezone.utc).timestamp() - status_file.stat().st_mtime))
+    warnings = _backup_warnings(st, age)
+    pending, done = _recent_requests(req_dir)
+    level = "bad" if any(w["level"] == "bad" for w in warnings) else "warn" if warnings else "ok"
+    return {"available": True, "overall": level, "warnings": warnings, "snapshot_age_sec": age,
+            "pending_request": pending, "recent_requests": done, **st}
+
+
+@router.post("/backups/request")
+def ops_backup_request(principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    """Ask the host runner for a backup now. It is picked up within about a minute."""
+    import json
+    import secrets
+
+    status_file, req_dir = _backup_files()
+    pending, _ = _recent_requests(req_dir)
+    if pending:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=409, detail="이미 처리 대기/진행 중인 백업 요청이 있습니다.")
+    req_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    req = {"id": now.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2), "requested_at": now.isoformat(timespec="seconds"),
+           "requested_by": principal.name, "status": "pending"}
+    path = req_dir / (req["id"] + ".json")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(req, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    stale = (not status_file.exists()) or (now.timestamp() - status_file.stat().st_mtime > _BACKUP_SNAPSHOT_STALE_SEC)
+    return {**req, "runner_warning": "호스트 러너가 응답하지 않는 것 같습니다. crontab 등록을 확인하세요." if stale else None}
