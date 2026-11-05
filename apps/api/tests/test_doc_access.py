@@ -28,3 +28,16 @@ def test_attach_document_access():
     assert out["path"] == "tech_repo/X.md"
     assert out["body_api"]
     assert out["access"]["mcp_tool"] == "kb_get_document"
+
+
+def test_source_url_http_only():
+    acc = document_access(
+        external_id="1", source_type="confluence_map",
+        source_uri="http://wiki/pages/viewpage.action?pageId=1",
+    )
+    assert acc["source_url"] == "http://wiki/pages/viewpage.action?pageId=1"
+    assert document_access(external_id="X", source_type="tech_repo",
+                           source_uri="file://tech_repo/X.md")["source_url"] is None
+    out = attach_document_access({"external_id": "1", "source_type": "confluence_map",
+                                  "source_uri": "https://c/x"})
+    assert out["source_url"] == "https://c/x"

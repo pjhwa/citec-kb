@@ -15,6 +15,14 @@
     .meta { color:var(--muted); font-size:13px; margin-bottom:14px; }
     .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
     .err { background:#fef2f2; color:#b91c1c; padding:12px; border-radius:8px; }
+    .meta, h1 { overflow-wrap:anywhere; }
+    .src-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 12px; }
+    a.src-btn { display:inline-block; padding:7px 14px; border-radius:8px; background:#1d4ed8; color:#fff; font-weight:700; font-size:13px; text-decoration:none; }
+    a.src-btn:hover { background:#1e40af; }
+    .notice { font-size:12px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 10px; }
+    table.fm { border-collapse:collapse; font-size:13px; margin:0 0 14px; width:100%; }
+    table.fm th { text-align:left; white-space:nowrap; vertical-align:top; color:var(--muted); font-weight:600; padding:3px 12px 3px 0; width:1%; }
+    table.fm td { padding:3px 0; overflow-wrap:anywhere; }
     .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; margin-right:6px; }
     .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
     button, .btn {
@@ -36,6 +44,7 @@
   </div>
   <h1 id="title">로딩…</h1>
   <div class="meta" id="meta"></div>
+  <div class="src-row" id="srcRow"></div>
   <div class="card">
     <div id="body" class="md-body">로딩…</div>
   </div>
@@ -86,6 +95,34 @@
     return html || "<p class='meta'>(필드 없음)</p>";
   }
 
+  // "--- key : value ---" frontmatter (confluence_map / confluence_docs / tech_repo …)
+  function splitFrontmatter(md) {
+    const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(md || "");
+    if (!m) return { fm: null, rest: md || "" };
+    const fm = {};
+    for (const line of m[1].split(/\r?\n/)) {
+      const i = line.search(/\s:\s|:\s*$/);
+      if (i < 0) continue;
+      const k = line.slice(0, i).trim();
+      if (k) fm[k] = line.slice(i).replace(/^\s*:\s*/, "").trim();
+    }
+    return { fm: Object.keys(fm).length ? fm : null, rest: md.slice(m[0].length) };
+  }
+
+  function httpUrl(u) {
+    u = String(u || "").trim();
+    return /^https?:\/\//i.test(u) ? u : "";
+  }
+
+  const FM_HIDE = new Set(["URL", "제목", "Page ID", "구분", "조상ID목록", "최종수정일시각", "space_key", "tech_relevant", "citec_domains"]);
+
+  function fmTableHtml(fm) {
+    const rows = Object.entries(fm || {})
+      .filter(([k, v]) => v && !FM_HIDE.has(k))
+      .map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`);
+    return rows.length ? `<table class="fm">${rows.join("")}</table>` : "";
+  }
+
   function renderBody() {
     if (showRaw) {
       if (structured && structured.sections) {
@@ -95,10 +132,11 @@
       }
     } else if (structured && structured.sections) {
       $("body").innerHTML = renderCheckitemSections(structured.sections);
-    } else if (window.CitecMD && CitecMD.render) {
-      $("body").innerHTML = CitecMD.render(rawMd || "(본문 없음)");
     } else {
-      $("body").textContent = rawMd || "(본문 없음)";
+      const { fm, rest } = splitFrontmatter(rawMd);
+      const text = (fm ? rest : rawMd) || "(본문 없음)";
+      const html = (window.CitecMD && CitecMD.render) ? CitecMD.render(text) : `<pre>${esc(text)}</pre>`;
+      $("body").innerHTML = (fm ? fmTableHtml(fm) : "") + html;
     }
   }
 
@@ -151,6 +189,8 @@
           assignee: w.meta && (w.meta.assignee || w.meta.Assignee),
           Created: w.meta && w.meta.Created,
           path: w.path || p,
+          source_url: w.source_url,
+          access: w.access,
         };
       }
       if (!rawMd) rawMd = d.body_md || "";
@@ -165,8 +205,27 @@
         (d.component ? ` · component=${esc(d.component)}` : "") +
         (d.status ? ` · status=${esc(d.status)}` : "") +
         (d.assignee ? ` · assignee=${esc(d.assignee)}` : "") +
-        (d.Created ? ` · Created=${esc(d.Created)}` : "") +
-        (d.path || d.web_url ? `<br/>${d.web_url ? `<a href="${esc(window.CitecMD && CitecMD.localizeUrl ? CitecMD.localizeUrl(d.web_url) : d.web_url)}">${esc(window.CitecMD && CitecMD.localizeUrl ? CitecMD.localizeUrl(d.web_url) : d.web_url)}</a>` : `path=<code>${esc(d.path)}</code>`}` : "");
+        (d.Created ? ` · Created=${esc(d.Created)}` : "");
+      // 원문(Confluence 등) 링크: API source_url 우선, 없으면 frontmatter URL
+      const fm = splitFrontmatter(rawMd).fm;
+      const src = httpUrl(d.source_url) || httpUrl(d.access && d.access.source_url) || httpUrl(fm && fm.URL);
+      const sr = $("srcRow");
+      sr.innerHTML = "";
+      if (src) {
+        const a = document.createElement("a");
+        a.className = "src-btn";
+        a.href = src;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = /confluence|viewpage|atlassian/i.test(src) ? "Confluence 원문 열기 ↗" : "원문 열기 ↗";
+        sr.appendChild(a);
+      }
+      if ((d.source_type || st) === "confluence_map") {
+        const n = document.createElement("span");
+        n.className = "notice";
+        n.textContent = "KB 저장본(텍스트 발췌/추출)입니다. 표·서식은 손실되었을 수 있으니 정확한 내용은 Confluence 원문을 확인하세요.";
+        sr.appendChild(n);
+      }
       $("btnApi").href = apiUrl;
       $("btnToggle").textContent = structured
         ? "구조 뷰 / JSON 원문"
