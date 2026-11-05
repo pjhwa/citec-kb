@@ -2198,7 +2198,12 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
         f"confidence={data.get('confidence')} "
         f"support={data.get('support_count')} counter={data.get('counter_count')}\n"
         f"evidence_ref={data.get('evidence_ref')} created_by={data.get('created_by')}\n\n"
-        f"증상: {data.get('symptom')}\n"
+        + (
+            f"사람 확정 결정: {c.get('decision_id')} [{c.get('effective_status')}] {c.get('verdict') or '판정 대기'}"
+            f"{' — ' + str(c.get('decided_by')) if c.get('decided_by') else ''}\n"
+            if (c := data.get("confirmation")) else "사람 확정 결정: 없음(스캔이 아직 제안하지 않았거나 confidence가 확정 기준 이상)\n"
+        )
+        + f"증상: {data.get('symptom')}\n"
         f"판별 신호: {data.get('discriminating_signals')}\n"
         f"반증 신호: {data.get('counter_signals')}\n"
         f"근본원인: {data.get('root_cause')}\n"

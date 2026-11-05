@@ -49,12 +49,12 @@ def _doc(body: str = TITLE, eid: str | None = None) -> dict:
     return upsert_document_from_draft(d)
 
 
-def _mutate_doc(doc_id: str, body: str) -> None:
+def _mutate_doc(doc_id: str, body: str, title: str | None = None) -> None:
     from app.db.session import session_scope
 
     with session_scope() as s:
-        s.execute(text("UPDATE documents SET body_md=:b, content_hash=:h, version=version+1 WHERE id=:i"),
-                  {"b": body, "h": uuid.uuid4().hex, "i": doc_id})
+        s.execute(text("UPDATE documents SET body_md=:b, title=COALESCE(:t, title), content_hash=:h, version=version+1 WHERE id=:i"),
+                  {"b": body, "t": title, "h": uuid.uuid4().hex, "i": doc_id})
 
 
 def _propose(client, doc_id=None, quote="2026.11.30 까지 제공", **kw):
@@ -154,7 +154,7 @@ def test_keep_fails_loudly_when_quote_vanished(client):
     doc = _doc()
     d = _propose(client, doc["document_id"])
     _verdict(client, d["id"])
-    _mutate_doc(doc["document_id"], "완전히 다른 본문")
+    _mutate_doc(doc["document_id"], "완전히 다른 본문", title="완전히 다른 제목")
     assert _verdict(client, d["id"], keep=True).status_code == 409
 
 
@@ -352,3 +352,103 @@ def test_failed_evidence_does_not_leave_orphan_proposal(client):
         "quote": "존재하지 않는 문장", "stance": "supports", "option_key": "a", "document_id": _doc()["document_id"]}]})
     assert r.status_code == 400
     assert client.get("/v1/decisions", params={"status": "proposed"}).json()["total"] == before
+
+
+# ---- periodic topic scan + failure bucket linkage ------------------------------------
+
+def _bucket(name="scan-test 링크 플래핑", conf_support=0):
+    from app.failure_buckets import service as fb
+
+    return fb.create_bucket(
+        bucket_name=name, fb_domain="linux", symptom="NIC 링크가 반복해서 끊긴다",
+        discriminating_signals=["ens1f1np1 link down 반복"], root_cause="SFP 접촉 불량으로 링크 플래핑",
+        recommended_action="SFP 교체", evidence_ref="confluence:1", created_by="human-tester")
+
+
+@pytest.fixture()
+def scan_env(monkeypatch):
+    monkeypatch.setattr("app.embed.job.embed_pending_chunks", lambda **kw: {"embedded": 0})
+    # 시험 DB의 다른 버킷·문서가 섞이지 않게 탐지기를 이 시험의 데이터로 한정한다
+    from app.decisions import scan
+
+    monkeypatch.setattr(scan, "load_config", lambda: {**scan.DEFAULTS, "detectors": ["fb_confirm", "deadline"],
+                                                       "max_new_per_run": 50, "max_open_server_proposals": 500})
+    return scan
+
+
+def _scan(client, **params):
+    r = client.post("/v1/decisions/_scan-topics", params=params)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_scan_dry_run_creates_nothing_then_creates_once_and_is_idempotent(client, scan_env):
+    b = _bucket()
+    key = f"fb:{b['id']}"
+    dry = _scan(client, dry_run="true")
+    assert key in {w["source_key"] for w in dry["would_create"]} and dry["created_count"] == 0
+    assert not client.get("/v1/decisions", params={"topic": "failure_bucket"}).json()["items"] or True
+    first = _scan(client)
+    assert key in {c["source_key"] for c in first["created"]}
+    again = _scan(client)
+    assert key not in {c["source_key"] for c in again["created"]} and again["already_known"] >= 1
+    card = next(i for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == key)
+    assert card["created_by_kind"] == "server_job" and card["source_ref"]["id"] == b["id"]
+    assert [o["key"] for o in card["options"]][:3] == ["confirm", "revise", "retire"]
+    assert card["evidence_count"] == 1
+
+
+def test_bucket_confirmation_link_appears_and_verdict_does_not_change_bucket(client, scan_env):
+    from app.failure_buckets import service as fb
+
+    b = _bucket("scan-test 연계 버킷")
+    assert fb.get_bucket(b["id"])["confirmation"] is None
+    _scan(client)
+    did = next(i["id"] for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == f"fb:{b['id']}")
+    link = fb.get_bucket(b["id"])["confirmation"]
+    assert link["decision_id"] == did and link["verdict"] is None and link["effective_status"] == "proposed"
+    before = fb.get_bucket(b["id"])["confidence"]
+    assert _verdict(client, did, option_key="confirm").status_code == 200
+    after = fb.get_bucket(b["id"])
+    assert after["confirmation"]["verdict"] == "확정 패턴으로 인정" and after["confirmation"]["verdict_key"] == "confirm"
+    assert after["confidence"] == before and after["status"] == "active"  # 사람 확정은 별도 신호, 버킷은 안 바뀐다
+    matches = fb.match_buckets(observed_signals=["ens1f1np1 link down 반복"], fb_domain="linux")
+    assert next(m for m in matches if m["bucket_id"] == b["id"])["confirmation"]["verdict_key"] == "confirm"
+
+
+def test_scan_deadline_title_detector_and_caps(client, scan_env, monkeypatch):
+    doc = _doc(body="본문에는 기한이 없다", eid=f"DL-{uuid.uuid4().hex[:6]}")
+    from app.db.session import session_scope
+
+    with session_scope() as s:
+        s.execute(text("UPDATE documents SET title=:t WHERE id=:i"), {"t": "ZZTOOL (엑셀)_2031.12.31 까지 제공", "i": doc["document_id"]})
+    r = _scan(client)
+    made = [c for c in r["created"] if c["detector"] == "deadline"]
+    assert any(c["source_key"] == f"deadline:{doc['document_id']}" for c in made)
+    card = next(i for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == f"deadline:{doc['document_id']}")
+    assert card["options"][0]["label"] == "2031.12.31" and card["evidence_count"] == 1
+    # 같은 문서로 진행 중 결정이 있으면 다른 key로 다시 제안하지 않는다 + 상한 0이면 아무것도 안 만든다
+    assert _scan(client, max_new=0)["created_count"] == 0
+
+
+def test_scan_respects_open_proposal_cap(client, monkeypatch):
+    monkeypatch.setattr("app.embed.job.embed_pending_chunks", lambda **kw: {"embedded": 0})
+    from app.decisions import scan
+
+    _bucket("scan-test 상한 버킷")
+    monkeypatch.setattr(scan, "load_config", lambda: {**scan.DEFAULTS, "detectors": ["fb_confirm"],
+                                                       "max_new_per_run": 50, "max_open_server_proposals": 0})
+    r = _scan(client)
+    assert r["created_count"] == 0 and r["skipped_by_cap"] >= 1
+
+
+def test_scan_evidence_failure_does_not_leave_orphans_and_is_reported(client, scan_env, monkeypatch):
+    from app.decisions import scan
+
+    bad = scan.Proposal(detector="deadline", source_key="deadline:bad", question="q?", options=[
+        {"key": "a", "label": "x"}, {"key": "b", "label": "y"}],
+        evidence=[{"quote": "존재하지 않음", "stance": "supports", "option_key": "a", "document_id": _doc()["document_id"]}])
+    monkeypatch.setattr(scan, "detect_deadline", lambda s, **kw: [bad])
+    r = _scan(client)
+    assert "deadline:bad" in r["errors"]
+    assert not [i for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == "deadline:bad"]

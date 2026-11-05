@@ -28,6 +28,7 @@ ALLOWED_TYPES = frozenset(
         "capacity_seed",
         "noop",
         "decision_staleness_scan",  # payload: {}
+        "decision_topic_scan",  # payload: {dry_run?, max_new?}
         "embed_document",  # payload: {document_id}
         "confluence_map_sync",  # payload: {source_ids?, dry_run?, max_pages_per_root?, root_id?}
     }

@@ -50,6 +50,14 @@ function evCard(e) {
       ${date ? `<span class="chip">${esc(date)}</span>` : ""}${pin}${links}</div></div>`;
 }
 
+function srcLink(r) {
+  if (!r) return "";
+  if (r.type === "failure_bucket") return `<a class="chip" href="/v1/failure-buckets/${encodeURIComponent(r.id)}" target="_blank" rel="noopener" title="신뢰도 ${esc(r.confidence)} · 지지 ${esc(r.support_count)} · 반증 ${esc(r.counter_count)}">실패 버킷 ${esc(String(r.id).slice(0, 8))} ↗</a>`;
+  if (r.type === "document") return `<span class="chip">기한 ${esc(r.deadline)}${r.due_passed_or_soon ? " (지남·임박)" : ""}</span>`;
+  if (r.type === "domain_gap") return `<span class="chip">${esc(r.domain)} 반복 장애 ${esc(r.recurring_incident_count)}건 · 버킷 0</span>`;
+  return "";
+}
+
 function render() {
   const cur = D.current_verdict, ai = D.ai_recommendation_key;
   const bestFor = (k) => (D.evidence_by_option[k] || []).filter(e => !e.retracted_at).sort((a, b) => (b.stance === "supports") - (a.stance === "supports"))[0];
@@ -74,6 +82,8 @@ function render() {
       ${D.changed_pins ? `<span class="chip warn">지난 확정 이후 변경 ${D.changed_pins}건</span>` : ""}
       ${D.external_only ? `<span class="chip pri">외부·서버 미검증 근거만</span>` : ""}
       <span class="chip ${D.effective_status==='confirmed' ? 'ok' : 'warn'}">${esc(D.effective_status)}</span>
+      ${D.created_by_kind === "server_job" ? `<span class="chip" title="${esc(D.created_by || "")}">자동 제안(스캔)</span>` : ""}
+      ${srcLink(D.source_ref)}
       ${D.superseded_by ? `<a class="chip" href="/decision.html?id=${esc(D.superseded_by)}">대체됨 → 새 결정</a>` : ""}
     </div>
     <div class="why">AI 추천: ${aiLabel ? `<b>${esc(aiLabel)}</b> (근거 ${supports[ai] || 0}건) — 눌려 있지 않습니다` : "없음"} · 이 순서인 이유: ${esc(D.queue_reason)}</div>

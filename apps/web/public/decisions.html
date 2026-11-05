@@ -39,6 +39,7 @@ function chips(d) {
   if (d.changed_pins) h += `<span class="chip warn">근거 변경 ${d.changed_pins}건</span>`;
   if (d.effective_status === "needs_recheck") h += `<span class="chip warn">재확인 필요</span>`;
   if (d.external_only) h += `<span class="chip pri">외부·서버 미검증 근거만</span>`;
+  if (d.created_by_kind === "server_job") h += `<span class="chip" title="${esc(d.created_by||'')}">자동 제안</span>`;
   h += `<span class="chip ${d.effective_status==='confirmed'?'ok':''}">${esc(d.effective_status)}</span>`;
   return h;
 }

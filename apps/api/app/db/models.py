@@ -752,6 +752,9 @@ class Decision(Base):
     review_interval_days: Mapped[Optional[int]] = mapped_column(Integer, server_default="180")
     created_by_kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="mcp")
     created_by: Mapped[Optional[str]] = mapped_column(String(128))
+    # 스캔이 질문을 도출한 원천의 안정 키(예: fb:<bucket id>). 값이 있으면 유일 — 재실행해도 같은 주제를 두 번 제안하지 않는다.
+    source_key: Mapped[Optional[str]] = mapped_column(String(256))
+    source_ref: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

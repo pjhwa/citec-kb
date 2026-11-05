@@ -120,6 +120,14 @@ def post_scan(principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
     return svc.scan_staleness()
 
 
+@router.post("/decisions/_scan-topics")
+def post_scan_topics(dry_run: bool = False, max_new: Optional[int] = Query(None, ge=0, le=200),
+                     principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
+    from app.decisions.scan import scan_topics
+
+    return scan_topics(dry_run=dry_run, max_new=max_new)
+
+
 @router.get("/decisions/metrics")
 def get_metrics() -> dict[str, Any]:
     return svc.metrics()

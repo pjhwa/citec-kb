@@ -29,6 +29,11 @@ class DecisionConflict(Exception):
     """State does not allow the action (HTTP 409)."""
 
 
+def visible_text(doc: Document) -> str:
+    """독자가 보는 원문 전체 = 제목 + 본문. 제목에만 있는 문장(예: 제공 기한)도 인용할 수 있다."""
+    return f"{doc.title or ''}\n{doc.body_md or ''}"
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -67,6 +72,7 @@ def create_decision(
     stakes: str = "mid", ai_recommendation_key: Optional[str] = None,
     review_interval_days: Optional[int] = 180, created_by_kind: str = "mcp",
     created_by: Optional[str] = None, evidence: Optional[list[dict]] = None,
+    source_key: Optional[str] = None, source_ref: Optional[dict] = None,
 ) -> dict[str, Any]:
     if stakes not in rules.STAKES:
         raise ValueError(f"stakes must be one of {list(rules.STAKES)}")
@@ -79,7 +85,7 @@ def create_decision(
             question=rules.norm_text(question), options=opts, topic=topic, domain=domain,
             stakes=stakes, status="proposed", ai_recommendation_key=ai_recommendation_key,
             review_interval_days=review_interval_days, created_by_kind=created_by_kind,
-            created_by=created_by,
+            created_by=created_by, source_key=source_key, source_ref=source_ref,
         )
         s.add(row)
         s.flush()
@@ -127,7 +133,7 @@ def add_evidence(
             doc = s.get(Document, document_id)
             if not doc:
                 raise ValueError(f"document_id not found: {document_id}")
-            if not rules.quote_in_body(quote, doc.body_md):
+            if not rules.quote_in_body(quote, visible_text(doc)):
                 raise ValueError("quote not found in the pinned document body (after NFC/whitespace normalisation)")
             md = doc.metadata_ or {}
             fields = dict(
@@ -269,6 +275,7 @@ def _payload(s, dec: Decision, *, full: bool) -> dict[str, Any]:
         "ai_recommendation_key": dec.ai_recommendation_key, "superseded_by": dec.superseded_by,
         "review_interval_days": dec.review_interval_days, "created_by": dec.created_by,
         "created_by_kind": dec.created_by_kind, "created_at": _iso(dec.created_at),
+        "source_key": dec.source_key, "source_ref": dec.source_ref,
         "current_verdict": _verdict_dict(cur) if cur else None,
         "conflict": cf, "evidence_count": len(live),
         "source_count": len({e.get("document_id") or e.get("external_url") for e in live}),
@@ -413,7 +420,7 @@ def _repin(s, dec: Decision, evs: list[DecisionEvidence]) -> None:
             raise DecisionConflict(f"evidence document missing: {e.document_id}")
         if doc.content_hash == e.pinned_content_hash:
             continue
-        if not rules.quote_in_body(e.quote, doc.body_md):
+        if not rules.quote_in_body(e.quote, visible_text(doc)):
             raise DecisionConflict(
                 f"evidence {e.id}: quote no longer present in the current document; review or retract it first"
             )
@@ -512,3 +519,25 @@ def metrics() -> dict[str, Any]:
         "needs_recheck": by_status.get("needs_recheck", 0),
         "self_reported_verdicts": sum(1 for v in vs if v.auth_via == "anonymous"),
     }
+
+
+def decisions_by_source_keys(keys: list[str]) -> dict[str, dict[str, Any]]:
+    """source_key -> {decision_id, status, effective_status, verdict(label)} (failure bucket 연계용)."""
+    if not keys:
+        return {}
+    with session_scope() as s:
+        rows = list(s.scalars(select(Decision).where(Decision.source_key.in_(keys))).all())
+        out: dict[str, dict[str, Any]] = {}
+        for d in rows:
+            p = _payload(s, d, full=False)
+            cur = p["current_verdict"]
+            label = None
+            if cur:
+                label = next((o["label"] for o in d.options if o["key"] == cur["option_key"]), cur["option_key"])
+            out[d.source_key] = {
+                "decision_id": d.id, "status": d.status, "effective_status": p["effective_status"],
+                "verdict": label, "verdict_key": cur["option_key"] if cur else None,
+                "decided_by": cur["decided_by"] if cur else None,
+                "decided_at": cur["decided_at"] if cur else None,
+            }
+        return out

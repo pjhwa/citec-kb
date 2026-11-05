@@ -87,6 +87,11 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _http_json("POST", f"/v1/entities/seed?link={'true' if link else 'false'}")
     if job_type == "capacity_seed":
         return _http_json("POST", "/v1/capacity/seed")
+    if job_type == "decision_topic_scan":
+        q = "?dry_run=true" if payload.get("dry_run") else ""
+        if payload.get("max_new") is not None:
+            q += ("&" if q else "?") + f"max_new={int(payload['max_new'])}"
+        return _http_json("POST", f"/v1/decisions/_scan-topics{q}", timeout=900)
     if job_type == "decision_staleness_scan":
         return _http_json("POST", "/v1/decisions/_scan-staleness", timeout=600)
     if job_type == "confluence_map_sync":
