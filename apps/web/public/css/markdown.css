@@ -39,7 +39,7 @@
   color: #334155;
 }
 .md-body code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 0.9em;
   background: #f1f5f9;
   padding: 0.1em 0.35em;

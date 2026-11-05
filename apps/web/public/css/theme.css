@@ -61,6 +61,25 @@
   font-display: swap;
 }
 
+/* Typography — single source of truth for every page.
+   Sans: Pretendard (Korean + Latin; its Latin is Inter-derived), vendored above so it works air-gapped;
+   the named system fonts below only cover the moment before the woff2 loads or a load failure.
+   Mono: JetBrains Mono (vendored). Do not hard-code font stacks in pages — use these variables. */
+:root {
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "D2Coding", monospace;
+}
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  word-break: keep-all;            /* Korean: break at spaces, not mid-word */
+  overflow-wrap: break-word;       /* …but never overflow on long tokens (ids, URLs) */
+}
+code, kbd, samp, pre { font-family: var(--font-mono); }
+input, select, textarea, button { font-family: inherit; }
+table, .num { font-variant-numeric: tabular-nums; }   /* aligned digits in tables/counters */
+
 .top {
   background: #0C111F;
   border-bottom: 1px solid #1A2238;
