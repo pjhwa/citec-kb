@@ -1410,6 +1410,7 @@ function renderScanResult(d, kind) {
   const det = Object.entries(d.detected || {}).map(([k, v]) => k + " " + v).join(", ") || "없음";
   let h = '<div class="meta">탐지: ' + esc(det) + ' · 이미 등록: ' + d.already_known + ' · 상한으로 보류: ' + d.skipped_by_cap +
     (kind === "run" ? ' · <b>등록 ' + d.created_count + '건</b> (LLM 문구 ' + (d.llm_refined || 0) + '건)' : '') + '</div>';
+  if (d.llm_auth_failed) h += '<div class="meta" style="color:var(--bad)">LLM 인증 실패(401) — 첫 실패 이후 LLM 호출 ' + (d.llm_skipped || 0) + '건을 건너뛰고 규칙 문구를 사용했습니다. 운영 LLM 키를 확인하세요.</div>';
   const errs = Object.entries(d.errors || {});
   if (errs.length) h += '<div class="meta" style="color:var(--bad)">오류: ' + errs.map(([k, v]) => esc(k + " — " + v)).join("; ") + '</div>';
   const prev = d.llm_preview;

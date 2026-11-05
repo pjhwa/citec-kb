@@ -221,12 +221,14 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
     todo = new[:limit]
     created: list[dict[str, Any]] = []
     refined = 0
+    llm_run = None
     if not dry_run:
         if cfg.get("llm_refine"):  # 1단계: 문구만 다듬는다(근거·선택지 key는 불변). 실패하면 규칙 문구.
             from app.decisions import refine
 
+            llm_run = refine.Run()
             for p in todo[: int(cfg["llm_max_per_run"])]:
-                refined += int(refine.refine(p))
+                refined += int(refine.refine(p, run=llm_run))
         for p in todo:
             try:
                 d = svc.create_decision(
@@ -242,7 +244,8 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
     if dry_run and llm_preview:  # DB에 쓰지 않고 LLM이 다듬을 문구만 미리 본다(llm_refine 설정과 무관)
         from app.decisions import refine
 
-        previews = [refine.preview(p) for p in todo[: int(cfg["llm_max_per_run"])]]
+        llm_run = refine.Run()
+        previews = [refine.preview(p, run=llm_run) for p in todo[: int(cfg["llm_max_per_run"])]]
     by_det: dict[str, int] = {}
     for p in found:
         by_det[p.detector] = by_det.get(p.detector, 0) + 1
@@ -251,6 +254,7 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
         "would_create": [{"detector": p.detector, "source_key": p.source_key, "question": p.question, "stakes": p.stakes}
                          for p in todo] if dry_run else None,
         "created": created, "created_count": len(created), "llm_refined": refined, "llm_preview": previews,
+        "llm_auth_failed": bool(llm_run and llm_run.auth_failed), "llm_skipped": llm_run.skipped if llm_run else 0,
         "skipped_by_cap": max(0, len(new) - len(todo)), "open_server_proposals_before": open_server,
         "caps": {"max_new_per_run": cap_new, "max_open_server_proposals": cfg["max_open_server_proposals"]},
         "errors": errors,

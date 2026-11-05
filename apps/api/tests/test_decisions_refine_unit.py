@@ -80,3 +80,43 @@ def test_preview_reports_llm_failure():
     def boom(*a, **k):
         raise RuntimeError("HTTP 402")
     assert "402" in refine.preview(_p(), complete=boom)["reason"]
+
+
+def _seq(*steps):
+    it = iter(steps)
+
+    def f(*a, **k):
+        s = next(it)
+        if isinstance(s, Exception):
+            raise s
+        return json.dumps(s, ensure_ascii=False) if isinstance(s, dict) else s
+    return f
+
+
+def test_401_stops_remaining_calls_of_the_run():
+    run, calls = refine.Run(), []
+
+    def always_401(*a, **k):
+        calls.append(1)
+        raise RuntimeError("Fabrix HTTP 401: Unauthorized")
+    for _ in range(4):
+        assert refine.refine(_p(), complete=always_401, run=run) is False
+    assert len(calls) == 1 and run.auth_failed and run.skipped == 3
+    pv = refine.preview(_p(), complete=always_401, run=run)
+    assert pv["reason"] == refine.AUTH_SKIP_REASON and len(calls) == 1
+
+
+def test_non_401_errors_do_not_stop_and_success_continues():
+    run = refine.Run()
+    f = _seq(RuntimeError("Fabrix HTTP 500: boom"), _good(), RuntimeError("HTTP 402"), _good())
+    results = [refine.refine(_p(), complete=f, run=run) for _ in range(4)]
+    assert results == [False, True, False, True] and not run.auth_failed and run.skipped == 0
+
+
+def test_401_flag_not_shared_between_runs():
+    def boom(*a, **k):
+        raise RuntimeError("HTTP 401")
+    r1 = refine.Run()
+    refine.refine(_p(), complete=boom, run=r1)
+    r2 = refine.Run()
+    assert refine.refine(_p(), complete=lambda *a, **k: json.dumps(_good(), ensure_ascii=False), run=r2) is True
