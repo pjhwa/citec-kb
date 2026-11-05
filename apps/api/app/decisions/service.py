@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from app.db.models import Decision, DecisionEvidence, DecisionNonce, DecisionVerdict, Document
 from app.db.session import session_scope
-from app.decisions import rules
+from app.decisions import mirror, rules
 from app.settings import get_settings
 
 NONCE_TTL_SECONDS = 60
@@ -390,7 +390,10 @@ def add_verdict(
             dec.current_verdict_id = v.id
             dec.status = "confirmed"
         s.flush()
-        return {"verdict": _verdict_dict(v), "status": dec.status}
+        result = {"verdict": _verdict_dict(v), "status": dec.status}
+    if option_key != "NEI":
+        result["mirror_error"] = mirror.safe_sync(decision_id)
+    return result
 
 
 def _repin(s, dec: Decision, evs: list[DecisionEvidence]) -> None:
@@ -434,7 +437,10 @@ def supersede(decision_id: str, *, new_decision_id: str) -> dict[str, Any]:
         old.status = "superseded"
         old.superseded_by = new.id
         s.flush()
-        return {"id": old.id, "status": old.status, "superseded_by": new.id}
+        result = {"id": old.id, "status": old.status, "superseded_by": new.id}
+    errs = [e for e in (mirror.safe_sync(decision_id), mirror.safe_sync(new_decision_id)) if e]
+    result["mirror_error"] = "; ".join(errs) or None
+    return result
 
 
 def retire(decision_id: str) -> dict[str, Any]:
@@ -447,7 +453,9 @@ def retire(decision_id: str) -> dict[str, Any]:
         d.status_before_retire = d.status
         d.status = "retired"
         s.flush()
-        return {"id": d.id, "status": d.status}
+        result = {"id": d.id, "status": d.status}
+    result["mirror_error"] = mirror.safe_sync(decision_id)
+    return result
 
 
 def restore(decision_id: str) -> dict[str, Any]:
@@ -460,7 +468,9 @@ def restore(decision_id: str) -> dict[str, Any]:
         d.status = d.status_before_retire or "proposed"
         d.status_before_retire = None
         s.flush()
-        return {"id": d.id, "status": d.status}
+        result = {"id": d.id, "status": d.status}
+    result["mirror_error"] = mirror.safe_sync(decision_id)
+    return result
 
 
 def scan_staleness() -> dict[str, Any]:
@@ -473,7 +483,8 @@ def scan_staleness() -> dict[str, Any]:
                 d.status = "needs_recheck"
                 changed_ids.append(d.id)
         s.flush()
-    return {"marked_needs_recheck": changed_ids, "count": len(changed_ids)}
+    errors = [e for e in (mirror.safe_sync(i) for i in changed_ids) if e]
+    return {"marked_needs_recheck": changed_ids, "count": len(changed_ids), "mirror_errors": errors}
 
 
 def metrics() -> dict[str, Any]:

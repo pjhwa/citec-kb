@@ -23,6 +23,13 @@ TITLE = "PIXEL (엑셀기반 PISA진단)_2026.11.30 까지 제공"
 OPTS = [{"key": "a", "label": "2026.11.30"}, {"key": "b", "label": "연장"}]
 
 
+@pytest.fixture(autouse=True)
+def _no_embedding(monkeypatch):
+    from app.decisions import mirror
+
+    monkeypatch.setattr(mirror, "_embed", lambda doc_id: None)
+
+
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setenv("AUTH_MODE", "off")
@@ -208,3 +215,60 @@ def test_auth_off_again_accepts_self_reported_name(monkeypatch, client):
     assert v["decided_by"] == "자기신고" and v["auth_via"] == "anonymous" and v["self_reported"]
     n = client.get(f"/v1/decisions/{d['id']}/nonce").json()["nonce"]
     assert client.post(f"/v1/decisions/{d['id']}/verdict", json={"option_key": "a", "nonce": n}).status_code == 400
+
+
+# ---- search mirror (B2) --------------------------------------------------------
+
+def _mirror_doc(did):
+    from app.db.models import Document
+    from app.db.session import session_scope
+    from sqlalchemy import select
+
+    with session_scope() as s:
+        d = s.scalar(select(Document).where(Document.source_type == "confirmed_decision",
+                                            Document.external_id == f"DEC-{did[:8]}"))
+        if not d:
+            return None
+        return {"id": d.id, "status": d.status, "grade": d.evidence_grade, "hash": d.content_hash,
+                "body": d.body_md, "meta": dict(d.metadata_ or {}), "version": d.version}
+
+
+def test_mirror_created_on_confirm_with_grade_h_and_self_reported_marker(client):
+    d = _propose(client, _doc()["document_id"])
+    assert _mirror_doc(d["id"]) is None  # proposed: not searchable
+    r = _verdict(client, d["id"], rationale="원문 제목 변경")
+    assert r.json()["mirror_error"] is None
+    m = _mirror_doc(d["id"])
+    assert m["status"] == "active" and m["grade"] == "H"
+    assert "결론: 2026.11.30" in m["body"] and "홍길동 (자기 신고)" in m["body"]
+    assert "변경 이유: 원문 제목 변경" in m["body"] and "tech_repo/T-" in m["body"]
+    assert "선택하지 않은 선택지:\n- 연장" in m["body"]
+
+
+def test_mirror_hash_stable_across_recheck_state_changes(client):
+    doc = _doc()
+    d = _propose(client, doc["document_id"])
+    _verdict(client, d["id"])
+    before = _mirror_doc(d["id"])
+    # evidence doc changes -> needs_recheck: mirror meaning unchanged -> no re-chunk/re-embed
+    _mutate_doc(doc["document_id"], TITLE + " (v98)")
+    client.post("/v1/decisions/_scan-staleness")
+    after = _mirror_doc(d["id"])
+    assert after["meta"]["recheck"] is True and before["meta"].get("recheck") is False
+    assert after["hash"] == before["hash"] and after["version"] == before["version"]
+    assert after["status"] == "active"
+
+
+def test_mirror_status_follows_supersede_and_retire(client):
+    doc = _doc()
+    old = _propose(client, doc["document_id"])
+    _verdict(client, old["id"])
+    new = _propose(client, doc["document_id"])
+    _verdict(client, new["id"])
+    client.post(f"/v1/decisions/{old['id']}/supersede", json={"new_decision_id": new["id"]})
+    assert _mirror_doc(old["id"])["status"] == "superseded"
+    assert f"DEC-{old['id'][:8]}" in _mirror_doc(new["id"])["body"]  # 이전 기준 링크
+    client.post(f"/v1/decisions/{new['id']}/retire")
+    assert _mirror_doc(new["id"])["status"] == "archived"
+    client.post(f"/v1/decisions/{new['id']}/restore")
+    assert _mirror_doc(new["id"])["status"] == "active"
