@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     company_email: str | None = Field(default=None, alias="COMPANY_EMAIL")
 
     config_dir: Path = Field(default_factory=_default_config_dir)
+    # RW data dir (/app/data in container). Admin-editable overrides live here because
+    # config/ is mounted read-only into the api container.
+    data_dir: Path = Field(default=Path("data"), alias="DATA_DIR")
 
     @property
     def model_profile_key(self) -> str:

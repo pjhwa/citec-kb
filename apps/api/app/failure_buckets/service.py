@@ -164,31 +164,50 @@ _SYSTEM_CREATED_BY_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*@[A-Za-z0-9._-]+$")
 # (vs. a human email such as someone@example.com, which gets no warning).
 _VERSIONISH_RE = re.compile(r"^v?\d")
 _registrants_lock = threading.Lock()
-_registrants_cache: tuple[tuple[float, int] | None, frozenset[str]] = (None, frozenset())
+_registrants_cache: tuple[object, frozenset[str]] = (None, frozenset())
+
+
+def _stat_key(path: Path) -> tuple[float, int] | None:
+    try:
+        st = path.stat()
+        return (st.st_mtime, st.st_size)
+    except OSError:
+        return None
+
+
+def _read_systems(path: Path) -> frozenset[str] | None:
+    """Names from one allowlist file; None when missing or malformed."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return frozenset(str(n).strip() for n in (data.get("systems") or []) if str(n).strip())
+    except Exception:  # noqa: BLE001
+        logger.exception("failed to load %s", path)
+        return None
 
 
 def _system_registrants() -> frozenset[str]:
-    """System names from config/system_registrants.json (mtime/size cached).
+    """Effective system-name allowlist (mtime/size cached).
 
+    `<data_dir>/system_registrants.json` (admin-editable override) wins when present
+    and valid; otherwise `<config_dir>/system_registrants.json` (git-tracked default).
     A missing or malformed file yields an empty set (nobody is classified as a
     system) — registration itself must never fail on this soft convention.
     """
     global _registrants_cache
-    path = Path(get_settings().config_dir) / "system_registrants.json"
-    try:
-        st = path.stat()
-        key: tuple[float, int] | None = (st.st_mtime, st.st_size)
-    except OSError:
+    settings = get_settings()
+    cfg_path = Path(settings.config_dir) / "system_registrants.json"
+    data_dir = getattr(settings, "data_dir", None)
+    ovr_path = Path(data_dir) / "system_registrants.json" if data_dir else None
+    key = (_stat_key(cfg_path), _stat_key(ovr_path) if ovr_path else None)
+    if key == (None, None):
         return frozenset()
     with _registrants_lock:
         if _registrants_cache[0] == key:
             return _registrants_cache[1]
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            names = frozenset(str(n).strip() for n in (data.get("systems") or []) if str(n).strip())
-        except Exception:  # noqa: BLE001
-            logger.exception("failed to load %s", path)
-            names = frozenset()
+        names = _read_systems(ovr_path) if key[1] is not None else None
+        if names is None and key[0] is not None:
+            names = _read_systems(cfg_path)
+        names = names if names is not None else frozenset()
         _registrants_cache = (key, names)
         return names
 

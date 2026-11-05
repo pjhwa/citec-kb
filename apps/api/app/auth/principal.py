@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
@@ -66,6 +67,39 @@ _token_cache: tuple[object, dict[str, Principal]] | None = None
 _token_table_builds = 0  # test instrumentation: how many times the table was rebuilt
 
 
+ADMIN_TOKENS_FILE = "auth_tokens.json"
+HASH_PREFIX = "sha256:"
+
+
+def admin_tokens_path() -> Path:
+    """Tokens issued from the admin page: <data_dir>/auth_tokens.json, keyed by sha256 digest."""
+    return Path(getattr(get_settings(), "data_dir", "data")) / ADMIN_TOKENS_FILE
+
+
+def _admin_tokens_key() -> object:
+    path = admin_tokens_path()
+    try:
+        st = path.stat()
+        return (str(path), st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        return (str(path), None, None, None)
+
+
+def token_digest(raw: str) -> str:
+    return HASH_PREFIX + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def lookup_token(table: dict[str, Principal], cred: str) -> Optional[Principal]:
+    """Find a credential in the table: raw entries (config/env) or hashed admin-issued ones.
+
+    A credential that itself starts with "sha256:" never matches a raw key, so presenting a
+    stored digest as if it were the token cannot authenticate.
+    """
+    if not cred.startswith(HASH_PREFIX) and cred in table:
+        return table[cred]
+    return table.get(token_digest(cred))
+
+
 def _token_cache_key() -> tuple[object, str]:
     settings = get_settings()
     path = Path(settings.config_dir) / "auth.json"
@@ -74,7 +108,7 @@ def _token_cache_key() -> tuple[object, str]:
         file_key: object = (str(path), st.st_mtime_ns, st.st_size, st.st_ino)
     except OSError:
         file_key = (str(path), None, None, None)
-    return file_key, getattr(settings, "auth_tokens_json", None) or ""
+    return (file_key, _admin_tokens_key()), getattr(settings, "auth_tokens_json", None) or ""
 
 
 def _load_token_table() -> dict[str, Principal]:
@@ -120,6 +154,22 @@ def _build_token_table() -> dict[str, Principal]:
                 )
         except Exception:  # noqa: BLE001
             logger.exception("failed to load %s", path)
+
+    admin_path = admin_tokens_path()
+    if admin_path.is_file():
+        try:
+            for tok, meta in (json.loads(admin_path.read_text(encoding="utf-8")).get("tokens") or {}).items():
+                if not str(tok).startswith(HASH_PREFIX) or not isinstance(meta, dict):
+                    continue  # only digests are accepted from this file
+                roles = frozenset(str(r) for r in (meta.get("roles") or []) if r in ALL_ROLES)
+                table[str(tok)] = Principal(
+                    sub=str(meta.get("sub") or "user"),
+                    name=str(meta.get("name") or meta.get("sub") or "user"),
+                    roles=roles or frozenset({ROLE_VIEWER}),
+                    auth_via="apikey",
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("failed to load %s", admin_path)
 
     raw = getattr(settings, "auth_tokens_json", None) or ""
     if raw.strip():
@@ -192,8 +242,8 @@ def resolve_principal(
             except Exception:  # noqa: BLE001
                 pass
             table = _load_token_table()
-            if cred in table:
-                p = table[cred]
+            p = lookup_token(table, cred)
+            if p is not None:
                 return Principal(
                     sub=p.sub,
                     name=p.name,
@@ -206,9 +256,9 @@ def resolve_principal(
         return ANON_RESTRICTED
 
     # API keys always accepted in enforced modes (service accounts)
-    table = _load_token_table()
-    if cred in table:
-        return table[cred]
+    found = lookup_token(_load_token_table(), cred)
+    if found is not None:
+        return found
 
     # oidc_stub opaque helper
     if mode in ("oidc_stub", "oidc") and cred.startswith("stub:"):

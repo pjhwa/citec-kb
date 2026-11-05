@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
+from app.failure_buckets import registrants_store
 from app.failure_buckets.service import (
     BucketRetiredError,
     create_bucket,
@@ -117,6 +118,69 @@ def get_failure_buckets(
         limit=limit,
         offset=offset,
     )
+
+
+class SystemRegistrantBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+
+
+def _registrant_counts_24h() -> dict[str, int]:
+    """Registrations in the last 24h grouped by system name (the part before '@')."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func, select
+
+    from app.db.models import FailureBucket
+    from app.db.session import session_scope
+
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    out: dict[str, int] = {}
+    with session_scope() as session:
+        rows = session.execute(
+            select(FailureBucket.created_by, func.count())
+            .where(FailureBucket.created_at >= since, FailureBucket.created_by.like("%@%"))
+            .group_by(FailureBucket.created_by)
+        ).all()
+    for created_by, n in rows:
+        name = str(created_by).split("@", 1)[0]
+        out[name] = out.get(name, 0) + int(n)
+    return out
+
+
+def _registrants_view(snap: dict[str, Any]) -> dict[str, Any]:
+    try:
+        counts: dict[str, int] | None = _registrant_counts_24h()
+    except Exception:  # noqa: BLE001 — the list must stay readable when the DB is down
+        counts = None
+    snap["counts_24h"] = counts
+    return snap
+
+
+@router.get("/failure-buckets/system-registrants")
+def list_system_registrants() -> dict[str, Any]:
+    """Allowlist of system names accepted as `<system>@<version>` created_by (read-only for all)."""
+    return _registrants_view(registrants_store.snapshot())
+
+
+@router.post("/failure-buckets/system-registrants")
+def add_system_registrant(
+    body: SystemRegistrantBody, principal: Principal = Depends(require_roles("admin"))
+) -> dict[str, Any]:
+    try:
+        snap = registrants_store.add(body.name, principal.name)
+    except registrants_store.RegistrantNameError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return _registrants_view(snap)
+
+
+@router.delete("/failure-buckets/system-registrants/{name}")
+def remove_system_registrant(
+    name: str, principal: Principal = Depends(require_roles("admin"))
+) -> dict[str, Any]:
+    snap = registrants_store.remove(name, principal.name)
+    if not snap["changed"]:
+        raise HTTPException(status_code=404, detail=f"허용 목록에 '{name}'이(가) 없습니다.")
+    return _registrants_view(snap)
 
 
 @router.get("/failure-buckets/{bucket_id}")
