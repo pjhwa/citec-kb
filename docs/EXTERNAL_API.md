@@ -47,7 +47,7 @@ citec-kb는 자체 **`/v1/*`** API를 유지하면서, wiki-qa 클라이언트 �
 | `tech_repo` | `tech_repo` |
 | `tuning_ai` / `sql_tuning` | `tuning_ai` |
 | `vendor_docs` | `vendor_docs` |
-| `synthesis` | `insight` |
+| `decision` / `decisions` | `confirmed_decision` |  (`synthesis`/`insight`는 폐기 — 400)
 | `general` / 빈값 | (전체) |
 
 **path 해석** (`/api/wiki/file`):  
@@ -191,16 +191,11 @@ SSE 이벤트 (wiki-qa 호환):
 
 `stream: false` 이면 JSON 한 번에 반환.
 
-`template`: `general` · `checkitems` · `support_history` · `incident_reports` · `tech_repo` · `tuning_ai` · `synthesis` …
+`template`: `general` · `checkitems` · `support_history` · `incident_reports` · `tech_repo` · `tuning_ai` · `confirmed_decision` …
 
-### Synthesis ≈ Insight
+### Synthesis — 폐기됨 (2026-11-05)
 
-| Method | Path | 설명 |
-|--------|------|------|
-| GET | `/api/synthesis?limit=&offset=` | Insight 목록 (slug=id) |
-| GET | `/api/synthesis/{slug}` | Insight 상세 (`answer`=body_md) |
-
-> wiki-qa의 파일 기반 synthesis 대신 **Insight 승인 플로우** 데이터를 노출합니다.
+`GET /api/synthesis`, `/api/synthesis/{slug}` 는 **HTTP 410**(폐기 안내)을 돌려준다. 한 릴리스 뒤 제거. 대체: `/v1/decisions` (사람 확정 결정).
 
 ### Feedback
 
@@ -225,7 +220,7 @@ verdict: `helpful` | `not_helpful` | `resolved` | `failed` | `edited`
 | GET | `/v1/tickets/{external_id}` | 티켓 전체 본문 |
 | GET | `/v1/analytics/tickets` | 기간·유형 집계 |
 | POST | `/v1/similar-incident` | 유사장애 |
-| GET | `/v1/insights` | Insight CRUD 계열 |
+| * | `/v1/insights*` | **폐기됨** — HTTP 410 안내 스텁(다음 릴리스에서 제거) |
 | POST/GET | `/v1/decisions` | 사람 확정 결정 제안(author+) / 목록(`status`,`topic`,`domain`,`sort`,`include_superseded`) |
 | GET | `/v1/decisions/{id}` | 카드 페이로드(선택지별 근거, 충돌, 고정 대비 현재 버전, 이력) |
 | POST | `/v1/decisions/{id}/evidence` | 근거 추가(author+, 인용 원문 검증) |
@@ -274,8 +269,9 @@ docker compose up -d --build mcp   # http://localhost:8577
 |----------|------|
 | `kb_search` / `wiki_search` | `GET /api/wiki/search` |
 | `kb_get_document` / `wiki_get_document` | `GET /api/wiki/file` |
-| `kb_list_insights` / `wiki_list_synthesis` | `GET /api/synthesis` |
-| `kb_get_insight` / `wiki_get_synthesis` | `GET /api/synthesis/{slug}` |
+| `kb_list_insights` / `wiki_list_synthesis` | 폐기됨 (안내 스텁) |
+| `kb_get_insight` / `wiki_get_synthesis` | 폐기됨 (안내 스텁) |
+| `kb_list_decisions` / `kb_get_decision` / `kb_propose_decision` / `kb_add_decision_evidence` | `/v1/decisions*` |
 | `kb_ask` / `wiki_ask` | `POST /api/query` SSE |
 | `kb_query` | `POST /v1/query` |
 | `kb_ticket` | `GET /v1/tickets/{id}` |

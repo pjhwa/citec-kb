@@ -17,7 +17,7 @@ Related docs:
 
 CI-TEC internal knowledge platform:
 
-- **Corpus:** support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, insights  
+- **Corpus:** support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, human-confirmed decisions  
 - **Search:** hybrid **PostgreSQL FTS + pgvector** (multilingual-e5-base, 768-d)  
 - **Planner:** natural language → intent (time list, analytics, similar incident, checklist, capacity, hybrid search, RAG)  
 - **LLM:** external only (OpenRouter / Fabrix)—not embedded in MCP  
@@ -299,10 +299,11 @@ Args: `period_days`, `basis` (e.g. `1안`), `include_pricing`.
 Full ticket markdown.  
 **API:** `GET /v1/tickets/{external_id}?source_type=support_history`
 
-### 4.12 Insights
+### 4.12 Insights — RETIRED (2026-11-05)
 
-- `kb_list_insights` / `wiki_list_synthesis`  
-- `kb_get_insight` / `wiki_get_synthesis`  
+`kb_list_insights` / `kb_get_insight` / `wiki_list_synthesis` / `wiki_get_synthesis` are **retired stubs** (they only answer
+"폐기됨 — use kb_list_decisions / kb_get_decision"; removed in the next release). `/v1/insights*` and `/api/synthesis*`
+answer HTTP 410. Filter values `insight`/`insights`/`synthesis` are rejected with HTTP 400. Use §4.12b.
 
 ### 4.12b Confirmed decisions (사람 확정)
 
@@ -504,7 +505,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form | A |
 | `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` | B |
 | `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools | `machine`(자동계산 confidence와 별개 필드) |
-| insights / synthesis | Approved insights | via insight tools | n/a (status: draft/review/approved/rejected) |
+| `confirmed_decision` | 사람이 확정한 현재 기준 (질문·선택지·고정 근거) | `kb_get_decision`, `confirmed_decision/DEC-xxxxxxxx.md` | `H` (human-confirmed) |
 
 **Ticket keys:** always `CITECTS-<number>` (case-insensitive in search; normalize to `CITECTS-####` when calling `kb_ticket`).
 
@@ -553,8 +554,7 @@ It is **not a relevance score** — it is a statement about how directly this ro
   this option in the decision UI against pinned evidence. This is the current standard for that
   question. Always cite with the confirmer and the date; if the hit says `recheck=true`, treat it as
   *needs re-check*, not as fact. Existing rows' grades are never changed to `H`.
-- **`draft`**: not yet reviewed (e.g. an unapproved insight) — do not present
-  as settled fact.
+- **`draft`**: not yet reviewed — do not present as settled fact. (The first-generation insight rows that used it were retired 2026-11-05.)
 
 **Rule of thumb:** before citing a hit as fact, check `source_type`. If it is
 `confluence_map`, you may quote its body, but flag it as unverified/C-grade

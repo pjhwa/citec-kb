@@ -11,8 +11,8 @@
   "roles": {
     "realm": [
       { "name": "viewer", "description": "Read access" },
-      { "name": "author", "description": "Create/edit insights" },
-      { "name": "senior", "description": "Approve insights" },
+      { "name": "author", "description": "Propose decisions / add evidence" },
+      { "name": "senior", "description": "Confirm decisions (verdict)" },
       { "name": "admin", "description": "Admin / jobs" },
       { "name": "offline_access" },
       { "name": "uma_authorization" },

@@ -1,7 +1,7 @@
 # citec-kb MCP 서버
 
 Claude Desktop / Claude Code / Cursor 등 MCP 클라이언트에서  
-CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·티켓·Insight)를 tool로 사용합니다.
+CI-TEC 지식베이스(검색·기간조회·집계·문서·RAG·통합질의·티켓·사람 확정 결정)를 tool로 사용합니다.
 
 구조: **경량 프록시** → citec-kb REST (`/api/*`, `/v1/*`). 검색·LLM 로직은 API에 두고 MCP는 프로토콜 어댑터만 담당합니다.
 
@@ -87,12 +87,12 @@ MCP 서버는 환경 변수 `CITEC_KB_API_KEY`가 있을 때만 `X-API-Key`를 �
 
 판정·대체·보류 도구는 **없다**. 사람이 웹 `/decisions.html`에서 판정한다. `kb_search(section="confirmed_decision")`로 확정 문서만 검색하고, `include_superseded=true`로 대체된 결정도 본다.
 
-### Insight · 상태
+### 상태
 
 | Tool | 설명 | 백엔드 |
 |------|------|--------|
-| `kb_list_insights` / `wiki_list_synthesis` | Insight 목록 | `GET /api/synthesis` |
-| `kb_get_insight` / `wiki_get_synthesis` | Insight 상세 | `GET /api/synthesis/{id}` |
+| `kb_list_insights` / `wiki_list_synthesis` | **폐기됨**(안내 스텁, 다음 릴리스에서 제거) → `kb_list_decisions` | — |
+| `kb_get_insight` / `wiki_get_synthesis` | **폐기됨**(안내 스텁) → `kb_get_decision` | — |
 | `kb_health` | API 헬스 | `/api/health` + `/v1/health` |
 | `kb_stats` | 코퍼스 통계 | `GET /api/wiki-stats` |
 

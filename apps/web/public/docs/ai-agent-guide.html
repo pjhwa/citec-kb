@@ -37,7 +37,7 @@
       <a href="#49-checklist" style="padding-left:20px;font-size:12px">4.9 Checklist</a>
       <a href="#410-kb_capacity_estimate" style="padding-left:20px;font-size:12px">4.10 kb_capacity_estimate</a>
       <a href="#411-kb_ticket" style="padding-left:20px;font-size:12px">4.11 kb_ticket</a>
-      <a href="#412-insights" style="padding-left:20px;font-size:12px">4.12 Insights</a>
+      <a href="#412-insights-retired-2026-11-05" style="padding-left:20px;font-size:12px">4.12 Insights — RETIRED (2026-11-05)</a>
       <a href="#412b-confirmed-decisions" style="padding-left:20px;font-size:12px">4.12b Confirmed decisions (사람 확정)</a>
       <a href="#413-kb_ask-wiki_ask" style="padding-left:20px;font-size:12px">4.13 kb_ask / wiki_ask</a>
       <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
@@ -121,7 +121,7 @@
 <h2 id="1-what-citec-kb-is">1. What citec-kb is</h2>
 <p>CI-TEC internal knowledge platform:</p>
 <ul>
-<li><strong>Corpus:</strong> support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, insights  </li>
+<li><strong>Corpus:</strong> support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, human-confirmed decisions  </li>
 <li><strong>Search:</strong> hybrid <strong>PostgreSQL FTS + pgvector</strong> (multilingual-e5-base, 768-d)  </li>
 <li><strong>Planner:</strong> natural language → intent (time list, analytics, similar incident, checklist, capacity, hybrid search, RAG)  </li>
 <li><strong>LLM:</strong> external only (OpenRouter / Fabrix)—not embedded in MCP  </li>
@@ -643,11 +643,10 @@ Args: <code>period_days</code>, <code>basis</code> (e.g. <code>1안</code>), <co
 <h3 id="411-kb_ticket">4.11 <code>kb_ticket</code></h3>
 <p>Full ticket markdown.<br>
 <strong>API:</strong> <code>GET /v1/tickets/{external_id}?source_type=support_history</code></p>
-<h3 id="412-insights">4.12 Insights</h3>
-<ul>
-<li><code>kb_list_insights</code> / <code>wiki_list_synthesis</code>  </li>
-<li><code>kb_get_insight</code> / <code>wiki_get_synthesis</code>  </li>
-</ul>
+<h3 id="412-insights-retired-2026-11-05">4.12 Insights — RETIRED (2026-11-05)</h3>
+<p><code>kb_list_insights</code> / <code>kb_get_insight</code> / <code>wiki_list_synthesis</code> / <code>wiki_get_synthesis</code> are <strong>retired stubs</strong> (they only answer<br>
+"폐기됨 — use kb_list_decisions / kb_get_decision"; removed in the next release). <code>/v1/insights*</code> and <code>/api/synthesis*</code><br>
+answer HTTP 410. Filter values <code>insight</code>/<code>insights</code>/<code>synthesis</code> are rejected with HTTP 400. Use §4.12b.</p>
 <h3 id="412b-confirmed-decisions">4.12b Confirmed decisions (사람 확정)</h3>
 <p>The <strong>human-confirmed "current standard" layer</strong>. A decision is one question with mutually exclusive<br>
 options (+ <code>NEI</code> "cannot tell" and <code>OTHER</code> "free text", added by the server), pinned evidence, and<br>
@@ -900,10 +899,10 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 <td><code>machine</code>(자동계산 confidence와 별개 필드)</td>
 </tr>
 <tr>
-<td>insights / synthesis</td>
-<td>Approved insights</td>
-<td>via insight tools</td>
-<td>n/a (status: draft/review/approved/rejected)</td>
+<td><code>confirmed_decision</code></td>
+<td>사람이 확정한 현재 기준 (질문·선택지·고정 근거)</td>
+<td><code>kb_get_decision</code>, <code>confirmed_decision/DEC-xxxxxxxx.md</code></td>
+<td><code>H</code> (human-confirmed)</td>
 </tr>
 </tbody>
 </table></div>
@@ -951,8 +950,7 @@ It is <strong>not a relevance score</strong> — it is a statement about how dir
   this option in the decision UI against pinned evidence. This is the current standard for that<br>
   question. Always cite with the confirmer and the date; if the hit says <code>recheck=true</code>, treat it as<br>
 <em>needs re-check</em>, not as fact. Existing rows' grades are never changed to <code>H</code>.<br>
-- <strong><code>draft</code></strong>: not yet reviewed (e.g. an unapproved insight) — do not present<br>
-  as settled fact.</p>
+- <strong><code>draft</code></strong>: not yet reviewed — do not present as settled fact. (The first-generation insight rows that used it were retired 2026-11-05.)</p>
 <p><strong>Rule of thumb:</strong> before citing a hit as fact, check <code>source_type</code>. If it is<br>
 <code>confluence_map</code>, you may quote its body, but flag it as unverified/C-grade<br>
 unless you've also opened the live page or found an A-grade copy of the<br>
