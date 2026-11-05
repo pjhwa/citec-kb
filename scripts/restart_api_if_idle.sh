@@ -10,7 +10,8 @@
 # within seconds.
 #
 # BUT: `python -m app.ingest.cli` / `python -m app.embed.cli` / the Confluence
-# sync CLIs (`app.confluence.sync_cli`, `app.confluence.map_sync_cli`) are
+# sync CLIs (`app.confluence.sync_cli`, `app.confluence.map_sync_cli`, and the
+# multi-hour `map_inventory_cli` / `docs_inventory_cli` / `map_backfill_cli`) are
 # sometimes run inside this same container via `docker compose exec` (see
 # scripts/ingest_and_embed.sh, scripts/confluence_sync.sh, scripts/map_sync.sh)
 # and can run for hours. Restarting mid-batch would kill that job (idempotent,
@@ -51,7 +52,7 @@ fi
 BUSY_PIDS="$(docker compose exec -T api sh -c '
   for p in /proc/[0-9]*; do
     [ -r "$p/cmdline" ] || continue
-    tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -Eq "app\.(embed|ingest)\.cli|app\.synonyms\.cli|app\.confluence\.(map_sync_cli|sync_cli)" && basename "$p"
+    tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -Eq "app\.(embed|ingest)\.cli|app\.synonyms\.cli|app\.confluence\.(map_sync_cli|sync_cli|map_inventory_cli|docs_inventory_cli|map_backfill_cli)" && basename "$p"
   done
 ' 2>/dev/null || true)"
 
