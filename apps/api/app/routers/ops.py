@@ -9,6 +9,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select, text
 
 from app import __version__
+from app.audit.api_access import WINDOWS as _API_WINDOWS
+from app.audit.api_access import api_usage_stats
 from app.audit.mcp_access import mcp_query_stats
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
@@ -328,3 +330,16 @@ def ops_backup_request(principal: Principal = Depends(require_roles("admin"))) -
     tmp.replace(path)
     stale = (not status_file.exists()) or (now.timestamp() - status_file.stat().st_mtime > _BACKUP_SNAPSHOT_STALE_SEC)
     return {**req, "runner_warning": "호스트 러너가 응답하지 않는 것 같습니다. crontab 등록을 확인하세요." if stale else None}
+
+
+@router.get("/api-usage")
+def ops_api_usage(
+    window: str = "24h", principal: Principal = Depends(require_roles("admin"))
+) -> dict[str, Any]:
+    """API usage (non-MCP) by caller kind: web UI / internal systems / external systems."""
+    from fastapi import HTTPException
+
+    if window not in _API_WINDOWS:
+        raise HTTPException(status_code=422, detail=f"window는 {', '.join(_API_WINDOWS)} 중 하나여야 합니다.")
+    with session_scope() as session:
+        return api_usage_stats(session, window)

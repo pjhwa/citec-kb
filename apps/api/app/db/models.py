@@ -507,6 +507,30 @@ class McpAccessLog(Base):
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
 
 
+class ApiAccessLog(Base):
+    """2026-11-05 — non-MCP API usage (the MCP side is mcp_access_log). One row per /v1 request
+    from a browser UI, an internal system (worker/scripts/containers) or an external system.
+    Written in batches by app.audit.api_access; pruned after API_ACCESS_LOG_RETENTION_DAYS."""
+
+    __tablename__ = "api_access_log"
+    __table_args__ = (
+        Index("ix_api_access_log_created_at", "created_at"),
+        Index("ix_api_access_log_kind_created", "client_kind", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    client_kind: Mapped[str] = mapped_column(String(16), nullable=False)  # web | internal | external
+    client_name: Mapped[Optional[str]] = mapped_column(String(128))  # token name / X-Citec-Client / UA product
+    client_ip: Mapped[Optional[str]] = mapped_column(String(64))
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path: Mapped[str] = mapped_column(String(256), nullable=False)  # route template when known
+    status_code: Mapped[Optional[int]] = mapped_column(Integer)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
+
+
 class Answer(Base):
     __tablename__ = "answers"
 

@@ -215,6 +215,18 @@
   @keyframes tin { from { transform:translateY(8px); opacity:0; } }
   @media (prefers-reduced-motion: reduce) { .pulse { animation:none; } html { scroll-behavior:auto; } .drawer,.scrim,.pb-f { transition:none; } .toast { animation:none; } }
 
+
+  /* ===== API usage chart ===== */
+  .legend-dot { display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+  .lg-web { background:var(--primary); } .lg-internal { background:var(--ok); } .lg-external { background:var(--dot-warn); }
+  .achart { display:flex; align-items:flex-end; justify-content:flex-start; gap:3px; height:150px; padding:4px 0 0; border-bottom:1px solid var(--border-strong); }
+  .achart .col { flex:1 1 0; min-width:3px; max-width:44px; display:flex; flex-direction:column-reverse; height:100%; justify-content:flex-start; position:relative; }
+  .achart .col i { display:block; width:100%; }
+  .achart .col i:first-child { border-radius:0 0 2px 2px; } .achart .col i:last-child { border-radius:2px 2px 0 0; }
+  .achart .col:hover { background:var(--primary-soft); }
+  .achart .w { background:var(--primary); } .achart .n { background:var(--ok); } .achart .x { background:var(--dot-warn); }
+  .achart-axis { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:4px; }
+
   /* ===== narrow screens ===== */
   @media (max-width:1000px) {
     .shell { grid-template-columns:minmax(0,1fr); gap:12px; padding:12px 12px 64px; }
@@ -516,10 +528,11 @@
     </section>
 
     <section class="sec" id="usage" aria-labelledby="h-usage">
-      <div class="sec-h"><h2 id="h-usage">사용 현황</h2><p>검색 쿼리와 MCP 경유 조회 기록</p></div>
+      <div class="sec-h"><h2 id="h-usage">사용 현황</h2><p>검색 쿼리, MCP 조회(AI CLI), API 호출(웹 · 내부 시스템 · 외부 시스템)</p></div>
       <div class="tabs" role="tablist" data-tabs="usage" aria-label="사용 현황 보기">
         <button type="button" role="tab" data-tab="u-query" aria-selected="true">검색 쿼리</button>
-        <button type="button" role="tab" data-tab="u-mcp" aria-selected="false">MCP 조회</button>
+        <button type="button" role="tab" data-tab="u-mcp" aria-selected="false">MCP 조회 (AI CLI)</button>
+        <button type="button" role="tab" data-tab="u-api" aria-selected="false">API 호출 (웹 · 시스템)</button>
       </div>
       <div class="tab-panel" id="u-query" role="tabpanel"><div class="card">
       <strong>최근 쿼리 (최대 10건)</strong>
@@ -541,6 +554,57 @@
       <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
     </table>
   </div></div>
+      <div class="tab-panel" id="u-api" role="tabpanel" hidden>
+        <div class="card" id="apiCard">
+          <div class="job-top">
+            <strong>API 호출 현황 (MCP 제외)</strong>
+            <span class="seg" id="apiWin" role="group" aria-label="기간">
+              <button type="button" data-w="1h" aria-pressed="false">1시간</button>
+              <button type="button" data-w="24h" aria-pressed="true">24시간</button>
+              <button type="button" data-w="7d" aria-pressed="false">7일</button>
+            </span>
+          </div>
+          <p class="meta" style="margin:0 0 14px">
+            AI CLI(MCP)는 "MCP 조회" 탭에서 따로 봅니다. 여기는 그 외 호출을 <b>웹</b>(사람이 쓰는 브라우저 화면), <b>내부 시스템</b>(이 서버/컨테이너 안의 worker·스크립트),
+            <b>외부 시스템</b>(다른 서버)으로 나눠 보여 줍니다. 다른 시스템이 호출하면 <b>외부</b>로 잡히며, 호출 시 <code>X-Citec-Client: &lt;시스템명&gt;</code> 헤더를 보내면 이름까지 구분됩니다.
+          </p>
+          <div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:14px">
+            <div class="kpi na" id="apiKTotal"><div class="kpi-l">전체 호출</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+            <div class="kpi na" id="apiKWeb"><div class="kpi-l"><span class="legend-dot lg-web"></span>웹 화면</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+            <div class="kpi na" id="apiKInternal"><div class="kpi-l"><span class="legend-dot lg-internal"></span>내부 시스템</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+            <div class="kpi na" id="apiKExternal"><div class="kpi-l"><span class="legend-dot lg-external"></span>외부 시스템</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+            <div class="kpi na" id="apiKErr"><div class="kpi-l">서버 오류 (5xx)</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+            <div class="kpi na" id="apiKLat"><div class="kpi-l">응답 지연</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+          </div>
+          <div class="panel" style="margin-bottom:12px">
+            <h4>시간대별 호출 <span class="meta" id="apiChartUnit"></span></h4>
+            <div id="apiChart" class="achart" role="img" aria-label="시간대별 호출 막대 차트"></div>
+            <div class="stack-legend"><span><span class="legend-dot lg-web"></span>웹</span><span><span class="legend-dot lg-internal"></span>내부 시스템</span><span><span class="legend-dot lg-external"></span>외부 시스템</span></div>
+          </div>
+          <div class="panels" style="grid-template-columns:repeat(auto-fit,minmax(380px,1fr))">
+            <div class="panel">
+              <h4>호출자별</h4>
+              <span class="seg" id="apiKind" role="group" aria-label="호출자 구분" style="margin-bottom:10px">
+                <button type="button" data-k="" aria-pressed="true">전체</button><button type="button" data-k="web" aria-pressed="false">웹</button>
+                <button type="button" data-k="internal" aria-pressed="false">내부</button><button type="button" data-k="external" aria-pressed="false">외부</button>
+              </span>
+              <table class="tbl"><thead><tr><th>구분</th><th>이름</th><th>IP</th><th>호출</th><th>오류</th><th>평균</th><th>마지막</th></tr></thead>
+                <tbody id="apiClients"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody></table>
+            </div>
+            <div class="panel">
+              <h4>엔드포인트 상위</h4>
+              <table class="tbl"><thead><tr><th>경로</th><th>호출</th><th>오류</th><th>평균</th><th>p95</th></tr></thead>
+                <tbody id="apiEndpoints"><tr><td colspan="5" class="meta">로딩 중…</td></tr></tbody></table>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:12px">
+            <h4>최근 오류 (4xx / 5xx)</h4>
+            <table class="tbl"><thead><tr><th>시각</th><th>구분</th><th>호출자</th><th>요청</th><th>상태</th><th>지연</th></tr></thead>
+              <tbody id="apiErrors"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody></table>
+          </div>
+          <p class="meta" id="apiNote" style="margin:12px 0 0"></p>
+        </div>
+      </div>
     </section>
 
     <section class="sec" id="automation" aria-labelledby="h-automation">
@@ -1367,13 +1431,13 @@ $("tokCard").addEventListener("click", async (ev) => {
 });
 refreshTokens();
 
-$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); refreshBuckets(); refreshMining(); refreshSynCounts(); refreshBackups(); };
+$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); refreshBuckets(); refreshMining(); refreshSynCounts(); refreshBackups(); if (!$("u-api").hidden) refreshApiUsage(); };
 
 let _timer = null;
 function scheduleAuto() {
   if (_timer) clearInterval(_timer);
   if (!$("chkAuto").checked) return;
-  _timer = setInterval(() => { refresh(); refreshCron(); if (!mineTimer) refreshMining(); if (!backupTimer) refreshBackups(); }, 10000);
+  _timer = setInterval(() => { refresh(); refreshCron(); if (!mineTimer) refreshMining(); if (!backupTimer) refreshBackups(); if (!$("u-api").hidden) refreshApiUsage(); }, 10000);
 }
 $("chkAuto").onchange = scheduleAuto;
 
@@ -1980,6 +2044,95 @@ $("btnBackupNow").onclick = async () => {
   refreshBackups();
 };
 
+/* ---------------------------------- API usage (non-MCP) ---------------------------------- */
+const API_USAGE = "/v1/ops/api-usage";
+const apiState = { win: "24h", kind: "", data: null };
+const KIND_LABEL = { web: "웹", internal: "내부", external: "외부" };
+const KIND_CLS = { web: "na", internal: "ok", external: "warn" };
+function apiKpi(id, val, sub) { const k = $(id); k.querySelector(".kpi-v").textContent = val; k.querySelector(".kpi-s").textContent = sub || ""; k.querySelector(".kpi-s").title = sub || ""; }
+function renderApiUsage(d) {
+  apiState.data = d;
+  const n = (v) => Number(v || 0).toLocaleString();
+  const bk = d.by_kind || {};
+  const pct = (x) => d.total ? Math.round((x / d.total) * 100) + "%" : "—";
+  apiKpi("apiKTotal", n(d.total), d.window + " 동안");
+  apiKpi("apiKWeb", n(bk.web), pct(bk.web || 0));
+  apiKpi("apiKInternal", n(bk.internal), pct(bk.internal || 0));
+  apiKpi("apiKExternal", n(bk.external), pct(bk.external || 0));
+  apiKpi("apiKErr", n(d.errors_5xx), d.total ? ((d.errors_5xx / d.total) * 100).toFixed(1) + "% · 4xx " + n(d.errors_4xx) : "—");
+  apiKpi("apiKLat", d.avg_latency_ms != null ? d.avg_latency_ms + " ms" : "—", d.p95_latency_ms != null ? "p95 " + d.p95_latency_ms + " ms" : "");
+  $("apiKErr").className = "kpi " + (d.errors_5xx ? "bad" : d.total ? "ok" : "na");
+
+  // stacked bars: one column per time bucket (empty buckets included so the axis is a real timeline),
+  // segment heights relative to the busiest bucket
+  const stepMs = { minute: 60000, hour: 3600000, day: 86400000 }[d.unit] || 3600000;
+  const floorMs = (ms) => Math.floor(ms / stepMs) * stepMs;
+  const byT = {};
+  (d.series || []).forEach((b) => { byT[floorMs(new Date(b.t).getTime())] = b; });
+  const series = [];
+  for (let t = floorMs(new Date(d.since).getTime()); t <= Date.now(); t += stepMs) series.push({ t: new Date(t).toISOString(), ...(byT[t] || {}) });
+  const max = Math.max(1, ...series.map((b) => (b.web || 0) + (b.internal || 0) + (b.external || 0)));
+  const fmtT = (t) => { const x = new Date(t); return d.unit === "day" ? x.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" }) : d.unit === "hour" ? x.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit" }) : x.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }); };
+  $("apiChartUnit").textContent = "(" + ({ minute: "1분", hour: "1시간", day: "1일" }[d.unit] || d.unit) + " 단위)";
+  const anyData = (d.series || []).length > 0;
+  $("apiChart").innerHTML = anyData ? series.map((b) => {
+    const seg = (k, c) => b[k] ? '<i class="' + c + '" style="height:' + ((b[k] / max) * 100).toFixed(1) + '%"></i>' : "";
+    const tot = (b.web || 0) + (b.internal || 0) + (b.external || 0);
+    return '<div class="col" title="' + esc(fmtT(b.t)) + " · 합계 " + tot + " (웹 " + (b.web || 0) + ", 내부 " + (b.internal || 0) + ", 외부 " + (b.external || 0) + ')">' + seg("web", "w") + seg("internal", "n") + seg("external", "x") + "</div>";
+  }).join("") : '<span class="meta" style="align-self:center;margin:auto">이 기간에 기록된 호출이 없습니다.</span>';
+  $("apiChart").insertAdjacentHTML("afterend", "");
+  const axis = $("apiChart").parentNode.querySelector(".achart-axis");
+  if (axis) axis.remove();
+  if (series.length > 1) $("apiChart").insertAdjacentHTML("afterend", '<div class="achart-axis"><span>' + esc(fmtT(series[0].t)) + "</span><span>" + esc(fmtT(series[series.length - 1].t)) + "</span></div>");
+
+  renderApiClients();
+  $("apiEndpoints").innerHTML = (d.endpoints || []).length ? d.endpoints.map((e) =>
+    '<tr><td><span class="meta">' + esc(e.method) + '</span> <code>' + esc(e.path) + "</code></td><td class=\"num\">" + n(e.count) + "</td><td>" +
+    (e.errors ? '<span class="badge bad" style="margin:0">' + n(e.errors) + "</span>" : "—") + '</td><td class="num">' + (e.avg_latency_ms ?? "—") + '</td><td class="num">' + (e.p95_latency_ms ?? "—") + "</td></tr>").join("")
+    : '<tr><td colspan="5" class="meta">기록 없음</td></tr>';
+  $("apiErrors").innerHTML = (d.recent_errors || []).length ? d.recent_errors.map((e) =>
+    '<tr><td class="meta">' + fmtTs(e.at) + '</td><td><span class="badge ' + (KIND_CLS[e.kind] || "na") + '" style="margin:0">' + esc(KIND_LABEL[e.kind] || e.kind) + "</span></td><td>" + esc(e.name || e.ip || "—") +
+    '</td><td><span class="meta">' + esc(e.method) + "</span> <code>" + esc(e.path) + '</code></td><td><span class="badge ' + (e.status >= 500 ? "bad" : "warn") + '" style="margin:0">' + esc(e.status) + '</span></td><td class="num">' + (e.latency_ms ?? "—") + "ms</td></tr>").join("")
+    : '<tr><td colspan="6" class="meta">오류 없음</td></tr>';
+  $("apiNote").innerHTML = (d.logging_enabled ? "" : '<b style="color:var(--bad)">API 호출 기록이 꺼져 있습니다(API_ACCESS_LOG=off).</b> ') +
+    "분류 기준 — <b>웹</b>: 브라우저 요청(Sec-Fetch-Site 또는 Mozilla UA + Referer). <b>내부</b>: 호출 IP가 <code>" + esc((d.internal_cidrs || []).join(", ")) +
+    "</code> 안(환경변수 API_INTERNAL_CIDRS로 조정). <b>외부</b>: 그 밖의 IP. IP는 nginx가 넣는 X-Real-IP 기준이라 참고용입니다. 제외: MCP, admin 화면 자신의 폴링, health/ops/auth 상태 조회. 기록은 배포 이후부터 쌓이며 30일 보관합니다.";
+}
+const ago = (iso) => { if (!iso) return "—"; const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000); return s < 60 ? "방금" : s < 3600 ? Math.floor(s / 60) + "분 전" : s < 86400 ? Math.floor(s / 3600) + "시간 전" : Math.floor(s / 86400) + "일 전"; };
+function renderApiClients() {
+  const d = apiState.data;
+  if (!d) return;
+  const rows = (d.clients || []).filter((c) => !apiState.kind || c.kind === apiState.kind);
+  $("apiClients").innerHTML = rows.length ? rows.map((c) =>
+    '<tr><td><span class="badge ' + (KIND_CLS[c.kind] || "na") + '" style="margin:0">' + esc(KIND_LABEL[c.kind] || c.kind) + "</span></td><td>" + (c.name ? esc(c.name) : '<span class="meta">미식별</span>') +
+    '</td><td class="mono">' + esc(c.ip || "—") + '</td><td class="num">' + Number(c.count).toLocaleString() + "</td><td>" + (c.errors ? '<span class="badge bad" style="margin:0">' + c.errors + "</span>" : "—") +
+    '</td><td class="num">' + (c.avg_latency_ms ?? "—") + '</td><td class="meta" title="' + esc(fmtTs(c.last_seen)) + '">' + ago(c.last_seen) + "</td></tr>").join("")
+    : '<tr><td colspan="7" class="meta">해당하는 호출자가 없습니다.</td></tr>';
+}
+async function refreshApiUsage() {
+  try {
+    const r = await CitecAuth.apiFetch(API_USAGE + "?window=" + apiState.win);
+    if (r.status === 401 || r.status === 403) { $("apiClients").innerHTML = '<tr><td colspan="7" class="meta">관리자 권한 필요</td></tr>'; return; }
+    if (!r.ok) throw new Error(await regDetail(r));
+    renderApiUsage(await readJson(r, API_USAGE));
+  } catch (e) { $("apiClients").innerHTML = '<tr><td colspan="7" class="meta">' + esc(String(e)) + "</td></tr>"; }
+}
+$("apiWin").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-w]");
+  if (!b) return;
+  apiState.win = b.dataset.w;
+  $("apiWin").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  refreshApiUsage();
+});
+$("apiKind").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-k]");
+  if (!b) return;
+  apiState.kind = b.dataset.k;
+  $("apiKind").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  renderApiClients();
+});
+document.querySelector('[data-tab="u-api"]').addEventListener("click", refreshApiUsage);
+
 /* ---------------------------------- attention list ---------------------------------- */
 function renderAttention(items) {
   const extra = [];
@@ -1996,6 +2149,7 @@ function renderAttention(items) {
 }
 
 wireTabs();
+if (!$("u-api").hidden) refreshApiUsage();
 refreshBackups();
 refreshBuckets();
 refreshMining();

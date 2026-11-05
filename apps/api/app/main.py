@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app import __version__
+from app.audit.api_access import ApiAccessLogMiddleware
 from app.audit.mcp_access import McpAccessLogMiddleware
 from app.llm import check_llm
 from app.settings import get_settings
@@ -93,6 +94,8 @@ app.add_middleware(
 # 2026-10-14 — MCP(X-Citec-Client: mcp-server 헤더) 유래 요청을 어느
 # 엔드포인트든 자동으로 mcp_access_log에 남긴다(app/audit/mcp_access.py).
 app.add_middleware(McpAccessLogMiddleware)
+# 2026-11-05 — MCP 외 /v1 호출을 웹/내부 시스템/외부 시스템으로 구분해 api_access_log에 남긴다.
+app.add_middleware(ApiAccessLogMiddleware)
 app.include_router(ingest_router.router)
 app.include_router(search_router.router)
 app.include_router(checkitems_router.router)
