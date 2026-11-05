@@ -45,7 +45,7 @@
       <p class="lead">다중 진단 플러그인의 failure_bucket 연동 규약 (fb_domain·evidence_ref·source_plugin)</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/FAILURE_BUCKET_PLUGIN_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-05</div></div>
       </div>
     </header>
     <section>
@@ -365,6 +365,9 @@ CITEC_KB_API_KEY 환경 변수가 있을 때만 X-API-Key를 붙인다. 없으�
 </ul>
 <hr>
 <h2 id="9-retire-restore">9. 되돌리기 — retire / restore</h2>
+<blockquote>
+<p><strong>admin 화면:</strong> <code>admin.html</code> → 지식 관리 → "실패 버킷"에서 목록을 열람하고, 항목을 눌러 상세 패널에서 <strong>수정</strong>(PATCH)·<strong>삭제</strong>·<strong>복구</strong>를 한다. 화면의 "삭제"는 이 문서의 retire(소프트 삭제)이며 <strong>영구 삭제 기능은 없다</strong> — 데이터는 남고 복구할 수 있다.</p>
+</blockquote>
 <p><strong>삭제가 아니라 숨김이다.</strong> 행은 남고, 기본 조회에서만 빠진다. 잘못 숨겼으면 restore로 복구한다.</p>
 <div class="table-wrap"><table>
 <thead>
@@ -389,6 +392,16 @@ CITEC_KB_API_KEY 환경 변수가 있을 때만 X-API-Key를 붙인다. 없으�
 <td><code>POST /v1/failure-buckets/retire-batch</code></td>
 <td><code>admin</code></td>
 <td>본문 <code>{"created_by_prefix": "…", "reason": "…", "dry_run": true}</code> — 시험 방 정리용. <strong>기본 dry_run</strong>: 대상 건수와 id만 반환. <code>created_by_prefix</code>는 3자 이상</td>
+</tr>
+<tr>
+<td><code>PATCH /v1/failure-buckets/{id}</code></td>
+<td><code>senior</code>, <code>admin</code></td>
+<td>부분 수정 — <strong>보낸 필드만</strong> 바뀐다: <code>bucket_name</code>, <code>fb_domain</code>, <code>protocol</code>, <code>environment</code>(csp/msp/onprem/hybrid 또는 빈 값), <code>evidence_ref</code>, <code>symptom</code>, <code>root_cause</code>, <code>recommended_action</code>, <code>discriminating_signals</code>(최소 1개), <code>counter_signals</code>. 신뢰도·확인/반박 횟수는 수정 대상이 아니다(refine으로만 누적). 바뀐 필드는 <code>changed_fields</code>로, 내용이 바뀌면 검색 인덱스(문서 미러·임베딩)를 다시 만든다. retired는 409(복구 후 수정), 검증 실패는 422</td>
+</tr>
+<tr>
+<td><code>GET /v1/failure-buckets?status=retired</code></td>
+<td>제한 없음</td>
+<td><code>status</code>는 <code>active</code>/<code>retired</code>/<code>test</code> — 지정하면 <code>include_retired</code>보다 우선한다</td>
 </tr>
 <tr>
 <td>MCP</td>

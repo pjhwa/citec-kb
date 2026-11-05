@@ -51,7 +51,7 @@ fi
 BUSY_PIDS="$(docker compose exec -T api sh -c '
   for p in /proc/[0-9]*; do
     [ -r "$p/cmdline" ] || continue
-    tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -Eq "app\.(embed|ingest)\.cli|app\.confluence\.(map_sync_cli|sync_cli)" && basename "$p"
+    tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -Eq "app\.(embed|ingest)\.cli|app\.synonyms\.cli|app\.confluence\.(map_sync_cli|sync_cli)" && basename "$p"
   done
 ' 2>/dev/null || true)"
 

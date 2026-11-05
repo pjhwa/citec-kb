@@ -11,6 +11,7 @@ from app.auth.deps import require_roles
 from app.auth.principal import Principal
 from app.failure_buckets import registrants_store
 from app.failure_buckets.service import (
+    BucketEditError,
     BucketRetiredError,
     create_bucket,
     get_bucket,
@@ -21,6 +22,7 @@ from app.failure_buckets.service import (
     restore_bucket,
     retire_batch,
     retire_bucket,
+    update_bucket,
 )
 
 router = APIRouter(prefix="/v1", tags=["failure-buckets"])
@@ -45,6 +47,21 @@ class FailureBucketRefine(BaseModel):
     add_counter_signal: Optional[str] = None
     environment: Optional[str] = Field(default=None, max_length=16)
     confirm: bool = True
+
+
+class FailureBucketEdit(BaseModel):
+    """Partial edit: only the fields that are sent are changed."""
+
+    bucket_name: Optional[str] = Field(default=None, max_length=256)
+    fb_domain: Optional[str] = Field(default=None, max_length=32)
+    protocol: Optional[str] = Field(default=None, max_length=32)
+    environment: Optional[str] = Field(default=None, max_length=16)
+    evidence_ref: Optional[str] = Field(default=None, max_length=2000)
+    symptom: Optional[str] = Field(default=None, max_length=4000)
+    root_cause: Optional[str] = Field(default=None, max_length=4000)
+    recommended_action: Optional[str] = Field(default=None, max_length=4000)
+    discriminating_signals: Optional[list[str]] = Field(default=None, max_length=100)
+    counter_signals: Optional[list[str]] = Field(default=None, max_length=100)
 
 
 class FailureBucketRetire(BaseModel):
@@ -108,9 +125,11 @@ def get_failure_buckets(
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
     include_retired: bool = Query(False),
+    status: Optional[str] = Query(None, pattern="^(active|retired|test)$"),
 ) -> dict[str, Any]:
     return list_buckets(
         include_retired=include_retired,
+        status=status,
         fb_domain=fb_domain,
         protocol=protocol,
         environment=environment,
@@ -189,6 +208,24 @@ def get_one_failure_bucket(bucket_id: str) -> dict[str, Any]:
     if not row:
         raise HTTPException(status_code=404, detail="failure_bucket not found")
     return row
+
+
+@router.patch("/failure-buckets/{bucket_id}")
+def patch_failure_bucket(
+    bucket_id: str,
+    body: FailureBucketEdit,
+    principal: Principal = Depends(require_roles("senior", "admin")),
+) -> dict[str, Any]:
+    """Curate a bucket's descriptive fields (senior/admin). Re-indexes the search mirror."""
+    _ = principal
+    try:
+        return update_bucket(bucket_id, body.model_dump(exclude_unset=True))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="failure_bucket not found") from None
+    except BucketRetiredError:
+        raise HTTPException(status_code=409, detail="retired: restore 후 수정") from None
+    except BucketEditError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/failure-buckets/{bucket_id}/refine")
