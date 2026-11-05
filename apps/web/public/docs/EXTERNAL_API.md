@@ -226,6 +226,12 @@ verdict: `helpful` | `not_helpful` | `resolved` | `failed` | `edited`
 | GET | `/v1/analytics/tickets` | 기간·유형 집계 |
 | POST | `/v1/similar-incident` | 유사장애 |
 | GET | `/v1/insights` | Insight CRUD 계열 |
+| POST/GET | `/v1/decisions` | 사람 확정 결정 제안(author+) / 목록(`status`,`topic`,`domain`,`sort`,`include_superseded`) |
+| GET | `/v1/decisions/{id}` | 카드 페이로드(선택지별 근거, 충돌, 고정 대비 현재 버전, 이력) |
+| POST | `/v1/decisions/{id}/evidence` | 근거 추가(author+, 인용 원문 검증) |
+| GET/POST | `/v1/decisions/{id}/nonce` · `/verdict` | 판정(senior+, UI nonce 필요, 인증 ON이면 `decided_by`는 `principal.name`) |
+| POST | `/v1/decisions/{id}/supersede` · `/retire` · `/restore` | 대체 / 보류 / 복구 (senior+, 하드 삭제 없음) |
+| GET | `/v1/decisions/metrics` | 판정 소요 중앙값, AI 추천 override 비율, NEI 비율 등 |
 | POST/GET | `/v1/failure-buckets` | 실패 버킷 등록/목록 (self-improving 진단 지식) |
 | GET | `/v1/external/catalog` | 이 문서의 기계 가독 카탈로그 |
 | GET | `/v1/external/search` | 간단 GET 검색 |

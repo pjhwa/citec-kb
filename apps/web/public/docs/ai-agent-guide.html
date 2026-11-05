@@ -38,6 +38,7 @@
       <a href="#410-kb_capacity_estimate" style="padding-left:20px;font-size:12px">4.10 kb_capacity_estimate</a>
       <a href="#411-kb_ticket" style="padding-left:20px;font-size:12px">4.11 kb_ticket</a>
       <a href="#412-insights" style="padding-left:20px;font-size:12px">4.12 Insights</a>
+      <a href="#412b-confirmed-decisions" style="padding-left:20px;font-size:12px">4.12b Confirmed decisions (사람 확정)</a>
       <a href="#413-kb_ask-wiki_ask" style="padding-left:20px;font-size:12px">4.13 kb_ask / wiki_ask</a>
       <a href="#414-ops" style="padding-left:20px;font-size:12px">4.14 Ops</a>
       <a href="#414b-ci-tec-domain-recurring-pattern-tools" style="padding-left:20px;font-size:12px">4.14b CI-TEC domain / recurring-pattern tools</a>
@@ -73,6 +74,7 @@
       <a href="#14-versioning">14. Versioning</a>
       <a href="#b-phase-retrieval-changes-2026-10-29">B-phase retrieval changes (2026-10-29)</a>
       <a href="#c-kb_ask-generation-failure-transparency-2026-10-29">C: kb_ask generation-failure transparency (2026-10-29)</a>
+      <a href="#d-confirmed-decisions-2026-11-05">D: Confirmed decisions (2026-11-05)</a>
     </nav>
   </aside>
   <main class="main">
@@ -84,7 +86,7 @@
       <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-29</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
       </div>
     </header>
     <section>
@@ -646,6 +648,27 @@ Args: <code>period_days</code>, <code>basis</code> (e.g. <code>1안</code>), <co
 <li><code>kb_list_insights</code> / <code>wiki_list_synthesis</code>  </li>
 <li><code>kb_get_insight</code> / <code>wiki_get_synthesis</code>  </li>
 </ul>
+<h3 id="412b-confirmed-decisions">4.12b Confirmed decisions (사람 확정)</h3>
+<p>The <strong>human-confirmed "current standard" layer</strong>. A decision is one question with mutually exclusive<br>
+options (+ <code>NEI</code> "cannot tell" and <code>OTHER</code> "free text", added by the server), pinned evidence, and<br>
+append-only human verdicts. Confirmed decisions are searchable as <code>source_type=confirmed_decision</code>,<br>
+<code>evidence_grade=H</code>.</p>
+<ul>
+<li><code>kb_list_decisions(status, topic, domain, include_superseded, limit)</code> / <code>kb_get_decision(decision_id)</code> — read.</li>
+<li><code>kb_propose_decision(question, options, evidence, ai_recommendation_key, …)</code> — you may <strong>propose</strong> a question.</li>
+<li><code>kb_add_decision_evidence(decision_id, quote, stance, document_id | external_url+external_snapshot+retrieved_at)</code>.<br>
+  An internal <code>quote</code> must appear <strong>verbatim</strong> in the document body (NFC + whitespace-normalised), otherwise HTTP 400.</li>
+<li>There is <strong>no verdict tool</strong>. You cannot confirm a decision. A human confirms it in <code>/decisions.html</code><br>
+  (the verdict endpoint needs a one-time nonce issued by that UI). With <code>AUTH_MODE=off</code> this is only a guard against<br>
+  accidental AI verdicts, not a security boundary — turning auth on is the real fix.</li>
+<li><code>GET /v1/decisions[?status=&amp;sort=priority|recent&amp;include_superseded=]</code>, <code>GET /v1/decisions/{id}</code>,<br>
+<code>GET /v1/decisions/metrics</code> are public reads.</li>
+</ul>
+<p><strong>When you cite a <code>confirmed_decision</code></strong>: cite it first, and state <em>who confirmed it and when</em><br>
+(<code>decision.decided_by</code>, <code>decided_at</code>; "(자기 신고)" means the name was self-reported while auth is off).<br>
+If <code>decision.recheck=true</code> (<code>needs_recheck</code>: a pinned source document changed, or the review interval passed),<br>
+do <strong>not</strong> state it as fact — open the source and say the confirmation needs re-checking.<br>
+<code>superseded</code>/<code>retired</code> decisions are hidden unless <code>include_superseded=true</code> (kb_search).</p>
 <h3 id="413-kb_ask-wiki_ask">4.13 <code>kb_ask</code> / <code>wiki_ask</code></h3>
 <p>RAG answer (SSE under the hood).<br>
 Args: <code>query</code>, <code>template</code> (default <code>general</code>), <code>mode</code> (<code>fast</code>|<code>deep</code>).<br>
@@ -886,7 +909,7 @@ Still verify important claims with <code>kb_get_document</code> if the model out
 </table></div>
 <p><strong>Ticket keys:</strong> always <code>CITECTS-&lt;number&gt;</code> (case-insensitive in search; normalize to <code>CITECTS-####</code> when calling <code>kb_ticket</code>).</p>
 <h3 id="61-evidence_grade-how-much-to-trust-a-hit-before-you-even-open-it">6.1 <code>evidence_grade</code> — how much to trust a hit, before you even open it</h3>
-<p>Every <code>documents</code> row carries <code>evidence_grade</code> (<code>A</code> / <code>A-</code> / <code>B</code> / <code>C</code> / <code>draft</code>).<br>
+<p>Every <code>documents</code> row carries <code>evidence_grade</code> (<code>H</code> / <code>A</code> / <code>A-</code> / <code>B</code> / <code>C</code> / <code>draft</code>).<br>
 It is <strong>not a relevance score</strong> — it is a statement about how directly this row<br>
 <em>is</em> the fact, vs. merely <em>points at</em> where the fact might live:</p>
 <ul>
@@ -924,6 +947,10 @@ It is <strong>not a relevance score</strong> — it is a statement about how dir
   production here — if in doubt, treat a short/breadcrumb-shaped<br>
 <code>confluence_map</code> body as unverified structure-only, not as evidence the<br>
   page itself is short.<br>
+- <strong><code>H</code> — human-confirmed</strong> (<code>source_type=confirmed_decision</code> only): a person picked<br>
+  this option in the decision UI against pinned evidence. This is the current standard for that<br>
+  question. Always cite with the confirmer and the date; if the hit says <code>recheck=true</code>, treat it as<br>
+<em>needs re-check</em>, not as fact. Existing rows' grades are never changed to <code>H</code>.<br>
 - <strong><code>draft</code></strong>: not yet reviewed (e.g. an unapproved insight) — do not present<br>
   as settled fact.</p>
 <p><strong>Rule of thumb:</strong> before citing a hit as fact, check <code>source_type</code>. If it is<br>
@@ -1160,6 +1187,21 @@ POST /api/query
 <td><code>kb_citec_recurring_patterns</code></td>
 </tr>
 <tr>
+<td>State a <code>confirmed_decision</code> with <code>decision.recheck=true</code> as settled fact</td>
+<td>Its pinned evidence changed or the review interval passed (§4.12b)</td>
+<td>Open the source, say it needs re-checking</td>
+</tr>
+<tr>
+<td>Try to confirm a decision yourself / look for a verdict tool</td>
+<td>By design only a human confirms (UI nonce, <code>decided_via=ui</code>)</td>
+<td><code>kb_propose_decision</code> + <code>kb_add_decision_evidence</code>, then tell the user to open <code>/decisions.html</code></td>
+</tr>
+<tr>
+<td>Add an evidence <code>quote</code> you paraphrased</td>
+<td>The server requires a verbatim substring of the pinned document</td>
+<td>Copy the exact text from <code>kb_get_document</code></td>
+</tr>
+<tr>
 <td>Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스")</td>
 <td><code>kb_citec_recurring_patterns</code> filters do exact match</td>
 <td><code>kb_citec_domain_catalog()</code> first</td>
@@ -1239,6 +1281,14 @@ If a tool name is missing in the live server, call <code>kb_tools_help</code> or
 <li>MCP <code>kb_ask</code>/<code>wiki_ask</code> first line on failure: <code>[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status=…, 사유: …)</code>. The <code>[스니펫 요약]</code> prefix is unchanged. Fallback text and the source list show one entry per document.</li>
 <li><strong>Fabrix chat adapter (2026-10-29):</strong> <code>apps/api/app/llm_fabrix.py</code> implements <code>POST {COMPANY_ENDPOINT_URL}/openapi/chat/v1/messages</code> (non-stream and SSE). Answer text is taken only from <code>CHUNK</code> events — <code>THINK</code> events carry the model's reasoning and are dropped. Reasoning shares <code>max_new_tokens</code>, so the adapter adds <code>FABRIX_THINK_HEADROOM</code> (default 2048) to the caller's answer budget. <code>check_llm</code> now makes a real tiny non-stream + stream call (cached 60 s): <code>chat_supported</code> / <code>chat_stream_supported</code> are measured, not hardcoded. Errors surface Fabrix's <code>errorCode</code> and <code>detailMessage</code> as the <code>llm_error</code> reason.</li>
 <li>With the adapter, production <code>kb_ask</code> should return <code>generation_status=ok</code> with a generated answer; any failure still falls back to the transparent snippet summary above.</li>
+</ul>
+<h2 id="d-confirmed-decisions-2026-11-05">D: Confirmed decisions (2026-11-05)</h2>
+<ul>
+<li>New layer <code>confirmed_decision</code> (grade <code>H</code>), MCP <code>kb_list_decisions</code> / <code>kb_get_decision</code> / <code>kb_propose_decision</code> / <code>kb_add_decision_evidence</code>, web <code>/decisions.html</code> + <code>/decision.html?id=</code>. See §4.12b and §6.1.</li>
+<li><code>kb_ask</code> source list now prints <strong>every</strong> <code>[C#]</code> for a document on one line (<code>- C1, C11, C15 &lt;title&gt;</code>); previously only the first chunk's number was shown, so <code>[C11]</code> in the answer looked missing (A2).</li>
+<li>Confirmed decisions are put first in the answer context; the source entry shows <code>사람 확정: 확정자 …, 확정일 …</code> and <code>⚠ 재확인 필요</code> when applicable.</li>
+<li><code>kb_search(include_superseded=true)</code> also returns superseded confirmed decisions (default false). <code>SEARCH_CONFIRMED_FACTOR</code> (default 1.0 = off) multiplies the score of current confirmed decisions; needs_recheck is never boosted.</li>
+<li><code>kb_stats</code> has a <code>decisions</code> block with named counts and its own definition (<code>by_status</code> = rows in <code>decisions</code>; <code>searchable_active_documents</code> = searchable mirror documents).</li>
 </ul>
       </div>
     </section>

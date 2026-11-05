@@ -24,6 +24,7 @@
       <a href="#_6" style="padding-left:20px;font-size:12px">유사장애 · 체크리스트 · 용량</a>
       <a href="#networkclusterwindows" style="padding-left:20px;font-size:12px">실패 버킷 (장애 패턴, 다중 플러그인 — network/cluster/windows 등)</a>
       <a href="#_7" style="padding-left:20px;font-size:12px">문서 업로드 (쓰기)</a>
+      <a href="#confirmed-decision" style="padding-left:20px;font-size:12px">사람 확정 (Confirmed Decision)</a>
       <a href="#insight" style="padding-left:20px;font-size:12px">Insight · 상태</a>
       <a href="#confluence-drawio" style="padding-left:20px;font-size:12px">Confluence draw.io 다이어그램</a>
       <a href="#_8">사용 예 (에이전트)</a>
@@ -41,7 +42,7 @@
       <p class="lead">Claude / Cursor용 kb_search · kb_ask · kb_query</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/MCP.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-10-20</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
       </div>
     </header>
     <section>
@@ -259,6 +260,39 @@ MCP 서버는 환경 변수 <code>CITEC_KB_API_KEY</code>가 있을 때만 <code
 </tr>
 </tbody>
 </table></div>
+<h3 id="confirmed-decision">사람 확정 (Confirmed Decision)</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>설명</th>
+<th>백엔드</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>kb_list_decisions</code></td>
+<td>결정 목록 (<code>status</code>, <code>topic</code>, <code>domain</code>, <code>include_superseded</code>)</td>
+<td><code>GET /v1/decisions</code></td>
+</tr>
+<tr>
+<td><code>kb_get_decision</code></td>
+<td>질문·선택지·선택지별 근거·충돌·판정 이력</td>
+<td><code>GET /v1/decisions/{id}</code></td>
+</tr>
+<tr>
+<td><code>kb_propose_decision</code></td>
+<td>판정할 질문 제안(proposed). <strong>쓰기</strong> — 판정은 못 함</td>
+<td><code>POST /v1/decisions</code></td>
+</tr>
+<tr>
+<td><code>kb_add_decision_evidence</code></td>
+<td>근거 추가(내부 인용은 원문에 글자 그대로 있어야 함)</td>
+<td><code>POST /v1/decisions/{id}/evidence</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>판정·대체·보류 도구는 <strong>없다</strong>. 사람이 웹 <code>/decisions.html</code>에서 판정한다. <code>kb_search(section="confirmed_decision")</code>로 확정 문서만 검색하고, <code>include_superseded=true</code>로 대체된 결정도 본다.</p>
 <h3 id="insight">Insight · 상태</h3>
 <div class="table-wrap"><table>
 <thead>

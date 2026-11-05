@@ -304,6 +304,29 @@ Full ticket markdown.
 - `kb_list_insights` / `wiki_list_synthesis`  
 - `kb_get_insight` / `wiki_get_synthesis`  
 
+### 4.12b Confirmed decisions (사람 확정)
+
+The **human-confirmed "current standard" layer**. A decision is one question with mutually exclusive
+options (+ `NEI` "cannot tell" and `OTHER` "free text", added by the server), pinned evidence, and
+append-only human verdicts. Confirmed decisions are searchable as `source_type=confirmed_decision`,
+`evidence_grade=H`.
+
+- `kb_list_decisions(status, topic, domain, include_superseded, limit)` / `kb_get_decision(decision_id)` — read.
+- `kb_propose_decision(question, options, evidence, ai_recommendation_key, …)` — you may **propose** a question.
+- `kb_add_decision_evidence(decision_id, quote, stance, document_id | external_url+external_snapshot+retrieved_at)`.
+  An internal `quote` must appear **verbatim** in the document body (NFC + whitespace-normalised), otherwise HTTP 400.
+- There is **no verdict tool**. You cannot confirm a decision. A human confirms it in `/decisions.html`
+  (the verdict endpoint needs a one-time nonce issued by that UI). With `AUTH_MODE=off` this is only a guard against
+  accidental AI verdicts, not a security boundary — turning auth on is the real fix.
+- `GET /v1/decisions[?status=&sort=priority|recent&include_superseded=]`, `GET /v1/decisions/{id}`,
+  `GET /v1/decisions/metrics` are public reads.
+
+**When you cite a `confirmed_decision`**: cite it first, and state *who confirmed it and when*
+(`decision.decided_by`, `decided_at`; "(자기 신고)" means the name was self-reported while auth is off).
+If `decision.recheck=true` (`needs_recheck`: a pinned source document changed, or the review interval passed),
+do **not** state it as fact — open the source and say the confirmation needs re-checking.
+`superseded`/`retired` decisions are hidden unless `include_superseded=true` (kb_search).
+
 ### 4.13 `kb_ask` / `wiki_ask`
 
 RAG answer (SSE under the hood).  
@@ -487,7 +510,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 
 ### 6.1 `evidence_grade` — how much to trust a hit, before you even open it
 
-Every `documents` row carries `evidence_grade` (`A` / `A-` / `B` / `C` / `draft`).
+Every `documents` row carries `evidence_grade` (`H` / `A` / `A-` / `B` / `C` / `draft`).
 It is **not a relevance score** — it is a statement about how directly this row
 *is* the fact, vs. merely *points at* where the fact might live:
 
@@ -526,6 +549,10 @@ It is **not a relevance score** — it is a statement about how directly this ro
   production here — if in doubt, treat a short/breadcrumb-shaped
   `confluence_map` body as unverified structure-only, not as evidence the
   page itself is short.
+- **`H` — human-confirmed** (`source_type=confirmed_decision` only): a person picked
+  this option in the decision UI against pinned evidence. This is the current standard for that
+  question. Always cite with the confirmer and the date; if the hit says `recheck=true`, treat it as
+  *needs re-check*, not as fact. Existing rows' grades are never changed to `H`.
 - **`draft`**: not yet reviewed (e.g. an unapproved insight) — do not present
   as settled fact.
 
@@ -737,6 +764,9 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 | Cite a `confluence_map` hit as settled fact with no caveat | `evidence_grade="C"` by policy regardless of body richness (§6.1) — automated crawl, no dedicated verification pipeline | Prefer a `tech_repo`/`confluence_docs` copy of the same page if one exists (§6.2); otherwise answer but flag as unverified |
 | Assume a short/breadcrumb-only `confluence_map` body means the page itself is short | It may just predate 2026-10-01 full-body capture (§6.1) | Check `metadata["source_version"]` presence, or open the live URL |
 | Count/rank CI-TEC domain incidents by scanning search results yourself | Error-prone, and ignores multi-domain tagging | `kb_citec_recurring_patterns` |
+| State a `confirmed_decision` with `decision.recheck=true` as settled fact | Its pinned evidence changed or the review interval passed (§4.12b) | Open the source, say it needs re-checking |
+| Try to confirm a decision yourself / look for a verdict tool | By design only a human confirms (UI nonce, `decided_via=ui`) | `kb_propose_decision` + `kb_add_decision_evidence`, then tell the user to open `/decisions.html` |
+| Add an evidence `quote` you paraphrased | The server requires a verbatim substring of the pinned document | Copy the exact text from `kb_get_document` |
 | Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스") | `kb_citec_recurring_patterns` filters do exact match | `kb_citec_domain_catalog()` first |
 
 ---
@@ -832,3 +862,11 @@ If a tool name is missing in the live server, call `kb_tools_help` or fall back 
 - MCP `kb_ask`/`wiki_ask` first line on failure: `[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status=…, 사유: …)`. The `[스니펫 요약]` prefix is unchanged. Fallback text and the source list show one entry per document.
 - **Fabrix chat adapter (2026-10-29):** `apps/api/app/llm_fabrix.py` implements `POST {COMPANY_ENDPOINT_URL}/openapi/chat/v1/messages` (non-stream and SSE). Answer text is taken only from `CHUNK` events — `THINK` events carry the model's reasoning and are dropped. Reasoning shares `max_new_tokens`, so the adapter adds `FABRIX_THINK_HEADROOM` (default 2048) to the caller's answer budget. `check_llm` now makes a real tiny non-stream + stream call (cached 60 s): `chat_supported` / `chat_stream_supported` are measured, not hardcoded. Errors surface Fabrix's `errorCode` and `detailMessage` as the `llm_error` reason.
 - With the adapter, production `kb_ask` should return `generation_status=ok` with a generated answer; any failure still falls back to the transparent snippet summary above.
+
+## D: Confirmed decisions (2026-11-05)
+
+- New layer `confirmed_decision` (grade `H`), MCP `kb_list_decisions` / `kb_get_decision` / `kb_propose_decision` / `kb_add_decision_evidence`, web `/decisions.html` + `/decision.html?id=`. See §4.12b and §6.1.
+- `kb_ask` source list now prints **every** `[C#]` for a document on one line (`- C1, C11, C15 <title>`); previously only the first chunk's number was shown, so `[C11]` in the answer looked missing (A2).
+- Confirmed decisions are put first in the answer context; the source entry shows `사람 확정: 확정자 …, 확정일 …` and `⚠ 재확인 필요` when applicable.
+- `kb_search(include_superseded=true)` also returns superseded confirmed decisions (default false). `SEARCH_CONFIRMED_FACTOR` (default 1.0 = off) multiplies the score of current confirmed decisions; needs_recheck is never boosted.
+- `kb_stats` has a `decisions` block with named counts and its own definition (`by_status` = rows in `decisions`; `searchable_active_documents` = searchable mirror documents).

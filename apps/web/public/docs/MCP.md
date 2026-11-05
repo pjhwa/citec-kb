@@ -76,6 +76,17 @@ MCP 서버는 환경 변수 `CITEC_KB_API_KEY`가 있을 때만 `X-API-Key`를 �
 |------|------|--------|
 | `kb_upload_document` | 문서 1건 업로드 → 즉시 ingest 큐 등록(백그라운드 처리). `kb_register_failure_bucket`과 같은 급의 **쓰기** 도구 — 코퍼스에 반영됨. 주 용도: SWIM 증분 반영(`source_type` 기본값 `incident_reports`) | `POST /api/upload` |
 
+### 사람 확정 (Confirmed Decision)
+
+| Tool | 설명 | 백엔드 |
+|------|------|--------|
+| `kb_list_decisions` | 결정 목록 (`status`, `topic`, `domain`, `include_superseded`) | `GET /v1/decisions` |
+| `kb_get_decision` | 질문·선택지·선택지별 근거·충돌·판정 이력 | `GET /v1/decisions/{id}` |
+| `kb_propose_decision` | 판정할 질문 제안(proposed). **쓰기** — 판정은 못 함 | `POST /v1/decisions` |
+| `kb_add_decision_evidence` | 근거 추가(내부 인용은 원문에 글자 그대로 있어야 함) | `POST /v1/decisions/{id}/evidence` |
+
+판정·대체·보류 도구는 **없다**. 사람이 웹 `/decisions.html`에서 판정한다. `kb_search(section="confirmed_decision")`로 확정 문서만 검색하고, `include_superseded=true`로 대체된 결정도 본다.
+
 ### Insight · 상태
 
 | Tool | 설명 | 백엔드 |
