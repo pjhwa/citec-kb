@@ -34,6 +34,7 @@ from app.routers import confluence as confluence_router  # noqa: E402
 from app.routers import confluence_map as confluence_map_router  # noqa: E402
 from app.auth import mock_idp as mock_idp_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
+from app.routers import auth_tokens as auth_tokens_router  # noqa: E402
 from app.routers import insights as insights_router  # noqa: E402
 from app.routers import jobs as jobs_router  # noqa: E402
 from app.routers import lexicon as lexicon_router  # noqa: E402
@@ -114,6 +115,7 @@ app.include_router(jobs_router.router)
 app.include_router(ops_router.router)
 app.include_router(insights_router.router)
 app.include_router(auth_router.router)
+app.include_router(auth_tokens_router.router)
 app.include_router(mock_idp_router.router)
 # wiki-qa compatible /api/* + /v1/external/* for external system integration
 app.include_router(external_compat_router.router)

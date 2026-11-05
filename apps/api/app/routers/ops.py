@@ -185,3 +185,36 @@ def ops_dashboard(
         result["mcp_queries"] = {"error": str(exc)}
 
     return result
+
+
+_CRON_STALE_SEC = 15 * 60
+
+
+@router.get("/cron")
+def ops_cron(principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    """Host crontab jobs and their last-run state, from logs/cron_status.json.
+
+    The file is written on the host by scripts/cron_snapshot.py (the api container cannot
+    see the host crontab). `snapshot_stale` means the snapshot job itself stopped running.
+    """
+    import json
+    import os
+    from pathlib import Path
+
+    path = Path(os.getenv("LOG_DIR", "/app/logs")) / "cron_status.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {
+            "available": False,
+            "hint": "logs/cron_status.json 없음 — 호스트 crontab에 scripts/cron_snapshot.py를 5분 주기로 등록하세요.",
+        }
+    except Exception as e:  # noqa: BLE001
+        return {"available": False, "hint": f"cron_status.json 읽기 실패: {e}"}
+    age = max(0, int(datetime.now(timezone.utc).timestamp() - path.stat().st_mtime))
+    return {
+        "available": True,
+        "snapshot_age_sec": age,
+        "snapshot_stale": age > _CRON_STALE_SEC,
+        **data,
+    }

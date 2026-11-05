@@ -56,5 +56,37 @@ python3 scripts/issue_system_token.py --name insight-ops@v1.4 --rotate    # 기�
 
 ## 5. 주의
 
-- `config/auth.json`은 `.gitignore`에 올렸지만, **이미 git이 추적 중인 파일이라 ignore가 적용되지 않는다.** 운영자가 `git rm --cached config/auth.json`으로 추적을 끊을지 결정한다(배포가 이 파일을 저장소에서 가져가는지 확인 후). 토큰 값을 커밋하지 않는다. 형식 예시는 `config/auth.json.example`.
+- `config/auth.json`은 `.gitignore`에 있고 git 추적에서도 제외됐다(PR #18). 토큰 값을 커밋하지 않는다. 형식 예시는 `config/auth.json.example`. 추적 해제 커밋을 서버에서 `git pull`하면 서버의 파일이 삭제될 수 있으니 pull 전에 백업한다.
 - 토큰을 로그·티켓·채팅에 남기지 않는다. 유출 시 즉시 `--revoke`.
+
+## 6. admin 화면에서 토큰 발급 (admin.html "API 토큰 발급")
+
+`config/auth.json`은 api 컨테이너에 읽기 전용으로 마운트돼 있어 화면에서는 고칠 수 없다. 화면(`/v1/auth/tokens`)은
+별도 저장소 `data/auth_tokens.json`을 쓴다.
+
+- **해시만 저장:** 파일에는 토큰의 sha256 해시만 남는다. 토큰 원문은 발급 응답에 **한 번만** 나오고 다시 볼 수 없다
+  (목록에는 이름·롤·출처·지문만). 같은 파일을 직접 편집해 토큰을 넣을 수는 없다(해시 키만 읽는다).
+- **조건:** admin 롤 필요. **`AUTH_MODE=off`에서는 발급·회수가 409로 막힌다**(누구나 접근 가능한 상태에서 토큰을
+  미리 만들 수 없게). 그래서 첫 admin 토큰은 호스트에서 만든다:
+  `python3 scripts/issue_system_token.py --name <이름> --roles admin --allow-privileged` → `AUTH_MODE=apikey`로 켠 뒤
+  그 토큰으로 화면에 로그인해 나머지를 발급한다.
+- **롤:** 기본 author. senior/admin은 `allow_privileged` 확인이 필요하고, `<시스템>@<판>` 형식 이름에는 줄 수 없다.
+- **교체/회수:** 같은 이름은 `rotate`를 켜야 교체(기존 토큰은 즉시 폐기), 회수는 즉시 반영된다(재시작 불필요).
+  `config/auth.json`·환경변수 토큰은 화면에서 조회만 되며 회수는 호스트에서 `issue_system_token.py --revoke`로 한다.
+  자기 자신의 토큰은 회수할 수 없다(잠김 방지).
+- 로그에는 이름·롤·발급자·지문만 남고 토큰은 남지 않는다.
+
+## 7. 크론 작업 상태 표시 (admin.html "크론 작업 상태")
+
+api 컨테이너는 호스트 crontab을 볼 수 없다. 호스트에서 스냅샷 스크립트를 5분 주기로 등록하면 `logs/cron_status.json`이
+갱신되고 화면이 이를 읽는다(`GET /v1/ops/cron`, admin).
+
+```
+*/5 * * * * /home/citec/dev/citec-kb/scripts/cron_snapshot.py >> /home/citec/dev/citec-kb/logs/cron_snapshot.log 2>&1
+```
+
+- 상태: `running` / `ok` / `failed` / `missed` / `unknown`. cron은 종료 코드를 남기지 않으므로 `failed`는 로그 끝의
+  오류 표식(❌, Traceback, ERROR, 실패)으로 추정한 값이고, `missed`는 직전 예정 시각 이후 로그가 갱신되지 않았다는 뜻이다.
+  `>> 파일` 리다이렉트가 없는 job은 `unknown`.
+- 수행이력은 스크립트가 `<이름>_<STAMP>.log`로 남기는 최근 5건(`ingest_*.log`, `confluence_sync_*.log` 등)을 보여준다.
+- 스냅샷이 15분 넘게 갱신되지 않으면 화면에 "갱신 중단 의심"이 표시된다. 스냅샷 파일이 없으면 등록 안내가 나온다.

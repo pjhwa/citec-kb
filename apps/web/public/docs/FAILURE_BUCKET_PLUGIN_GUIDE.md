@@ -354,6 +354,10 @@ curl -s -X POST $KB/v1/failure-buckets/<id>/restore
   된다. 초기값은 `insight-ops`, `agent-room`. 목록에 없으면 `"human"`이고, 형식이 어긋나거나(`@`가 있는데
   패턴과 다름) 목록에 없는 시스템 이름이면 `created_by_warning`이 붙는다. **거부하지 않는다.** 사람 이름이나
   이메일(`someone@example.com`)에는 경고가 없다.
+  **admin 화면 편집:** `admin.html`의 "시스템 등록자 허용 목록"에서 조회·추가·제거한다(admin 롤, API는
+  `GET/POST/DELETE /v1/failure-buckets/system-registrants`). config가 읽기 전용이라 첫 편집부터
+  `data/system_registrants.json`에 저장되며 이 파일이 `config/system_registrants.json`보다 우선한다. 파일이
+  깨져 있으면 config 기본값으로 돌아간다. 목록에서 빼도 기존 행은 바뀌지 않는다(이후 등록만 human + 경고).
 - **중복 처리:** 응답에 `possible_duplicate_of`가 있으면 재등록하지 않고 refine으로 처리한다. 서버가 막지는
   않는다.
 - **멱등:** 같은 `created_by` + `evidence_ref` + `bucket_name`의 활성 bucket이 이미 있으면 새 행 없이 기존

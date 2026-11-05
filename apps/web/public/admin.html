@@ -230,6 +230,74 @@
       <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
     </table>
   </div>
+
+  <div class="card" style="margin-top:12px" id="regCard">
+    <div class="job-top">
+      <strong>시스템 등록자 허용 목록 (failure bucket)</strong>
+      <span id="regSource" class="badge na">…</span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">
+      created_by가 <code>&lt;시스템&gt;@&lt;판&gt;</code> 형식이고 시스템 이름이 이 목록에 있으면 <code>registrant_kind=system</code>으로 분류됩니다.
+      목록 밖 이름은 거부되지 않고 human + 경고로 처리됩니다. 변경은 즉시(캐시 갱신 후) 반영되며 admin 권한이 필요합니다.
+      기본값은 <code>config/system_registrants.json</code>, 첫 편집부터 <code>data/system_registrants.json</code>이 우선합니다.
+    </p>
+    <table class="tbl">
+      <thead><tr><th>시스템 이름</th><th>최근 24h 등록</th><th></th></tr></thead>
+      <tbody id="regBody"><tr><td colspan="3" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">
+      <input type="text" id="regNew" maxlength="64" placeholder="새 시스템 이름 (예: insight-ops)" style="flex:1;min-width:200px"/>
+      <button type="button" id="regAdd">추가</button>
+      <span id="regMsg" class="meta"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px" id="cronCard">
+    <div class="job-top">
+      <strong>크론 작업 상태 (호스트 crontab)</strong>
+      <span id="cronSnap" class="meta">…</span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">
+      호스트의 <code>scripts/cron_snapshot.py</code>가 5분마다 기록한 <code>logs/cron_status.json</code>을 보여줍니다.
+      종료 코드는 cron이 남기지 않으므로 <b>failed</b>는 로그 끝의 오류 표식(❌, Traceback, ERROR 등)으로 추정한 값이고,
+      <b>missed</b>는 직전 예정 시각 이후 로그가 갱신되지 않았다는 뜻입니다.
+    </p>
+    <table class="tbl">
+      <thead><tr><th>상태</th><th>스케줄</th><th>작업</th><th>직전 예정</th><th>로그 갱신</th><th>마지막 출력</th></tr></thead>
+      <tbody id="cronBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+    <span id="cronMsg" class="meta"></span>
+  </div>
+
+  <div class="card" style="margin-top:12px" id="tokCard">
+    <div class="job-top">
+      <strong>API 토큰 발급</strong>
+      <span id="tokMode" class="badge na">…</span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">
+      토큰은 발급 직후 <b>한 번만</b> 표시되며 서버에는 해시만 저장됩니다. 기본 롤은 author(시스템 등록자용)입니다.
+      senior/admin은 사람용이라 별도 확인이 필요합니다. AUTH_MODE=off에서는 발급이 막혀 있습니다(첫 admin 토큰은 호스트에서
+      <code>scripts/issue_system_token.py</code>, 절차는 docs/AUTH_ENABLEMENT.md). config/auth.json·환경변수 토큰은 조회만 가능합니다.
+    </p>
+    <table class="tbl">
+      <thead><tr><th>이름</th><th>롤</th><th>출처</th><th>지문</th><th>발급</th><th></th></tr></thead>
+      <tbody id="tokBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center">
+      <input type="text" id="tokName" maxlength="128" placeholder="이름 (예: insight-ops@v1.4)" style="flex:2;min-width:200px"/>
+      <select id="tokRole"><option value="author">author</option><option value="viewer">viewer</option><option value="senior">senior</option><option value="admin">admin</option></select>
+      <input type="text" id="tokNote" maxlength="300" placeholder="메모 (선택)" style="flex:2;min-width:140px"/>
+      <label class="toggle"><input type="checkbox" id="tokRotate"/> 기존 토큰 교체</label>
+      <button type="button" id="tokIssue">발급</button>
+    </div>
+    <div id="tokResult" style="display:none;margin-top:8px;padding:8px;border:1px solid var(--border);border-radius:8px">
+      <div class="meta">아래 토큰은 이 화면에서만 보입니다. 지금 복사해 안전한 곳에 보관하세요.</div>
+      <code id="tokValue" style="word-break:break-all;user-select:all"></code>
+      <button type="button" class="ghost" id="tokCopy">복사</button>
+      <button type="button" class="ghost" id="tokHide">닫기</button>
+    </div>
+    <span id="tokMsg" class="meta"></span>
+  </div>
 </div>
 <script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
@@ -816,13 +884,147 @@ $("synAll").onchange = (ev) => {
 renderSynTabs();
 refreshSynonyms();
 
-$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); };
+const REG_API = "/v1/failure-buckets/system-registrants";
+async function regDetail(r) {
+  try { const j = await r.json(); return typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail || j); }
+  catch (e) { return "HTTP " + r.status; }
+}
+function renderRegistrants(d) {
+  badge($("regSource"), d.source === "override" ? true : null, d.source === "override" ? "data/ 오버라이드" : "config 기본값");
+  const counts = d.counts_24h;
+  const names = d.systems || [];
+  $("regBody").innerHTML = names.length
+    ? names.map((n) => '<tr><td><code>' + esc(n) + '</code></td><td>' +
+        (counts ? (counts[n] || 0) : "—") + '</td><td><button type="button" class="ghost regDel" data-name="' + esc(n) + '">제거</button></td></tr>').join("")
+    : '<tr><td colspan="3" class="meta">등록된 시스템 없음 — 모든 시스템 형식 created_by가 human + 경고로 처리됩니다.</td></tr>';
+  const unlisted = counts ? Object.keys(counts).filter((k) => !names.includes(k)) : [];
+  $("regMsg").textContent = (d.updated_by ? "마지막 변경: " + d.updated_by + " · " + fmtTs(d.updated_at) : "") +
+    (unlisted.length ? " · 목록 밖 24h 등록: " + unlisted.map((k) => k + "(" + counts[k] + ")").join(", ") : "");
+}
+async function refreshRegistrants() {
+  try {
+    const r = await fetch(REG_API);
+    renderRegistrants(await readJson(r, REG_API));
+  } catch (e) { $("regBody").innerHTML = '<tr><td colspan="3" class="meta">' + esc(String(e)) + '</td></tr>'; }
+}
+async function regMutate(method, url, body) {
+  const r = await CitecAuth.apiFetch(url, body ? { method, body } : { method });
+  if (r.status === 401 || r.status === 403) { $("regMsg").textContent = "관리자 권한 필요 (로그인 후 admin 역할 필요)"; return; }
+  if (!r.ok) { $("regMsg").textContent = await regDetail(r); return; }
+  renderRegistrants(await readJson(r, url));
+}
+$("regAdd").onclick = async () => {
+  const name = $("regNew").value.trim();
+  if (!name) return;
+  await regMutate("POST", REG_API, { name });
+  $("regNew").value = "";
+};
+$("regNew").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("regAdd").click(); });
+$("regCard").addEventListener("click", async (ev) => {
+  const b = ev.target.closest(".regDel");
+  if (!b) return;
+  if (!confirm("'" + b.dataset.name + "'을(를) 허용 목록에서 제거할까요?\n이 이름의 created_by는 이후 human + 경고로 분류됩니다(기존 행은 그대로).")) return;
+  await regMutate("DELETE", REG_API + "/" + encodeURIComponent(b.dataset.name));
+});
+
+function cronClass(st) {
+  return st === "ok" ? "ok" : st === "failed" || st === "missed" ? "bad" : st === "running" ? "warn" : "na";
+}
+async function refreshCron() {
+  try {
+    const r = await CitecAuth.apiFetch("/v1/ops/cron");
+    if (r.status === 401 || r.status === 403) {
+      $("cronBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
+      return;
+    }
+    const d = await readJson(r, "/v1/ops/cron");
+    if (!d.available) {
+      $("cronSnap").textContent = "스냅샷 없음";
+      $("cronBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(d.hint || "") + '</td></tr>';
+      return;
+    }
+    $("cronSnap").textContent = "스냅샷 " + fmtTs(d.generated_at) + " (" + Math.round(d.snapshot_age_sec / 60) + "분 전)" +
+      (d.snapshot_stale ? " — 갱신 중단 의심" : "") + (d.host ? " · " + d.host : "");
+    $("cronSnap").style.color = d.snapshot_stale ? "var(--bad, #c0392b)" : "";
+    const jobs = d.jobs || [];
+    $("cronBody").innerHTML = jobs.length ? jobs.map((j) => {
+      const hist = (j.history || []).length
+        ? '<details><summary class="meta">최근 실행 ' + j.history.length + '건</summary>' + j.history.map((h) =>
+            '<div class="meta">' + (h.error ? "❌ " : "") + esc(h.file) + " · " + fmtTs(h.mtime) + " · " + esc(h.last_line) + '</div>').join("") + '</details>'
+        : "";
+      return '<tr><td><span class="badge ' + cronClass(j.status) + '">' + esc(j.status) + '</span></td>' +
+        '<td><code>' + esc(j.schedule) + '</code></td>' +
+        '<td title="' + esc(j.command) + '">' + esc(j.script || j.command.slice(0, 40)) + '</td>' +
+        '<td class="meta">' + fmtTs(j.expected_last_run) + '</td>' +
+        '<td class="meta">' + fmtTs(j.log_mtime) + '</td>' +
+        '<td class="meta">' + esc((j.last_lines || []).slice(-1)[0] || "—") + hist + '</td></tr>';
+    }).join("") : '<tr><td colspan="6" class="meta">등록된 crontab 항목 없음</td></tr>';
+    $("cronMsg").textContent = "";
+  } catch (e) { $("cronBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(String(e)) + '</td></tr>'; }
+}
+refreshRegistrants();
+refreshCron();
+
+const TOK_API = "/v1/auth/tokens";
+async function refreshTokens() {
+  try {
+    const r = await CitecAuth.apiFetch(TOK_API);
+    if (r.status === 401 || r.status === 403) {
+      $("tokBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
+      return;
+    }
+    const d = await readJson(r, TOK_API);
+    badge($("tokMode"), d.enforced, d.enforced ? "인증 강제" : "AUTH_MODE=off (발급 불가)");
+    $("tokIssue").disabled = !d.enforced;
+    const t = d.tokens || [];
+    $("tokBody").innerHTML = t.length ? t.map((x) =>
+      '<tr><td>' + esc(x.name) + '</td><td>' + esc((x.roles || []).join(",")) + '</td><td>' + esc(x.source) +
+      '</td><td class="meta">' + esc(x.fingerprint || "—") + '</td><td class="meta">' +
+      (x.created_at ? esc(x.created_by || "") + " · " + fmtTs(x.created_at) : "—") + (x.note ? " · " + esc(x.note) : "") +
+      '</td><td>' + (x.source === "admin" ? '<button type="button" class="ghost tokDel" data-name="' + esc(x.name) + '">회수</button>' : "") +
+      '</td></tr>').join("") : '<tr><td colspan="6" class="meta">발급된 토큰 없음</td></tr>';
+  } catch (e) { $("tokBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(String(e)) + '</td></tr>'; }
+}
+$("tokIssue").onclick = async () => {
+  const name = $("tokName").value.trim();
+  if (!name) return;
+  const role = $("tokRole").value;
+  const privileged = role === "senior" || role === "admin";
+  if (privileged && !confirm(role + " 롤 토큰은 사람용 권한입니다(retire/발급 등). 정말 발급할까요?")) return;
+  $("tokMsg").textContent = "발급 중…";
+  const r = await CitecAuth.apiFetch(TOK_API, { method: "POST", body: {
+    name, roles: [role], allow_privileged: privileged, note: $("tokNote").value.trim() || null, rotate: $("tokRotate").checked } });
+  if (r.status === 401 || r.status === 403) { $("tokMsg").textContent = "관리자 권한 필요"; return; }
+  if (!r.ok) { $("tokMsg").textContent = await regDetail(r); return; }
+  const d = await readJson(r, TOK_API);
+  $("tokValue").textContent = d.token;
+  $("tokResult").style.display = "block";
+  $("tokMsg").textContent = d.name + " 발급 완료" + (d.rotated ? " (기존 토큰 폐기됨)" : "");
+  $("tokName").value = ""; $("tokNote").value = ""; $("tokRotate").checked = false;
+  refreshTokens();
+};
+$("tokHide").onclick = () => { $("tokValue").textContent = ""; $("tokResult").style.display = "none"; };
+$("tokCopy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("tokValue").textContent); $("tokMsg").textContent = "복사됨"; }
+  catch (e) { $("tokMsg").textContent = "복사 실패 — 값을 직접 선택해 복사하세요"; }
+};
+$("tokCard").addEventListener("click", async (ev) => {
+  const b = ev.target.closest(".tokDel");
+  if (!b) return;
+  if (!confirm("'" + b.dataset.name + "' 토큰을 회수할까요? 즉시 사용할 수 없게 됩니다.")) return;
+  const r = await CitecAuth.apiFetch(TOK_API + "/" + encodeURIComponent(b.dataset.name), { method: "DELETE" });
+  $("tokMsg").textContent = r.ok ? b.dataset.name + " 회수됨" : await regDetail(r);
+  refreshTokens();
+});
+refreshTokens();
+
+$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); };
 
 let _timer = null;
 function scheduleAuto() {
   if (_timer) clearInterval(_timer);
   if (!$("chkAuto").checked) return;
-  _timer = setInterval(refresh, 10000);
+  _timer = setInterval(() => { refresh(); refreshCron(); }, 10000);
 }
 $("chkAuto").onchange = scheduleAuto;
 
