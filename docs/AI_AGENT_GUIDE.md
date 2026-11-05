@@ -359,7 +359,16 @@ See §6.3 for the full taxonomy and when to use each:
 가 정본이다. 플러그인 개발자용 상세 지침은 [FAILURE_BUCKET_PLUGIN_GUIDE.md](./FAILURE_BUCKET_PLUGIN_GUIDE.md).
 
 - `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)` — 새 실패 패턴 등록, 즉시 검색 노출. `fb_domain`/`evidence_ref`는 필수(빈 값이면 400) — `evidence_ref`는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(`CITECTS-2481`, `capture:....pcapng#frame=4821` 등)여야 한다(알려진 접두어와 다르면 응답에 `evidence_ref_warning`). 응답에 `possible_duplicate_of`가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 `kb_refine_failure_bucket`으로 정정한다. 등록 응답의 `registrant_kind`(`system`\|`human`), `created_by_warning`, `evidence_ref_note`(`insight:`/`agent-room:`만 쓴 경우 "열람 제약 있음, `confluence:` 병기 권장")는 거부가 아닌 안내이고, 같은 `created_by`+`evidence_ref`+`bucket_name` 재시도는 `already_registered: true`로 기존 행을 돌려준다
-- `kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다. `environment`를 채우면 다른 환경으로 태깅된 버킷은 후보에서 제외(태그 없는 버킷은 계속 후보에 남음)
+- `kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다.
+  **매칭 규칙 (2026-11-05)** — 판정은 판별 신호 **하나씩**이다. 같은 말로 보는 것은 등록된 한/영 용어 그룹뿐이다
+  (쿼럼=quorum, 펜싱=fencing, 스플릿 브레인=split-brain, 재부팅=reboot, 타임아웃=timeout 등 + 승인된 검색 동의어). 의미가
+  비슷하다는 이유로는 일치시키지 않는다(그룹에 없는 말은 일치하지 않는다). 증상(`symptom`) 글도 같은 정규화를 거쳐 일치에 쓰인다.
+  응답에는 `match_evidence`(일치한 신호마다 겹친 단어, 표기가 달라 그룹으로 일치시킨 것은 `via_term_group`·`observed_as`↔`signal_as`),
+  `contradicted_evidence`, `label_basis`(일치 n/전체, 계산 분모, 버킷 confidence, **조건부/가능에 필요한 일치 수**, 아직 확인 안 된 신호)와
+  최상위 `label_rules`가 들어 있다. 라벨 기준: `score = 0.6*일치비율 + 0.4*confidence - 0.5*반증수`, **가능** score≥0.7이고 일치≥1,
+  **조건부** score≥0.4, 그 외·반증 일치는 **비권고**. confidence가 기본 0.5(미검증)인 버킷은 '가능'에 계산 대상 신호가 모두 일치해야 하므로
+  여러 신호 버킷에서 1개만 일치하면 비권고다(의도된 보수성 — refine으로 confidence가 오르면 같은 일치 수로도 오른다). 일치 0개 후보가 같은
+  도메인 필터 안에서 낮은 점수로 나올 수 있으니 `matched_signals`가 비면 쓰지 않는다. `fb_domain`을 지정하면 다른 도메인 버킷은 후보에서 빠진다. `environment`를 채우면 다른 환경으로 태깅된 버킷은 후보에서 제외(태그 없는 버킷은 계속 후보에 남음)
 - `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)` — 확인/반박 시 신뢰도 자동 재계산 (self-improving). `environment`는 미지정 시 기존 값 유지, 지정 시 덮어씀 — 등록 시점에 몰랐던 환경을 나중에 소급 태깅할 때 사용
 - `kb_list_failure_buckets(fb_domain=, protocol=, environment=, include_retired=)` / `kb_get_failure_bucket(bucket_id=)` — **목록과 match는 기본으로 활성(active) 버킷만** 돌려준다. retire된 건과 `-test` 시험 등록은 `include_retired=true` 목록과 `kb_get_failure_bucket`(상세)에서만 보인다
 - `kb_retire_failure_bucket(bucket_id=, reason=)` / `kb_restore_failure_bucket(bucket_id=)` — **[쓰기]** 되돌리기. 삭제가 아니라 숨김(검색·매칭·그래프 이웃·집계에서 제외)이며 restore로 복구된다. `reason` 8자 이상, `senior` 이상(인증 켜진 경우). 잘못 등록했으면 새로 등록해서 덮지 않는다

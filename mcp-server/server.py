@@ -2054,6 +2054,27 @@ async def kb_match_failure_bucket(
             f"  matched: {r.get('matched_signals')}\n"
             f"  contradicted: {r.get('contradicted')}"
         )
+        for ev in r.get("match_evidence") or []:
+            words = ", ".join(
+                f"{o['token']}" + (f" (입력 {'/'.join(o['observed_as'])} = 저장 {'/'.join(o['signal_as'])})" if o.get("via_term_group") else "")
+                for o in ev.get("overlap") or []
+            )
+            lines.append(f"  겹친 단어 [{ev.get('signal')}]: {words}")
+        b = r.get("label_basis") or {}
+        if b:
+            need_c, need_p = b.get("matched_needed_for_조건부"), b.get("matched_needed_for_가능")
+            lines.append(
+                f"  판정 근거: 일치 {b.get('matched')}/{b.get('signals_total')} (계산 분모 {b.get('ratio_denominator')}), "
+                f"버킷 confidence={b.get('bucket_confidence')}, 조건부에는 일치 {need_c or '도달 불가'}개, 가능에는 {need_p or '도달 불가'}개 필요"
+            )
+            if b.get("unmatched_signals"):
+                lines.append(f"  아직 확인 안 된 판별 신호: {b.get('unmatched_signals')}")
+        if r.get("confirmation"):
+            c = r["confirmation"]
+            lines.append(f"  사람 확정: 결정 {c.get('decision_id')} [{c.get('effective_status')}] {c.get('verdict') or '판정 대기'}")
+    rules = data.get("label_rules") or {}
+    if rules:
+        lines.append(f"[라벨 기준] {rules.get('labels')} | {rules.get('note')}")
     return "\n".join(lines)
 
 
