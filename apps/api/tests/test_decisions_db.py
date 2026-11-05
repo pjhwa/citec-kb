@@ -344,3 +344,11 @@ def test_search_code_has_no_hardcoded_answers():
     src = pathlib.Path("app/retrieval/search.py").read_text() + pathlib.Path("app/decisions/mirror.py").read_text()
     for needle in ("PIXEL", "80022224", "PISA Station"):
         assert needle not in src
+
+
+def test_failed_evidence_does_not_leave_orphan_proposal(client):
+    before = client.get("/v1/decisions", params={"status": "proposed"}).json()["total"]
+    r = client.post("/v1/decisions", json={"question": "고아 확인?", "options": OPTS, "evidence": [{
+        "quote": "존재하지 않는 문장", "stance": "supports", "option_key": "a", "document_id": _doc()["document_id"]}]})
+    assert r.status_code == 400
+    assert client.get("/v1/decisions", params={"status": "proposed"}).json()["total"] == before

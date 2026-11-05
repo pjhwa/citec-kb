@@ -84,8 +84,15 @@ def create_decision(
         s.add(row)
         s.flush()
         did = row.id
-    for ev in evidence or []:
-        add_evidence(did, added_by=created_by, **ev)
+    try:
+        for ev in evidence or []:
+            add_evidence(did, added_by=created_by, **ev)
+    except Exception:
+        # 근거 검증 실패 시 근거 없는 고아 제안이 남지 않게 방금 만든 제안을 되돌린다(판정 전 행이라 안전).
+        with session_scope() as s:
+            s.execute(DecisionEvidence.__table__.delete().where(DecisionEvidence.decision_id == did))
+            s.execute(Decision.__table__.delete().where(Decision.id == did))
+        raise
     out = get_decision(did)
     out["warnings"] = warnings
     return out
