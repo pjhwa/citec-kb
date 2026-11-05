@@ -129,8 +129,9 @@ root(사실상 그 함수 호출 전체)가 죽었다** — 개별 페이지 실
 
 ## 알려진 한계
 
-- **삭제/비공개 전환 페이지는 탐지하지 않는다.** `lastmodified >` 조건은
-  추가/수정만 잡는다. 별도의 주기적 전체 재조정(reconciliation) 배치가 필요함.
+- **삭제/비공개 전환/이동 페이지는 일일 증분으로는 탐지하지 않는다.** `lastmodified >` 조건은
+  추가/수정만 잡는다(페이지 이동은 수정 시각이 안 바뀔 수 있다 — 라이브 미검증). 주 1회
+  전체 대조 배치(`docs_inventory`, 아래 "주간 전체 대조")가 이를 보완한다.
 - `--dry-run`은 `Source.last_sync_at`을 갱신하지 않으므로 반복 실행해도 항상
   같은(또는 bootstrap) 범위를 재크롤링한다 — 검증용으로만 쓸 것.
 - `--max-pages`/`--root-id`로 범위를 좁힌 실행은 **항상 `last_sync_at`을
@@ -167,3 +168,46 @@ root(사실상 그 함수 호출 전체)가 죽었다** — 개별 페이지 실
   scratch DB(`CONFLUENCE_SYNC_TEST_DATABASE_URL`)를 만들어야 실행됨 — 파일
   상단 docstring에 절차 있음. **절대 운영 `citec_knowledge` DB를 가리키지
   말 것.**
+
+## 주간 전체 대조 (`app.confluence.docs_inventory_cli`, 2026-11-05)
+
+`confluence_docs` / `tech_repo`의 일일 증분은 "위치만 바뀐" 페이지와 "추적 루트 밖으로 나간/삭제된"
+페이지를 잡지 못한다(`confluence_map`에는 `map_inventory`가 있었고 이쪽에는 없었다). 이 배치가 그 틈을 닫는다.
+
+**동작**
+1. 모든 루트를 전부 나열한다(`since=None`, `expand=ancestors`, 50건/호출 → 약 170회 호출). 페이지 본문은 받지 않는다.
+2. 활성 문서(`status=active`)의 `external_id` / `title` / `metadata.ancestor_ids`와 비교한다.
+   - 새 페이지(루트 안으로 이동해 들어온 것 포함), 조상 체인이 다른 페이지(이동), 제목이 다른 페이지(이름 변경)만
+     `get_page_full`로 다시 받아 raw 파일을 쓴다. 나머지는 건드리지 않는다.
+   - 목록에 없는 활성 문서는 `archived`로 바꾸고, 원본 파일을 `<raw>/<source_type>/.archived/`로 **옮긴다**
+     (삭제 아님). `run_ingest`가 raw 파일을 전부 다시 읽어 archived 문서를 되살리므로(원본이 보이면 복구하는
+     기존 동작), 파일을 옮기지 않으면 다음 ingest에서 즉시 되살아난다.
+3. 변경분만 `run_ingest` + `embed_pending_chunks` 한다. `Source.last_sync_at`은 건드리지 않는다.
+
+**보관(archive) 안전장치** — 목록에서의 부재는 목록이 믿을 만할 때만 증거다.
+- 루트 하나라도 검색 오류/페이지네이션 정체가 있으면 보관하지 않는다(`archive_skipped: listing_errors`).
+- 보관 후보가 활성 문서의 5%(`--max-archive-ratio`)를 넘으면 보관하지 않는다(`ratio_exceeded`). 루트 목록 오설정이나
+  Confluence 장애로 인덱스가 대량 보관되는 것을 막는다. 후보는 항상 `would_archive`에 나온다.
+- `--no-archive`로 보관을 끌 수 있다. 되돌리기: 해당 문서 `status`를 `active`로 되돌리고 `.archived/`의 파일을
+  원위치로 옮긴 뒤 ingest. 또는 페이지가 목록에 다시 나타나면 다음 실행이 새 페이지로 다시 받는다.
+- 이 DB에 있는 `confluence_docs`/`tech_repo` 문서 중 현재 루트 목록 밖에서 온 것(과거 다른 경로로 적재)은 후보가 된다.
+  **첫 실행은 반드시 `--dry-run`으로 `would_archive`를 눈으로 확인한다.**
+
+**미확인(운영 첫 dry-run에서 확인)**
+- 검색 API가 `expand=ancestors`를 실제로 지원하는지. 결과에 `ancestors`가 없으면 그 페이지는 이동 여부를 알 수
+  없어 건너뛰고(`skipped_no_ancestors`로 보고), `--allow-full-fetch`를 줄 때만 전부 다시 받는다(사실상 전체 크롤, 수 시간).
+- 페이지 이동이 `lastmodified`를 바꾸는지(바꾸면 일일 증분도 이동을 잡는다).
+
+**운영**
+```bash
+scripts/docs_inventory.sh --dry-run            # 결과 JSON: fetch_by_reason, would_archive, listing_errors, skipped_no_ancestors
+scripts/docs_inventory.sh                      # 실제 반영 (종료코드 1 = 목록/페이지 오류 있음)
+# cron (일일 sync와 같은 flock 파일 → 서로 겹치지 않음), 주 1회 일요일 03:00:
+# 0 3 * * 0 /usr/bin/flock -n /tmp/citec-kb-confluence-sync.lock /path/to/citec-kb/scripts/docs_inventory.sh >> /path/to/citec-kb/logs/cron_docs_inventory.log 2>&1
+```
+옵션: `--sources confluence_docs,tech_repo`(기본 둘 다), `--no-archive`, `--max-archive-ratio R`, `--allow-full-fetch`.
+코드: `apps/api/app/confluence/docs_inventory.py`(`plan_reconcile`은 순수 함수), 테스트 `tests/test_confluence_docs_inventory.py`,
+`tests/test_confluence_docs_inventory_db.py`(scratch DB).
+
+**알려진 별개 문제(이번에 고치지 않음)**: `confluence_map`의 `run_map_inventory`와 일일 `sync`는 archived 처리 후에도 원본
+raw 파일을 그대로 두므로, 다음 `run_ingest`가 archived 문서를 되살릴 수 있다. 위와 같은 방식(파일 옮기기)이 필요한지 확인할 것.

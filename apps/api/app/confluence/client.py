@@ -228,12 +228,17 @@ class ConfluenceClient:
         limit: int = 50,
         client: httpx.AsyncClient | None = None,
         limiter: RateLimiter | None = None,
+        expand: str | None = None,
     ) -> dict[str, Any]:
         """Pages under ancestor_id, optionally lastmodified > since (CQL
         cursor string, see build_incremental_cql). since=None → full
-        bootstrap crawl of everything under the ancestor."""
+        bootstrap crawl of everything under the ancestor. `expand` (e.g.
+        "ancestors") asks the search itself to inline those fields, so a
+        listing can be diffed against the DB without a per-page fetch."""
         cql = build_incremental_cql(ancestor_id, since=since)
-        params = {"cql": cql, "start": start, "limit": limit}
+        params: dict[str, Any] = {"cql": cql, "start": start, "limit": limit}
+        if expand:
+            params["expand"] = expand
         if client is not None:
             return await self._get_with_retry(
                 client, "/rest/api/content/search", params,
