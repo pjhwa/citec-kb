@@ -307,6 +307,8 @@ CITEC_KB_API_KEY 환경 변수가 있을 때만 X-API-Key를 붙인다. 없으�
 
 ## 9. 되돌리기 — retire / restore
 
+> **admin 화면:** `admin.html` → 지식 관리 → "실패 버킷"에서 목록을 열람하고, 항목을 눌러 상세 패널에서 **수정**(PATCH)·**삭제**·**복구**를 한다. 화면의 "삭제"는 이 문서의 retire(소프트 삭제)이며 **영구 삭제 기능은 없다** — 데이터는 남고 복구할 수 있다.
+
 **삭제가 아니라 숨김이다.** 행은 남고, 기본 조회에서만 빠진다. 잘못 숨겼으면 restore로 복구한다.
 
 | 호출 | 롤 | 동작 |
@@ -314,6 +316,8 @@ CITEC_KB_API_KEY 환경 변수가 있을 때만 X-API-Key를 붙인다. 없으�
 | `POST /v1/failure-buckets/{id}/retire` | `senior`, `admin` | 본문 `{"reason": "…"}` — **8자 이상 필수**. 이미 retired면 200과 현재 상태(멱등, 처음 사유 유지). 없는 id는 404 |
 | `POST /v1/failure-buckets/{id}/restore` | `senior`, `admin` | `status=active`로 복구, `retired_*` 비움. 멱등. (`-test` 시험 행에 쓰면 운영으로 **승격**된다) |
 | `POST /v1/failure-buckets/retire-batch` | `admin` | 본문 `{"created_by_prefix": "…", "reason": "…", "dry_run": true}` — 시험 방 정리용. **기본 dry_run**: 대상 건수와 id만 반환. `created_by_prefix`는 3자 이상 |
+| `PATCH /v1/failure-buckets/{id}` | `senior`, `admin` | 부분 수정 — **보낸 필드만** 바뀐다: `bucket_name`, `fb_domain`, `protocol`, `environment`(csp/msp/onprem/hybrid 또는 빈 값), `evidence_ref`, `symptom`, `root_cause`, `recommended_action`, `discriminating_signals`(최소 1개), `counter_signals`. 신뢰도·확인/반박 횟수는 수정 대상이 아니다(refine으로만 누적). 바뀐 필드는 `changed_fields`로, 내용이 바뀌면 검색 인덱스(문서 미러·임베딩)를 다시 만든다. retired는 409(복구 후 수정), 검증 실패는 422 |
+| `GET /v1/failure-buckets?status=retired` | 제한 없음 | `status`는 `active`/`retired`/`test` — 지정하면 `include_retired`보다 우선한다 |
 | MCP | — | `kb_retire_failure_bucket(bucket_id=, reason=)`, `kb_restore_failure_bucket(bucket_id=)`, `kb_list_failure_buckets(include_retired=true)` |
 
 `author`(시스템 등록자 포함)는 retire할 수 없다 — 자기 등록건을 스스로 지우지 못하게 한 의도다. 잘못 등록했다면

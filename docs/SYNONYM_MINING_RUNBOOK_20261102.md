@@ -22,6 +22,18 @@ docker compose exec -T api python -m alembic current   # 20261102_0017 (head)
 
 > **주의 (롤백 순서)**: `git_pull_deploy.sh`의 자동 롤백은 코드만 되돌리고 DB는 되돌리지 않는다. 0017 적용 후 코드를 이전 커밋으로 롤백하면 api 기동 시 `alembic upgrade head`가 "Can't locate revision"으로 실패해 api가 올라오지 않는다. 0017을 지나 롤백해야 하면 **코드를 되돌리기 전에** 새 코드가 떠 있는 상태에서 `docker compose exec -T api python -m alembic downgrade 20261014_0016`을 먼저 실행한다. 마이그레이션 자체가 실패하면 api가 시작되지 않아 자동 롤백이 동작한다.
 
+## 0.5 admin 화면에서 실행 (admin.html → 지식 관리 → "동의어 마이닝")
+
+CLI와 같은 코드(`python -m app.synonyms.cli mine`)를 api 컨테이너 안에서 백그라운드로 실행하고, 진행률·로그·결과를 화면에서 본다.
+**admin 롤 전용**이고 LLM(Fabrix) 호출 비용이 든다. 한 번에 하나만 실행된다(실행 중이면 409).
+
+- 입력: 대상 기간(년), 티켓 수 제한, 배치 크기, 최대 배치 수, "끝나면 후보로 자동 저장"(= `--commit`, 부분 실행이면 건너뜀), "빈 응답 분할 재시도"(`--split-on-empty`, 추가 과금).
+- 결과 파일·로그는 `data/synonym_runs/<run_id>.*`에 남는다(호스트 `./data`가 마운트돼 컨테이너를 다시 만들어도 유지). 자동 저장을 끄고 돌렸다면 결과를 보고 "후보로 가져오기"로 `proposed`에 넣는다.
+- **후보 보기**를 누르면 "동의어 검수" 탭이 그 실행(`run_id`)의 후보만 보여 준다. 승인 전에는 검색에 영향이 없다.
+- 종료 코드는 CLI와 같다: 완료(0), 부분 완료(3: 같은 설정으로 다시 실행하면 실패한 배치만 재시도), 설정 오류(2: LLM 백엔드 미설정 등), 그 외 실패. 서버 재시작으로 끊기면 "중단됨"으로 표시된다(끝난 배치는 체크포인트로 남음).
+- 야간 `restart_api_if_idle.sh`는 마이닝 프로세스(`app.synonyms.cli`)가 돌고 있으면 재시작을 건너뛴다.
+- `AUTH_MODE=off`이면 이 실행 API도 누구나 호출할 수 있다(위 "사전 확인" 참고).
+
 ## 1. 소규모 시험 (운영, dry-run — DB 쓰기 없음)
 
 `--commit`이 없으면 DB에 쓰지 않고 JSON 파일만 만든다. LLM(Fabrix) 호출은 일어난다.

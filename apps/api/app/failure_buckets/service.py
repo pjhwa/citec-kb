@@ -390,12 +390,15 @@ def list_buckets(
     limit: int = 20,
     offset: int = 0,
     include_retired: bool = False,
+    status: Optional[str] = None,
 ) -> dict[str, Any]:
     limit = max(1, min(int(limit), 200))
     offset = max(0, int(offset))
     with session_scope() as session:
         stmt = select(FailureBucket).order_by(FailureBucket.created_at.desc())
-        if not include_retired:
+        if status in (STATUS_ACTIVE, STATUS_RETIRED, STATUS_TEST):
+            stmt = stmt.where(FailureBucket.status == status)  # explicit filter beats include_retired
+        elif not include_retired:
             stmt = stmt.where(FailureBucket.status == STATUS_ACTIVE)
         if fb_domain:
             stmt = stmt.where(FailureBucket.fb_domain == fb_domain)
@@ -463,6 +466,80 @@ def refine_bucket(
         raise RuntimeError(f"failure_bucket {bucket_id} vanished after refine")
     if index:
         result["index"] = index
+    return result
+
+
+_EDITABLE_TEXT = {"bucket_name": 256, "symptom": 4000, "root_cause": 4000, "recommended_action": 4000,
+                  "evidence_ref": 2000, "protocol": 32}
+
+
+class BucketEditError(ValueError):
+    pass
+
+
+def update_bucket(bucket_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+    """Edit descriptive fields of a bucket (admin curation) and re-index its search mirror.
+
+    Only keys present in `changes` are touched. Counts/confidence are never edited here (they
+    follow refine). Retired buckets must be restored first, like refine.
+    """
+    changed: list[str] = []
+    with session_scope() as session:
+        row = session.get(FailureBucket, bucket_id)
+        if not row:
+            raise KeyError(bucket_id)
+        if row.status == STATUS_RETIRED:
+            raise BucketRetiredError(bucket_id)
+
+        for key, limit in _EDITABLE_TEXT.items():
+            if key not in changes or changes[key] is None:
+                continue
+            val = str(changes[key]).strip()
+            if key in ("bucket_name", "evidence_ref") and not val:
+                raise BucketEditError(f"{key}은(는) 비울 수 없습니다.")
+            if len(val) > limit:
+                raise BucketEditError(f"{key}은(는) {limit}자 이하여야 합니다.")
+            new = val or None if key == "protocol" else val
+            if new != getattr(row, key):
+                setattr(row, key, new)
+                changed.append(key)
+        if "fb_domain" in changes and changes["fb_domain"] is not None:
+            val = str(changes["fb_domain"]).strip().lower()
+            if not val or len(val) > 32:
+                raise BucketEditError("fb_domain은(는) 1~32자여야 합니다.")
+            if val != row.fb_domain:
+                row.fb_domain = val
+                changed.append("fb_domain")
+        if "environment" in changes and changes["environment"] is not None:
+            val = str(changes["environment"]).strip().lower() or None
+            if val is not None and val not in _ENVIRONMENTS:
+                raise BucketEditError(f"environment는 {', '.join(_ENVIRONMENTS)} 중 하나이거나 비워야 합니다.")
+            if val != row.environment:
+                row.environment = val
+                changed.append("environment")
+        for key in ("discriminating_signals", "counter_signals"):
+            if key in changes and changes[key] is not None:
+                seen: list[str] = []
+                for x in changes[key]:
+                    x = str(x).strip()
+                    if x and x not in seen:
+                        seen.append(x)
+                if key == "discriminating_signals" and not seen:
+                    raise BucketEditError("discriminating_signals는 최소 1개가 필요합니다.")
+                if seen != list(getattr(row, key) or []):
+                    setattr(row, key, seen)
+                    changed.append(key)
+        session.flush()
+
+    index = _index_bucket(bucket_id) if changed else None
+    result = get_bucket(bucket_id)
+    if result is None:
+        raise RuntimeError(f"failure_bucket {bucket_id} vanished after update")
+    result["changed_fields"] = changed
+    if index:
+        result["index"] = index
+    if "fb_domain" in changed and result["fb_domain"] not in _known_fb_domains():
+        result["fb_domain_warning"] = f"fb_domain='{result['fb_domain']}'은(는) 문서화된 도메인 목록에 없습니다(저장은 됨)."
     return result
 
 

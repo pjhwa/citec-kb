@@ -28,13 +28,13 @@ def _fake_set_status(result=None, exc=None, seen=None):
 def test_list_passes_filters(monkeypatch):
     seen = {}
 
-    def fake(*, status=None, limit=100, offset=0):
-        seen.update(status=status, limit=limit, offset=offset)
+    def fake(*, status=None, limit=100, offset=0, run_id=None):
+        seen.update(status=status, limit=limit, offset=offset, run_id=run_id)
         return {"total": 0, "items": []}
 
     monkeypatch.setattr(store, "list_candidates", fake)
-    res = _client().get("/v1/lexicon/synonym-candidates?status=proposed&limit=5")
-    assert res.status_code == 200 and seen == {"status": "proposed", "limit": 5, "offset": 0}
+    res = _client().get("/v1/lexicon/synonym-candidates?status=proposed&limit=5&run_id=adm-1")
+    assert res.status_code == 200 and seen == {"status": "proposed", "limit": 5, "offset": 0, "run_id": "adm-1"}
 
 
 def test_list_rejects_bad_status():
@@ -153,7 +153,7 @@ def test_auth_enforced(monkeypatch, enforced):
     seen = {}
     monkeypatch.setattr(store, "set_status", _fake_set_status(seen=seen))
     monkeypatch.setattr(store, "upsert_candidates", _fake_upsert())
-    monkeypatch.setattr(store, "list_candidates", lambda *, status=None, limit=100, offset=0: {"total": 0, "items": []})
+    monkeypatch.setattr(store, "list_candidates", lambda *, status=None, limit=100, offset=0, run_id=None: {"total": 0, "items": []})
     monkeypatch.setattr(rt, "reset_cache", lambda: None)
     c = _client()
     base = "/v1/lexicon/synonym-candidates"

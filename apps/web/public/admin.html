@@ -5,164 +5,280 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Admin / Ops — CI-TEC Knowledge</title>
 <link rel="stylesheet" href="/css/theme.css"/>
-<style>
-  /* Design tokens. Fonts come from theme.css (--font-sans / --font-mono). Status colors meet
-     WCAG AA text contrast on their tinted backgrounds, and every status also carries an icon
-     and a text label (never color alone). */
-  :root {
-    --bg:#f4f6fa; --card:#fff; --surface-2:#f8fafc; --text:#0f172a; --muted:#475569; --border:#e2e8f0;
-    --primary:#1428A0; --primary-soft:#e8ecfb;
-    --ok:#047857; --ok-bg:#d1fae5; --bad:#b91c1c; --bad-bg:#fee2e2; --warn:#92400e; --warn-bg:#fef3c7; --na-bg:#eef2f7;
-    --radius:12px; --gap:16px;
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
-  body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; }
-  a { color:var(--primary); }
-  :focus-visible { outline:2px solid var(--primary); outline-offset:2px; border-radius:4px; }
+<script>try{var t=localStorage.getItem("adminTheme");if(!t)t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 
-  /* ---- shell: sticky section nav + content ---- */
-  .shell { display:grid; grid-template-columns:184px minmax(0,1fr); gap:28px; max-width:1480px; margin:0 auto; padding:20px 20px 72px; }
-  .side { position:sticky; top:16px; align-self:start; display:flex; flex-direction:column; gap:2px; }
-  .side-title { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 6px 10px; }
-  .side a { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; color:var(--muted); text-decoration:none; font-weight:600; }
-  .side a:hover { background:#e9edf5; color:var(--text); }
+<style>
+  /* ===== Design tokens (light / dark). Fonts: theme.css (--font-sans / --font-mono). =====
+     Status colors keep AA text contrast on their tints in both themes; every status also has an icon + label. */
+  :root {
+    color-scheme: light;
+    --bg:#f3f5f9; --card:#fff; --card-2:#f7f9fc; --text:#0f172a; --muted:#566275; --border:#e3e8ef; --border-strong:#cfd7e3;
+    --primary:#2340d8; --primary-h:#1b32b0; --primary-soft:#eaeefd; --on-primary:#fff;
+    --ok:#047857; --ok-bg:#d9f5e8; --bad:#b42318; --bad-bg:#fde8e6; --warn:#8a4b0a; --warn-bg:#fdf1d3; --na-bg:#edf0f5; --dot-warn:#d97706;
+    --shadow:0 1px 2px rgba(15,23,42,.05), 0 6px 18px rgba(15,23,42,.05); --shadow-lg:0 20px 50px rgba(2,6,23,.25);
+    --radius:16px; --radius-sm:10px; --gap:16px;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0a0f1e; --card:#111a2f; --card-2:#16213a; --text:#e7ecf6; --muted:#9aa8bf; --border:#233049; --border-strong:#33425f;
+    --primary:#8aa0ff; --primary-h:#a5b6ff; --primary-soft:#1a2650; --on-primary:#0a0f1e;
+    --ok:#4ade9d; --ok-bg:#0f3a2b; --bad:#ff8f86; --bad-bg:#431a1c; --warn:#fbbf6a; --warn-bg:#40300f; --na-bg:#1b2740; --dot-warn:#fbbf6a;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.25); --shadow-lg:0 20px 50px rgba(0,0,0,.6);
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; scroll-padding-top:20px; }
+  body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.55; }
+  a { color:var(--primary); }
+  :focus-visible { outline:2px solid var(--primary); outline-offset:2px; border-radius:6px; }
+  .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  svg.i { width:1.15em; height:1.15em; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-.2em; flex:none; }
+
+  /* ===== shell ===== */
+  .shell { display:grid; grid-template-columns:208px minmax(0,1fr); gap:32px; max-width:1560px; margin:0 auto; padding:24px 24px 80px; }
+  .side { position:sticky; top:20px; align-self:start; display:flex; flex-direction:column; gap:4px; }
+  .brand { display:flex; align-items:center; gap:10px; padding:2px 10px 14px; font-weight:700; letter-spacing:-.01em; }
+  .brand .logo { width:30px; height:30px; border-radius:9px; background:linear-gradient(135deg,var(--primary),#7c3aed); display:grid; place-items:center; color:#fff; font-size:13px; }
+  .side a { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:var(--radius-sm); color:var(--muted); text-decoration:none; font-weight:600; position:relative; }
+  .side a:hover { background:var(--na-bg); color:var(--text); }
   .side a.is-active { background:var(--primary-soft); color:var(--primary); }
-  .side a .dot { width:8px; height:8px; border-radius:50%; background:#cbd5e1; flex:none; }
-  .side a.is-bad .dot { background:var(--bad); } .side a.is-warn .dot { background:#d97706; } .side a.is-ok .dot { background:var(--ok); }
+  .side a .st { margin-left:auto; width:8px; height:8px; border-radius:50%; background:transparent; }
+  .side a.is-bad .st { background:var(--bad); } .side a.is-warn .st { background:var(--dot-warn); } .side a.is-ok .st { background:var(--ok); }
+  .side-foot { margin-top:14px; padding:12px 10px 0; border-top:1px solid var(--border); display:flex; flex-direction:column; gap:10px; }
   main { min-width:0; }
 
-  .page-h { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
-  h1 { font-size:24px; line-height:1.25; margin:0; letter-spacing:-.01em; }
-  .sub { color:var(--muted); font-size:13px; margin:4px 0 0; }
-  .toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-
-  section.sec { margin-bottom:36px; }
-  .sec-h { margin:0 0 12px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
-  .sec-h h2 { font-size:17px; margin:0; letter-spacing:-.005em; }
-  .sec-h p { margin:0; color:var(--muted); font-size:12.5px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:var(--gap); align-items:start; }
+  .page-h { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+  h1 { font-size:26px; line-height:1.2; margin:0; letter-spacing:-.02em; }
+  .sub { color:var(--muted); font-size:13px; margin:6px 0 0; }
+  .toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  section.sec { margin-bottom:44px; }
+  .sec-h { margin:0 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .sec-h h2 { font-size:18px; margin:0; letter-spacing:-.01em; display:flex; align-items:center; gap:8px; }
+  .sec-h p { margin:0; color:var(--muted); font-size:12.5px; flex:1 1 240px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:var(--gap); align-items:start; }
   .stack { display:flex; flex-direction:column; gap:var(--gap); }
 
-  /* ---- overview: banner + KPI tiles ---- */
-  .banner { display:flex; align-items:center; gap:12px; padding:14px 18px; border-radius:var(--radius); border:1px solid; font-weight:600; margin-bottom:var(--gap); }
-  .banner .ico { font-size:20px; line-height:1; }
-  .banner small { display:block; font-weight:500; opacity:.9; }
-  .banner.ok { background:var(--ok-bg); color:var(--ok); border-color:#a7f3d0; }
-  .banner.warn { background:var(--warn-bg); color:var(--warn); border-color:#fcd34d; }
-  .banner.bad { background:var(--bad-bg); color:var(--bad); border-color:#fca5a5; }
+  /* ===== overview ===== */
+  .banner { display:flex; align-items:center; gap:14px; padding:16px 20px; border-radius:var(--radius); border:1px solid; font-weight:700; font-size:15px; margin-bottom:var(--gap); box-shadow:var(--shadow); }
+  .banner .ico { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-size:17px; background:rgba(255,255,255,.55); flex:none; }
+  :root[data-theme="dark"] .banner .ico { background:rgba(255,255,255,.1); }
+  .banner small { display:block; font-weight:500; font-size:12.5px; opacity:.9; }
+  .banner.ok { background:var(--ok-bg); color:var(--ok); border-color:color-mix(in srgb,var(--ok) 30%,transparent); }
+  .banner.warn { background:var(--warn-bg); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 30%,transparent); }
+  .banner.bad { background:var(--bad-bg); color:var(--bad); border-color:color-mix(in srgb,var(--bad) 30%,transparent); }
   .banner.na { background:var(--na-bg); color:var(--muted); border-color:var(--border); }
-  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:var(--gap); }
-  .kpi { background:var(--card); border:1px solid var(--border); border-left:4px solid #cbd5e1; border-radius:var(--radius); padding:12px 14px; }
-  .kpi.ok { border-left-color:var(--ok); } .kpi.bad { border-left-color:var(--bad); } .kpi.warn { border-left-color:#d97706; }
-  .kpi-l { font-size:12px; font-weight:600; color:var(--muted); }
-  .kpi-v { font-size:22px; font-weight:700; line-height:1.3; letter-spacing:-.01em; }
-  .kpi-v::before { font-size:15px; margin-right:6px; vertical-align:2px; }
-  .kpi.ok .kpi-v::before { content:"✓"; color:var(--ok); } .kpi.bad .kpi-v::before { content:"✕"; color:var(--bad); }
-  .kpi.warn .kpi-v::before { content:"▲"; color:#b45309; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:var(--gap); }
+  .kpi { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; box-shadow:var(--shadow); position:relative; overflow:hidden; }
+  .kpi::after { content:""; position:absolute; left:0; right:0; top:0; height:3px; background:var(--border-strong); }
+  .kpi.ok::after { background:var(--ok); } .kpi.bad::after { background:var(--bad); } .kpi.warn::after { background:var(--dot-warn); }
+  .kpi-l { font-size:12px; font-weight:600; color:var(--muted); display:flex; align-items:center; gap:6px; }
+  .kpi-v { font-size:23px; font-weight:700; line-height:1.3; letter-spacing:-.02em; margin-top:2px; }
+  .kpi-v::before { font-size:14px; margin-right:6px; vertical-align:3px; }
+  .kpi.ok .kpi-v::before { content:"✓"; color:var(--ok); } .kpi.bad .kpi-v::before { content:"✕"; color:var(--bad); } .kpi.warn .kpi-v::before { content:"▲"; color:var(--dot-warn); }
   .kpi-s { font-size:12px; color:var(--muted); min-height:1.4em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .kpi .ring { position:absolute; right:14px; top:16px; width:38px; height:38px; border-radius:50%; background:conic-gradient(var(--ring,var(--ok)) calc(var(--pct,0)*1%), var(--na-bg) 0); display:none; }
+  .kpi .ring::after { content:""; position:absolute; inset:6px; border-radius:50%; background:var(--card); }
+  .kpi.has-ring .ring { display:block; } .kpi.warn .ring { --ring:var(--dot-warn); } .kpi.bad .ring { --ring:var(--bad); }
 
-  /* ---- cards ---- */
-  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; min-width:0; overflow-x:auto; }
-  .card > strong:first-child, .card > .job-top > strong:first-child { font-size:14.5px; font-weight:700; display:block; }
-  .card > strong:first-child { margin-bottom:8px; }
-  .card.fold > :first-child { cursor:pointer; position:relative; padding-right:22px; user-select:none; }
-  .card.fold > :first-child::after { content:"▾"; position:absolute; right:0; top:0; color:var(--muted); transition:transform .15s; }
-  .card.fold.is-collapsed > :first-child::after { transform:rotate(-90deg); }
-  .card.fold.is-collapsed > :not(:first-child) { display:none; }
-  .card.fold.is-collapsed > :first-child { margin-bottom:0; }
-  .job-top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
+  .attn { margin-top:var(--gap); display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .attn-t { font-size:12px; font-weight:700; color:var(--muted); margin-right:4px; }
+  .chip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--card); border:1px solid var(--border); color:var(--text); font-size:12.5px; font-weight:600; text-decoration:none; cursor:pointer; box-shadow:var(--shadow); }
+  .chip:hover { border-color:var(--primary); color:var(--primary); }
+  .chip.bad { border-color:color-mix(in srgb,var(--bad) 40%,transparent); } .chip.warn { border-color:color-mix(in srgb,var(--dot-warn) 45%,transparent); }
+  .chip .n { background:var(--primary-soft); color:var(--primary); border-radius:999px; padding:0 7px; font-size:11.5px; }
+
+  /* ===== cards ===== */
+  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; min-width:0; overflow-x:auto; box-shadow:var(--shadow); }
+  .card > strong:first-child, .card > .job-top > strong:first-child { font-size:15px; font-weight:700; display:block; letter-spacing:-.01em; }
+  .card > strong:first-child { margin-bottom:10px; }
+  .job-top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
   .meta { color:var(--muted); font-size:12px; }
-  .row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:8px 0; border-bottom:1px solid var(--border); min-width:0; }
   .row:last-child { border-bottom:0; }
-  .row > span:first-child { color:var(--muted); }
-  code { background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:.9em; }
+  .row > span:first-child { color:var(--muted); flex:none; }
+  .row > span:last-child { text-align:right; overflow-wrap:anywhere; min-width:0; }
+  code { background:var(--card-2); border:1px solid var(--border); border-radius:6px; padding:0 5px; font-size:.88em; }
+  .mono { font-family:var(--font-mono); font-size:12px; }
 
-  /* ---- status badges: icon + text + color ---- */
-  .badge { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:999px; margin-right:4px; white-space:nowrap; }
+  /* key/value list: label above value, values wrap — never overlap */
+  .kvl { display:flex; flex-direction:column; gap:10px; margin:0; }
+  .kvl > div { min-width:0; }
+  .kvl dt { font-size:11.5px; font-weight:600; color:var(--muted); margin-bottom:2px; }
+  .kvl dd { margin:0; overflow-wrap:anywhere; word-break:break-word; }
+  .panel { background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px 16px; min-width:0; }
+  .panel > h4 { margin:0 0 10px; font-size:12px; font-weight:700; color:var(--muted); letter-spacing:.02em; text-transform:uppercase; }
+  .panels { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px; }
+
+  /* graph pipeline */
+  .pipe { display:flex; align-items:stretch; gap:0; margin:4px 0 14px; flex-wrap:wrap; }
+  .pipe-node { flex:1 1 200px; background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px; min-width:0; }
+  .pipe-node .l { font-size:11.5px; font-weight:700; color:var(--muted); }
+  .pipe-node .v { font-weight:700; margin-top:2px; overflow-wrap:anywhere; }
+  .pipe-link { flex:0 1 150px; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 10px; gap:4px; position:relative; min-width:110px; }
+  .pipe-link::before { content:""; position:absolute; left:0; right:0; top:50%; height:2px; background:repeating-linear-gradient(90deg,var(--border-strong) 0 6px,transparent 6px 11px); z-index:0; }
+  .pipe-link > * { position:relative; z-index:1; background:var(--card); }
+  @media (max-width:760px) { .pipe-link { flex-basis:100%; padding:8px 0; } .pipe-link::before { left:50%; right:auto; top:0; bottom:0; width:2px; height:auto; } }
+
+  /* ===== badges ===== */
+  .badge { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; padding:2px 10px; border-radius:999px; margin-right:4px; white-space:nowrap; }
   .badge::before { font-size:10px; }
   .ok { background:var(--ok-bg); color:var(--ok); } .ok::before { content:"✓"; }
   .bad { background:var(--bad-bg); color:var(--bad); } .bad::before { content:"✕"; }
   .warn { background:var(--warn-bg); color:var(--warn); } .warn::before { content:"▲"; }
   .na { background:var(--na-bg); color:var(--muted); } .na::before { content:"–"; }
   .banner::before, .kpi::before, .stack-seg::before, .side a::before { content:none !important; }
+  .kpi.ok::before,.kpi.bad::before,.kpi.warn::before,.kpi.na::before { content:none !important; }
 
-  /* ---- controls ---- */
-  button { background:var(--primary); color:#fff; border:1px solid var(--primary); border-radius:8px; padding:7px 14px; font-weight:600; font-size:13px; cursor:pointer; transition:background .12s, box-shadow .12s; }
-  button:hover { background:#0f1f80; }
+  /* ===== controls ===== */
+  button { background:var(--primary); color:var(--on-primary); border:1px solid var(--primary); border-radius:var(--radius-sm); padding:8px 15px; font-weight:600; font-size:13px; cursor:pointer; transition:background .12s,border-color .12s,transform .05s; display:inline-flex; align-items:center; gap:6px; }
+  button:hover { background:var(--primary-h); border-color:var(--primary-h); }
+  button:active { transform:translateY(1px); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  button.ghost { background:#fff; color:var(--primary); border-color:var(--border); }
-  button.ghost:hover { background:var(--primary-soft); border-color:#c7d0f0; }
-  input[type=text], select { border:1px solid #cbd5e1; border-radius:8px; padding:7px 10px; font-size:13px; background:#fff; color:var(--text); }
-  input[type=text]:focus, select:focus { border-color:var(--primary); outline:2px solid var(--primary-soft); }
+  button.ghost { background:var(--card); color:var(--primary); border-color:var(--border-strong); }
+  button.ghost:hover { background:var(--primary-soft); }
+  button.danger { background:var(--bad); border-color:var(--bad); color:#fff; }
+  button.danger.ghost { background:var(--card); color:var(--bad); border-color:color-mix(in srgb,var(--bad) 45%,transparent); }
+  button.icon { padding:7px; }
+  button.sm { padding:4px 10px; font-size:12px; }
+  input[type=text], input[type=number], select, textarea { border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:8px 11px; font-size:13px; background:var(--card); color:var(--text); font-family:inherit; min-width:0; }
+  textarea { width:100%; resize:vertical; line-height:1.5; }
+  input:focus, select:focus, textarea:focus { border-color:var(--primary); outline:2px solid var(--primary-soft); }
   label.toggle { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); cursor:pointer; }
   a.link { color:var(--primary); font-weight:600; }
+  .field { display:flex; flex-direction:column; gap:4px; font-size:12px; font-weight:600; color:var(--muted); }
+  .field small { font-weight:400; }
+  .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-items:end; }
 
-  /* ---- tables ---- */
-  table.tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
-  table.tbl th { text-align:left; padding:7px 10px; border-bottom:2px solid var(--border); color:var(--muted); font-size:11.5px; font-weight:700; white-space:nowrap; position:sticky; top:0; background:var(--card); }
-  table.tbl td { padding:7px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
-  table.tbl tbody tr:hover { background:var(--surface-2); }
-  pre { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:11.5px; overflow:auto; max-height:280px; }
+  /* segmented tabs */
+  .tabs { display:inline-flex; gap:4px; padding:4px; background:var(--na-bg); border-radius:12px; flex-wrap:wrap; margin-bottom:var(--gap); max-width:100%; }
+  .tabs button { background:transparent; border-color:transparent; color:var(--muted); padding:7px 14px; }
+  .tabs button:hover { background:color-mix(in srgb,var(--card) 60%,transparent); color:var(--text); }
+  .tabs button[aria-selected="true"] { background:var(--card); color:var(--text); box-shadow:var(--shadow); border-color:var(--border); }
+  .tabs .cnt { background:var(--primary-soft); color:var(--primary); border-radius:999px; padding:0 7px; font-size:11px; font-weight:700; }
+  .tabs .tdot { width:7px; height:7px; border-radius:50%; background:transparent; }
+  .tabs .tdot.s-bad { background:var(--bad); } .tabs .tdot.s-warn { background:var(--dot-warn); } .tabs .tdot.s-ok { background:var(--ok); }
+  .tab-panel[hidden] { display:none; }
+  .seg { display:inline-flex; border:1px solid var(--border-strong); border-radius:var(--radius-sm); overflow:hidden; }
+  .seg button { border-radius:0; border:0; background:var(--card); color:var(--muted); padding:6px 12px; }
+  .seg button + button { border-left:1px solid var(--border-strong); }
+  .seg button[aria-pressed="true"] { background:var(--primary-soft); color:var(--primary); }
+  .filters { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:12px; }
+  .filters input[type=text] { flex:1 1 220px; }
 
-  /* ---- bars ---- */
+  /* ===== tables ===== */
+  table.tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+  table.tbl th { text-align:left; padding:9px 12px; border-bottom:1px solid var(--border-strong); color:var(--muted); font-size:11.5px; font-weight:700; white-space:nowrap; position:sticky; top:0; background:var(--card); letter-spacing:.01em; }
+  table.tbl td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.tbl tbody tr:hover { background:var(--card-2); }
+  table.tbl tr.click { cursor:pointer; }
+  table.tbl tr.click:focus-visible { outline-offset:-2px; }
+  pre { background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:11.5px; overflow:auto; max-height:320px; margin:0; white-space:pre-wrap; word-break:break-word; }
+  .meter { display:inline-block; width:64px; height:6px; background:var(--na-bg); border-radius:3px; overflow:hidden; vertical-align:middle; margin-right:6px; }
+  .meter > i { display:block; height:100%; background:var(--primary); border-radius:3px; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:6px; background:var(--na-bg); color:var(--text); font-size:12px; margin:0 4px 4px 0; }
+  .tag.counter { background:var(--bad-bg); color:var(--bad); }
+
+  /* ===== bars ===== */
   .pb { height:8px; background:var(--na-bg); border-radius:4px; overflow:hidden; min-width:80px; }
-  .pb-f { height:100%; border-radius:4px; background:var(--primary); }
-  .stack-bar { display:flex; height:14px; border-radius:4px; overflow:hidden; background:var(--na-bg); width:100%; }
+  .pb-f { height:100%; border-radius:4px; background:var(--primary); transition:width .3s; }
+  .stack-bar { display:flex; height:12px; border-radius:6px; overflow:hidden; background:var(--na-bg); width:100%; }
   .stack-seg { height:100%; }
-  .stack-seg.ok { background:var(--ok); } .stack-seg.bad { background:var(--bad); } .stack-seg.na { background:#cbd5e1; }
-  .stack-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin-top:4px; }
-  .stack-legend span.dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
-  .hbar-row { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; }
+  .stack-seg.ok { background:var(--ok); } .stack-seg.bad { background:var(--bad); } .stack-seg.na { background:var(--border-strong); }
+  .stack-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--muted); margin-top:6px; }
+  .stack-legend span.dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:middle; }
+  .hbar-row { display:flex; align-items:center; gap:8px; margin:5px 0; font-size:12px; }
   .hbar-label { width:130px; flex-shrink:0; text-align:right; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .hbar-track { flex:1; height:12px; background:var(--na-bg); border-radius:3px; overflow:hidden; }
-  .hbar-fill { height:100%; border-radius:3px; background:var(--primary); }
+  .hbar-track { flex:1; height:12px; background:var(--na-bg); border-radius:4px; overflow:hidden; }
+  .hbar-fill { height:100%; border-radius:4px; background:var(--primary); }
   .hbar-count { width:36px; flex-shrink:0; font-weight:700; }
   .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; animation:pulse 1.4s infinite; }
   @keyframes pulse { 0%{opacity:1} 50%{opacity:.25} 100%{opacity:1} }
-  @media (prefers-reduced-motion: reduce) { .pulse { animation:none; } html { scroll-behavior:auto; } }
-  .job-c { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+  .job-c { background:var(--card-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 10px; margin-bottom:6px; font-size:12px; }
 
-  /* ---- narrow screens: nav becomes a sticky chip bar ---- */
-  @media (max-width: 960px) {
-    .shell { grid-template-columns:minmax(0,1fr); gap:12px; padding:12px 12px 56px; }
-    .side { position:sticky; top:0; z-index:10; flex-direction:row; overflow-x:auto; background:var(--bg); padding:8px 0; gap:6px; }
-    .side-title { display:none; }
+  /* ===== drawer + toast ===== */
+  .scrim { position:fixed; inset:0; background:rgba(2,6,23,.5); opacity:0; pointer-events:none; transition:opacity .2s; z-index:50; }
+  .scrim.open { opacity:1; pointer-events:auto; }
+  .drawer { position:fixed; top:0; right:0; bottom:0; width:min(620px,100%); background:var(--card); border-left:1px solid var(--border); box-shadow:var(--shadow-lg); transform:translateX(102%); transition:transform .22s ease; z-index:51; display:flex; flex-direction:column; }
+  .drawer.open { transform:none; }
+  .drawer-h { padding:18px 22px 14px; border-bottom:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; }
+  .drawer-h h3 { margin:0; font-size:17px; line-height:1.35; letter-spacing:-.01em; flex:1; overflow-wrap:anywhere; }
+  .drawer-b { padding:18px 22px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px; }
+  .drawer-f { padding:14px 22px; border-top:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap; background:var(--card-2); }
+  .drawer-f .sp { flex:1; }
+  .sect-t { font-size:11.5px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin:0 0 6px; }
+  .prose { white-space:pre-wrap; overflow-wrap:anywhere; }
+  .callout { border:1px solid var(--border); background:var(--card-2); border-radius:var(--radius-sm); padding:12px 14px; font-size:13px; }
+  .callout.warn { background:var(--warn-bg); border-color:color-mix(in srgb,var(--warn) 35%,transparent); color:var(--warn); }
+  #toasts { position:fixed; right:20px; bottom:20px; display:flex; flex-direction:column; gap:8px; z-index:80; max-width:min(420px,calc(100% - 40px)); }
+  .toast { background:var(--text); color:var(--bg); padding:11px 16px; border-radius:var(--radius-sm); box-shadow:var(--shadow-lg); font-size:13px; font-weight:600; animation:tin .18s ease; }
+  .toast.bad { background:var(--bad); color:#fff; } .toast.ok { background:var(--ok); color:#fff; }
+  :root[data-theme="dark"] .toast.ok, :root[data-theme="dark"] .toast.bad { color:#06101f; }
+  @keyframes tin { from { transform:translateY(8px); opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation:none; } html { scroll-behavior:auto; } .drawer,.scrim,.pb-f { transition:none; } .toast { animation:none; } }
+
+  /* ===== narrow screens ===== */
+  @media (max-width:1000px) {
+    .shell { grid-template-columns:minmax(0,1fr); gap:12px; padding:12px 12px 64px; }
+    .side { position:sticky; top:0; z-index:10; flex-direction:row; overflow-x:auto; background:var(--bg); padding:8px 0; gap:6px; align-items:center; }
+    .brand, .side-foot { display:none; }
     .side a { white-space:nowrap; background:var(--card); border:1px solid var(--border); }
-    html { scroll-padding-top: 60px; }
+    .side a .st { margin-left:2px; }
+    html { scroll-padding-top:64px; }
   }
 
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+    <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></symbol>
+  </defs>
+</svg>
+
 <div class="top" id="topNav" data-page="admin"></div>
 <div class="shell">
   <nav class="side" id="sideNav" aria-label="Admin 섹션">
-    <div class="side-title">Admin / Ops</div>
-    <a href="#overview" data-sec="overview"><span class="dot"></span>개요</a>
-    <a href="#system" data-sec="system"><span class="dot"></span>시스템</a>
-    <a href="#ingest" data-sec="ingest"><span class="dot"></span>데이터 수집</a>
-    <a href="#knowledge" data-sec="knowledge"><span class="dot"></span>지식 관리</a>
-    <a href="#usage" data-sec="usage"><span class="dot"></span>사용 현황</a>
-    <a href="#automation" data-sec="automation"><span class="dot"></span>자동화 (cron)</a>
-    <a href="#access" data-sec="access"><span class="dot"></span>접근 제어</a>
+    <div class="brand"><span class="logo">K</span><span>Admin / Ops</span></div>
+    <a href="#overview" data-sec="overview"><svg class="i"><use href="#i-overview"/></svg>개요<span class="st"></span></a>
+    <a href="#system" data-sec="system"><svg class="i"><use href="#i-server"/></svg>시스템<span class="st"></span></a>
+    <a href="#ingest" data-sec="ingest"><svg class="i"><use href="#i-db"/></svg>데이터 수집<span class="st"></span></a>
+    <a href="#knowledge" data-sec="knowledge"><svg class="i"><use href="#i-book"/></svg>지식 관리<span class="st"></span></a>
+    <a href="#usage" data-sec="usage"><svg class="i"><use href="#i-activity"/></svg>사용 현황<span class="st"></span></a>
+    <a href="#automation" data-sec="automation"><svg class="i"><use href="#i-clock"/></svg>자동화 (cron)<span class="st"></span></a>
+    <a href="#access" data-sec="access"><svg class="i"><use href="#i-key"/></svg>접근 제어<span class="st"></span></a>
+    <div class="side-foot">
+      <label class="toggle"><input type="checkbox" id="chkAuto" checked/> 자동 갱신 (10초)</label>
+      <button type="button" class="ghost sm" id="btnTheme" aria-label="테마 전환"><svg class="i"><use href="#i-moon"/></svg><span id="themeLbl">다크 모드</span></button>
+    </div>
   </nav>
 
   <main>
     <header class="page-h">
       <div>
         <h1>Admin / Ops 대시보드</h1>
-        <p class="sub">운영 상태 요약 → 영역별 세부 순서로 구성했습니다. 접을 수 있는 카드는 제목을 눌러 펼치세요.</p>
+        <p class="sub">상태 요약 → 영역별 세부. 목록의 항목을 누르면 상세 패널이 열립니다.</p>
       </div>
       <div class="toolbar">
-        <button type="button" id="btnRefresh">전체 새로고침</button>
-        <label class="toggle"><input type="checkbox" id="chkAuto" checked/> 자동 갱신 (10초)</label>
         <span id="msg" class="meta" role="status" aria-live="polite"></span>
+        <button type="button" id="btnRefresh"><svg class="i"><use href="#i-refresh"/></svg>새로고침</button>
       </div>
     </header>
 
     <section class="sec" id="overview" aria-labelledby="h-overview">
-      <div class="sec-h"><h2 id="h-overview">개요</h2><p>지금 문제가 있는가? — 아래 요약만 보고 판단할 수 있게 합니다.</p></div>
+      <div class="sec-h"><h2 id="h-overview">개요</h2><p>지금 문제가 있는가? 위의 한 줄과 타일만 보고 판단하고, 아래 "확인할 일"에서 바로 이동하세요.</p></div>
       <div id="banner" class="banner na" role="status"><span class="ico" aria-hidden="true">…</span><div><span id="bannerText">상태 확인 중…</span><small id="bannerSub"></small></div></div>
       <div class="kpis">
         <div class="kpi na" id="kpiApi"><div class="kpi-l">API</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
@@ -170,9 +286,10 @@
         <div class="kpi na" id="kpiWorker"><div class="kpi-l">Worker</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
         <div class="kpi na" id="kpiGraph"><div class="kpi-l">지식그래프</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
         <div class="kpi na" id="kpiCron"><div class="kpi-l">크론 작업</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
-        <div class="kpi na" id="kpiDisk"><div class="kpi-l">디스크 (raw)</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiDisk"><div class="ring"></div><div class="kpi-l">디스크 (raw)</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
         <div class="kpi na" id="kpiAuth"><div class="kpi-l">인증</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
       </div>
+      <div class="attn" id="attn" aria-label="확인할 일"></div>
     </section>
 
     <section class="sec" id="system" aria-labelledby="h-system">
@@ -213,16 +330,20 @@
     </section>
 
     <section class="sec" id="ingest" aria-labelledby="h-ingest">
-      <div class="sec-h"><h2 id="h-ingest">데이터 수집</h2><p>인제스트·임베딩, Confluence 맵 동기화, 지식그래프 반영</p></div>
-      <div class="stack">
-        <div class="card">
+      <div class="sec-h"><h2 id="h-ingest">데이터 수집</h2><p>원본 → 인제스트·임베딩 → 지식그래프 반영 흐름</p></div>
+      <div class="tabs" role="tablist" data-tabs="ingest" aria-label="데이터 수집 보기">
+        <button type="button" role="tab" data-tab="ingest-prog" aria-selected="true">인제스트 · 임베딩</button>
+        <button type="button" role="tab" data-tab="ingest-map" aria-selected="false">Confluence 맵</button>
+        <button type="button" role="tab" data-tab="ingest-graph" aria-selected="false">지식그래프 <span class="tdot" id="tdGraph"></span></button>
+      </div>
+      <div class="tab-panel" id="ingest-prog" role="tabpanel"><div class="card">
     <strong>인제스트 / 임베딩 진행률</strong>
     <table class="tbl">
       <thead><tr><th>소스</th><th>raw 파일</th><th>문서</th><th>청크(활성)</th><th>임베딩</th><th>진행률</th><th>최근 잡</th></tr></thead>
       <tbody id="ingestBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
     </table>
-  </div>
-        <div class="card">
+  </div></div>
+      <div class="tab-panel" id="ingest-map" role="tabpanel" hidden><div class="card">
     <div class="job-top">
       <strong>Confluence 맵 동기화 (confluence_map)</strong>
       <span>
@@ -251,57 +372,125 @@
       <label class="toggle"><input type="checkbox" id="newIsExplicit"/> explicit page</label>
       <button type="button" id="btnAddSpace">추가</button>
     </div>
-  </div>
-        <div class="card">
-    <div class="job-top">
-      <strong>지식그래프 (Postgres → Neo4j) 현황</strong>
-      <span id="graphReadState" class="badge na">…</span>
-    </div>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-top:6px">
-      <div>
-        <div class="row"><span>generation 일치</span><span id="graphGenMatch" class="badge na">…</span></div>
-        <div class="row"><span>neo4j_generation</span><span id="graphNeoGen" class="meta">…</span></div>
-        <div class="row"><span>store identity</span><span id="graphStoreId" class="meta">…</span></div>
-        <div class="row"><span>api_build_sha / contract</span><span id="graphBuild" class="meta">…</span></div>
-      </div>
-      <div>
-        <strong class="meta">최신 run</strong>
-        <div class="row"><span>상태 / liveness</span><span id="graphLatestStatus" class="meta">…</span></div>
-        <div class="row"><span>scope / generation</span><span id="graphLatestScope" class="meta">…</span></div>
-        <div style="margin:6px 0">
-          <div class="stack-bar" id="graphDocsBar"></div>
-          <div class="stack-legend">
-            <span><span class="dot" style="background:var(--ok)"></span>synced <b id="graphDocsSynced">—</b></span>
-            <span><span class="dot" style="background:#cbd5e1"></span>skipped <b id="graphDocsSkipped">—</b></span>
-            <span><span class="dot" style="background:var(--bad)"></span>failed <b id="graphDocsFailed">—</b></span>
+  </div></div>
+      <div class="tab-panel" id="ingest-graph" role="tabpanel" hidden>
+        <div class="card" id="graphCard">
+          <div class="job-top"><strong>지식그래프 (Postgres → Neo4j)</strong><span id="graphReadState" class="badge na">…</span></div>
+          <div class="pipe" aria-label="동기화 흐름">
+            <div class="pipe-node"><div class="l">Postgres (원본)</div><div class="v">문서 · 청크 · 엔티티</div><div class="meta" id="graphPgNote">최신 run generation —</div></div>
+            <div class="pipe-link"><span id="graphLinkRun" class="badge na">run —</span><span id="graphGenMatch" class="badge na">…</span></div>
+            <div class="pipe-node"><div class="l">Neo4j (그래프)</div><div class="v mono" id="graphNeoGen">…</div><div class="meta" id="graphStoreId">…</div></div>
           </div>
+          <div class="panels">
+            <div class="panel">
+              <h4>최신 run</h4>
+              <dl class="kvl">
+                <div><dt>상태 / liveness</dt><dd id="graphLatestStatus">…</dd></div>
+                <div><dt>scope / generation</dt><dd class="mono" id="graphLatestScope">…</dd></div>
+                <div><dt>문서 처리 결과</dt><dd>
+                  <div class="stack-bar" id="graphDocsBar"></div>
+                  <div class="stack-legend">
+                    <span><span class="dot" style="background:var(--ok)"></span>synced <b id="graphDocsSynced">—</b></span>
+                    <span><span class="dot" style="background:var(--border-strong)"></span>skipped <b id="graphDocsSkipped">—</b></span>
+                    <span><span class="dot" style="background:var(--bad)"></span>failed <b id="graphDocsFailed">—</b></span>
+                  </div></dd></div>
+                <div><dt>시작 → 완료</dt><dd id="graphLatestTime">…</dd></div>
+              </dl>
+            </div>
+            <div class="panel">
+              <h4>마지막 완료된 full run</h4>
+              <dl class="kvl">
+                <div><dt>run_id / generation</dt><dd class="mono" id="graphFullId">…</dd></div>
+                <div><dt>완료 시각</dt><dd id="graphFullTime">…</dd></div>
+                <div><dt>unresolved_references</dt><dd id="graphFullUnresolved">…</dd></div>
+              </dl>
+            </div>
+            <div class="panel">
+              <h4>빌드 정보</h4>
+              <dl class="kvl">
+                <div><dt>api_build_sha / contract</dt><dd class="mono" id="graphBuild">…</dd></div>
+              </dl>
+            </div>
+          </div>
+          <p id="graphMsg" class="meta" style="margin:12px 0 0"></p>
         </div>
-        <div class="row"><span>시작 / 완료</span><span id="graphLatestTime" class="meta">…</span></div>
-      </div>
-      <div>
-        <strong class="meta">마지막 완료된 full run</strong>
-        <div class="row"><span>run_id / generation</span><span id="graphFullId" class="meta">…</span></div>
-        <div class="row"><span>완료 시각</span><span id="graphFullTime" class="meta">…</span></div>
-        <div class="row"><span>unresolved_references</span><span id="graphFullUnresolved" class="meta">…</span></div>
-      </div>
-    </div>
-    <span id="graphMsg" class="meta"></span>
-  </div>
       </div>
     </section>
 
     <section class="sec" id="knowledge" aria-labelledby="h-knowledge">
-      <div class="sec-h"><h2 id="h-knowledge">지식 관리</h2><p>실패 버킷, 동의어 후보 검수, 시스템 등록자 허용 목록</p></div>
-      <div class="stack">
-        <div class="card fold">
-    <strong>최근 등록된 실패 버킷 (failure_bucket)</strong>
-    <div id="fbByDomain" class="meta">로딩 중…</div>
+      <div class="sec-h"><h2 id="h-knowledge">지식 관리</h2><p>실패 버킷을 열람·수정·퇴역하고, 동의어는 마이닝부터 검수까지 한곳에서 관리합니다.</p></div>
+      <div class="tabs" role="tablist" data-tabs="knowledge" aria-label="지식 관리 보기">
+        <button type="button" role="tab" data-tab="k-bucket" aria-selected="true">실패 버킷</button>
+        <button type="button" role="tab" data-tab="k-synrev" aria-selected="false">동의어 검수 <span class="cnt" id="cntSynProposed" hidden>0</span></button>
+        <button type="button" role="tab" data-tab="k-synmine" aria-selected="false">동의어 마이닝 <span class="tdot" id="tdMine"></span></button>
+        <button type="button" role="tab" data-tab="k-reg" aria-selected="false">시스템 등록자</button>
+      </div>
+      <div class="tab-panel" id="k-bucket" role="tabpanel">
+        <div class="card" id="fbCard">
+          <div class="job-top">
+            <strong>실패 버킷 (failure_bucket)</strong>
+            <span class="seg" id="fbStatus" role="group" aria-label="상태 필터">
+              <button type="button" data-st="active" aria-pressed="true">활성</button>
+              <button type="button" data-st="retired" aria-pressed="false">퇴역</button>
+              <button type="button" data-st="test" aria-pressed="false">테스트</button>
+            </span>
+          </div>
+          <div class="filters">
+            <input type="text" id="fbSearch" placeholder="이름·도메인·등록자·증상 검색" aria-label="실패 버킷 검색"/>
+            <select id="fbDomain" aria-label="도메인 필터"><option value="">전체 도메인</option></select>
+            <span id="fbCount" class="meta"></span>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>이름</th><th>도메인</th><th>프로토콜 · 환경</th><th>신뢰도</th><th>확인/반박</th><th>등록자</th><th>갱신</th></tr></thead>
+            <tbody id="fbBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="tab-panel" id="k-synrev" role="tabpanel" hidden><div class="card" id="synCard">
+    <div class="job-top">
+      <strong>동의어 후보 검수</strong>
+      <span id="synTabs"></span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">승인된 그룹은 검색에 반영되기까지 최대 60초(워커별 캐시 TTL) 걸립니다.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="text" id="synNote" maxlength="1000" placeholder="메모 (선택, 결정 시 함께 저장)" style="flex:1;min-width:200px"/>
+      <button type="button" id="synBulkApprove">선택 승인</button>
+      <button type="button" class="ghost" id="synBulkReject">선택 거절</button>
+    </div>
+    <div id="synRunFilter"></div>
+    <div id="synMsg" class="meta" style="margin-bottom:6px"></div>
     <table class="tbl">
-      <thead><tr><th>이름</th><th>도메인</th><th>프로토콜</th><th>신뢰도</th><th>확인/반박</th><th>등록자</th><th>갱신</th></tr></thead>
-      <tbody id="fbBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
+      <thead><tr><th><input type="checkbox" id="synAll" title="전체 선택"/></th><th>id</th><th>용어</th><th>근거</th><th>사유</th><th>모델/run</th><th>결정</th><th></th></tr></thead>
+      <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
     </table>
-  </div>
-        <div class="card" id="regCard">
+  </div></div>
+      <div class="tab-panel" id="k-synmine" role="tabpanel" hidden>
+        <div class="card" id="mineCard">
+          <div class="job-top"><strong>동의어 마이닝 실행 (Fabrix LLM)</strong><span id="mineActive" class="badge na">대기</span></div>
+          <p class="meta" style="margin:0 0 12px">
+            티켓 본문에서 동의어 후보를 LLM으로 추출하고 코드로 검증합니다. <b>LLM 호출 비용이 발생</b>하며, 결과는 <b>'제안'</b> 상태로만 저장돼
+            승인하기 전에는 검색에 영향이 없습니다. 처음에는 티켓 수를 300 정도로 제한해 시험하세요. 한 번에 하나만 실행됩니다.
+          </p>
+          <div class="form-grid">
+            <label class="field">대상 기간 (년)<input type="number" id="mineYears" value="2" min="0.1" max="10" step="0.5"/></label>
+            <label class="field">티켓 수 제한<input type="number" id="mineLimit" placeholder="전체" min="1"/><small>시험: 300</small></label>
+            <label class="field">배치 크기<input type="number" id="mineBatch" value="100" min="10" max="500"/></label>
+            <label class="field">최대 배치 수<input type="number" id="mineMaxB" placeholder="제한 없음" min="1"/></label>
+          </div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0">
+            <label class="toggle"><input type="checkbox" id="mineCommit"/> 끝나면 후보로 자동 저장 (제안 상태)</label>
+            <label class="toggle"><input type="checkbox" id="mineSplit"/> 빈 응답 분할 재시도 (추가 호출 과금)</label>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button type="button" id="mineStart"><svg class="i"><use href="#i-play"/></svg>마이닝 실행</button>
+            <span id="mineMsg" class="meta"></span>
+          </div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:18px 0 14px"/>
+          <div class="job-top"><strong style="font-size:14px">실행 이력</strong><span class="meta">최근 20건 · 실행 중이면 자동 갱신</span></div>
+          <div id="mineRuns" class="stack" style="gap:10px"><span class="meta">로딩 중…</span></div>
+        </div>
+      </div>
+      <div class="tab-panel" id="k-reg" role="tabpanel" hidden><div class="card" id="regCard">
     <div class="job-top">
       <strong>시스템 등록자 허용 목록 (failure bucket)</strong>
       <span id="regSource" class="badge na">…</span>
@@ -320,39 +509,24 @@
       <button type="button" id="regAdd">추가</button>
       <span id="regMsg" class="meta"></span>
     </div>
-  </div>
-        <div class="card fold" id="synCard">
-    <div class="job-top">
-      <strong>동의어 후보 검수 (Fabrix 마이닝)</strong>
-      <span id="synTabs"></span>
-    </div>
-    <p class="meta" style="margin:2px 0 6px">승인된 그룹은 검색에 반영되기까지 최대 60초(워커별 캐시 TTL) 걸립니다.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-      <input type="text" id="synNote" maxlength="1000" placeholder="메모 (선택, 결정 시 함께 저장)" style="flex:1;min-width:200px"/>
-      <button type="button" id="synBulkApprove">선택 승인</button>
-      <button type="button" class="ghost" id="synBulkReject">선택 거절</button>
-    </div>
-    <div id="synMsg" class="meta" style="margin-bottom:6px"></div>
-    <table class="tbl">
-      <thead><tr><th><input type="checkbox" id="synAll" title="전체 선택"/></th><th>id</th><th>용어</th><th>근거</th><th>사유</th><th>모델/run</th><th>결정</th><th></th></tr></thead>
-      <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
-    </table>
-  </div>
-      </div>
+  </div></div>
     </section>
 
     <section class="sec" id="usage" aria-labelledby="h-usage">
       <div class="sec-h"><h2 id="h-usage">사용 현황</h2><p>검색 쿼리와 MCP 경유 조회 기록</p></div>
-      <div class="stack">
-        <div class="card fold">
+      <div class="tabs" role="tablist" data-tabs="usage" aria-label="사용 현황 보기">
+        <button type="button" role="tab" data-tab="u-query" aria-selected="true">검색 쿼리</button>
+        <button type="button" role="tab" data-tab="u-mcp" aria-selected="false">MCP 조회</button>
+      </div>
+      <div class="tab-panel" id="u-query" role="tabpanel"><div class="card">
       <strong>최근 쿼리 (최대 10건)</strong>
       <p class="meta" style="margin:2px 0 6px">audit=true로 명시한 호출만 기록됨(웹/MCP 구분 없음). MCP가 실제로 뭘 조회했는지는 아래 카드 참고.</p>
       <table class="tbl">
         <thead><tr><th>시각</th><th>모드</th><th>지연</th><th>쿼리</th></tr></thead>
         <tbody id="queryBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
       </table>
-    </div>
-        <div class="card fold">
+    </div></div>
+      <div class="tab-panel" id="u-mcp" role="tabpanel" hidden><div class="card">
     <strong>MCP 경유 조회 (최근 20건)</strong>
     <p class="meta" style="margin:2px 0 6px">
       mcp-server가 보내는 모든 요청에 실린 호출 도구 이름 기준 — kb_search처럼 과거엔 전혀 기록 안 되던 조회도 전부 잡힘.
@@ -363,8 +537,7 @@
       <thead><tr><th>시각</th><th>도구</th><th>경로</th><th>요약</th><th>상태</th><th>지연</th></tr></thead>
       <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
     </table>
-  </div>
-      </div>
+  </div></div>
     </section>
 
     <section class="sec" id="automation" aria-labelledby="h-automation">
@@ -432,6 +605,14 @@
     </section>
   </main>
 </div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle" aria-hidden="true">
+  <div class="drawer-h"><h3 id="drawerTitle"></h3><button type="button" class="ghost icon" id="drawerClose" aria-label="닫기"><svg class="i"><use href="#i-x"/></svg></button></div>
+  <div class="drawer-b" id="drawerBody"></div>
+  <div class="drawer-f" id="drawerFoot"></div>
+</aside>
+<div id="toasts" aria-live="polite"></div>
 
 <script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
@@ -585,6 +766,10 @@ async function refreshGraphStatus() {
     $("graphFullUnresolved").textContent = "—";
   }
 
+  $("graphPgNote").textContent = "최신 run generation " + ((d.latest_run && d.latest_run.generation) || "—");
+  const lrs = d.latest_run ? d.latest_run.status : null;
+  badge($("graphLinkRun"), lrs ? (lrs === "completed" || lrs === "success" ? true : (lrs === "failed" || lrs === "error") ? false : null) : null, "run " + (lrs || "—"));
+  $("tdGraph").className = "tdot " + (d.generation_matches === true && d.read_state === "consistent" ? "s-ok" : d.read_state === "mixed" || d.generation_matches === false ? "s-warn" : "");
   $("graphMsg").textContent = "as_of " + (d.as_of || "—") + " · " + new Date().toLocaleTimeString();
 }
 
@@ -593,7 +778,6 @@ async function refreshDashboard() {
   if (dr.status === 401 || dr.status === 403) {
     $("ingestBody").innerHTML = '<tr><td colspan="7" class="meta">관리자 권한 필요 (로그인 후 admin 역할 필요)</td></tr>';
     $("queryBody").innerHTML = '<tr><td colspan="4" class="meta">관리자 권한 필요</td></tr>';
-    $("fbBody").innerHTML = '<tr><td colspan="6" class="meta">관리자 권한 필요</td></tr>';
     return;
   }
   const d = await readJson(dr, "/v1/ops/dashboard");
@@ -692,23 +876,6 @@ async function refreshDashboard() {
         }).join("")
       : '<tr><td colspan="6" class="meta">MCP 경유 조회 기록 없음 — AI가 아직 MCP로 아무것도 조회하지 않았거나, 이 배포에 아직 적용 전입니다.</td></tr>';
   }
-
-  const fbData = d.failure_buckets || {};
-  const fb = fbData.recent || [];
-  const byDomain = fbData.by_domain || {};
-  const domainEntries = Object.keys(byDomain);
-  $("fbByDomain").textContent = domainEntries.length
-    ? "도메인별 건수: " + domainEntries.map((k) => k + "=" + byDomain[k]).join(", ")
-    : "도메인별 건수: —";
-  $("fbBody").innerHTML = fb.length
-    ? fb.map((r) => {
-        return '<tr><td>' + esc(r.bucket_name || "") + '</td><td>' + esc(r.fb_domain || "—") +
-          '</td><td>' + esc(r.protocol || "—") +
-          '</td><td>' + esc(String(r.confidence != null ? r.confidence : "—")) +
-          '</td><td>' + esc((r.support_count || 0) + " / " + (r.counter_count || 0)) +
-          '</td><td>' + esc(r.created_by || "—") + '</td><td>' + fmtTs(r.updated_at) + '</td></tr>';
-      }).join("")
-    : '<tr><td colspan="7" class="meta">등록된 실패 버킷 없음</td></tr>';
 }
 
 function fmtCheckpoint(cp) {
@@ -896,6 +1063,7 @@ const SYN_ACTIONS = {
   rejected: [],
 };
 let synStatus = "proposed";
+let synRunFilter = "";
 let synTotals = {};
 
 // Pure: item -> <tr> HTML. Every API-supplied value goes through esc().
@@ -943,21 +1111,24 @@ async function synDetail(r) {
 async function refreshSynonyms() {
   const body = $("synBody");
   try {
-    const r = await CitecAuth.apiFetch(SYN_API + "?status=" + encodeURIComponent(synStatus) + "&limit=200");
+    const r = await CitecAuth.apiFetch(SYN_API + "?status=" + encodeURIComponent(synStatus) + "&limit=200" +
+      (synRunFilter ? "&run_id=" + encodeURIComponent(synRunFilter) : ""));
     if (r.status === 401 || r.status === 403) {
       body.innerHTML = '<tr><td colspan="8" class="meta">관리자 권한 필요</td></tr>';
       return;
     }
     const d = await readJson(r, SYN_API);
     if (!r.ok) throw new Error(await synDetail(r));
-    synTotals[synStatus] = d.total;
+    if (!synRunFilter) synTotals[synStatus] = d.total;   // run-filtered totals would mislead the tab counts
     renderSynTabs();
+    $("synRunFilter").innerHTML = synRunFilter
+      ? '<span class="chip" style="margin-bottom:8px">실행 <code>' + esc(synRunFilter) + '</code> 의 후보만 표시 <button type="button" class="ghost sm" id="synClearRun">필터 해제</button></span>' : "";
     const items = d.items || [];
     $("synAll").checked = false;
     body.innerHTML = items.length
       ? items.map(renderSynRow).join("") +
         (d.total > items.length ? '<tr><td colspan="8" class="meta">' + esc(items.length) + " / " + esc(d.total) + "건만 표시</td></tr>" : "")
-      : '<tr><td colspan="8" class="meta">후보 없음 — scripts/synonym_mine.sh로 마이닝 후 import</td></tr>';
+      : '<tr><td colspan="8" class="meta">' + (synRunFilter ? "이 실행에서 나온 후보가 이 상태에는 없습니다." : "후보 없음 — 동의어 마이닝 탭에서 마이닝을 실행하세요.") + '</td></tr>';
   } catch (e) {
     body.innerHTML = '<tr><td colspan="8" class="meta">' + esc(String(e)) + "</td></tr>";
   }
@@ -1156,13 +1327,13 @@ $("tokCard").addEventListener("click", async (ev) => {
 });
 refreshTokens();
 
-$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); };
+$("btnRefresh").onclick = () => { refresh(); refreshSynonyms(); refreshRegistrants(); refreshCron(); refreshTokens(); refreshBuckets(); refreshMining(); refreshSynCounts(); };
 
 let _timer = null;
 function scheduleAuto() {
   if (_timer) clearInterval(_timer);
   if (!$("chkAuto").checked) return;
-  _timer = setInterval(() => { refresh(); refreshCron(); }, 10000);
+  _timer = setInterval(() => { refresh(); refreshCron(); if (!mineTimer) refreshMining(); }, 10000);
 }
 $("chkAuto").onchange = scheduleAuto;
 
@@ -1182,9 +1353,12 @@ function setKpi(id, state, val, sub) {
 }
 function updateSummary() {
   const bad = [], warn = [], sec = {};
+  const items = [];
+  const GO = { "지식그래프": "ingest:ingest-graph", "디스크": "ingest", "크론": "automation", "인증": "access", "Worker": "system", "API": "system", "Postgres/Redis": "system" };
   const note = (name, state, section) => {
     if (state === "bad") bad.push(name);
     if (state === "warn") warn.push(name);
+    if (state === "bad" || state === "warn") items.push({ name: name + (state === "bad" ? " 이상" : " 주의"), state, go: GO[name] || section });
     const order = { bad: 3, warn: 2, ok: 1, na: 0 };
     if (!sec[section] || order[state] > order[sec[section]]) sec[section] = state;
   };
@@ -1213,6 +1387,8 @@ function updateSummary() {
   const hasDisk = /%/.test($("rDiskPct").textContent);
   const disk = !hasDisk ? "na" : pct >= 90 ? "bad" : pct >= 80 ? "warn" : "ok";
   setKpi("kpiDisk", disk, hasDisk ? pct + "%" : "—", $("rDiskPct").textContent);
+  $("kpiDisk").classList.toggle("has-ring", hasDisk);
+  $("kpiDisk").style.setProperty("--pct", hasDisk ? pct : 0);
   note("디스크", disk, "ingest");
 
   const c = window._cron;
@@ -1229,7 +1405,7 @@ function updateSummary() {
 
   const enf = stateOf($("aenf"));
   const auth = enf === "ok" ? "ok" : enf === "bad" ? "warn" : "na";
-  setKpi("kpiAuth", auth, enf === "ok" ? "강제" : enf === "bad" ? "꺼짐 (개방)" : "—", "mode " + ($("amode").textContent || "—"));
+  setKpi("kpiAuth", auth, enf === "ok" ? "강제" : enf === "bad" ? "꺼짐" : "—", (enf === "bad" ? "개방 상태 · " : "") + "mode " + ($("amode").textContent || "—"));
   note("인증", auth, "access");
 
   const b = $("banner");
@@ -1249,6 +1425,7 @@ function updateSummary() {
     $("bannerText").textContent = "모든 항목이 정상입니다";
     $("bannerSub").textContent = new Date().toLocaleTimeString("ko-KR") + " 기준";
   }
+  renderAttention(items);
   document.querySelectorAll("#sideNav a[data-sec]").forEach((a) => {
     a.classList.remove("is-ok", "is-warn", "is-bad");
     const st = sec[a.dataset.sec];
@@ -1258,31 +1435,7 @@ function updateSummary() {
 const _refreshBase = refresh;
 refresh = async function () { await _refreshBase(); updateSummary(); };
 
-/* ---- collapsible cards (progressive disclosure); open/closed state is remembered per browser ---- */
-function wireFolds() {
-  const DEFAULT_COLLAPSED = ["queries", "mcp"];
-  let saved = {};
-  try { saved = JSON.parse(localStorage.getItem("adminFolds") || "{}"); } catch (e) { saved = {}; }
-  document.querySelectorAll(".card.fold").forEach((card, i) => {
-    const head = card.firstElementChild;
-    const key = (head.textContent || "").trim().slice(0, 24) || String(i);
-    const collapsed = key in saved ? saved[key] : /최근 쿼리|MCP 경유/.test(head.textContent);
-    card.classList.toggle("is-collapsed", !!collapsed);
-    head.setAttribute("role", "button");
-    head.tabIndex = 0;
-    head.setAttribute("aria-expanded", String(!collapsed));
-    const toggle = (ev) => {
-      if (ev.target.closest("button, a, input, select, label")) return;   // tabs/buttons in the header keep their job
-      const now = card.classList.toggle("is-collapsed");
-      head.setAttribute("aria-expanded", String(!now));
-      saved[key] = now;
-      try { localStorage.setItem("adminFolds", JSON.stringify(saved)); } catch (e) { /* private mode */ }
-    };
-    head.addEventListener("click", toggle);
-    head.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(ev); } });
-  });
-}
-wireFolds();
+
 
 /* ---- side nav: highlight the section in view ---- */
 (function () {
@@ -1296,6 +1449,442 @@ wireFolds();
   }, { rootMargin: "-20% 0px -70% 0px" });
   links.forEach((a) => { const t = document.getElementById(a.dataset.sec); if (t) io.observe(t); });
 })();
+
+/* =====================================================================================
+   v2: theme, tabs, toast, drawer, failure-bucket curation, synonym mining, attention list
+   ===================================================================================== */
+function applyTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  $("themeLbl").textContent = t === "dark" ? "라이트 모드" : "다크 모드";
+  $("btnTheme").querySelector("use").setAttribute("href", t === "dark" ? "#i-sun" : "#i-moon");
+}
+$("btnTheme").onclick = () => {
+  const t = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  try { localStorage.setItem("adminTheme", t); } catch (e) { /* private mode */ }
+  applyTheme(t);
+};
+applyTheme(document.documentElement.getAttribute("data-theme") || "light");
+
+function toast(msg, kind) {
+  const t = document.createElement("div");
+  t.className = "toast " + (kind || "");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => t.remove(), kind === "bad" ? 8000 : 3500);
+}
+
+/* tabs: selection is remembered per group; arrow keys move between tabs */
+function selectTab(group, id) {
+  const g = document.querySelector('[data-tabs="' + group + '"]');
+  if (!g) return;
+  g.querySelectorAll('[role="tab"]').forEach((b) => {
+    const on = b.dataset.tab === id;
+    b.setAttribute("aria-selected", String(on));
+    b.tabIndex = on ? 0 : -1;
+    const p = $(b.dataset.tab);
+    if (p) p.hidden = !on;
+  });
+  try { localStorage.setItem("adminTab:" + group, id); } catch (e) { /* ignore */ }
+}
+function wireTabs() {
+  document.querySelectorAll("[data-tabs]").forEach((g) => {
+    const group = g.dataset.tabs;
+    const btns = Array.from(g.querySelectorAll('[role="tab"]'));
+    const ids = btns.map((b) => b.dataset.tab);
+    let saved = null;
+    try { saved = localStorage.getItem("adminTab:" + group); } catch (e) { saved = null; }
+    selectTab(group, ids.includes(saved) ? saved : ids[0]);
+    btns.forEach((b, i) => {
+      b.addEventListener("click", () => selectTab(group, b.dataset.tab));
+      b.addEventListener("keydown", (ev) => {
+        if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+        const n = btns[(i + (ev.key === "ArrowRight" ? 1 : btns.length - 1)) % btns.length];
+        selectTab(group, n.dataset.tab);
+        n.focus();
+      });
+    });
+  });
+}
+function gotoSection(sec, tab) {
+  if (tab) {
+    const g = document.querySelector("#" + sec + " [data-tabs]");
+    if (g) selectTab(g.dataset.tabs, tab);
+  }
+  const el = $(sec);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest("[data-goto]");
+  if (!a) return;
+  ev.preventDefault();
+  const [sec, tab] = a.dataset.goto.split(":");
+  gotoSection(sec, tab);
+});
+
+/* slide-over drawer with focus return + Esc + simple focus trap */
+let _drawerReturn = null;
+function openDrawer(title, bodyHtml, footHtml) {
+  $("drawerTitle").textContent = title;
+  $("drawerBody").innerHTML = bodyHtml;
+  $("drawerFoot").innerHTML = footHtml || "";
+  $("drawerFoot").style.display = footHtml ? "flex" : "none";
+  if (!$("drawer").classList.contains("open")) _drawerReturn = document.activeElement;
+  $("scrim").classList.add("open");
+  $("drawer").classList.add("open");
+  $("drawer").setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  $("drawerClose").focus();
+}
+function closeDrawer() {
+  $("scrim").classList.remove("open");
+  $("drawer").classList.remove("open");
+  $("drawer").setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  if (_drawerReturn && document.contains(_drawerReturn)) _drawerReturn.focus();
+}
+$("drawerClose").onclick = closeDrawer;
+$("scrim").onclick = closeDrawer;
+document.addEventListener("keydown", (ev) => {
+  if (!$("drawer").classList.contains("open")) return;
+  if (ev.key === "Escape") { closeDrawer(); return; }
+  if (ev.key !== "Tab") return;
+  const f = Array.from($("drawer").querySelectorAll("button, a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])")).filter((x) => !x.disabled && x.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0], last = f[f.length - 1];
+  if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+});
+
+/* ---------------------------------- failure buckets ---------------------------------- */
+const FB_API = "/v1/failure-buckets";
+const FB_ENVS = ["csp", "msp", "onprem", "hybrid"];
+const fbState = { status: "active", q: "", domain: "", items: [], total: 0 };
+const fbById = {};
+
+function fmtConf(c) {
+  const v = Math.max(0, Math.min(1, Number(c) || 0));
+  return '<span class="meter" aria-hidden="true"><i style="width:' + Math.round(v * 100) + '%"></i></span>' + v.toFixed(2);
+}
+function registrantChip(by) {
+  if (!by) return '<span class="meta">—</span>';
+  return esc(by) + (String(by).includes("@") ? ' <span class="badge na" style="margin:0 0 0 4px">system</span>' : "");
+}
+async function refreshBuckets() {
+  try {
+    const r = await CitecAuth.apiFetch(FB_API + "?status=" + fbState.status + "&limit=200");
+    if (!r.ok) throw new Error(await regDetail(r));
+    const d = await readJson(r, FB_API);
+    fbState.items = d.items || [];
+    fbState.total = d.total || 0;
+    fbState.items.forEach((b) => { fbById[b.id] = b; });
+    const cur = fbState.domain;
+    const doms = Array.from(new Set(fbState.items.map((i) => i.fb_domain))).sort();
+    $("fbDomain").innerHTML = '<option value="">전체 도메인 (' + doms.length + ")</option>" +
+      doms.map((x) => '<option value="' + esc(x) + '"' + (x === cur ? " selected" : "") + ">" + esc(x) + "</option>").join("");
+    renderBuckets();
+  } catch (e) {
+    $("fbBody").innerHTML = '<tr><td colspan="7" class="meta">' + esc(String(e)) + "</td></tr>";
+  }
+}
+function renderBuckets() {
+  const q = fbState.q.trim().toLowerCase();
+  const rows = fbState.items.filter((b) =>
+    (!fbState.domain || b.fb_domain === fbState.domain) &&
+    (!q || [b.bucket_name, b.fb_domain, b.created_by, b.symptom, b.protocol].some((v) => String(v || "").toLowerCase().includes(q))));
+  $("fbCount").textContent = rows.length + "건 표시 · 전체 " + fbState.total + "건" + (fbState.total > fbState.items.length ? " (최근 " + fbState.items.length + "건만 불러옴)" : "");
+  const empty = { active: "등록된 활성 실패 버킷이 없습니다.", retired: "퇴역한 실패 버킷이 없습니다.", test: "테스트 등록(-test)이 없습니다." }[fbState.status];
+  $("fbBody").innerHTML = rows.length ? rows.map((b) => {
+    const sym = String(b.symptom || "");
+    return '<tr class="click" tabindex="0" role="button" data-id="' + esc(b.id) + '" aria-label="' + esc(b.bucket_name) + ' 상세 보기">' +
+      "<td><strong>" + esc(b.bucket_name) + '</strong><div class="meta">' + esc(sym.length > 70 ? sym.slice(0, 70) + "…" : sym) + "</div></td>" +
+      '<td><span class="tag">' + esc(b.fb_domain || "—") + "</span></td>" +
+      "<td>" + esc([b.protocol, b.environment].filter(Boolean).join(" · ") || "—") + "</td>" +
+      "<td>" + fmtConf(b.confidence) + "</td>" +
+      '<td class="num">' + esc((b.support_count || 0) + " / " + (b.counter_count || 0)) + "</td>" +
+      "<td>" + registrantChip(b.created_by) + "</td>" +
+      '<td class="meta">' + fmtTs(b.updated_at) + "</td></tr>";
+  }).join("") : '<tr><td colspan="7" class="meta">' + (q || fbState.domain ? "검색 조건에 맞는 항목이 없습니다." : empty) + "</td></tr>";
+}
+$("fbStatus").addEventListener("click", (ev) => {
+  const b = ev.target.closest("button[data-st]");
+  if (!b) return;
+  fbState.status = b.dataset.st;
+  fbState.domain = "";
+  $("fbStatus").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  refreshBuckets();
+});
+$("fbSearch").addEventListener("input", (ev) => { fbState.q = ev.target.value; renderBuckets(); });
+$("fbDomain").addEventListener("change", (ev) => { fbState.domain = ev.target.value; renderBuckets(); });
+function openFromRow(ev) {
+  const tr = ev.target.closest("tr[data-id]");
+  if (tr && (ev.type === "click" || ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openBucket(tr.dataset.id); }
+}
+$("fbBody").addEventListener("click", openFromRow);
+$("fbBody").addEventListener("keydown", openFromRow);
+
+const kv = (k, v) => '<div><dt>' + k + "</dt><dd>" + v + "</dd></div>";
+const tagList = (arr, cls) => (arr && arr.length) ? arr.map((x) => '<span class="tag ' + (cls || "") + '">' + esc(x) + "</span>").join("") : '<span class="meta">없음</span>';
+const prose = (t) => t ? '<div class="prose">' + esc(t) + "</div>" : '<span class="meta">비어 있음</span>';
+
+function bucketView(b) {
+  const st = { active: ["ok", "활성"], retired: ["na", "퇴역"], test: ["warn", "테스트"] }[b.status] || ["na", b.status];
+  const conf = Math.round((Number(b.confidence) || 0) * 100);
+  return (b.status === "retired" ? '<div class="callout warn"><b>퇴역된 항목입니다.</b> 목록·검색·그래프에서 숨겨져 있습니다. 수정하려면 먼저 복구하세요.<br/>' +
+      esc(b.retired_by || "—") + " · " + fmtTs(b.retired_at) + "<br/>사유: " + esc(b.retire_reason || "—") + "</div>" : "") +
+    '<div><span class="badge ' + st[0] + '">' + st[1] + "</span></div>" +
+    '<dl class="kvl" style="display:grid;grid-template-columns:1fr 1fr;gap:12px 18px">' +
+      kv("도메인", '<span class="tag">' + esc(b.fb_domain) + "</span>") + kv("프로토콜", esc(b.protocol || "—")) +
+      kv("환경", esc(b.environment || "전체(미지정)")) + kv("근거 등급", esc(b.evidence_grade || "—")) +
+      kv("등록자", registrantChip(b.created_by)) + kv("등록 · 갱신", fmtTs(b.created_at) + "<br/>" + fmtTs(b.updated_at)) +
+    "</dl>" +
+    '<div><div class="sect-t">신뢰도</div><div style="display:flex;align-items:center;gap:12px"><div class="pb" style="flex:1"><div class="pb-f" style="width:' + conf + '%"></div></div><b>' + conf + '%</b></div>' +
+      '<div class="meta" style="margin-top:4px">확인 ' + esc(b.support_count || 0) + "회 · 반박 " + esc(b.counter_count || 0) + "회 (refine으로 누적)</div></div>" +
+    '<div><div class="sect-t">증상</div>' + prose(b.symptom) + "</div>" +
+    '<div><div class="sect-t">판별 신호</div>' + tagList(b.discriminating_signals) + "</div>" +
+    '<div><div class="sect-t">반대 신호</div>' + tagList(b.counter_signals, "counter") + "</div>" +
+    '<div><div class="sect-t">원인</div>' + prose(b.root_cause) + "</div>" +
+    '<div><div class="sect-t">권장 조치</div>' + prose(b.recommended_action) + "</div>" +
+    '<div><div class="sect-t">근거 (evidence_ref)</div><code style="word-break:break-all">' + esc(b.evidence_ref || "—") + '</code></div>' +
+    '<div><div class="sect-t">ID</div><code class="mono" style="word-break:break-all">' + esc(b.id) + "</code></div>";
+}
+function bucketFoot(b) {
+  return b.status === "retired"
+    ? '<button type="button" data-act="restore"><svg class="i"><use href="#i-undo"/></svg>복구</button><span class="sp"></span><button type="button" class="ghost" data-act="close">닫기</button>'
+    : '<button type="button" data-act="edit"><svg class="i"><use href="#i-edit"/></svg>수정</button>' +
+      '<button type="button" class="danger ghost" data-act="retire"><svg class="i"><use href="#i-trash"/></svg>삭제 (퇴역)</button><span class="sp"></span><button type="button" class="ghost" data-act="close">닫기</button>';
+}
+let _curBucket = null;
+async function openBucket(id) {
+  openDrawer(fbById[id] ? fbById[id].bucket_name : "실패 버킷", '<span class="meta">불러오는 중…</span>', "");
+  try {
+    const r = await CitecAuth.apiFetch(FB_API + "/" + encodeURIComponent(id));
+    if (!r.ok) throw new Error(await regDetail(r));
+    showBucket(await readJson(r, FB_API));
+  } catch (e) { $("drawerBody").innerHTML = '<div class="callout warn">' + esc(String(e)) + "</div>"; }
+}
+function showBucket(b) {
+  _curBucket = b;
+  fbById[b.id] = b;
+  $("drawerTitle").textContent = b.bucket_name;
+  $("drawerBody").innerHTML = bucketView(b);
+  $("drawerFoot").innerHTML = bucketFoot(b);
+  $("drawerFoot").style.display = "flex";
+}
+function bucketEditForm(b) {
+  const doms = Array.from(new Set(fbState.items.map((i) => i.fb_domain).concat(b.fb_domain)));
+  const lines = (a) => esc((a || []).join("\n"));
+  return '<div id="beErr"></div><form id="beForm" class="stack" style="gap:12px" autocomplete="off">' +
+    '<label class="field">이름<input type="text" id="beName" maxlength="256" value="' + esc(b.bucket_name) + '"/></label>' +
+    '<div class="form-grid"><label class="field">도메인<input type="text" id="beDomain" list="beDomains" maxlength="32" value="' + esc(b.fb_domain) + '"/></label>' +
+    '<label class="field">프로토콜<input type="text" id="beProto" maxlength="32" value="' + esc(b.protocol || "") + '"/></label>' +
+    '<label class="field">환경<select id="beEnv"><option value="">전체(미지정)</option>' + FB_ENVS.map((e) => '<option' + (b.environment === e ? " selected" : "") + ">" + e + "</option>").join("") + "</select></label></div>" +
+    '<datalist id="beDomains">' + doms.map((d) => '<option value="' + esc(d) + '">').join("") + "</datalist>" +
+    '<label class="field">증상<textarea id="beSymptom" rows="3" maxlength="4000">' + esc(b.symptom || "") + "</textarea></label>" +
+    '<label class="field">판별 신호 <small>한 줄에 하나 · 최소 1개</small><textarea id="beSigs" rows="4">' + lines(b.discriminating_signals) + "</textarea></label>" +
+    '<label class="field">반대 신호 <small>한 줄에 하나</small><textarea id="beCounter" rows="3">' + lines(b.counter_signals) + "</textarea></label>" +
+    '<label class="field">원인<textarea id="beCause" rows="3" maxlength="4000">' + esc(b.root_cause || "") + "</textarea></label>" +
+    '<label class="field">권장 조치<textarea id="beAction" rows="3" maxlength="4000">' + esc(b.recommended_action || "") + "</textarea></label>" +
+    '<label class="field">근거 (evidence_ref)<input type="text" id="beEvidence" maxlength="2000" value="' + esc(b.evidence_ref || "") + '"/></label>' +
+    '<div class="meta">저장하면 검색 인덱스(문서 미러·임베딩)가 다시 만들어집니다. 신뢰도와 확인/반박 횟수는 여기서 바꾸지 않습니다.</div></form>';
+}
+async function saveBucketEdit() {
+  const b = _curBucket;
+  const lines = (id) => $(id).value.split("\n").map((x) => x.trim()).filter(Boolean);
+  const next = {
+    bucket_name: $("beName").value.trim(), fb_domain: $("beDomain").value.trim(), protocol: $("beProto").value.trim(),
+    environment: $("beEnv").value, symptom: $("beSymptom").value.trim(), discriminating_signals: lines("beSigs"),
+    counter_signals: lines("beCounter"), root_cause: $("beCause").value.trim(), recommended_action: $("beAction").value.trim(),
+    evidence_ref: $("beEvidence").value.trim(),
+  };
+  const same = (k) => JSON.stringify(next[k]) === JSON.stringify(Array.isArray(next[k]) ? (b[k] || []) : (b[k] || ""));
+  const changes = {};
+  Object.keys(next).forEach((k) => { if (!same(k)) changes[k] = next[k]; });
+  if (!Object.keys(changes).length) { toast("변경된 내용이 없습니다."); showBucket(b); return; }
+  const btn = $("drawerFoot").querySelector('[data-act="save"]');
+  if (btn) btn.disabled = true;
+  const r = await CitecAuth.apiFetch(FB_API + "/" + encodeURIComponent(b.id), { method: "PATCH", body: changes });
+  if (btn) btn.disabled = false;
+  if (r.status === 401 || r.status === 403) { $("beErr").innerHTML = '<div class="callout warn">수정 권한이 없습니다 (senior/admin 로그인 필요).</div>'; return; }
+  if (!r.ok) { $("beErr").innerHTML = '<div class="callout warn">' + esc(await regDetail(r)) + "</div>"; return; }
+  const d = await readJson(r, FB_API);
+  toast("저장됨 · " + (d.changed_fields || []).join(", ") + (d.index ? " · 검색 인덱스 갱신" : ""), "ok");
+  if (d.fb_domain_warning) toast(d.fb_domain_warning);
+  showBucket(d);
+  refreshBuckets();
+}
+function showRetireForm() {
+  $("drawerBody").insertAdjacentHTML("beforeend",
+    '<div class="callout warn" id="retireBox"><b>삭제는 "퇴역"으로 처리됩니다.</b> 데이터는 보존되고 목록·검색·그래프에서 숨겨지며 언제든 복구할 수 있습니다. ' +
+    '영구 삭제 기능은 제공하지 않습니다.<label class="field" style="margin-top:10px">퇴역 사유 (8자 이상, 기록됩니다)<textarea id="retireReason" rows="2" maxlength="2000"></textarea></label>' +
+    '<div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="danger" data-act="retire-ok">퇴역 확인</button><button type="button" class="ghost" data-act="retire-cancel">취소</button></div></div>');
+  $("retireReason").focus();
+  $("retireBox").scrollIntoView({ behavior: "smooth", block: "end" });
+}
+async function bucketAction(act) {
+  const b = _curBucket;
+  if (act === "close") return closeDrawer();
+  if (act === "edit") {
+    $("drawerBody").innerHTML = bucketEditForm(b);
+    $("drawerFoot").innerHTML = '<button type="button" data-act="save">저장</button><button type="button" class="ghost" data-act="cancel-edit">취소</button>';
+    $("beName").focus();
+    return;
+  }
+  if (act === "cancel-edit") return showBucket(b);
+  if (act === "save") return saveBucketEdit();
+  if (act === "retire") return showRetireForm();
+  if (act === "retire-cancel") return $("retireBox").remove();
+  if (act === "retire-ok" || act === "restore") {
+    const reason = act === "retire-ok" ? $("retireReason").value.trim() : null;
+    if (act === "retire-ok" && reason.length < 8) { toast("사유를 8자 이상 입력하세요.", "bad"); return; }
+    const r = await CitecAuth.apiFetch(FB_API + "/" + encodeURIComponent(b.id) + (act === "restore" ? "/restore" : "/retire"),
+      { method: "POST", body: reason ? { reason } : {} });
+    if (r.status === 401 || r.status === 403) { toast("권한이 없습니다 (senior/admin 로그인 필요).", "bad"); return; }
+    if (!r.ok) { toast(await regDetail(r), "bad"); return; }
+    toast(act === "restore" ? "복구했습니다." : "퇴역 처리했습니다. (복구 가능)", "ok");
+    const d = await readJson(r, FB_API);
+    showBucket(d);
+    refreshBuckets();
+  }
+}
+$("drawerFoot").addEventListener("click", (ev) => { const b = ev.target.closest("[data-act]"); if (b && _curBucket) bucketAction(b.dataset.act); });
+$("drawerBody").addEventListener("click", (ev) => { const b = ev.target.closest("[data-act]"); if (b && _curBucket) bucketAction(b.dataset.act); });
+
+/* ---------------------------------- synonym mining ---------------------------------- */
+const MINE_API = SYN_API + "/mine-runs";
+const MINE_STATUS = {
+  running: ["warn", "실행 중"], done: ["ok", "완료"], partial: ["warn", "부분 완료"], failed: ["bad", "실패"],
+  config_error: ["bad", "설정 오류"], cancelled: ["na", "중단함"], interrupted: ["bad", "중단됨 (서버 재시작?)"],
+};
+let mineTimer = null;
+window._mine = null;
+function mineArgsText(a) {
+  a = a || {};
+  return [a.since_years + "년", a.limit_tickets ? "티켓 " + a.limit_tickets : "티켓 전체", "배치 " + a.batch_size,
+    a.max_batches ? "최대 " + a.max_batches + "배치" : "", a.commit ? "자동 저장" : "", a.split_on_empty ? "분할 재시도" : ""].filter(Boolean).join(" · ");
+}
+function renderRun(r) {
+  const s = MINE_STATUS[r.status] || ["na", r.status];
+  const p = r.progress || {};
+  const pct = p.batches_total ? Math.min(100, Math.round((p.batches_done / p.batches_total) * 100)) : null;
+  const bar = (r.status === "running" || (pct != null && r.status !== "done"))
+    ? '<div class="pb" style="margin:8px 0 2px"><div class="pb-f" style="width:' + (pct == null ? 4 : pct) + '%"></div></div>' +
+      '<div class="meta">' + (p.tickets != null ? "티켓 " + p.tickets + "건 · " : "") + "배치 " + (p.batches_done || 0) + (p.batches_total ? " / " + p.batches_total : "") + "</div>" : "";
+  const st = r.stats || {};
+  const bad = ["llm_error", "proc_error", "parse_fail", "empty_response"].filter((k) => st[k]).map((k) => k + "=" + st[k]).join(" ");
+  const imported = r.committed;
+  const btn = (act, label, cls) => '<button type="button" class="sm ' + (cls || "ghost") + '" data-run="' + esc(r.run_id) + '" data-ract="' + act + '">' + label + "</button>";
+  return '<div class="panel"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
+    (r.status === "running" ? '<span class="pulse"></span>' : "") + '<span class="badge ' + s[0] + '">' + s[1] + "</span>" +
+    '<code class="mono">' + esc(r.run_id) + '</code><span class="meta">' + fmtTs(r.started_at) + " · " + esc(r.started_by || "—") + "</span></div>" +
+    '<div class="meta" style="margin-top:6px">' + esc(mineArgsText(r.args)) + "</div>" + bar +
+    (r.items_found != null ? '<div style="margin-top:6px">후보 <b>' + r.items_found + "</b>건 발견" + (imported ? ' · <span class="badge ok">후보로 저장됨</span>' : "") +
+      (r.commit ? ' <span class="meta">(신규 ' + esc(r.commit.inserted ?? "—") + " · 중복 " + esc(r.commit.skipped ?? "—") + ")</span>" : "") + "</div>" : "") +
+    (bad ? '<div class="meta" style="margin-top:4px;color:var(--bad)">오류 집계: ' + esc(bad) + "</div>" : "") +
+    (r.hint ? '<div class="callout warn" style="margin-top:8px">' + esc(r.hint) + "</div>" : "") +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + btn("log", "로그") +
+    (imported ? btn("review", "후보 보기", "") : "") +
+    (!imported && (r.items_found || 0) > 0 && r.status !== "running" ? btn("import", "후보로 가져오기", "") : "") +
+    (r.status === "running" ? btn("cancel", "중단", "danger ghost") : "") + "</div></div>";
+}
+async function refreshMining() {
+  try {
+    const r = await CitecAuth.apiFetch(MINE_API);
+    if (r.status === 401 || r.status === 403) { $("mineRuns").innerHTML = '<span class="meta">관리자 권한 필요</span>'; $("mineStart").disabled = true; return; }
+    if (!r.ok) throw new Error(await regDetail(r));
+    const runs = (await readJson(r, MINE_API)).runs || [];
+    window._mine = runs[0] || null;
+    const running = runs.find((x) => x.status === "running");
+    badge($("mineActive"), running ? null : (runs[0] && (runs[0].status === "failed" || runs[0].status === "config_error")) ? false : null,
+      running ? "실행 중 · " + running.run_id : "대기");
+    $("mineActive").className = "badge " + (running ? "warn" : "na");
+    $("tdMine").className = "tdot " + (running ? "s-warn" : (runs[0] && ["failed", "config_error", "interrupted"].includes(runs[0].status)) ? "s-bad" : "");
+    $("mineStart").disabled = !!running;
+    $("mineRuns").innerHTML = runs.length ? runs.map(renderRun).join("") : '<span class="meta">아직 실행한 마이닝이 없습니다. 위에서 시험 실행(티켓 300건)을 시작해 보세요.</span>';
+    clearTimeout(mineTimer);
+    if (running) mineTimer = setTimeout(refreshMining, 4000);
+    else if (window._minePrevRunning) { window._minePrevRunning = false; refreshSynCounts(); toast("마이닝이 끝났습니다.", "ok"); }
+    if (running) window._minePrevRunning = true;
+    updateSummary();
+  } catch (e) { $("mineRuns").innerHTML = '<span class="meta">' + esc(String(e)) + "</span>"; }
+}
+function numOrNull(id) { const v = $(id).value.trim(); return v === "" ? null : Number(v); }
+$("mineStart").onclick = async () => {
+  const body = { since_years: Number($("mineYears").value) || 2, limit_tickets: numOrNull("mineLimit"), batch_size: Number($("mineBatch").value) || 100,
+    max_batches: numOrNull("mineMaxB"), commit: $("mineCommit").checked, split_on_empty: $("mineSplit").checked };
+  if (!confirm("마이닝을 시작합니다.\n" + mineArgsText(body) + "\n\nLLM(Fabrix) 호출 비용이 발생합니다. 계속할까요?")) return;
+  $("mineStart").disabled = true;
+  $("mineMsg").textContent = "시작 중…";
+  const r = await CitecAuth.apiFetch(MINE_API, { method: "POST", body });
+  $("mineMsg").textContent = "";
+  if (r.status === 401 || r.status === 403) { toast("관리자 권한이 필요합니다.", "bad"); $("mineStart").disabled = false; return; }
+  if (!r.ok) { toast(await regDetail(r), "bad"); $("mineStart").disabled = false; return; }
+  toast("마이닝을 시작했습니다.", "ok");
+  refreshMining();
+};
+$("mineRuns").addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-ract]");
+  if (!b) return;
+  const id = b.dataset.run, act = b.dataset.ract;
+  if (act === "review") { synRunFilter = id; synStatus = "proposed"; renderSynTabs(); refreshSynonyms(); gotoSection("knowledge", "k-synrev"); return; }
+  if (act === "log") {
+    const r = await CitecAuth.apiFetch(MINE_API + "/" + encodeURIComponent(id));
+    if (!r.ok) { toast(await regDetail(r), "bad"); return; }
+    const d = await readJson(r, MINE_API);
+    openDrawer("마이닝 로그 · " + id, '<div class="meta">' + esc(mineArgsText(d.args)) + (d.model ? " · 모델 " + esc(d.model) : "") + "</div><pre>" +
+      esc((d.log_tail || []).join("\n") || "(로그 없음)") + "</pre>" +
+      (d.empty_samples && d.empty_samples.length ? '<div class="sect-t">빈 응답 샘플</div><pre>' + esc(JSON.stringify(d.empty_samples, null, 2)) + "</pre>" : ""),
+      '<span class="sp"></span><button type="button" class="ghost" id="logClose">닫기</button>');
+    $("logClose").onclick = closeDrawer;
+    return;
+  }
+  if (act === "cancel" && !confirm("실행 중인 마이닝을 중단할까요? 끝난 배치는 체크포인트로 남아 같은 설정으로 다시 실행하면 이어서 진행됩니다.")) return;
+  if (act === "import" && !confirm("이 실행의 결과를 '제안' 후보로 가져옵니다. (승인 전에는 검색에 영향이 없습니다)")) return;
+  b.disabled = true;
+  const r = await CitecAuth.apiFetch(MINE_API + "/" + encodeURIComponent(id) + "/" + act, { method: "POST" });
+  if (!r.ok) { toast(await regDetail(r), "bad"); b.disabled = false; return; }
+  const d = await readJson(r, MINE_API);
+  toast(act === "import" ? "후보로 가져왔습니다 (신규 " + (d.inserted ?? 0) + " · 중복 " + (d.skipped ?? 0) + ")" : "중단했습니다.", "ok");
+  refreshMining();
+  if (act === "import") refreshSynCounts();
+});
+
+/* synonym review counts (tab badges) */
+async function refreshSynCounts() {
+  try {
+    await Promise.all(SYN_STATUSES.map(async ([s]) => {
+      const r = await CitecAuth.apiFetch(SYN_API + "?status=" + s + "&limit=1");
+      if (r.ok) synTotals[s] = (await readJson(r, SYN_API)).total;
+    }));
+    renderSynTabs();
+    const n = synTotals.proposed || 0;
+    $("cntSynProposed").textContent = n;
+    $("cntSynProposed").hidden = !n;
+    updateSummary();
+  } catch (e) { /* counts are cosmetic */ }
+}
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#synClearRun")) { synRunFilter = ""; refreshSynonyms(); }
+});
+
+/* ---------------------------------- attention list ---------------------------------- */
+function renderAttention(items) {
+  const extra = [];
+  const proposed = synTotals.proposed || 0;
+  if (proposed) extra.push({ name: "동의어 후보 검수 대기", n: proposed, state: "info", go: "knowledge:k-synrev" });
+  const m = window._mine;
+  if (m && m.status === "running") extra.push({ name: "마이닝 실행 중", state: "warn", go: "knowledge:k-synmine" });
+  else if (m && ["failed", "config_error", "interrupted", "partial"].includes(m.status)) extra.push({ name: "마이닝 " + (MINE_STATUS[m.status] || [0, m.status])[1], state: m.status === "partial" ? "warn" : "bad", go: "knowledge:k-synmine" });
+  const all = items.concat(extra);
+  $("attn").innerHTML = all.length
+    ? '<span class="attn-t">확인할 일</span>' + all.map((i) => '<a class="chip ' + (i.state === "info" ? "" : i.state) + '" href="#" data-goto="' + esc(i.go) + '">' +
+        esc(i.name) + (i.n ? ' <span class="n">' + esc(i.n) + "</span>" : "") + "</a>").join("")
+    : '<span class="attn-t">확인할 일 없음</span>';
+}
+
+wireTabs();
+refreshBuckets();
+refreshMining();
+refreshSynCounts();
 
 refresh();
 scheduleAuto();

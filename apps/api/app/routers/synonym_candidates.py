@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator
 
 from app.auth.deps import require_roles
 from app.auth.principal import Principal
-from app.synonyms import runtime, store
+from app.synonyms import runner, runtime, store
 
 router = APIRouter(prefix="/v1/lexicon/synonym-candidates", tags=["lexicon"])
 
@@ -39,13 +39,56 @@ class ImportBody(BaseModel):
     items: list[ImportItem] = Field(max_length=2000)
 
 
+class MineStart(BaseModel):
+    since_years: float = Field(default=2.0, ge=0.1, le=10)
+    limit_tickets: Optional[int] = Field(default=None, ge=1, le=100000)
+    batch_size: int = Field(default=100, ge=10, le=500)
+    max_batches: Optional[int] = Field(default=None, ge=1, le=10000)
+    commit: bool = False  # True: accepted candidates go straight in as 'proposed'
+    split_on_empty: bool = False  # extra (billable) calls to isolate filter-blocked tickets
+
+
+def _run(fn, *a, **kw):
+    try:
+        return fn(*a, **kw)
+    except runner.RunError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+# Mining spends LLM calls and runs a long subprocess, so it is admin-only (not senior).
+@router.get("/mine-runs")
+def list_mine_runs(principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return {"runs": runner.list_runs()}
+
+
+@router.post("/mine-runs")
+def start_mine_run(body: MineStart, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return _run(runner.start, started_by=principal.name, **body.model_dump())
+
+
+@router.get("/mine-runs/{run_id}")
+def get_mine_run(run_id: str, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return _run(runner.describe, run_id, detail=True)
+
+
+@router.post("/mine-runs/{run_id}/cancel")
+def cancel_mine_run(run_id: str, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return _run(runner.cancel, run_id)
+
+
+@router.post("/mine-runs/{run_id}/import")
+def import_mine_run(run_id: str, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return _run(runner.import_result, run_id)
+
+
 @router.get("")
 def list_candidates(
     status: Optional[str] = Query(None, pattern="^(proposed|approved|rejected|disabled)$"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    run_id: Optional[str] = Query(None, max_length=64),
 ) -> dict[str, Any]:
-    return store.list_candidates(status=status, limit=limit, offset=offset)
+    return store.list_candidates(status=status, limit=limit, offset=offset, run_id=run_id)
 
 
 @router.post("/import")

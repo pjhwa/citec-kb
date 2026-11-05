@@ -77,11 +77,14 @@ def upsert_candidates(
 
 
 def list_candidates(
-    *, status: str | None = None, limit: int = 100, offset: int = 0
+    *, status: str | None = None, limit: int = 100, offset: int = 0, run_id: str | None = None
 ) -> dict[str, Any]:
     with session_scope() as session:
         q = select(SearchSynonymCandidate)
         cq = select(func.count()).select_from(SearchSynonymCandidate)
+        if run_id:
+            q = q.where(SearchSynonymCandidate.run_id == run_id)
+            cq = cq.where(SearchSynonymCandidate.run_id == run_id)
         if status:
             q = q.where(SearchSynonymCandidate.status == status)
             cq = cq.where(SearchSynonymCandidate.status == status)
