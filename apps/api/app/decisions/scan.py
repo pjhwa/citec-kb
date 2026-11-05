@@ -62,14 +62,9 @@ class Proposal:
 
 
 def load_config() -> dict[str, Any]:
-    cfg = dict(DEFAULTS)
-    try:
-        p = Path(get_settings().config_dir) / "decision_scan.json"
-        if p.exists():
-            cfg.update(json.loads(p.read_text()))
-    except Exception:  # noqa: BLE001 — 설정 오류가 스캔을 막지 않게 기본값
-        pass
-    return cfg
+    from app.decisions import scan_config
+
+    return scan_config.effective(DEFAULTS)
 
 
 # ---------------------------------------------------------------- detectors
@@ -193,7 +188,7 @@ def _documents_with_open_decisions(session) -> set[str]:
         .where(Decision.status != "retired", DecisionEvidence.document_id.is_not(None))).all())
 
 
-def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None) -> dict[str, Any]:
+def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_preview: bool = False) -> dict[str, Any]:
     cfg = load_config()
     cap_new = int(max_new if max_new is not None else cfg["max_new_per_run"])
     with session_scope() as s:
@@ -243,6 +238,11 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None) -> dict
                 continue  # 동시 실행으로 같은 source_key가 먼저 들어감
             except ValueError as exc:  # 근거 검증 실패 등 — 건너뛰고 보고
                 errors[p.source_key] = str(exc)
+    previews = None
+    if dry_run and llm_preview:  # DB에 쓰지 않고 LLM이 다듬을 문구만 미리 본다(llm_refine 설정과 무관)
+        from app.decisions import refine
+
+        previews = [refine.preview(p) for p in todo[: int(cfg["llm_max_per_run"])]]
     by_det: dict[str, int] = {}
     for p in found:
         by_det[p.detector] = by_det.get(p.detector, 0) + 1
@@ -250,7 +250,7 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None) -> dict
         "dry_run": dry_run, "detected": by_det, "already_known": len(found) - len(new),
         "would_create": [{"detector": p.detector, "source_key": p.source_key, "question": p.question, "stakes": p.stakes}
                          for p in todo] if dry_run else None,
-        "created": created, "created_count": len(created), "llm_refined": refined,
+        "created": created, "created_count": len(created), "llm_refined": refined, "llm_preview": previews,
         "skipped_by_cap": max(0, len(new) - len(todo)), "open_server_proposals_before": open_server,
         "caps": {"max_new_per_run": cap_new, "max_open_server_proposals": cfg["max_open_server_proposals"]},
         "errors": errors,

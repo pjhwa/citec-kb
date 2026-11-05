@@ -52,32 +52,37 @@ def _parse(raw: str) -> Optional[dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def validate(p, data: dict[str, Any]) -> Optional[tuple[str, list[dict]]]:
-    """Return (question, options) when the LLM answer is safe to use, else None."""
+def check(p, data: dict[str, Any]) -> tuple[Optional[tuple[str, list[dict]]], str]:
+    """(question, options) when the LLM answer is safe to use, else (None, reason)."""
     q = rules.norm_text(data.get("question"))
     got = data.get("options")
     if not q or not isinstance(got, list):
-        return None
+        return None, "질문 또는 선택지가 없음/형식 오류"
     if [str(o.get("key")) for o in got if isinstance(o, dict)] != [o["key"] for o in p.options]:
-        return None  # key set / order must be unchanged
+        return None, "선택지 key 목록·순서가 바뀜"
     # Numbers and dates of the rule draft must survive; no new ones may appear.
     if _numbers(q) != _numbers(p.question):
-        return None
+        return None, "질문의 숫자·날짜가 바뀜"
     opts = []
     for orig, o in zip(p.options, got):
         label, summary = rules.norm_text(o.get("label")), rules.norm_text(o.get("summary"))
-        if not label or _numbers(label) != _numbers(orig["label"]):
-            return None
+        if not label:
+            return None, "label이 비어 있음"
+        if _numbers(label) != _numbers(orig["label"]):
+            return None, "선택지 label의 숫자·날짜가 바뀜"
         opts.append({"key": orig["key"], "label": label, "summary": summary or orig["summary"]})
     try:
         rules.lint_options(q, opts)
-    except ValueError:
-        return None
-    return q, opts
+    except ValueError as exc:
+        return None, f"선택지 검사 실패: {exc}"
+    return (q, opts), ""
 
 
-def refine(p, *, complete=None) -> bool:
-    """Reword proposal `p` in place. Returns True when the LLM text was adopted."""
+def validate(p, data: dict[str, Any]) -> Optional[tuple[str, list[dict]]]:
+    return check(p, data)[0]
+
+
+def _ask(p, complete) -> tuple[Optional[tuple[str, list[dict]]], str]:
     if complete is None:
         from app.llm_chat import chat_complete as complete
     try:
@@ -85,12 +90,32 @@ def refine(p, *, complete=None) -> bool:
                        max_tokens=700, temperature=0.2, timeout=60.0)
     except Exception as exc:  # noqa: BLE001 — LLM 장애는 규칙 문구로 대체
         logger.warning("decision refine skipped (%s): %s", p.source_key, exc)
-        return False
-    ok = validate(p, _parse(raw) or {})
+        return None, f"LLM 호출 실패: {str(exc)[:160]}"
+    data = _parse(raw)
+    if data is None:
+        return None, "LLM 응답이 JSON이 아님"
+    return check(p, data)
+
+
+def refine(p, *, complete=None) -> bool:
+    """Reword proposal `p` in place. Returns True when the LLM text was adopted."""
+    ok, reason = _ask(p, complete)
     if ok is None:
-        logger.info("decision refine rejected (%s)", p.source_key)
+        logger.info("decision refine rejected (%s): %s", p.source_key, reason)
         return False
     p.source_ref = {**p.source_ref, "llm_refined": True, "rule_question": p.question,
                     "rule_options": p.options}
     p.question, p.options = ok
     return True
+
+
+def preview(p, *, complete=None) -> dict[str, Any]:
+    """Side-effect free: what refine() would do to `p`, with the rejection reason when it would not."""
+    ok, reason = _ask(p, complete)
+    out: dict[str, Any] = {"source_key": p.source_key, "detector": p.detector, "adopted": ok is not None,
+                           "rule": {"question": p.question, "options": p.options}}
+    if ok is not None:
+        out["llm"] = {"question": ok[0], "options": ok[1]}
+    else:
+        out["reason"] = reason
+    return out

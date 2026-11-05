@@ -71,6 +71,7 @@ def _http(exc: Exception) -> HTTPException:
 
 _AUTHOR = require_roles("author", "senior", "admin")
 _SENIOR = require_roles("senior", "admin")
+_ADMIN = require_roles("admin")
 
 
 @router.post("/decisions")
@@ -121,11 +122,29 @@ def post_scan(principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
 
 
 @router.post("/decisions/_scan-topics")
-def post_scan_topics(dry_run: bool = False, max_new: Optional[int] = Query(None, ge=0, le=200),
+def post_scan_topics(dry_run: bool = False, llm_preview: bool = False,
+                     max_new: Optional[int] = Query(None, ge=0, le=200),
                      principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
     from app.decisions.scan import scan_topics
 
-    return scan_topics(dry_run=dry_run, max_new=max_new)
+    return scan_topics(dry_run=dry_run, max_new=max_new, llm_preview=llm_preview and dry_run)
+
+
+@router.get("/decisions/_scan-config")
+def get_scan_config(principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
+    from app.decisions import scan, scan_config
+
+    return scan_config.snapshot(scan.DEFAULTS)
+
+
+@router.put("/decisions/_scan-config")
+def put_scan_config(body: dict[str, Any], principal: Principal = Depends(_ADMIN)) -> dict[str, Any]:
+    from app.decisions import scan, scan_config
+
+    try:
+        return scan_config.update(body, scan.DEFAULTS, principal.name or "admin")
+    except scan_config.ScanConfigError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/decisions/metrics")
