@@ -26,6 +26,7 @@
       <a href="#2-v1">2. 네이티브 외부 연동 (/v1/*)</a>
       <a href="#v1failure-buckets" style="padding-left:20px;font-size:12px">실패 버킷 (/v1/failure-buckets/*)</a>
       <a href="#3-mcp-claude">3. MCP 서버 (Claude 등)</a>
+      <a href="#3-1-admin-api">3-1. 호출자 식별과 사용 현황 (admin → 사용 현황 → "API 호출")</a>
       <a href="#4">4. 인증</a>
       <a href="#5-curl">5. curl 스모크</a>
     </nav>
@@ -39,7 +40,7 @@
       <p class="lead">citec-wiki-qa 호환 /api/* 레이어</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/EXTERNAL_API.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-09-28</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
       </div>
     </header>
     <section>
@@ -636,6 +637,37 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 </table></div>
 <p>Claude Desktop 예시: <code>mcp-server/claude_desktop_config.example.json</code></p>
 <hr>
+<h2 id="3-1-admin-api">3-1. 호출자 식별과 사용 현황 (admin → 사용 현황 → "API 호출")</h2>
+<p>MCP(AI CLI)는 <code>mcp_access_log</code>로, 그 밖의 <code>/v1/*</code> 호출은 <code>api_access_log</code>로 기록하고 admin 화면에서 <strong>웹 / 내부 시스템 / 외부 시스템</strong>으로 나눠 본다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>구분</th>
+<th>판정</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>웹</td>
+<td>브라우저 요청 — <code>Sec-Fetch-Site</code> 헤더가 있거나 <code>Mozilla</code> UA + <code>Referer</code>가 있음</td>
+</tr>
+<tr>
+<td>내부 시스템</td>
+<td>호출 IP가 <code>API_INTERNAL_CIDRS</code>(기본: 루프백, <code>169.254/16</code>, <code>172.16/12</code> = 도커 브리지) 안 — worker, 서버 위 스크립트, 컨테이너</td>
+</tr>
+<tr>
+<td>외부 시스템</td>
+<td>그 밖의 IP — 다른 서버가 호출하면 여기로 잡힌다</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>다른 시스템에서 오는 호출도 구분된다.</strong> 이름까지 보려면 호출 측이 헤더를 보낸다: <code>X-Citec-Client: &lt;시스템명&gt;</code> (예: <code>toolbox-sosanalyzer</code>). 없으면 인증된 토큰 이름(<code>AUTH_MODE</code>가 켜진 경우), 그것도 없으면 User-Agent 제품명(<code>curl</code>, <code>python-requests</code> 등)으로 표시한다. <code>mcp-server</code>는 MCP 전용 값이라 이 로그에서는 제외된다.</li>
+<li><strong>IP는 참고용이다.</strong> nginx가 넣는 <code>X-Real-IP</code>(없으면 <code>X-Forwarded-For</code>, 그것도 없으면 접속 IP)를 쓴다. api 포트(8573)에 직접 붙는 클라이언트는 이 헤더를 스스로 보낼 수 있으므로 보안 판단 근거로 쓰지 않는다. 사내 다른 서버(10.x, 192.168.x)는 모두 "외부"로 분류된다. 기준을 바꾸려면 <code>API_INTERNAL_CIDRS</code>(쉼표 구분 CIDR)를 설정한다.</li>
+<li><strong>기록하지 않는 것:</strong> MCP(별도 테이블), admin 화면 자신의 폴링(Referer <code>/admin.html</code>), <code>/v1/health</code>·<code>/v1/ops/*</code>·<code>/v1/auth/*</code>·<code>/v1/graph/status</code>, OPTIONS 사전요청. 경로는 라우트 템플릿(<code>/v1/failure-buckets/{bucket_id}</code>)으로 저장하고, 매칭되지 않는 404 경로는 앞 3개 구간만 남긴다. 요청 본문·쿼리스트링·토큰은 저장하지 않는다.</li>
+<li><strong>성능·보관:</strong> 요청은 큐에 넣고 백그라운드 스레드가 2초 단위로 배치 insert 한다(요청이 DB를 기다리지 않음, 큐가 가득 차면 버리고 <code>dropped</code>로 센다). <code>API_ACCESS_LOG_RETENTION_DAYS</code>(기본 30)보다 오래된 행은 매시간 삭제한다. <code>API_ACCESS_LOG=off</code>로 끌 수 있다.</li>
+<li>기록은 이 기능을 배포한 시점부터 쌓인다(과거 호출은 복원되지 않는다). 마이그레이션 <code>20261105_0020</code>(새 테이블만 추가)이 필요하다.</li>
+</ul>
 <h2 id="4">4. 인증</h2>
 <p>파일럿 기본 <code>AUTH_MODE=off</code> — Bearer 불필요.<br>
 <code>apikey</code> / <code>oidc</code> 모드에서는 <code>/v1/*</code> 와 동일하게 게이트가 적용될 수 있습니다 (호환 <code>/api/*</code> 는 현재 공개 연동용으로 게이트 없음; 운영 시 리버스 프록시·API 키를 권장).</p>

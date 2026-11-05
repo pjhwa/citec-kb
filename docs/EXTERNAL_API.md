@@ -285,6 +285,22 @@ Claude Desktop 예시: `mcp-server/claude_desktop_config.example.json`
 
 ---
 
+## 3-1. 호출자 식별과 사용 현황 (admin → 사용 현황 → "API 호출")
+
+MCP(AI CLI)는 `mcp_access_log`로, 그 밖의 `/v1/*` 호출은 `api_access_log`로 기록하고 admin 화면에서 **웹 / 내부 시스템 / 외부 시스템**으로 나눠 본다.
+
+| 구분 | 판정 |
+|---|---|
+| 웹 | 브라우저 요청 — `Sec-Fetch-Site` 헤더가 있거나 `Mozilla` UA + `Referer`가 있음 |
+| 내부 시스템 | 호출 IP가 `API_INTERNAL_CIDRS`(기본: 루프백, `169.254/16`, `172.16/12` = 도커 브리지) 안 — worker, 서버 위 스크립트, 컨테이너 |
+| 외부 시스템 | 그 밖의 IP — 다른 서버가 호출하면 여기로 잡힌다 |
+
+- **다른 시스템에서 오는 호출도 구분된다.** 이름까지 보려면 호출 측이 헤더를 보낸다: `X-Citec-Client: <시스템명>` (예: `toolbox-sosanalyzer`). 없으면 인증된 토큰 이름(`AUTH_MODE`가 켜진 경우), 그것도 없으면 User-Agent 제품명(`curl`, `python-requests` 등)으로 표시한다. `mcp-server`는 MCP 전용 값이라 이 로그에서는 제외된다.
+- **IP는 참고용이다.** nginx가 넣는 `X-Real-IP`(없으면 `X-Forwarded-For`, 그것도 없으면 접속 IP)를 쓴다. api 포트(8573)에 직접 붙는 클라이언트는 이 헤더를 스스로 보낼 수 있으므로 보안 판단 근거로 쓰지 않는다. 사내 다른 서버(10.x, 192.168.x)는 모두 "외부"로 분류된다. 기준을 바꾸려면 `API_INTERNAL_CIDRS`(쉼표 구분 CIDR)를 설정한다.
+- **기록하지 않는 것:** MCP(별도 테이블), admin 화면 자신의 폴링(Referer `/admin.html`), `/v1/health`·`/v1/ops/*`·`/v1/auth/*`·`/v1/graph/status`, OPTIONS 사전요청. 경로는 라우트 템플릿(`/v1/failure-buckets/{bucket_id}`)으로 저장하고, 매칭되지 않는 404 경로는 앞 3개 구간만 남긴다. 요청 본문·쿼리스트링·토큰은 저장하지 않는다.
+- **성능·보관:** 요청은 큐에 넣고 백그라운드 스레드가 2초 단위로 배치 insert 한다(요청이 DB를 기다리지 않음, 큐가 가득 차면 버리고 `dropped`로 센다). `API_ACCESS_LOG_RETENTION_DAYS`(기본 30)보다 오래된 행은 매시간 삭제한다. `API_ACCESS_LOG=off`로 끌 수 있다.
+- 기록은 이 기능을 배포한 시점부터 쌓인다(과거 호출은 복원되지 않는다). 마이그레이션 `20261105_0020`(새 테이블만 추가)이 필요하다.
+
 ## 4. 인증
 
 파일럿 기본 `AUTH_MODE=off` — Bearer 불필요.  
