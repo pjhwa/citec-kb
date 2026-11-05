@@ -6,71 +6,186 @@
 <title>Admin / Ops — CI-TEC Knowledge</title>
 <link rel="stylesheet" href="/css/theme.css"/>
 <style>
-  :root { --bg:#f6f8fb; --card:#fff; --text:#0f172a; --muted:#64748b; --primary:#1428A0; --border:#e2e8f0; --ok:#047857; --bad:#b91c1c; --warn:#b45309; }
+  /* Design tokens. Fonts come from theme.css (--font-sans / --font-mono). Status colors meet
+     WCAG AA text contrast on their tinted backgrounds, and every status also carries an icon
+     and a text label (never color alone). */
+  :root {
+    --bg:#f4f6fa; --card:#fff; --surface-2:#f8fafc; --text:#0f172a; --muted:#475569; --border:#e2e8f0;
+    --primary:#1428A0; --primary-soft:#e8ecfb;
+    --ok:#047857; --ok-bg:#d1fae5; --bad:#b91c1c; --bad-bg:#fee2e2; --warn:#92400e; --warn-bg:#fef3c7; --na-bg:#eef2f7;
+    --radius:12px; --gap:16px;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: 'Pretendard', system-ui, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--text); }
-  .wrap { max-width:1200px; margin:0 auto; padding:24px 16px 60px; }
-  h1 { font-size:1.4rem; margin:0 0 8px; }
-  .sub { color:var(--muted); font-size:13px; margin-bottom:16px; }
-  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px; }
-  .badge { display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-right:4px; }
-  .ok { background:#d1fae5; color:var(--ok); }
-  .bad { background:#fee2e2; color:var(--bad); }
-  .warn { background:#fef3c7; color:var(--warn); }
-  .na { background:#f1f5f9; color:var(--muted); }
-  button { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:8px 14px; font-weight:700; cursor:pointer; margin:4px 4px 4px 0; }
-  button.ghost { background:#fff; color:var(--primary); border:1px solid var(--border); }
-  pre { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px; font-size:11px; overflow:auto; max-height:280px; }
+  html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+  body { margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.5; }
+  a { color:var(--primary); }
+  :focus-visible { outline:2px solid var(--primary); outline-offset:2px; border-radius:4px; }
+
+  /* ---- shell: sticky section nav + content ---- */
+  .shell { display:grid; grid-template-columns:184px minmax(0,1fr); gap:28px; max-width:1480px; margin:0 auto; padding:20px 20px 72px; }
+  .side { position:sticky; top:16px; align-self:start; display:flex; flex-direction:column; gap:2px; }
+  .side-title { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 6px 10px; }
+  .side a { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; color:var(--muted); text-decoration:none; font-weight:600; }
+  .side a:hover { background:#e9edf5; color:var(--text); }
+  .side a.is-active { background:var(--primary-soft); color:var(--primary); }
+  .side a .dot { width:8px; height:8px; border-radius:50%; background:#cbd5e1; flex:none; }
+  .side a.is-bad .dot { background:var(--bad); } .side a.is-warn .dot { background:#d97706; } .side a.is-ok .dot { background:var(--ok); }
+  main { min-width:0; }
+
+  .page-h { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; margin-bottom:20px; }
+  h1 { font-size:24px; line-height:1.25; margin:0; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:13px; margin:4px 0 0; }
+  .toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+
+  section.sec { margin-bottom:36px; }
+  .sec-h { margin:0 0 12px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .sec-h h2 { font-size:17px; margin:0; letter-spacing:-.005em; }
+  .sec-h p { margin:0; color:var(--muted); font-size:12.5px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:var(--gap); align-items:start; }
+  .stack { display:flex; flex-direction:column; gap:var(--gap); }
+
+  /* ---- overview: banner + KPI tiles ---- */
+  .banner { display:flex; align-items:center; gap:12px; padding:14px 18px; border-radius:var(--radius); border:1px solid; font-weight:600; margin-bottom:var(--gap); }
+  .banner .ico { font-size:20px; line-height:1; }
+  .banner small { display:block; font-weight:500; opacity:.9; }
+  .banner.ok { background:var(--ok-bg); color:var(--ok); border-color:#a7f3d0; }
+  .banner.warn { background:var(--warn-bg); color:var(--warn); border-color:#fcd34d; }
+  .banner.bad { background:var(--bad-bg); color:var(--bad); border-color:#fca5a5; }
+  .banner.na { background:var(--na-bg); color:var(--muted); border-color:var(--border); }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:var(--gap); }
+  .kpi { background:var(--card); border:1px solid var(--border); border-left:4px solid #cbd5e1; border-radius:var(--radius); padding:12px 14px; }
+  .kpi.ok { border-left-color:var(--ok); } .kpi.bad { border-left-color:var(--bad); } .kpi.warn { border-left-color:#d97706; }
+  .kpi-l { font-size:12px; font-weight:600; color:var(--muted); }
+  .kpi-v { font-size:22px; font-weight:700; line-height:1.3; letter-spacing:-.01em; }
+  .kpi-v::before { font-size:15px; margin-right:6px; vertical-align:2px; }
+  .kpi.ok .kpi-v::before { content:"✓"; color:var(--ok); } .kpi.bad .kpi-v::before { content:"✕"; color:var(--bad); }
+  .kpi.warn .kpi-v::before { content:"▲"; color:#b45309; }
+  .kpi-s { font-size:12px; color:var(--muted); min-height:1.4em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* ---- cards ---- */
+  .card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; min-width:0; overflow-x:auto; }
+  .card > strong:first-child, .card > .job-top > strong:first-child { font-size:14.5px; font-weight:700; display:block; }
+  .card > strong:first-child { margin-bottom:8px; }
+  .card.fold > :first-child { cursor:pointer; position:relative; padding-right:22px; user-select:none; }
+  .card.fold > :first-child::after { content:"▾"; position:absolute; right:0; top:0; color:var(--muted); transition:transform .15s; }
+  .card.fold.is-collapsed > :first-child::after { transform:rotate(-90deg); }
+  .card.fold.is-collapsed > :not(:first-child) { display:none; }
+  .card.fold.is-collapsed > :first-child { margin-bottom:0; }
+  .job-top { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px; }
   .meta { color:var(--muted); font-size:12px; }
-  .row { display:flex; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); }
   .row:last-child { border-bottom:0; }
+  .row > span:first-child { color:var(--muted); }
+  code { background:var(--surface-2); border:1px solid var(--border); border-radius:4px; padding:0 4px; font-size:.9em; }
+
+  /* ---- status badges: icon + text + color ---- */
+  .badge { display:inline-flex; align-items:center; gap:4px; font-size:11.5px; font-weight:700; padding:2px 9px; border-radius:999px; margin-right:4px; white-space:nowrap; }
+  .badge::before { font-size:10px; }
+  .ok { background:var(--ok-bg); color:var(--ok); } .ok::before { content:"✓"; }
+  .bad { background:var(--bad-bg); color:var(--bad); } .bad::before { content:"✕"; }
+  .warn { background:var(--warn-bg); color:var(--warn); } .warn::before { content:"▲"; }
+  .na { background:var(--na-bg); color:var(--muted); } .na::before { content:"–"; }
+  .banner::before, .kpi::before, .stack-seg::before, .side a::before { content:none !important; }
+
+  /* ---- controls ---- */
+  button { background:var(--primary); color:#fff; border:1px solid var(--primary); border-radius:8px; padding:7px 14px; font-weight:600; font-size:13px; cursor:pointer; transition:background .12s, box-shadow .12s; }
+  button:hover { background:#0f1f80; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  button.ghost { background:#fff; color:var(--primary); border-color:var(--border); }
+  button.ghost:hover { background:var(--primary-soft); border-color:#c7d0f0; }
+  input[type=text], select { border:1px solid #cbd5e1; border-radius:8px; padding:7px 10px; font-size:13px; background:#fff; color:var(--text); }
+  input[type=text]:focus, select:focus { border-color:var(--primary); outline:2px solid var(--primary-soft); }
+  label.toggle { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--muted); cursor:pointer; }
   a.link { color:var(--primary); font-weight:600; }
-  table.tbl { width:100%; border-collapse:collapse; font-size:12px; }
-  table.tbl th { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border); color:var(--muted); font-size:11px; }
-  table.tbl td { padding:5px 8px; border-bottom:1px solid var(--border); vertical-align:middle; }
-  .pb { height:6px; background:#eef2f7; border-radius:3px; overflow:hidden; min-width:80px; }
-  .pb-f { height:100%; border-radius:3px; background:var(--primary); }
-  .stack-bar { display:flex; height:14px; border-radius:4px; overflow:hidden; background:#eef2f7; width:100%; }
+
+  /* ---- tables ---- */
+  table.tbl { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.tbl th { text-align:left; padding:7px 10px; border-bottom:2px solid var(--border); color:var(--muted); font-size:11.5px; font-weight:700; white-space:nowrap; position:sticky; top:0; background:var(--card); }
+  table.tbl td { padding:7px 10px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  table.tbl tbody tr:hover { background:var(--surface-2); }
+  pre { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:10px; font-size:11.5px; overflow:auto; max-height:280px; }
+
+  /* ---- bars ---- */
+  .pb { height:8px; background:var(--na-bg); border-radius:4px; overflow:hidden; min-width:80px; }
+  .pb-f { height:100%; border-radius:4px; background:var(--primary); }
+  .stack-bar { display:flex; height:14px; border-radius:4px; overflow:hidden; background:var(--na-bg); width:100%; }
   .stack-seg { height:100%; }
-  .stack-seg.ok { background:var(--ok); }
-  .stack-seg.bad { background:var(--bad); }
-  .stack-seg.na { background:#cbd5e1; }
-  .stack-legend { display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:4px; }
+  .stack-seg.ok { background:var(--ok); } .stack-seg.bad { background:var(--bad); } .stack-seg.na { background:#cbd5e1; }
+  .stack-legend { display:flex; gap:12px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin-top:4px; }
   .stack-legend span.dot { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
-  .hbar-row { display:flex; align-items:center; gap:8px; margin:3px 0; font-size:12px; }
+  .hbar-row { display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; }
   .hbar-label { width:130px; flex-shrink:0; text-align:right; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .hbar-track { flex:1; height:12px; background:#eef2f7; border-radius:3px; overflow:hidden; }
+  .hbar-track { flex:1; height:12px; background:var(--na-bg); border-radius:3px; overflow:hidden; }
   .hbar-fill { height:100%; border-radius:3px; background:var(--primary); }
   .hbar-count { width:36px; flex-shrink:0; font-weight:700; }
   .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; animation:pulse 1.4s infinite; }
   @keyframes pulse { 0%{opacity:1} 50%{opacity:.25} 100%{opacity:1} }
-  .job-c { background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
-  .job-top { display:flex; justify-content:space-between; margin-bottom:4px; }
-  label.toggle { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation:none; } html { scroll-behavior:auto; } }
+  .job-c { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:6px; font-size:12px; }
+
+  /* ---- narrow screens: nav becomes a sticky chip bar ---- */
+  @media (max-width: 960px) {
+    .shell { grid-template-columns:minmax(0,1fr); gap:12px; padding:12px 12px 56px; }
+    .side { position:sticky; top:0; z-index:10; flex-direction:row; overflow-x:auto; background:var(--bg); padding:8px 0; gap:6px; }
+    .side-title { display:none; }
+    .side a { white-space:nowrap; background:var(--card); border:1px solid var(--border); }
+    html { scroll-padding-top: 60px; }
+  }
+
 </style>
 </head>
 <body>
 <div class="top" id="topNav" data-page="admin"></div>
-<div class="wrap">
-  <h1>Admin / Ops 대시보드</h1>
-  <p class="sub">운영자 페르소나 · health · auth · worker · pilot 링크 · job ping (admin 토큰 시)</p>
+<div class="shell">
+  <nav class="side" id="sideNav" aria-label="Admin 섹션">
+    <div class="side-title">Admin / Ops</div>
+    <a href="#overview" data-sec="overview"><span class="dot"></span>개요</a>
+    <a href="#system" data-sec="system"><span class="dot"></span>시스템</a>
+    <a href="#ingest" data-sec="ingest"><span class="dot"></span>데이터 수집</a>
+    <a href="#knowledge" data-sec="knowledge"><span class="dot"></span>지식 관리</a>
+    <a href="#usage" data-sec="usage"><span class="dot"></span>사용 현황</a>
+    <a href="#automation" data-sec="automation"><span class="dot"></span>자동화 (cron)</a>
+    <a href="#access" data-sec="access"><span class="dot"></span>접근 제어</a>
+  </nav>
 
-  <div style="margin-bottom:12px">
-    <button type="button" id="btnRefresh">전체 새로고침</button>
-    <label class="toggle"><input type="checkbox" id="chkAuto" checked/> 자동 갱신 (10s)</label>
-    <span id="msg" class="meta"></span>
-  </div>
+  <main>
+    <header class="page-h">
+      <div>
+        <h1>Admin / Ops 대시보드</h1>
+        <p class="sub">운영 상태 요약 → 영역별 세부 순서로 구성했습니다. 접을 수 있는 카드는 제목을 눌러 펼치세요.</p>
+      </div>
+      <div class="toolbar">
+        <button type="button" id="btnRefresh">전체 새로고침</button>
+        <label class="toggle"><input type="checkbox" id="chkAuto" checked/> 자동 갱신 (10초)</label>
+        <span id="msg" class="meta" role="status" aria-live="polite"></span>
+      </div>
+    </header>
 
-  <div class="grid">
-    <div class="card">
+    <section class="sec" id="overview" aria-labelledby="h-overview">
+      <div class="sec-h"><h2 id="h-overview">개요</h2><p>지금 문제가 있는가? — 아래 요약만 보고 판단할 수 있게 합니다.</p></div>
+      <div id="banner" class="banner na" role="status"><span class="ico" aria-hidden="true">…</span><div><span id="bannerText">상태 확인 중…</span><small id="bannerSub"></small></div></div>
+      <div class="kpis">
+        <div class="kpi na" id="kpiApi"><div class="kpi-l">API</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiInfra"><div class="kpi-l">Postgres · Redis</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiWorker"><div class="kpi-l">Worker</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiGraph"><div class="kpi-l">지식그래프</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiCron"><div class="kpi-l">크론 작업</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiDisk"><div class="kpi-l">디스크 (raw)</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+        <div class="kpi na" id="kpiAuth"><div class="kpi-l">인증</div><div class="kpi-v">…</div><div class="kpi-s"></div></div>
+      </div>
+    </section>
+
+    <section class="sec" id="system" aria-labelledby="h-system">
+      <div class="sec-h"><h2 id="h-system">시스템</h2><p>세션, 플랫폼 구성요소, 리소스, 작업 큐</p></div>
+      <div class="grid">
+        <div class="card">
       <strong>Session</strong>
       <div class="row"><span>principal</span><span id="who" class="meta">…</span></div>
       <div class="row"><span>auth_mode</span><span id="amode" class="badge na">…</span></div>
       <div class="row"><span>enforced</span><span id="aenf" class="badge na">…</span></div>
       <div class="row"><span>oidc configured</span><span id="aoidc" class="badge na">…</span></div>
     </div>
-    <div class="card">
+        <div class="card">
       <strong>Platform</strong>
       <div class="row"><span>API health</span><span id="hapi" class="badge na">…</span></div>
       <div class="row"><span>Postgres</span><span id="hpg" class="badge na">…</span></div>
@@ -79,7 +194,7 @@
       <div class="row"><span>Worker</span><span id="hworker" class="badge na">…</span></div>
       <div class="row"><span>Pilot ready</span><span id="hpilot" class="badge na">…</span></div>
     </div>
-    <div class="card">
+        <div class="card">
       <strong>리소스 (API 프로세스 기준)</strong>
       <div class="row"><span>RSS 메모리</span><span id="rRss" class="meta">…</span></div>
       <div class="row"><span>Load avg (1m)</span><span id="rLoad" class="meta">…</span></div>
@@ -88,18 +203,56 @@
       <div class="row"><span>쿼리 (1h / 24h)</span><span id="qCounts" class="meta">…</span></div>
       <div class="row"><span>평균 지연 (24h)</span><span id="qLatency" class="meta">…</span></div>
     </div>
-    <div class="card">
-      <strong>Quick links</strong>
-      <p class="meta" style="line-height:1.8">
-        <a class="link" href="/insights.html">Insight 승인</a><br/>
-        <a class="link" href="/login.html">Login / SSO</a><br/>
-        <a class="link" href="/docs/oidc-idp-setup.html">OIDC IdP 가이드</a><br/>
-        <a class="link" href="/api/docs" target="_blank">Swagger</a>
-      </p>
+        <div class="card">
+      <strong>작업 큐</strong>
+      <div class="row"><span>queue_length</span><span id="jQueueLen" class="meta">…</span></div>
+      <div class="row"><span>worker heartbeat</span><span id="jWorker" class="badge na">…</span></div>
+      <div id="jobList" style="margin-top:8px"></div>
+    </div>
+      </div>
+    </section>
+
+    <section class="sec" id="ingest" aria-labelledby="h-ingest">
+      <div class="sec-h"><h2 id="h-ingest">데이터 수집</h2><p>인제스트·임베딩, Confluence 맵 동기화, 지식그래프 반영</p></div>
+      <div class="stack">
+        <div class="card">
+    <strong>인제스트 / 임베딩 진행률</strong>
+    <table class="tbl">
+      <thead><tr><th>소스</th><th>raw 파일</th><th>문서</th><th>청크(활성)</th><th>임베딩</th><th>진행률</th><th>최근 잡</th></tr></thead>
+      <tbody id="ingestBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
+        <div class="card">
+    <div class="job-top">
+      <strong>Confluence 맵 동기화 (confluence_map)</strong>
+      <span>
+        <span id="mapRunning" class="badge na">…</span>
+        <button type="button" id="btnMapRun">지금 실행 (백그라운드)</button>
+      </span>
+    </div>
+    <p class="meta" style="margin:4px 0 8px" id="mapSourceCount">
+      활성 공간 순차 동기화. 실행 중 중단돼도 다음 실행이 체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록
+      Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).
+    </p>
+    <div id="mapCurrent" class="row"><span>지금 처리 중</span><span class="meta">…</span></div>
+    <div id="backfillBox" style="margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:8px">백필 대기</div>
+    <table class="tbl">
+      <thead><tr><th>source_id</th><th>space</th><th>상태</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th><th></th></tr></thead>
+      <tbody id="mapSyncBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+    <span id="mapMsg" class="meta"></span>
+    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0"/>
+    <strong style="font-size:13px">새 공간 추가</strong>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center">
+      <input type="text" id="newSpaceKey" placeholder="space_key (예: NEWSPACE)" style="flex:1;min-width:140px"/>
+      <input type="text" id="newSpaceName" placeholder="space_name (예: 새 팀 공간)" style="flex:1;min-width:140px"/>
+      <input type="text" id="newPageId" placeholder="root/page ID" style="flex:1;min-width:120px"/>
+      <input type="text" id="newPageLabel" placeholder="label" style="flex:1;min-width:140px"/>
+      <label class="toggle"><input type="checkbox" id="newIsExplicit"/> explicit page</label>
+      <button type="button" id="btnAddSpace">추가</button>
     </div>
   </div>
-
-  <div class="card" style="margin-top:12px">
+        <div class="card">
     <div class="job-top">
       <strong>지식그래프 (Postgres → Neo4j) 현황</strong>
       <span id="graphReadState" class="badge na">…</span>
@@ -134,46 +287,13 @@
     </div>
     <span id="graphMsg" class="meta"></span>
   </div>
+      </div>
+    </section>
 
-  <div class="card" style="margin-top:12px">
-    <strong>인제스트 / 임베딩 진행률</strong>
-    <table class="tbl">
-      <thead><tr><th>소스</th><th>raw 파일</th><th>문서</th><th>청크(활성)</th><th>임베딩</th><th>진행률</th><th>최근 잡</th></tr></thead>
-      <tbody id="ingestBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="grid" style="margin-top:12px">
-    <div class="card">
-      <strong>작업 큐</strong>
-      <div class="row"><span>queue_length</span><span id="jQueueLen" class="meta">…</span></div>
-      <div class="row"><span>worker heartbeat</span><span id="jWorker" class="badge na">…</span></div>
-      <div id="jobList" style="margin-top:8px"></div>
-    </div>
-    <div class="card">
-      <strong>최근 쿼리 (최대 10건)</strong>
-      <p class="meta" style="margin:2px 0 6px">audit=true로 명시한 호출만 기록됨(웹/MCP 구분 없음). MCP가 실제로 뭘 조회했는지는 아래 카드 참고.</p>
-      <table class="tbl">
-        <thead><tr><th>시각</th><th>모드</th><th>지연</th><th>쿼리</th></tr></thead>
-        <tbody id="queryBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:12px">
-    <strong>MCP 경유 조회 (최근 20건)</strong>
-    <p class="meta" style="margin:2px 0 6px">
-      mcp-server가 보내는 모든 요청에 실린 호출 도구 이름 기준 — kb_search처럼 과거엔 전혀 기록 안 되던 조회도 전부 잡힘.
-      <span id="mcpCounts"></span>
-    </p>
-    <div id="mcpByToolChart" style="margin:4px 0 8px"></div>
-    <table class="tbl">
-      <thead><tr><th>시각</th><th>도구</th><th>경로</th><th>요약</th><th>상태</th><th>지연</th></tr></thead>
-      <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card" style="margin-top:12px">
+    <section class="sec" id="knowledge" aria-labelledby="h-knowledge">
+      <div class="sec-h"><h2 id="h-knowledge">지식 관리</h2><p>실패 버킷, 동의어 후보 검수, 시스템 등록자 허용 목록</p></div>
+      <div class="stack">
+        <div class="card fold">
     <strong>최근 등록된 실패 버킷 (failure_bucket)</strong>
     <div id="fbByDomain" class="meta">로딩 중…</div>
     <table class="tbl">
@@ -181,57 +301,7 @@
       <tbody id="fbBody"><tr><td colspan="7" class="meta">로딩 중…</td></tr></tbody>
     </table>
   </div>
-
-  <div class="card" style="margin-top:12px">
-    <div class="job-top">
-      <strong>Confluence 맵 동기화 (confluence_map)</strong>
-      <span>
-        <span id="mapRunning" class="badge na">…</span>
-        <button type="button" id="btnMapRun">지금 실행 (백그라운드)</button>
-      </span>
-    </div>
-    <p class="meta" style="margin:4px 0 8px" id="mapSourceCount">
-      활성 공간 순차 동기화. 실행 중 중단돼도 다음 실행이 체크포인트에서 이어받음 — 동시에 두 번 실행되지 않도록
-      Postgres advisory lock으로 보호됨(크론 CLI 실행과도 공유).
-    </p>
-    <div id="mapCurrent" class="row"><span>지금 처리 중</span><span class="meta">…</span></div>
-    <div id="backfillBox" style="margin:8px 0;padding:8px;border:1px solid var(--border);border-radius:8px">백필 대기</div>
-    <table class="tbl">
-      <thead><tr><th>source_id</th><th>space</th><th>상태</th><th>last_sync_at</th><th>진행 상태 (checkpoint)</th><th></th></tr></thead>
-      <tbody id="mapSyncBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
-    </table>
-    <span id="mapMsg" class="meta"></span>
-    <hr style="border:none;border-top:1px solid var(--border);margin:10px 0"/>
-    <strong style="font-size:13px">새 공간 추가</strong>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center">
-      <input type="text" id="newSpaceKey" placeholder="space_key (예: NEWSPACE)" style="flex:1;min-width:140px"/>
-      <input type="text" id="newSpaceName" placeholder="space_name (예: 새 팀 공간)" style="flex:1;min-width:140px"/>
-      <input type="text" id="newPageId" placeholder="root/page ID" style="flex:1;min-width:120px"/>
-      <input type="text" id="newPageLabel" placeholder="label" style="flex:1;min-width:140px"/>
-      <label class="toggle"><input type="checkbox" id="newIsExplicit"/> explicit page</label>
-      <button type="button" id="btnAddSpace">추가</button>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:12px" id="synCard">
-    <div class="job-top">
-      <strong>동의어 후보 검수 (Fabrix 마이닝)</strong>
-      <span id="synTabs"></span>
-    </div>
-    <p class="meta" style="margin:2px 0 6px">승인된 그룹은 검색에 반영되기까지 최대 60초(워커별 캐시 TTL) 걸립니다.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
-      <input type="text" id="synNote" maxlength="1000" placeholder="메모 (선택, 결정 시 함께 저장)" style="flex:1;min-width:200px"/>
-      <button type="button" id="synBulkApprove">선택 승인</button>
-      <button type="button" class="ghost" id="synBulkReject">선택 거절</button>
-    </div>
-    <div id="synMsg" class="meta" style="margin-bottom:6px"></div>
-    <table class="tbl">
-      <thead><tr><th><input type="checkbox" id="synAll" title="전체 선택"/></th><th>id</th><th>용어</th><th>근거</th><th>사유</th><th>모델/run</th><th>결정</th><th></th></tr></thead>
-      <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card" style="margin-top:12px" id="regCard">
+        <div class="card" id="regCard">
     <div class="job-top">
       <strong>시스템 등록자 허용 목록 (failure bucket)</strong>
       <span id="regSource" class="badge na">…</span>
@@ -251,8 +321,55 @@
       <span id="regMsg" class="meta"></span>
     </div>
   </div>
+        <div class="card fold" id="synCard">
+    <div class="job-top">
+      <strong>동의어 후보 검수 (Fabrix 마이닝)</strong>
+      <span id="synTabs"></span>
+    </div>
+    <p class="meta" style="margin:2px 0 6px">승인된 그룹은 검색에 반영되기까지 최대 60초(워커별 캐시 TTL) 걸립니다.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">
+      <input type="text" id="synNote" maxlength="1000" placeholder="메모 (선택, 결정 시 함께 저장)" style="flex:1;min-width:200px"/>
+      <button type="button" id="synBulkApprove">선택 승인</button>
+      <button type="button" class="ghost" id="synBulkReject">선택 거절</button>
+    </div>
+    <div id="synMsg" class="meta" style="margin-bottom:6px"></div>
+    <table class="tbl">
+      <thead><tr><th><input type="checkbox" id="synAll" title="전체 선택"/></th><th>id</th><th>용어</th><th>근거</th><th>사유</th><th>모델/run</th><th>결정</th><th></th></tr></thead>
+      <tbody id="synBody"><tr><td colspan="8" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
+      </div>
+    </section>
 
-  <div class="card" style="margin-top:12px" id="cronCard">
+    <section class="sec" id="usage" aria-labelledby="h-usage">
+      <div class="sec-h"><h2 id="h-usage">사용 현황</h2><p>검색 쿼리와 MCP 경유 조회 기록</p></div>
+      <div class="stack">
+        <div class="card fold">
+      <strong>최근 쿼리 (최대 10건)</strong>
+      <p class="meta" style="margin:2px 0 6px">audit=true로 명시한 호출만 기록됨(웹/MCP 구분 없음). MCP가 실제로 뭘 조회했는지는 아래 카드 참고.</p>
+      <table class="tbl">
+        <thead><tr><th>시각</th><th>모드</th><th>지연</th><th>쿼리</th></tr></thead>
+        <tbody id="queryBody"><tr><td colspan="4" class="meta">로딩 중…</td></tr></tbody>
+      </table>
+    </div>
+        <div class="card fold">
+    <strong>MCP 경유 조회 (최근 20건)</strong>
+    <p class="meta" style="margin:2px 0 6px">
+      mcp-server가 보내는 모든 요청에 실린 호출 도구 이름 기준 — kb_search처럼 과거엔 전혀 기록 안 되던 조회도 전부 잡힘.
+      <span id="mcpCounts"></span>
+    </p>
+    <div id="mcpByToolChart" style="margin:4px 0 8px"></div>
+    <table class="tbl">
+      <thead><tr><th>시각</th><th>도구</th><th>경로</th><th>요약</th><th>상태</th><th>지연</th></tr></thead>
+      <tbody id="mcpQueryBody"><tr><td colspan="6" class="meta">로딩 중…</td></tr></tbody>
+    </table>
+  </div>
+      </div>
+    </section>
+
+    <section class="sec" id="automation" aria-labelledby="h-automation">
+      <div class="sec-h"><h2 id="h-automation">자동화 (cron)</h2><p>호스트 crontab 작업의 수행 상태와 이력</p></div>
+      <div class="card" id="cronCard">
     <div class="job-top">
       <strong>크론 작업 상태 (호스트 crontab)</strong>
       <span id="cronSnap" class="meta">…</span>
@@ -268,8 +385,12 @@
     </table>
     <span id="cronMsg" class="meta"></span>
   </div>
+    </section>
 
-  <div class="card" style="margin-top:12px" id="tokCard">
+    <section class="sec" id="access" aria-labelledby="h-access">
+      <div class="sec-h"><h2 id="h-access">접근 제어</h2><p>API 토큰 발급·회수, 바로가기</p></div>
+      <div class="stack">
+        <div class="card" id="tokCard">
     <div class="job-top">
       <strong>API 토큰 발급</strong>
       <span id="tokMode" class="badge na">…</span>
@@ -298,7 +419,20 @@
     </div>
     <span id="tokMsg" class="meta"></span>
   </div>
+        <div class="card">
+      <strong>Quick links</strong>
+      <p class="meta" style="line-height:1.8">
+        <a class="link" href="/insights.html">Insight 승인</a><br/>
+        <a class="link" href="/login.html">Login / SSO</a><br/>
+        <a class="link" href="/docs/oidc-idp-setup.html">OIDC IdP 가이드</a><br/>
+        <a class="link" href="/api/docs" target="_blank">Swagger</a>
+      </p>
+    </div>
+      </div>
+    </section>
+  </main>
 </div>
+
 <script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
 <script>
@@ -941,12 +1075,15 @@ async function refreshCron() {
     if (!d.available) {
       $("cronSnap").textContent = "스냅샷 없음";
       $("cronBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(d.hint || "") + '</td></tr>';
+      window._cron = d;
+      updateSummary();
       return;
     }
     $("cronSnap").textContent = "스냅샷 " + fmtTs(d.generated_at) + " (" + Math.round(d.snapshot_age_sec / 60) + "분 전)" +
       (d.snapshot_stale ? " — 갱신 중단 의심" : "") + (d.host ? " · " + d.host : "");
     $("cronSnap").style.color = d.snapshot_stale ? "var(--bad, #c0392b)" : "";
     const jobs = d.jobs || [];
+    window._cron = d;
     $("cronBody").innerHTML = jobs.length ? jobs.map((j) => {
       const hist = (j.history || []).length
         ? '<details><summary class="meta">최근 실행 ' + j.history.length + '건</summary>' + j.history.map((h) =>
@@ -961,6 +1098,7 @@ async function refreshCron() {
     }).join("") : '<tr><td colspan="6" class="meta">등록된 crontab 항목 없음</td></tr>';
     $("cronMsg").textContent = "";
   } catch (e) { $("cronBody").innerHTML = '<tr><td colspan="6" class="meta">' + esc(String(e)) + '</td></tr>'; }
+  updateSummary();
 }
 refreshRegistrants();
 refreshCron();
@@ -974,7 +1112,7 @@ async function refreshTokens() {
       return;
     }
     const d = await readJson(r, TOK_API);
-    badge($("tokMode"), d.enforced, d.enforced ? "인증 강제" : "AUTH_MODE=off (발급 불가)");
+    badge($("tokMode"), d.enforced ? true : null, d.enforced ? "인증 강제" : "AUTH_MODE=off (발급 불가)");
     $("tokIssue").disabled = !d.enforced;
     const t = d.tokens || [];
     $("tokBody").innerHTML = t.length ? t.map((x) =>
@@ -1027,6 +1165,137 @@ function scheduleAuto() {
   _timer = setInterval(() => { refresh(); refreshCron(); }, 10000);
 }
 $("chkAuto").onchange = scheduleAuto;
+
+/* ---- overview: derive one banner + KPI tiles from the badges the sections already render ---- */
+function stateOf(el) {
+  if (!el) return "na";
+  return el.classList.contains("ok") ? "ok" : el.classList.contains("bad") ? "bad" : el.classList.contains("warn") ? "warn" : "na";
+}
+function setKpi(id, state, val, sub) {
+  const k = $(id);
+  if (!k) return;
+  k.className = "kpi " + state;
+  k.querySelector(".kpi-v").textContent = val;
+  const s = k.querySelector(".kpi-s");
+  s.textContent = sub || "";
+  s.title = sub || "";   // full text on hover when truncated
+}
+function updateSummary() {
+  const bad = [], warn = [], sec = {};
+  const note = (name, state, section) => {
+    if (state === "bad") bad.push(name);
+    if (state === "warn") warn.push(name);
+    const order = { bad: 3, warn: 2, ok: 1, na: 0 };
+    if (!sec[section] || order[state] > order[sec[section]]) sec[section] = state;
+  };
+
+  const api = stateOf($("hapi"));
+  setKpi("kpiApi", api, $("hapi").textContent, "");
+  note("API", api, "system");
+
+  const pg = stateOf($("hpg")), rd = stateOf($("hredis"));
+  const infra = pg === "bad" || rd === "bad" ? "bad" : pg === "ok" && rd === "ok" ? "ok" : "na";
+  setKpi("kpiInfra", infra, infra === "ok" ? "정상" : infra === "bad" ? "장애" : "확인 중",
+    "pg " + (pg === "ok" ? "✓" : pg === "bad" ? "✕" : "–") + " · redis " + (rd === "ok" ? "✓" : rd === "bad" ? "✕" : "–"));
+  note("Postgres/Redis", infra, "system");
+
+  const wk = stateOf($("hworker"));
+  setKpi("kpiWorker", wk, $("hworker").textContent, "큐 " + $("jQueueLen").textContent);
+  note("Worker", wk, "system");
+
+  const gr = stateOf($("graphReadState"));
+  const gm = stateOf($("graphGenMatch"));
+  const graph = gr === "bad" || gm === "bad" ? "bad" : gr === "ok" && gm !== "warn" ? "ok" : gr === "warn" || gm === "warn" ? "warn" : "na";
+  setKpi("kpiGraph", graph, $("graphReadState").textContent || "—", "generation " + ($("graphGenMatch").textContent || "—"));
+  note("지식그래프", graph, "ingest");
+
+  const pct = parseFloat(($("rDiskBar").style.width || "0").replace("%", ""));
+  const hasDisk = /%/.test($("rDiskPct").textContent);
+  const disk = !hasDisk ? "na" : pct >= 90 ? "bad" : pct >= 80 ? "warn" : "ok";
+  setKpi("kpiDisk", disk, hasDisk ? pct + "%" : "—", $("rDiskPct").textContent);
+  note("디스크", disk, "ingest");
+
+  const c = window._cron;
+  let cron = "na", cval = "—", csub = "";
+  if (c && c.available) {
+    const jobs = c.jobs || [];
+    const fail = jobs.filter((j) => j.status === "failed" || j.status === "missed");
+    cron = fail.length ? "bad" : c.snapshot_stale ? "warn" : "ok";
+    cval = fail.length ? fail.length + "건 이상" : "정상";
+    csub = fail.length ? fail.map((j) => j.script || j.schedule).join(", ") : (jobs.length + "개 작업" + (c.snapshot_stale ? " · 스냅샷 오래됨" : ""));
+  } else if (c) { cval = "스냅샷 없음"; csub = "cron_snapshot.py 등록 필요"; }
+  setKpi("kpiCron", cron, cval, csub);
+  note("크론", cron, "automation");
+
+  const enf = stateOf($("aenf"));
+  const auth = enf === "ok" ? "ok" : enf === "bad" ? "warn" : "na";
+  setKpi("kpiAuth", auth, enf === "ok" ? "강제" : enf === "bad" ? "꺼짐 (개방)" : "—", "mode " + ($("amode").textContent || "—"));
+  note("인증", auth, "access");
+
+  const b = $("banner");
+  if (!bad.length && !warn.length && Object.values(sec).every((v) => v === "na")) {
+    b.className = "banner na"; $("bannerText").textContent = "상태 확인 중…"; $("bannerSub").textContent = "";
+    b.querySelector(".ico").textContent = "…";
+  } else if (bad.length) {
+    b.className = "banner bad"; b.querySelector(".ico").textContent = "✕";
+    $("bannerText").textContent = "문제 " + bad.length + "건: " + bad.join(", ");
+    $("bannerSub").textContent = warn.length ? "주의: " + warn.join(", ") : "";
+  } else if (warn.length) {
+    b.className = "banner warn"; b.querySelector(".ico").textContent = "▲";
+    $("bannerText").textContent = "주의 " + warn.length + "건: " + warn.join(", ");
+    $("bannerSub").textContent = "";
+  } else {
+    b.className = "banner ok"; b.querySelector(".ico").textContent = "✓";
+    $("bannerText").textContent = "모든 항목이 정상입니다";
+    $("bannerSub").textContent = new Date().toLocaleTimeString("ko-KR") + " 기준";
+  }
+  document.querySelectorAll("#sideNav a[data-sec]").forEach((a) => {
+    a.classList.remove("is-ok", "is-warn", "is-bad");
+    const st = sec[a.dataset.sec];
+    if (st && st !== "na") a.classList.add("is-" + st);
+  });
+}
+const _refreshBase = refresh;
+refresh = async function () { await _refreshBase(); updateSummary(); };
+
+/* ---- collapsible cards (progressive disclosure); open/closed state is remembered per browser ---- */
+function wireFolds() {
+  const DEFAULT_COLLAPSED = ["queries", "mcp"];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("adminFolds") || "{}"); } catch (e) { saved = {}; }
+  document.querySelectorAll(".card.fold").forEach((card, i) => {
+    const head = card.firstElementChild;
+    const key = (head.textContent || "").trim().slice(0, 24) || String(i);
+    const collapsed = key in saved ? saved[key] : /최근 쿼리|MCP 경유/.test(head.textContent);
+    card.classList.toggle("is-collapsed", !!collapsed);
+    head.setAttribute("role", "button");
+    head.tabIndex = 0;
+    head.setAttribute("aria-expanded", String(!collapsed));
+    const toggle = (ev) => {
+      if (ev.target.closest("button, a, input, select, label")) return;   // tabs/buttons in the header keep their job
+      const now = card.classList.toggle("is-collapsed");
+      head.setAttribute("aria-expanded", String(!now));
+      saved[key] = now;
+      try { localStorage.setItem("adminFolds", JSON.stringify(saved)); } catch (e) { /* private mode */ }
+    };
+    head.addEventListener("click", toggle);
+    head.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(ev); } });
+  });
+}
+wireFolds();
+
+/* ---- side nav: highlight the section in view ---- */
+(function () {
+  const links = Array.from(document.querySelectorAll("#sideNav a[data-sec]"));
+  if (!("IntersectionObserver" in window) || !links.length) return;
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => {
+      if (!e.isIntersecting) return;
+      links.forEach((a) => a.classList.toggle("is-active", a.dataset.sec === e.target.id));
+    });
+  }, { rootMargin: "-20% 0px -70% 0px" });
+  links.forEach((a) => { const t = document.getElementById(a.dataset.sec); if (t) io.observe(t); });
+})();
 
 refresh();
 scheduleAuto();
