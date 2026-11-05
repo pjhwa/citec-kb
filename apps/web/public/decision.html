@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>판정 카드 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css"/>
+<link rel="stylesheet" href="/css/decision.css"/>
+</head>
+<body>
+<div class="top" id="topNav" data-page="decisions"></div>
+<div class="wrap">
+  <p class="meta"><a href="/decisions.html">← 큐</a></p>
+  <div id="card"><p class="meta">로딩…</p></div>
+  <p class="why">단축키: 1~9 선택지 · N 판단 불가 · E 직접 입력 · S 건너뛰기 · Z 되돌리기 (입력창에 포커스가 있으면 꺼집니다)</p>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/js/nav.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = (u, o) => CitecAuth.apiFetch(u, o);
+const id = new URLSearchParams(location.search).get("id");
+const t0 = Date.now();
+let D = null;
+let busy = false;
+
+function toast(t) { const e = $("toast"); e.textContent = t; e.style.display = "block"; clearTimeout(toast.t); toast.t = setTimeout(() => e.style.display = "none", 2600); }
+function lsGet(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+const allEv = () => Object.values(D.evidence_by_option || {}).flat();
+const liveEv = () => allEv().filter(e => !e.retracted_at);
+const keyed = () => D.options.filter(o => o.key !== "NEI" && o.key !== "OTHER");
+const keyOf = (o, i) => o.key === "NEI" ? "N" : o.key === "OTHER" ? "E" : String(i + 1);
+
+function evCard(e) {
+  const date = (e.source_modified_at || e.retrieved_at || "").slice(0, 10);
+  const pin = e.origin === "internal"
+    ? (e.changed ? `<span class="chip warn">고정 v${e.pinned_version} / 현재 v${e.current_version} 변경됨</span>` : `<span class="chip">고정 v${e.pinned_version}</span>`)
+    : `<span class="chip pri">외부·서버 미검증</span>`;
+  const acc = e.access || {};
+  const links = e.origin === "internal"
+    ? `${acc.source_url ? `<a href="${esc(acc.source_url)}" target="_blank" rel="noopener">원문 열기 ↗</a>` : ""}${acc.web_url ? `<a href="${esc(acc.web_url)}" target="_blank" rel="noopener">원문 안에서 보기</a>` : ""}`
+    : `<a href="${esc(e.external_url)}" target="_blank" rel="noopener noreferrer">링크 ↗</a> <span class="chip">가져온 시각 ${esc((e.retrieved_at||"").slice(0,16))}</span>`;
+  return `<div class="ev ${esc(e.stance)}${e.retracted_at ? " retracted" : ""}">
+    <b>[${esc(e.option_key || "공통")} · ${esc(e.stance)}]</b> “${esc(e.quote)}”
+    <div class="src"><span class="chip">${esc(e.source_type || e.origin)}</span>${e.grade_snapshot ? `<span class="chip">${esc(e.grade_snapshot)}</span>` : ""}
+      ${date ? `<span class="chip">${esc(date)}</span>` : ""}${pin}${links}</div></div>`;
+}
+
+function srcLink(r) {
+  if (!r) return "";
+  if (r.type === "failure_bucket") return `<a class="chip" href="/v1/failure-buckets/${encodeURIComponent(r.id)}" target="_blank" rel="noopener" title="신뢰도 ${esc(r.confidence)} · 지지 ${esc(r.support_count)} · 반증 ${esc(r.counter_count)}">실패 버킷 ${esc(String(r.id).slice(0, 8))} ↗</a>`;
+  if (r.type === "document") return `<span class="chip">기한 ${esc(r.deadline)}${r.due_passed_or_soon ? " (지남·임박)" : ""}</span>`;
+  if (r.type === "domain_gap") return `<span class="chip">${esc(r.domain)} 반복 장애 ${esc(r.recurring_incident_count)}건 · 버킷 0</span>`;
+  return "";
+}
+
+function render() {
+  const cur = D.current_verdict, ai = D.ai_recommendation_key;
+  const bestFor = (k) => (D.evidence_by_option[k] || []).filter(e => !e.retracted_at).sort((a, b) => (b.stance === "supports") - (a.stance === "supports"))[0];
+  const optHtml = D.options.map((o, i) => {
+    const k = keyOf(o, i), best = bestFor(o.key), n = (D.evidence_by_option[o.key] || []).filter(e => !e.retracted_at).length;
+    return `<button type="button" class="opt${cur && cur.option_key === o.key ? " sel" : ""}" data-opt="${esc(o.key)}">
+      <span class="l"><kbd>${k}</kbd>${esc(o.label)}</span>
+      <div class="s">${esc(o.summary || "")}</div>
+      <div class="n">${best ? "“" + esc(best.quote.slice(0, 60)) + (best.quote.length > 60 ? "…" : "") + "”" : (o.key === "NEI" || o.key === "OTHER" ? "" : "(근거 없음)")}${n > 1 ? ` 외 ${n - 1}건` : ""}</div></button>`;
+  }).join("");
+  const aiLabel = ai ? (D.options.find(o => o.key === ai) || {}).label : null;
+  const supports = {}; liveEv().forEach(e => { if (e.stance === "supports" && e.option_key) supports[e.option_key] = (supports[e.option_key] || 0) + 1; });
+  const common = (D.evidence_by_option["_common"] || []).filter(e => !e.retracted_at);
+  const rest = allEv();
+  const hist = (D.history || []).slice().reverse().map(v => `<li>${esc(v.decided_at.slice(0,16))} · <b>${esc((D.options.find(o=>o.key===v.option_key)||{}).label || v.option_key)}</b>${v.free_text ? " (" + esc(v.free_text) + ")" : ""} — ${esc(v.decided_by)}${v.self_reported ? " (자기 신고)" : ""}${v.rationale ? ", " + esc(v.rationale) : ""}</li>`).join("");
+  $("card").innerHTML = `<div class="dcard">
+    <p class="q">${esc(D.question)}</p>
+    <div>
+      <span class="chip">위험: ${esc({low:"낮음",mid:"중",high:"높음"}[D.stakes])}</span>
+      <span class="chip">근거 ${D.evidence_count} · 출처 ${D.source_count}</span>
+      ${D.conflict.conflict ? `<span class="chip bad" title="${esc(D.conflict.reasons.join(' / '))}">⚠ 충돌: ${esc(D.conflict.reasons[0])}</span>` : ""}
+      ${D.changed_pins ? `<span class="chip warn">지난 확정 이후 변경 ${D.changed_pins}건</span>` : ""}
+      ${D.external_only ? `<span class="chip pri">외부·서버 미검증 근거만</span>` : ""}
+      <span class="chip ${D.effective_status==='confirmed' ? 'ok' : 'warn'}">${esc(D.effective_status)}</span>
+      ${D.created_by_kind === "server_job" ? `<span class="chip" title="${esc(D.created_by || "")}">자동 제안(스캔)</span>` : ""}
+      ${srcLink(D.source_ref)}
+      ${D.superseded_by ? `<a class="chip" href="/decision.html?id=${esc(D.superseded_by)}">대체됨 → 새 결정</a>` : ""}
+    </div>
+    <div class="why">AI 추천: ${aiLabel ? `<b>${esc(aiLabel)}</b> (근거 ${supports[ai] || 0}건) — 눌려 있지 않습니다` : "없음"} · 이 순서인 이유: ${esc(D.queue_reason)}</div>
+    ${cur ? `<div class="warnbox" style="border-color:var(--d-ok)">현재 기준: <b>${esc((D.options.find(o=>o.key===cur.option_key)||{}).label)}</b>${cur.free_text ? " — " + esc(cur.free_text) : ""} · ${esc(cur.decided_by)}${cur.self_reported ? " (자기 신고)" : ""} · ${esc(cur.decided_at.slice(0,10))}${D.recheck_reasons.length ? " · ⚠ 재확인: " + esc(D.recheck_reasons.join(", ")) : ""}</div>` : ""}
+    <div class="opts">${optHtml}</div>
+    <div id="otherBox" class="hidden"><input class="txt wide" id="otherTxt" placeholder="직접 입력 후 Enter (Esc 취소)"/></div>
+    <div id="extBox" class="warnbox hidden">⚠ 이 결정의 근거는 <b>외부·서버 미검증 자료</b>뿐입니다. 확정하려면 확인하세요:
+      <label><input type="checkbox" id="extOk"/> 외부 근거만 사용함을 확인</label></div>
+    <div class="row-ctl">
+      <input class="txt" id="by" placeholder="확정자 이름 (인증 OFF 동안 자기 신고)" value="${esc(lsGet('citec_decider'))}"/>
+      <input class="txt" id="why" style="flex:1;min-width:200px" placeholder="변경·확정 이유 (선택)"/>
+    </div>
+    <div class="why" style="margin-top:6px">선택지별 최강 인용</div>
+    ${D.options.filter(o => o.key !== "NEI" && o.key !== "OTHER").map(o => bestFor(o.key)).filter(Boolean).map(evCard).join("") || "<p class='meta'>근거가 없습니다. 근거 없이는 확정할 수 없습니다.</p>"}
+    ${common.map(evCard).join("")}
+    <details><summary>근거 전체 펼치기 (${rest.length})</summary>${rest.map(evCard).join("")}</details>
+    <details><summary>이전 판정 이력 · 대체 링크</summary><ul class="why">${hist || "<li>이력 없음</li>"}</ul>
+      ${(D.supersedes || []).map(i => `<div class="why">이 결정은 <a href="/decision.html?id=${esc(i)}">이전 결정</a>을 대체함</div>`).join("")}</details>
+    <div class="actions">
+      <button type="button" id="bSkip">S 건너뛰기</button>
+      <button type="button" id="bUndo">Z 되돌리기</button>
+      ${cur ? `<button type="button" id="bKeep" title="같은 선택지로 새 판정 행을 추가하고 근거를 현재 버전으로 다시 고정">유지 (1클릭 재확인)</button>` : ""}
+      ${D.status === "retired" ? `<button type="button" id="bRestore">복구</button>` : `<button type="button" id="bRetire">보류(retire)</button>`}
+    </div>
+    <div id="err"></div></div>`;
+  document.querySelectorAll(".opt").forEach(b => b.onclick = () => choose(b.dataset.opt));
+  $("bSkip").onclick = skip; $("bUndo").onclick = undo;
+  if ($("bKeep")) $("bKeep").onclick = () => submit({ keep: true });
+  if ($("bRetire")) $("bRetire").onclick = () => lifecycle("retire");
+  if ($("bRestore")) $("bRestore").onclick = () => lifecycle("restore");
+  $("otherTxt") && $("otherTxt").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && $("otherTxt").value.trim()) submit({ option_key: "OTHER", free_text: $("otherTxt").value.trim() });
+    if (e.key === "Escape") $("otherBox").classList.add("hidden");
+  });
+}
+
+function showErr(m) { $("err").innerHTML = `<div class="errbox">${esc(m)}</div>`; }
+
+function choose(k) {
+  if (busy || !D || D.status === "retired" || D.status === "superseded") return;
+  if (k === "OTHER") { $("otherBox").classList.remove("hidden"); $("otherTxt").focus(); return; }
+  submit({ option_key: k });
+}
+
+async function submit(extra) {
+  if (busy) return;
+  const by = ($("by").value || "").trim();
+  if (by) lsSet("citec_decider", by);
+  const ext = D.external_only && extra.option_key !== "NEI";
+  if (ext && !$("extOk").checked) { $("extBox").classList.remove("hidden"); showErr("외부 근거만 있습니다. 확인란을 체크한 뒤 다시 선택하세요."); return; }
+  busy = true;
+  try {
+    const nr = await api(`/v1/decisions/${encodeURIComponent(id)}/nonce`);
+    const nd = await nr.json();
+    if (!nr.ok) throw new Error(nd.detail || "nonce 발급 실패");
+    const body = Object.assign({ decided_by: by || null, nonce: nd.nonce, rationale: ($("why").value || "").trim() || null,
+      external_only_confirm: ext, time_to_decide_ms: Date.now() - t0 }, extra);
+    const r = await api(`/v1/decisions/${encodeURIComponent(id)}/verdict`, { method: "POST", body });
+    const d = await r.json();
+    if (!r.ok) {
+      const m = typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail);
+      if (/decided_by/.test(m)) $("by").focus();
+      throw new Error(m);
+    }
+    toast(d.status === "proposed" ? "판단 불가로 기록했습니다 (기준으로 쓰지 않음)" : "판정을 기록했습니다");
+    if (d.mirror_error) toast("판정은 저장됐지만 검색 반영 오류: " + d.mirror_error);
+    await load();
+  } catch (e) { showErr(e.message); } finally { busy = false; }
+}
+
+async function undo() {
+  const h = D.history || [];
+  if (h.length < 2) { toast("되돌릴 이전 판정이 없습니다 (기준 해제는 '보류')"); return; }
+  const prev = h[h.length - 2];
+  submit({ option_key: prev.option_key, free_text: prev.free_text, rationale: "되돌리기: 이전 판정 복원" });
+}
+
+async function skip() {
+  const r = await api("/v1/decisions?sort=priority&limit=50");
+  const d = await r.json();
+  const ids = (d.items || []).map(i => i.id);
+  const i = ids.indexOf(id);
+  const next = ids[i + 1] || ids.find(x => x !== id);
+  if (next) location.href = "/decision.html?id=" + encodeURIComponent(next); else toast("다음 항목이 없습니다");
+}
+
+async function lifecycle(act) {
+  const r = await api(`/v1/decisions/${encodeURIComponent(id)}/${act}`, { method: "POST" });
+  const d = await r.json();
+  if (!r.ok) return showErr(d.detail || r.statusText);
+  toast(act === "retire" ? "보류했습니다 (검색에서 제외, 복구 가능)" : "복구했습니다");
+  load();
+}
+
+async function load() {
+  const r = await api("/v1/decisions/" + encodeURIComponent(id));
+  const d = await r.json();
+  if (!r.ok) { $("card").innerHTML = `<div class="errbox">${esc(d.detail || r.statusText)}</div>`; return; }
+  D = d; render();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (!D) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toUpperCase();
+  const opts = keyed();
+  if (/^[1-9]$/.test(k) && opts[+k - 1]) choose(opts[+k - 1].key);
+  else if (k === "N") choose("NEI");
+  else if (k === "E") { e.preventDefault(); choose("OTHER"); }
+  else if (k === "S") skip();
+  else if (k === "Z") undo();
+});
+CitecAuth.mountChip(".top");
+if (!id) $("card").innerHTML = `<div class="errbox">id 파라미터가 없습니다.</div>`; else load();
+</script>
+</body>
+</html>

@@ -78,3 +78,21 @@ def test_ok_generation_has_no_failure_header():
         [{"type": "done", "result": {"answer": "정상 답변 [C1]", "llm_error": None, "generation_status": "ok", "citations": []}}]
     )
     assert "생성 실패" not in text
+
+
+def test_all_citation_ids_for_a_document_are_listed_and_cover_the_answer():
+    """A2: [C11]/[C15] cite other chunks of a listed document; they must appear in sources."""
+    import re
+
+    def cit(i, eid):
+        return {"id": f"C{i}", "external_id": eid, "source_type": "support_history", "title": eid}
+
+    cites = [cit(1, "CITECTS-2690"), cit(2, "CITECTS-9")] + [cit(11, "CITECTS-2690"), cit(15, "CITECTS-2690")]
+    text = fold_ask_events([{"type": "done", "result": {
+        "answer": "원인은 A [C1]. 조치는 B [C11][C15]. 참고 [C2]", "llm_error": None,
+        "generation_status": "ok", "citations": cites}}])
+    body, sources = text.split("**출처 (원문 접근)**")
+    listed = set(re.findall(r"C\d+", " ".join(l.split(" CITECTS")[0] for l in sources.splitlines() if l.startswith("- "))))
+    assert set(re.findall(r"\[(C\d+)\]", body)) <= listed
+    assert "- C1, C11, C15 CITECTS-2690" in sources
+    assert sources.count("path: support_history/CITECTS-2690.md") == 1  # still one entry per document

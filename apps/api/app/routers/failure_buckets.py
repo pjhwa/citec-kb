@@ -308,4 +308,6 @@ def post_match_failure_buckets(body: FailureBucketMatch) -> dict[str, Any]:
         environment=environment,
         top_k=body.top_k,
     )
-    return {"results": results, "total": len(results)}
+    from app.failure_buckets.match import LABEL_RULES
+
+    return {"results": results, "total": len(results), "label_rules": LABEL_RULES}

@@ -27,6 +27,7 @@ class SearchFiltersIn(BaseModel):
     work_type: Optional[str] = None
     path_l2: Optional[str] = None
     status: str = "active"
+    include_superseded: bool = False
     exclude_page_ids: Optional[list[str]] = None
     exclude_source_types: Optional[list[str]] = None
     exclude_subtree_ids: Optional[list[str]] = None
@@ -128,6 +129,7 @@ def search(body: SearchBody) -> dict[str, Any]:
                     "evidence_eligible": r.evidence_eligible,
                     "map_synced_at": r.map_synced_at,
                     "duplicate_count": r.duplicate_count,
+                    "decision": r.decision,
                 }
             )
             for r in resp.results

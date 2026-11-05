@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 # 단일 소스 — app.graph.explore과 app.graph.failure_bucket이 여기서 가져온다.
 # "A-"가 빠져 C와 동일하게 정렬되던 버그(G09)를 이 통합으로 제거한다.
-GRADE_RANK: dict[str, int] = {"A": 0, "A-": 1, "B": 2, "C": 3, "machine": 4, "draft": 5}
+GRADE_RANK: dict[str, int] = {"H": -1, "A": 0, "A-": 1, "B": 2, "C": 3, "machine": 4, "draft": 5}
 
 # app.graph.pipeline.compute_priority_tier와 동일한 승격 정책 — 여기서 다시
 # import하면 pipeline(이 모듈의 호출자) <-> identity 순환 임포트가 생기므로,

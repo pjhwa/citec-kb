@@ -21,7 +21,7 @@
       <a href="#_1" style="padding-left:20px;font-size:12px">검색 · 문서</a>
       <a href="#wiki-qa-post-apiupload" style="padding-left:20px;font-size:12px">업로드 — wiki-qa POST /api/upload 호환</a>
       <a href="#qa-sse-mcp-wiki_ask" style="padding-left:20px;font-size:12px">Q&amp;A (SSE) — MCP wiki_ask</a>
-      <a href="#synthesis-insight" style="padding-left:20px;font-size:12px">Synthesis ≈ Insight</a>
+      <a href="#synthesis-2026-11-05" style="padding-left:20px;font-size:12px">Synthesis — 폐기됨 (2026-11-05)</a>
       <a href="#feedback" style="padding-left:20px;font-size:12px">Feedback</a>
       <a href="#2-v1">2. 네이티브 외부 연동 (/v1/*)</a>
       <a href="#v1failure-buckets" style="padding-left:20px;font-size:12px">실패 버킷 (/v1/failure-buckets/*)</a>
@@ -40,7 +40,7 @@
       <p class="lead">citec-wiki-qa 호환 /api/* 레이어</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/EXTERNAL_API.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-05</div></div>
       </div>
     </header>
     <section>
@@ -168,8 +168,8 @@
 <td><code>vendor_docs</code></td>
 </tr>
 <tr>
-<td><code>synthesis</code></td>
-<td><code>insight</code></td>
+<td><code>decision</code> / <code>decisions</code></td>
+<td><code>confirmed_decision</code></td>
 </tr>
 <tr>
 <td><code>general</code> / 빈값</td>
@@ -394,32 +394,9 @@ Content-Type: application/json
 </tbody>
 </table></div>
 <p><code>stream: false</code> 이면 JSON 한 번에 반환.</p>
-<p><code>template</code>: <code>general</code> · <code>checkitems</code> · <code>support_history</code> · <code>incident_reports</code> · <code>tech_repo</code> · <code>tuning_ai</code> · <code>synthesis</code> …</p>
-<h3 id="synthesis-insight">Synthesis ≈ Insight</h3>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>Method</th>
-<th>Path</th>
-<th>설명</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>GET</td>
-<td><code>/api/synthesis?limit=&amp;offset=</code></td>
-<td>Insight 목록 (slug=id)</td>
-</tr>
-<tr>
-<td>GET</td>
-<td><code>/api/synthesis/{slug}</code></td>
-<td>Insight 상세 (<code>answer</code>=body_md)</td>
-</tr>
-</tbody>
-</table></div>
-<blockquote>
-<p>wiki-qa의 파일 기반 synthesis 대신 <strong>Insight 승인 플로우</strong> 데이터를 노출합니다.</p>
-</blockquote>
+<p><code>template</code>: <code>general</code> · <code>checkitems</code> · <code>support_history</code> · <code>incident_reports</code> · <code>tech_repo</code> · <code>tuning_ai</code> · <code>confirmed_decision</code> …</p>
+<h3 id="synthesis-2026-11-05">Synthesis — 폐기됨 (2026-11-05)</h3>
+<p><code>GET /api/synthesis</code>, <code>/api/synthesis/{slug}</code> 는 <strong>HTTP 410</strong>(폐기 안내)을 돌려준다. 한 릴리스 뒤 제거. 대체: <code>/v1/decisions</code> (사람 확정 결정).</p>
 <h3 id="feedback">Feedback</h3>
 <pre><code class="language-http">POST /api/feedback
 {&quot;verdict&quot;: &quot;helpful&quot;, &quot;target_type&quot;: &quot;answer&quot;, &quot;target_id&quot;: &quot;&lt;query_or_answer_id&gt;&quot;}
@@ -473,9 +450,39 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 <td>유사장애</td>
 </tr>
 <tr>
+<td>*</td>
+<td><code>/v1/insights*</code></td>
+<td><strong>폐기됨</strong> — HTTP 410 안내 스텁(다음 릴리스에서 제거)</td>
+</tr>
+<tr>
+<td>POST/GET</td>
+<td><code>/v1/decisions</code></td>
+<td>사람 확정 결정 제안(author+) / 목록(<code>status</code>,<code>topic</code>,<code>domain</code>,<code>sort</code>,<code>include_superseded</code>)</td>
+</tr>
+<tr>
 <td>GET</td>
-<td><code>/v1/insights</code></td>
-<td>Insight CRUD 계열</td>
+<td><code>/v1/decisions/{id}</code></td>
+<td>카드 페이로드(선택지별 근거, 충돌, 고정 대비 현재 버전, 이력)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/decisions/{id}/evidence</code></td>
+<td>근거 추가(author+, 인용 원문 검증)</td>
+</tr>
+<tr>
+<td>GET/POST</td>
+<td><code>/v1/decisions/{id}/nonce</code> · <code>/verdict</code></td>
+<td>판정(senior+, UI nonce 필요, 인증 ON이면 <code>decided_by</code>는 <code>principal.name</code>)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/v1/decisions/{id}/supersede</code> · <code>/retire</code> · <code>/restore</code></td>
+<td>대체 / 보류 / 복구 (senior+, 하드 삭제 없음)</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/v1/decisions/metrics</code></td>
+<td>판정 소요 중앙값, AI 추천 override 비율, NEI 비율 등</td>
 </tr>
 <tr>
 <td>POST/GET</td>
@@ -587,11 +594,15 @@ verdict: <code>helpful</code> | <code>not_helpful</code> | <code>resolved</code>
 </tr>
 <tr>
 <td><code>kb_list_insights</code> / <code>wiki_list_synthesis</code></td>
-<td><code>GET /api/synthesis</code></td>
+<td>폐기됨 (안내 스텁)</td>
 </tr>
 <tr>
 <td><code>kb_get_insight</code> / <code>wiki_get_synthesis</code></td>
-<td><code>GET /api/synthesis/{slug}</code></td>
+<td>폐기됨 (안내 스텁)</td>
+</tr>
+<tr>
+<td><code>kb_list_decisions</code> / <code>kb_get_decision</code> / <code>kb_propose_decision</code> / <code>kb_add_decision_evidence</code></td>
+<td><code>/v1/decisions*</code></td>
 </tr>
 <tr>
 <td><code>kb_ask</code> / <code>wiki_ask</code></td>

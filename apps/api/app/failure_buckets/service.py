@@ -244,7 +244,7 @@ def classify_registrant(created_by: Optional[str]) -> tuple[str, Optional[str]]:
 # existing legacy:pre-migration rows would be a breaking change, and because
 # new prefixes will legitimately appear as new plugins register buckets).
 _EVIDENCE_REF_PREFIXES = (
-    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "agent-room:",
+    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "decision:", "agent-room:",
 )
 # Accepted without a warning, but a human may not be able to open them later
 # (insight: needs an insight-ops login; agent-room: vanishes with the room).
@@ -375,10 +375,29 @@ def create_bucket(
     return result
 
 
+def _attach_confirmation(items: list[dict[str, Any]], id_key: str = "id") -> list[dict[str, Any]]:
+    """Add `confirmation` = the human-confirmation decision linked to each bucket (or None).
+
+    The decision (source_key fb:<id>) is proposed by the decision scan; its verdict does NOT
+    change the bucket (confidence/status stay as they are) — it is a separate human signal that
+    callers can read next to the machine-computed confidence.
+    """
+    try:
+        from app.decisions.service import decisions_by_source_keys
+
+        links = decisions_by_source_keys([f"fb:{i[id_key]}" for i in items if i.get(id_key)])
+    except Exception:  # noqa: BLE001 — a missing decisions table must not break bucket reads
+        links = {}
+    for i in items:
+        i["confirmation"] = links.get(f"fb:{i.get(id_key)}")
+    return items
+
+
 def get_bucket(bucket_id: str) -> Optional[dict[str, Any]]:
     with session_scope() as session:
         row = session.get(FailureBucket, bucket_id)
-        return _to_dict(row) if row else None
+        d = _to_dict(row) if row else None
+    return _attach_confirmation([d])[0] if d else None
 
 
 def list_buckets(
@@ -414,7 +433,7 @@ def list_buckets(
             "total": int(total),
             "limit": limit,
             "offset": offset,
-            "items": [_to_dict(r) for r in rows],
+            "items": _attach_confirmation([_to_dict(r) for r in rows]),
         }
 
 
@@ -571,7 +590,7 @@ def match_buckets(
         stmt = stmt.limit(_MATCH_FETCH_LIMIT)
         rows = list(session.scalars(stmt).all())
         dicts = [_to_dict(r) for r in rows]
-    return rank_buckets(observed_signals, symptom, dicts, top_k=top_k)
+    return _attach_confirmation(rank_buckets(observed_signals, symptom, dicts, top_k=top_k), id_key="bucket_id")
 
 
 def _set_mirror_status(session, row: FailureBucket, status: str) -> None:

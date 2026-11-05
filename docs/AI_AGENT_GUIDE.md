@@ -17,7 +17,7 @@ Related docs:
 
 CI-TEC internal knowledge platform:
 
-- **Corpus:** support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, insights  
+- **Corpus:** support tickets (CITECTS-*), PISA checkitems, Confluence tech_repo, tuning notes, human-confirmed decisions  
 - **Search:** hybrid **PostgreSQL FTS + pgvector** (multilingual-e5-base, 768-d)  
 - **Planner:** natural language → intent (time list, analytics, similar incident, checklist, capacity, hybrid search, RAG)  
 - **LLM:** external only (OpenRouter / Fabrix)—not embedded in MCP  
@@ -299,10 +299,47 @@ Args: `period_days`, `basis` (e.g. `1안`), `include_pricing`.
 Full ticket markdown.  
 **API:** `GET /v1/tickets/{external_id}?source_type=support_history`
 
-### 4.12 Insights
+### 4.12 Insights — RETIRED (2026-11-05)
 
-- `kb_list_insights` / `wiki_list_synthesis`  
-- `kb_get_insight` / `wiki_get_synthesis`  
+`kb_list_insights` / `kb_get_insight` / `wiki_list_synthesis` / `wiki_get_synthesis` are **retired stubs** (they only answer
+"폐기됨 — use kb_list_decisions / kb_get_decision"; removed in the next release). `/v1/insights*` and `/api/synthesis*`
+answer HTTP 410. Filter values `insight`/`insights`/`synthesis` are rejected with HTTP 400. Use §4.12b.
+
+### 4.12b Confirmed decisions (사람 확정)
+
+The **human-confirmed "current standard" layer**. A decision is one question with mutually exclusive
+options (+ `NEI` "cannot tell" and `OTHER` "free text", added by the server), pinned evidence, and
+append-only human verdicts. Confirmed decisions are searchable as `source_type=confirmed_decision`,
+`evidence_grade=H`.
+
+- `kb_list_decisions(status, topic, domain, include_superseded, limit)` / `kb_get_decision(decision_id)` — read.
+- `kb_propose_decision(question, options, evidence, ai_recommendation_key, …)` — you may **propose** a question.
+- `kb_add_decision_evidence(decision_id, quote, stance, document_id | external_url+external_snapshot+retrieved_at)`.
+  An internal `quote` must appear **verbatim** in the document body (NFC + whitespace-normalised), otherwise HTTP 400.
+- There is **no verdict tool**. You cannot confirm a decision. A human confirms it in `/decisions.html`
+  (the verdict endpoint needs a one-time nonce issued by that UI). With `AUTH_MODE=off` this is only a guard against
+  accidental AI verdicts, not a security boundary — turning auth on is the real fix.
+- `GET /v1/decisions[?status=&sort=priority|recent&include_superseded=]`, `GET /v1/decisions/{id}`,
+  `GET /v1/decisions/metrics` are public reads.
+
+**Auto-proposed topics (periodic scan).** A server job (`decision_topic_scan`, `POST /v1/decisions/_scan-topics[?dry_run=true]`)
+derives questions from stored data with fixed rules (no LLM) and registers them as `proposed` decisions
+(`created_by_kind=server_job`, `created_by=decision-scan@<detector>`, UI badge "자동 제안"): `fb_confirm` (active failure buckets whose
+confidence is still < 0.7: confirm / revise / retire), `deadline` (a tech_repo/confluence_docs *title* states a date deadline),
+`bucket_gap` (a CI-TEC domain has recurring incidents but zero failure buckets). Each carries a unique `source_key`
+(`fb:<bucket id>`, `deadline:<document id>`, `gap:<domain>:<fb_domain>`) so re-runs never duplicate, and verbatim quotes that pass the same
+evidence gate. Caps: `max_new_per_run` (20) and `max_open_server_proposals` (60) — config/decision_scan.json. A server proposal is never a verdict.
+
+**Failure buckets and decisions.** A bucket's `confidence` is machine-computed (Laplace over support/counter counts, grade `machine`).
+Human confirmation is a separate signal: `kb_get_failure_bucket` / `kb_match_failure_bucket` / list responses carry `confirmation`
+(`decision_id`, `effective_status`, `verdict`, `decided_by`) when the scan proposed that bucket. A verdict does **not** change the bucket
+(confidence/status stay); retire/refine remain explicit bucket operations.
+
+**When you cite a `confirmed_decision`**: cite it first, and state *who confirmed it and when*
+(`decision.decided_by`, `decided_at`; "(자기 신고)" means the name was self-reported while auth is off).
+If `decision.recheck=true` (`needs_recheck`: a pinned source document changed, or the review interval passed),
+do **not** state it as fact — open the source and say the confirmation needs re-checking.
+`superseded`/`retired` decisions are hidden unless `include_superseded=true` (kb_search).
 
 ### 4.13 `kb_ask` / `wiki_ask`
 
@@ -335,7 +372,16 @@ See §6.3 for the full taxonomy and when to use each:
 가 정본이다. 플러그인 개발자용 상세 지침은 [FAILURE_BUCKET_PLUGIN_GUIDE.md](./FAILURE_BUCKET_PLUGIN_GUIDE.md).
 
 - `kb_register_failure_bucket(bucket_name=, symptom=, discriminating_signals=, root_cause=, recommended_action=, fb_domain=, evidence_ref=, counter_signals=, protocol=, environment=, source_plugin=)` — 새 실패 패턴 등록, 즉시 검색 노출. `fb_domain`/`evidence_ref`는 필수(빈 값이면 400) — `evidence_ref`는 자유 서술이 아니라 원자료를 가리키는 구체적 포인터(`CITECTS-2481`, `capture:....pcapng#frame=4821` 등)여야 한다(알려진 접두어와 다르면 응답에 `evidence_ref_warning`). 응답에 `possible_duplicate_of`가 오면 기존 버킷과 사실상 같은 패턴일 수 있다는 뜻 — 확인 후 필요하면 등록 대신 `kb_refine_failure_bucket`으로 정정한다. 등록 응답의 `registrant_kind`(`system`\|`human`), `created_by_warning`, `evidence_ref_note`(`insight:`/`agent-room:`만 쓴 경우 "열람 제약 있음, `confluence:` 병기 권장")는 거부가 아닌 안내이고, 같은 `created_by`+`evidence_ref`+`bucket_name` 재시도는 `already_registered: true`로 기존 행을 돌려준다
-- `kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다. `environment`를 채우면 다른 환경으로 태깅된 버킷은 후보에서 제외(태그 없는 버킷은 계속 후보에 남음)
+- `kb_match_failure_bucket(observed_signals=, symptom=, fb_domain=, protocol=, environment=)` — 관찰 신호로 후보 순위화 (구조화 매칭, 하이브리드 검색 아님). 매칭 스코어의 신호 개수 상한(K=4) 때문에 신호가 많다고 불리해지지 않는다.
+  **매칭 규칙 (2026-11-05)** — 판정은 판별 신호 **하나씩**이다. 같은 말로 보는 것은 등록된 한/영 용어 그룹뿐이다
+  (쿼럼=quorum, 펜싱=fencing, 스플릿 브레인=split-brain, 재부팅=reboot, 타임아웃=timeout 등 + 승인된 검색 동의어). 의미가
+  비슷하다는 이유로는 일치시키지 않는다(그룹에 없는 말은 일치하지 않는다). 증상(`symptom`) 글도 같은 정규화를 거쳐 일치에 쓰인다.
+  응답에는 `match_evidence`(일치한 신호마다 겹친 단어, 표기가 달라 그룹으로 일치시킨 것은 `via_term_group`·`observed_as`↔`signal_as`),
+  `contradicted_evidence`, `label_basis`(일치 n/전체, 계산 분모, 버킷 confidence, **조건부/가능에 필요한 일치 수**, 아직 확인 안 된 신호)와
+  최상위 `label_rules`가 들어 있다. 라벨 기준: `score = 0.6*일치비율 + 0.4*confidence - 0.5*반증수`, **가능** score≥0.7이고 일치≥1,
+  **조건부** score≥0.4, 그 외·반증 일치는 **비권고**. confidence가 기본 0.5(미검증)인 버킷은 '가능'에 계산 대상 신호가 모두 일치해야 하므로
+  여러 신호 버킷에서 1개만 일치하면 비권고다(의도된 보수성 — refine으로 confidence가 오르면 같은 일치 수로도 오른다). 일치 0개 후보가 같은
+  도메인 필터 안에서 낮은 점수로 나올 수 있으니 `matched_signals`가 비면 쓰지 않는다. `fb_domain`을 지정하면 다른 도메인 버킷은 후보에서 빠진다. `environment`를 채우면 다른 환경으로 태깅된 버킷은 후보에서 제외(태그 없는 버킷은 계속 후보에 남음)
 - `kb_refine_failure_bucket(bucket_id=, add_signal=, add_counter_signal=, environment=, confirm=)` — 확인/반박 시 신뢰도 자동 재계산 (self-improving). `environment`는 미지정 시 기존 값 유지, 지정 시 덮어씀 — 등록 시점에 몰랐던 환경을 나중에 소급 태깅할 때 사용
 - `kb_list_failure_buckets(fb_domain=, protocol=, environment=, include_retired=)` / `kb_get_failure_bucket(bucket_id=)` — **목록과 match는 기본으로 활성(active) 버킷만** 돌려준다. retire된 건과 `-test` 시험 등록은 `include_retired=true` 목록과 `kb_get_failure_bucket`(상세)에서만 보인다
 - `kb_retire_failure_bucket(bucket_id=, reason=)` / `kb_restore_failure_bucket(bucket_id=)` — **[쓰기]** 되돌리기. 삭제가 아니라 숨김(검색·매칭·그래프 이웃·집계에서 제외)이며 restore로 복구된다. `reason` 8자 이상, `senior` 이상(인증 켜진 경우). 잘못 등록했으면 새로 등록해서 덮지 않는다
@@ -481,13 +527,13 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form | A |
 | `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` | B |
 | `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools | `machine`(자동계산 confidence와 별개 필드) |
-| insights / synthesis | Approved insights | via insight tools | n/a (status: draft/review/approved/rejected) |
+| `confirmed_decision` | 사람이 확정한 현재 기준 (질문·선택지·고정 근거) | `kb_get_decision`, `confirmed_decision/DEC-xxxxxxxx.md` | `H` (human-confirmed) |
 
 **Ticket keys:** always `CITECTS-<number>` (case-insensitive in search; normalize to `CITECTS-####` when calling `kb_ticket`).
 
 ### 6.1 `evidence_grade` — how much to trust a hit, before you even open it
 
-Every `documents` row carries `evidence_grade` (`A` / `A-` / `B` / `C` / `draft`).
+Every `documents` row carries `evidence_grade` (`H` / `A` / `A-` / `B` / `C` / `draft`).
 It is **not a relevance score** — it is a statement about how directly this row
 *is* the fact, vs. merely *points at* where the fact might live:
 
@@ -526,8 +572,11 @@ It is **not a relevance score** — it is a statement about how directly this ro
   production here — if in doubt, treat a short/breadcrumb-shaped
   `confluence_map` body as unverified structure-only, not as evidence the
   page itself is short.
-- **`draft`**: not yet reviewed (e.g. an unapproved insight) — do not present
-  as settled fact.
+- **`H` — human-confirmed** (`source_type=confirmed_decision` only): a person picked
+  this option in the decision UI against pinned evidence. This is the current standard for that
+  question. Always cite with the confirmer and the date; if the hit says `recheck=true`, treat it as
+  *needs re-check*, not as fact. Existing rows' grades are never changed to `H`.
+- **`draft`**: not yet reviewed — do not present as settled fact. (The first-generation insight rows that used it were retired 2026-11-05.)
 
 **Rule of thumb:** before citing a hit as fact, check `source_type`. If it is
 `confluence_map`, you may quote its body, but flag it as unverified/C-grade
@@ -737,6 +786,9 @@ Full field tables: [EXTERNAL_API.md](./EXTERNAL_API.md).
 | Cite a `confluence_map` hit as settled fact with no caveat | `evidence_grade="C"` by policy regardless of body richness (§6.1) — automated crawl, no dedicated verification pipeline | Prefer a `tech_repo`/`confluence_docs` copy of the same page if one exists (§6.2); otherwise answer but flag as unverified |
 | Assume a short/breadcrumb-only `confluence_map` body means the page itself is short | It may just predate 2026-10-01 full-body capture (§6.1) | Check `metadata["source_version"]` presence, or open the live URL |
 | Count/rank CI-TEC domain incidents by scanning search results yourself | Error-prone, and ignores multi-domain tagging | `kb_citec_recurring_patterns` |
+| State a `confirmed_decision` with `decision.recheck=true` as settled fact | Its pinned evidence changed or the review interval passed (§4.12b) | Open the source, say it needs re-checking |
+| Try to confirm a decision yourself / look for a verdict tool | By design only a human confirms (UI nonce, `decided_via=ui`) | `kb_propose_decision` + `kb_add_decision_evidence`, then tell the user to open `/decisions.html` |
+| Add an evidence `quote` you paraphrased | The server requires a verbatim substring of the pinned document | Copy the exact text from `kb_get_document` |
 | Guess CI-TEC domain spelling ("Open Stack", "케이-에이트-에스") | `kb_citec_recurring_patterns` filters do exact match | `kb_citec_domain_catalog()` first |
 
 ---
@@ -832,3 +884,11 @@ If a tool name is missing in the live server, call `kb_tools_help` or fall back 
 - MCP `kb_ask`/`wiki_ask` first line on failure: `[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status=…, 사유: …)`. The `[스니펫 요약]` prefix is unchanged. Fallback text and the source list show one entry per document.
 - **Fabrix chat adapter (2026-10-29):** `apps/api/app/llm_fabrix.py` implements `POST {COMPANY_ENDPOINT_URL}/openapi/chat/v1/messages` (non-stream and SSE). Answer text is taken only from `CHUNK` events — `THINK` events carry the model's reasoning and are dropped. Reasoning shares `max_new_tokens`, so the adapter adds `FABRIX_THINK_HEADROOM` (default 2048) to the caller's answer budget. `check_llm` now makes a real tiny non-stream + stream call (cached 60 s): `chat_supported` / `chat_stream_supported` are measured, not hardcoded. Errors surface Fabrix's `errorCode` and `detailMessage` as the `llm_error` reason.
 - With the adapter, production `kb_ask` should return `generation_status=ok` with a generated answer; any failure still falls back to the transparent snippet summary above.
+
+## D: Confirmed decisions (2026-11-05)
+
+- New layer `confirmed_decision` (grade `H`), MCP `kb_list_decisions` / `kb_get_decision` / `kb_propose_decision` / `kb_add_decision_evidence`, web `/decisions.html` + `/decision.html?id=`. See §4.12b and §6.1.
+- `kb_ask` source list now prints **every** `[C#]` for a document on one line (`- C1, C11, C15 <title>`); previously only the first chunk's number was shown, so `[C11]` in the answer looked missing (A2).
+- Confirmed decisions are put first in the answer context; the source entry shows `사람 확정: 확정자 …, 확정일 …` and `⚠ 재확인 필요` when applicable.
+- `kb_search(include_superseded=true)` also returns superseded confirmed decisions (default false). `SEARCH_CONFIRMED_FACTOR` (default 1.5, `1.0` = off; measured on one dev pilot) multiplies the score of current confirmed decisions; needs_recheck is never boosted.
+- `kb_stats` has a `decisions` block with named counts and its own definition (`by_status` = rows in `decisions`; `searchable_active_documents` = searchable mirror documents).

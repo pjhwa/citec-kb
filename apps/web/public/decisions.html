@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>사람 확정 큐 — CI-TEC Knowledge</title>
+<link rel="stylesheet" href="/css/theme.css"/>
+<link rel="stylesheet" href="/css/decision.css"/>
+</head>
+<body>
+<div class="top" id="topNav" data-page="decisions"></div>
+<div class="wrap">
+  <h1>사람 확정 큐</h1>
+  <p class="sub">질문 하나씩 판정합니다. 순서는 선입선출이 아니라 충돌 → 위험 → 낡음입니다. 제안은 AI(MCP)가 하고, 판정은 이 화면에서 사람이 합니다.</p>
+  <div class="row-ctl">
+    <select id="fStatus">
+      <option value="">진행 중 (전체)</option><option value="proposed">proposed</option><option value="confirmed">confirmed</option>
+      <option value="needs_recheck">needs_recheck</option><option value="superseded">superseded</option><option value="retired">retired</option>
+    </select>
+    <select id="fSort"><option value="priority">우선순위순</option><option value="recent">최신순</option></select>
+    <label class="meta"><input type="checkbox" id="fSup"/> 대체된 결정 포함</label>
+    <button type="button" id="btnReload">새로고침</button>
+    <a class="meta" href="#metrics" id="lnkMetrics">지표 ▾</a>
+  </div>
+  <div id="out"><p class="meta">로딩…</p></div>
+  <div id="metrics" class="dcard hidden"></div>
+</div>
+<script src="/js/nav.js"></script>
+<script src="/js/auth.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const api = (u, o) => CitecAuth.apiFetch(u, o);
+
+function chips(d) {
+  let h = `<span class="chip">위험: ${esc({low:"낮음",mid:"중",high:"높음"}[d.stakes]||d.stakes)}</span>`;
+  h += `<span class="chip">근거 ${d.evidence_count} · 출처 ${d.source_count}</span>`;
+  if (d.conflict && d.conflict.conflict) h += `<span class="chip bad" title="${esc(d.conflict.reasons.join(' / '))}">⚠ 충돌</span>`;
+  if (d.changed_pins) h += `<span class="chip warn">근거 변경 ${d.changed_pins}건</span>`;
+  if (d.effective_status === "needs_recheck") h += `<span class="chip warn">재확인 필요</span>`;
+  if (d.external_only) h += `<span class="chip pri">외부·서버 미검증 근거만</span>`;
+  if (d.created_by_kind === "server_job") h += `<span class="chip" title="${esc(d.created_by||'')}">자동 제안</span>`;
+  h += `<span class="chip ${d.effective_status==='confirmed'?'ok':''}">${esc(d.effective_status)}</span>`;
+  return h;
+}
+
+async function load() {
+  $("out").innerHTML = "<p class='meta'>로딩…</p>";
+  const q = new URLSearchParams({ sort: $("fSort").value });
+  if ($("fStatus").value) q.set("status", $("fStatus").value);
+  if ($("fSup").checked) q.set("include_superseded", "true");
+  const r = await api("/v1/decisions?" + q);
+  const d = await r.json();
+  if (!r.ok) { $("out").innerHTML = `<div class="errbox">${esc(d.detail || r.statusText)}</div>`; return; }
+  if (!d.items.length) { $("out").innerHTML = "<p class='meta'>판정할 결정이 없습니다. (MCP kb_propose_decision 으로 제안이 올라오면 여기에 나타납니다)</p>"; return; }
+  $("out").innerHTML = `<p class="meta">총 ${d.total}건</p>` + d.items.map(it => `
+    <div class="dcard"><a class="qrow" href="/decision.html?id=${encodeURIComponent(it.id)}">
+      <div><div class="qtitle">${esc(it.question)}</div>
+        <div class="why">이 순서인 이유: ${esc(it.queue_reason)}${it.topic ? " · 주제 " + esc(it.topic) : ""}</div></div>
+      <div>${chips(it)}</div></a></div>`).join("");
+}
+
+async function loadMetrics() {
+  const el = $("metrics");
+  el.classList.toggle("hidden");
+  if (el.classList.contains("hidden")) return;
+  const m = await (await api("/v1/decisions/metrics")).json();
+  const f = (v, p) => v == null ? "—" : (p ? (v * 100).toFixed(0) + "%" : v);
+  el.innerHTML = `<strong>지표</strong> <span class="meta">(임계값은 정하지 않고 측정만 합니다)</span><br/>
+    <span class="metric"><b>${f(m.median_time_to_decide_ms) === "—" ? "—" : Math.round(m.median_time_to_decide_ms/1000) + "초"}</b>판정 소요 중앙값</span>
+    <span class="metric"><b>${f(m.ai_override_rate, 1)}</b>AI 추천과 다른 선택</span>
+    <span class="metric"><b>${f(m.nei_rate, 1)}</b>판단 불가 비율</span>
+    <span class="metric"><b>${m.needs_recheck}</b>재확인 필요</span>
+    <span class="metric"><b>${m.verdicts_total}</b>판정 행(이력 포함)</span>
+    <span class="metric"><b>${m.self_reported_verdicts}</b>자기 신고 판정</span>
+    <div class="meta">상태별: ${esc(JSON.stringify(m.decisions_by_status))} · ${esc(m.definition)}</div>`;
+}
+$("btnReload").onclick = load; ["fStatus","fSort","fSup"].forEach(i => $(i).onchange = load);
+$("lnkMetrics").onclick = (e) => { e.preventDefault(); loadMetrics(); };
+CitecAuth.mountChip(".top");
+load();
+</script>
+</body>
+</html>

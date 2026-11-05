@@ -137,8 +137,8 @@ def run_api_rbac(access_token: str, issuer: str, client_id: str) -> dict[str, An
     me = r.json()
 
     r = c.post(
-        "/v1/insights",
-        json={"title": "Keycloak e2e insight", "body_md": "from keycloak"},
+        "/v1/decisions",
+        json={"question": "Keycloak e2e?", "options": [{"key": "a", "label": "x"}, {"key": "b", "label": "y"}]},
         headers={"Authorization": f"Bearer {access_token}"},
     )
     create_status = r.status_code
@@ -192,7 +192,7 @@ def main() -> None:
             api_result = run_api_rbac(access, args.issuer, args.client_id)
             report["api"] = api_result
             report["audience_used"] = "*"
-            # senior should be able to create insights
+            # senior should be able to create (propose) decisions
             if "senior" in (api_result.get("roles") or []) or "author" in (
                 api_result.get("roles") or []
             ):

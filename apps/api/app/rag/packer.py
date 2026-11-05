@@ -26,6 +26,8 @@ class PackedChunk:
     # chunk was indistinguishable from a fulltext-verified one downstream.
     evidence_eligible: bool = True
     map_synced_at: Optional[str] = None
+    # confirmed_decision 청크: {status, recheck, decided_by, decided_at, self_reported}
+    decision: Optional[dict] = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -69,6 +71,7 @@ def pack_chunks(
                 est_tokens=est,
                 evidence_eligible=bool(getattr(h, "evidence_eligible", True)),
                 map_synced_at=getattr(h, "map_synced_at", None),
+                decision=getattr(h, "decision", None),
             )
         )
         used += est
@@ -81,6 +84,12 @@ def format_context_block(packed: Sequence[PackedChunk]) -> str:
         # A pointer chunk (evidence_eligible=False) must not read like a
         # verified excerpt to the generator — see PackedChunk.evidence_eligible.
         tag = "" if p.evidence_eligible else " (POINTER — 원문 미확인, 사실 근거로 인용 금지)"
+        if p.decision:
+            d = p.decision
+            who = f"{d.get('decided_by')}{'(자기 신고)' if d.get('self_reported') else ''}"
+            when = str(d.get("decided_at") or "")[:10]
+            tag += f" (사람 확정 — 확정자 {who}, 확정일 {when}"
+            tag += ", 재확인 필요: 사실로 단정하지 말고 원문 확인 안내)" if d.get("recheck") else ")"
         parts.append(
             f"[{p.cite_id}]{tag} title={p.title}\n"
             f"source={p.source_type} id={p.external_id}\n"

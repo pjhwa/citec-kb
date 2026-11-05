@@ -1,0 +1,6 @@
+trust medium
+1 confirmed_decision DEC-6190ab7f H 0.0234 | PIXEL(엑셀기반 PISA진단) 제공 종료일은? | ('수용시험(Claude ', False)
+2 tech_repo 531734869 A 0.0221 | 08-01-03. 주요 RDB Managed Service 비교/분석 2022 통합 | None
+3 checkitem PISAOLNX_03.01.04 A 0.0189 | [PISAOLNX_03.01.04] 사용자 정보 | None
+4 tech_repo 1365725609 A 0.0189 | Survey 작성 (한글/영문) | None
+5 checkitem PISAOLNX_06.01.07#EN A 0.0185 | [PISAOLNX_06.01.07] Event Message | None

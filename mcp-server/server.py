@@ -184,6 +184,12 @@ def _access_lines(d: dict[str, Any], *, indent: str = "  ") -> str:
         bits.append(f"{indent}web_url: {web}")
     if evidence_eligible is False:
         bits.append(f"{indent}⚠ pointer만 있음 — 원문 미확인 (evidence_eligible=false)")
+    dm = d.get("decision")
+    if dm:
+        who = f"{dm.get('decided_by')}{' (자기 신고)' if dm.get('self_reported') else ''}"
+        bits.append(f"{indent}사람 확정: 확정자 {who}, 확정일 {str(dm.get('decided_at') or '')[:10]}, 상태 {dm.get('status')}")
+        if dm.get("recheck"):
+            bits.append(f"{indent}⚠ 재확인 필요 — 사실로 단정하지 말고 원문 확인")
     if map_synced_at:
         bits.append(f"{indent}map_synced_at: {map_synced_at} (원문 실시간 확인 아님)")
     if verify_via and isinstance(verify_via, dict):
@@ -216,10 +222,11 @@ async def kb_search(
     exclude_subtree_ids: Optional[list[str]] = None,
     include_irrelevant_maps: Optional[bool] = None,
     diversify_copies: bool = True,
+    include_superseded: bool = False,
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
-    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|insight
+    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|confirmed_decision
         (checkitems·incident 같은 흔한 별칭은 서버가 정규화하고, 모르는 값은 허용 목록과 함께 거부한다)
     area: domain 필터 (os|dbms|network|cloud|storage|…, 대소문자 무시). 문서에 없는 값이면 결과 머리에 경고가 붙는다
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
@@ -230,6 +237,7 @@ async def kb_search(
     include_irrelevant_maps: 기술 무관 confluence_map 포함 여부. 미지정이면 section=confluence_map
         일 때만 포함(필터 꺼짐). 그 섹션에서도 필터를 유지하려면 false 를 명시
     diversify_copies: confluence_map 의 사본/Copy of/백업 페이지를 최고 점수 1건으로 접는다 (기본 true)
+    include_superseded: 대체된(superseded) 확정 결정도 포함 (기본 false = 현행 기준만)
     multi_query: 동의어·구문 확장 검색 (기본 true)
     use_v1: true면 POST /v1/search (필터 풍부), false면 GET /api/wiki/search
     """
@@ -248,6 +256,7 @@ async def kb_search(
         exclude_subtree_ids=exclude_subtree_ids,
         include_irrelevant_maps=include_irrelevant_maps,
         diversify_copies=diversify_copies,
+        include_superseded=include_superseded,
     )
 
 
@@ -278,6 +287,7 @@ async def _search_impl(
     exclude_subtree_ids: Optional[list[str]] = None,
     include_irrelevant_maps: Optional[bool] = None,
     diversify_copies: bool = True,
+    include_superseded: bool = False,
 ) -> str:
     # P0-A / D11 (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
     # §4 item 5, §5): the legacy GET /api/wiki/search path only forwards
@@ -309,6 +319,7 @@ async def _search_impl(
         or work_type
         or include_irrelevant_maps is not None
         or not diversify_copies
+        or include_superseded
     )
     if not use_v1 and category and _v1_only_filters_requested:
         return (
@@ -342,6 +353,8 @@ async def _search_impl(
                     filters["include_irrelevant_maps"] = include_irrelevant_maps
                 if not diversify_copies:
                     filters["diversify_copies"] = False
+                if include_superseded:
+                    filters["include_superseded"] = True
                 resp = await client.post(
                     "/v1/search",
                     json={
@@ -459,71 +472,159 @@ async def _get_document_impl(path: str) -> str:
     return meta_line + content
 
 
+# ── RETIRED 2026-11-05: Insight → 사람 확정 결정. 한 릴리스 동안 폐기 안내 스텁으로 둔다(다음 릴리스에서 제거).
+_INSIGHT_RETIRED = (
+    "폐기됨: Insight/합성지식은 사람 확정 결정(Confirmed Decision)으로 대체됐습니다. "
+    "kb_list_decisions / kb_get_decision 을 사용하세요."
+)
+
+
 @mcp.tool()
 async def kb_list_insights(limit: int = 20, status: str = "approved") -> str:
-    """승인된 Insight 목록. status=review|draft|rejected|all 로만 그 외를 본다."""
-    return await _list_synthesis_impl(limit, status)
+    """[폐기됨] kb_list_decisions 를 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
 async def wiki_list_synthesis(limit: int = 20) -> str:
-    """(wiki-qa 호환) kb_list_insights 와 동일 — synthesis≈insights."""
-    return await _list_synthesis_impl(limit)
+    """[폐기됨] kb_list_decisions 를 사용한다."""
+    return _INSIGHT_RETIRED
 
 
-async def _list_synthesis_impl(limit: int, status: str = "approved") -> str:
+# ── 사람 확정 결정 (Confirmed Decision) ─────────────────────────────
+# AI는 제안과 근거 추가까지만 한다. 판정·대체·보류 도구는 만들지 않는다(사람이 웹 화면에서 판정).
+
+def _fmt_decision_line(d: dict[str, Any]) -> str:
+    cur = d.get("current_verdict") or {}
+    label = ""
+    if cur:
+        label = next((o["label"] for o in d.get("options", []) if o["key"] == cur.get("option_key")), cur.get("option_key"))
+        label = f" → {label}" + (f" ({cur.get('free_text')})" if cur.get("free_text") else "")
+    return (
+        f"- {d['id']} [{d.get('effective_status')}] {d.get('question')}{label}"
+        f" (근거 {d.get('evidence_count')}, 위험 {d.get('stakes')})"
+    )
+
+
+@mcp.tool()
+async def kb_list_decisions(status: str = "", topic: str = "", domain: str = "",
+                            include_superseded: bool = False, limit: int = 20) -> str:
+    """사람이 확정(또는 확정 대기)한 결정 목록. status: proposed|confirmed|needs_recheck|superseded|retired
+    (비우면 진행 중 전체). effective_status가 needs_recheck면 근거 문서가 바뀌었거나 확인 주기가 지난 것이니
+    사실로 단정하지 말고 원문을 확인한다. 판정은 웹(/decisions.html)에서 사람만 한다."""
+    params: dict[str, Any] = {"limit": max(1, min(limit, 100)), "sort": "recent"}
+    for k, v in (("status", status), ("topic", topic), ("domain", domain)):
+        if v:
+            params[k] = v
+    if include_superseded:
+        params["include_superseded"] = "true"
     try:
         async with _client() as client:
-            resp = await client.get("/api/synthesis", params={"limit": limit, "status": status or "approved"})
-            resp.raise_for_status()
+            resp = await client.get("/v1/decisions", params=params)
+            if resp.status_code >= 400:
+                return f"status: invalid_request\n오류: {_api_error_detail(resp)}"
             data = resp.json()
     except httpx.HTTPError as e:
         return _err(e)
-
     items = data.get("items") or []
     if not items:
-        return "저장된 Insight/합성 답변이 없습니다."
+        return "결정이 없습니다."
+    return "\n".join([f"결정 {len(items)}건 (전체 {data.get('total')}건):"] + [_fmt_decision_line(d) for d in items])
 
-    lines = [f"Insight {len(items)}건 (전체 {data.get('total', 0)}건):"]
-    for it in items:
-        lines.append(
-            f"- {it.get('slug', '')} [{it.get('quality') or it.get('status', '')}] "
-            f"{it.get('query') or it.get('title', '')} "
-            f"(수정: {it.get('updated_at', '')})"
-        )
+
+@mcp.tool()
+async def kb_get_decision(decision_id: str) -> str:
+    """결정 한 건: 질문, 선택지, 선택지별 근거(인용·출처·고정 버전 대비 현재 버전), 충돌 여부, 판정 이력.
+    확정자·확정일·재확인 여부를 인용할 때 함께 적는다."""
+    try:
+        async with _client() as client:
+            resp = await client.get(f"/v1/decisions/{decision_id}")
+            if resp.status_code == 404:
+                return f"status: not_found\n오류: 결정을 찾을 수 없습니다: {decision_id}"
+            resp.raise_for_status()
+            d = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    lines = [_fmt_decision_line(d), f"선택지: " + " | ".join(f"{o['key']}={o['label']}" for o in d.get("options", []))]
+    cur = d.get("current_verdict")
+    if cur:
+        lines.append(f"현재 기준 확정: {cur.get('decided_by')}{' (자기 신고)' if cur.get('self_reported') else ''}, {str(cur.get('decided_at'))[:10]}")
+    if d.get("recheck_reasons"):
+        lines.append("⚠ 재확인 필요: " + ", ".join(d["recheck_reasons"]))
+    if d.get("conflict", {}).get("conflict"):
+        lines.append("⚠ 충돌: " + " / ".join(d["conflict"]["reasons"]))
+    for key, evs in (d.get("evidence_by_option") or {}).items():
+        for e in evs:
+            if e.get("retracted_at"):
+                continue
+            src = e.get("external_url") if e.get("origin") == "external" else (e.get("access") or {}).get("path")
+            flag = " [외부·서버 미검증]" if e.get("origin") == "external" else (" [근거 문서 변경됨]" if e.get("changed") else "")
+            lines.append(f"  [{key}/{e['stance']}] “{e['quote'][:160]}” — {src}{flag}")
     return "\n".join(lines)
 
 
 @mcp.tool()
+async def kb_propose_decision(question: str, options: list[dict[str, str]], evidence: Optional[list[dict[str, Any]]] = None,
+                              ai_recommendation_key: str = "", topic: str = "", domain: str = "",
+                              stakes: str = "mid") -> str:
+    """판정할 질문 하나를 제안한다(proposed). 판정은 사람이 웹 화면에서 한다 — AI는 확정할 수 없다.
+    question: 한 문장. options: [{key,label,summary?}] 2~8개, 서로 겹치지 않게(NEI/OTHER는 서버가 자동 추가, 키로 쓰면 거부).
+    evidence: [{quote, stance(supports|refutes|context), option_key?, document_id | external_url+external_snapshot+retrieved_at}]
+      내부 근거의 quote는 document_id 본문에 글자 그대로 있어야 한다(서버가 검증, 아니면 400).
+      외부 자료는 서버가 접속하지 못하니 클라이언트가 가져온 인용 스냅샷과 시각을 보낸다(UI에 '외부·서버 미검증' 표시).
+    stakes: low|mid|high."""
+    body: dict[str, Any] = {"question": question, "options": options, "stakes": stakes,
+                            "evidence": evidence or [], "created_by_kind": "mcp"}
+    for k, v in (("ai_recommendation_key", ai_recommendation_key), ("topic", topic), ("domain", domain)):
+        if v:
+            body[k] = v
+    try:
+        async with _client(timeout=60.0) as client:
+            resp = await client.post("/v1/decisions", json=body)
+            if resp.status_code >= 400:
+                return f"status: invalid_request\n오류: {_api_error_detail(resp)}"
+            d = resp.json()
+    except httpx.HTTPError as e:
+        return _err(e)
+    warn = "".join(f"\n[경고] {w}" for w in d.get("warnings") or [])
+    return (f"제안 등록: {d['id']} (status={d['status']}, 근거 {d.get('evidence_count')}건)\n"
+            f"사람 판정 화면: /decision.html?id={d['id']}{warn}")
+
+
+@mcp.tool()
+async def kb_add_decision_evidence(decision_id: str, quote: str, stance: str, option_key: str = "",
+                                   document_id: str = "", external_url: str = "",
+                                   external_snapshot: str = "", retrieved_at: str = "") -> str:
+    """결정에 근거를 추가한다. stance: supports|refutes|context. option_key를 비우면 공통 근거.
+    내부: document_id + 그 본문에 있는 quote(글자 그대로). 외부: external_url+external_snapshot+retrieved_at(ISO 시각)."""
+    body: dict[str, Any] = {"quote": quote, "stance": stance}
+    for k, v in (("option_key", option_key), ("document_id", document_id), ("external_url", external_url),
+                 ("external_snapshot", external_snapshot), ("retrieved_at", retrieved_at)):
+        if v:
+            body[k] = v
+    try:
+        async with _client(timeout=60.0) as client:
+            resp = await client.post(f"/v1/decisions/{decision_id}/evidence", json=body)
+            if resp.status_code == 404:
+                return f"status: not_found\n오류: 결정을 찾을 수 없습니다: {decision_id}"
+            if resp.status_code >= 400:
+                return f"status: invalid_request\n오류: {_api_error_detail(resp)}"
+            e = resp.json()
+    except httpx.HTTPError as err:
+        return _err(err)
+    return f"근거 추가: {e['id']} ({e['origin']}, {e['stance']}, option={e.get('option_key') or '공통'})"
+
+
+@mcp.tool()
 async def kb_get_insight(slug: str) -> str:
-    """Insight 본문을 조회한다. slug는 kb_list_insights 결과의 id/slug."""
-    return await _get_synthesis_impl(slug)
+    """[폐기됨] kb_get_decision 을 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
 async def wiki_get_synthesis(slug: str) -> str:
-    """(wiki-qa 호환) kb_get_insight 와 동일."""
-    return await _get_synthesis_impl(slug)
-
-
-async def _get_synthesis_impl(slug: str) -> str:
-    try:
-        async with _client() as client:
-            resp = await client.get(f"/api/synthesis/{slug}")
-            if resp.status_code == 404:
-                return f"오류: Insight/합성 답변을 찾을 수 없습니다: {slug}"
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPError as e:
-        return _err(e)
-
-    sources = data.get("sources") or []
-    src = ", ".join(str(s) for s in sources) if sources else "없음"
-    return (
-        f"질문/제목: {data.get('query') or data.get('title', '')}\n"
-        f"상태: {data.get('quality') or data.get('status', '')}\n\n"
-        f"{data.get('answer', '')}\n\n출처: {src}"
-    )
+    """[폐기됨] kb_get_decision 을 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
@@ -1627,7 +1728,9 @@ async def kb_tools_help() -> str:
 
 [티켓 · Insight · 상태]
   kb_ticket(external_id=)
-  kb_list_insights / kb_get_insight
+  (kb_list_insights / kb_get_insight / wiki_*_synthesis: 폐기됨 — 안내 스텁, 결정 도구 사용)
+  kb_list_decisions / kb_get_decision   사람이 확정한 현재 기준(읽기)
+  kb_propose_decision / kb_add_decision_evidence   질문·근거 제안(AI는 판정 못 함, 판정은 웹에서 사람이)
   kb_ask / wiki_ask   RAG 답변
   kb_health / kb_stats
 
@@ -1637,7 +1740,7 @@ async def kb_tools_help() -> str:
   kb_citec_failure_bucket_coverage(since_days=, min_count=)   반복 확인됐는데 failure_bucket 미등록인 도메인
 
 [신뢰도 — 답하기 전에 반드시 확인]
-  evidence_grade: A/A- 본문 그대로 인용 가능 · B 아직 미종결(열린 티켓 등, 결론 바뀔 수 있음)
+  evidence_grade: H=사람 확정(확정자·확정일과 함께 인용, needs_recheck면 원문 확인) · A/A- 본문 그대로 인용 가능 · B 아직 미종결(열린 티켓 등, 결론 바뀔 수 있음)
   · C(=confluence_map 전용) — 2026-10 이후 크롤/백필된 공간은 본문도 들어있지만
   (전엔 제목/경로만) evidence_grade="C"는 정책상 그대로 유지: 자동 크롤이라
   tech_repo/confluence_docs만큼의 검증·최신성 보장이 없다는 뜻. 같은 page_id가
@@ -1951,6 +2054,27 @@ async def kb_match_failure_bucket(
             f"  matched: {r.get('matched_signals')}\n"
             f"  contradicted: {r.get('contradicted')}"
         )
+        for ev in r.get("match_evidence") or []:
+            words = ", ".join(
+                f"{o['token']}" + (f" (입력 {'/'.join(o['observed_as'])} = 저장 {'/'.join(o['signal_as'])})" if o.get("via_term_group") else "")
+                for o in ev.get("overlap") or []
+            )
+            lines.append(f"  겹친 단어 [{ev.get('signal')}]: {words}")
+        b = r.get("label_basis") or {}
+        if b:
+            need_c, need_p = b.get("matched_needed_for_조건부"), b.get("matched_needed_for_가능")
+            lines.append(
+                f"  판정 근거: 일치 {b.get('matched')}/{b.get('signals_total')} (계산 분모 {b.get('ratio_denominator')}), "
+                f"버킷 confidence={b.get('bucket_confidence')}, 조건부에는 일치 {need_c or '도달 불가'}개, 가능에는 {need_p or '도달 불가'}개 필요"
+            )
+            if b.get("unmatched_signals"):
+                lines.append(f"  아직 확인 안 된 판별 신호: {b.get('unmatched_signals')}")
+        if r.get("confirmation"):
+            c = r["confirmation"]
+            lines.append(f"  사람 확정: 결정 {c.get('decision_id')} [{c.get('effective_status')}] {c.get('verdict') or '판정 대기'}")
+    rules = data.get("label_rules") or {}
+    if rules:
+        lines.append(f"[라벨 기준] {rules.get('labels')} | {rules.get('note')}")
     return "\n".join(lines)
 
 
@@ -2074,7 +2198,12 @@ async def kb_get_failure_bucket(bucket_id: str) -> str:
         f"confidence={data.get('confidence')} "
         f"support={data.get('support_count')} counter={data.get('counter_count')}\n"
         f"evidence_ref={data.get('evidence_ref')} created_by={data.get('created_by')}\n\n"
-        f"증상: {data.get('symptom')}\n"
+        + (
+            f"사람 확정 결정: {c.get('decision_id')} [{c.get('effective_status')}] {c.get('verdict') or '판정 대기'}"
+            f"{' — ' + str(c.get('decided_by')) if c.get('decided_by') else ''}\n"
+            if (c := data.get("confirmation")) else "사람 확정 결정: 없음(스캔이 아직 제안하지 않았거나 confidence가 확정 기준 이상)\n"
+        )
+        + f"증상: {data.get('symptom')}\n"
         f"판별 신호: {data.get('discriminating_signals')}\n"
         f"반증 신호: {data.get('counter_signals')}\n"
         f"근본원인: {data.get('root_cause')}\n"
@@ -2214,11 +2343,15 @@ async def kb_stats() -> str:
         return _err(e)
 
     lines = [
-        f"as_of={data.get('as_of')} total_documents={data.get('total')} insights={data.get('insights')}",
+        f"as_of={data.get('as_of')} total_documents={data.get('total')}",
         "by_source_type:",
     ]
     for k, v in sorted((data.get("by_source_type") or {}).items(), key=lambda x: -int(x[1] or 0)):
         lines.append(f"  - {k}: {v}")
+    dec = data.get("decisions")
+    if dec:
+        lines.append(f"decisions(사람 확정): by_status={dec.get('by_status')} searchable_active_documents={dec.get('searchable_active_documents')}")
+        lines.append(f"  정의: {dec.get('definition')}")
     return "\n".join(lines)
 
 

@@ -37,6 +37,8 @@ from app.auth import mock_idp as mock_idp_router  # noqa: E402
 from app.routers import auth as auth_router  # noqa: E402
 from app.routers import auth_tokens as auth_tokens_router  # noqa: E402
 from app.routers import insights as insights_router  # noqa: E402
+from app.routers import feedback as feedback_router  # noqa: E402
+from app.routers import decisions as decisions_router  # noqa: E402
 from app.routers import jobs as jobs_router  # noqa: E402
 from app.routers import lexicon as lexicon_router  # noqa: E402
 from app.routers import synonym_candidates as synonym_candidates_router  # noqa: E402
@@ -117,6 +119,8 @@ app.include_router(synonym_candidates_router.router)
 app.include_router(jobs_router.router)
 app.include_router(ops_router.router)
 app.include_router(insights_router.router)
+app.include_router(feedback_router.router)
+app.include_router(decisions_router.router)
 app.include_router(auth_router.router)
 app.include_router(auth_tokens_router.router)
 app.include_router(mock_idp_router.router)

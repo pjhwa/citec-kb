@@ -184,6 +184,10 @@
 </code></pre>
 <p>응답의 <code>matched_signals</code>/<code>contradicted</code>를 함께 본다. <code>contradicted</code>가 뜬 버킷은 사실상 배제<br>
 대상이다. 이 재조회는 1회로 끝내지 않는다.</p>
+<p><code>match_evidence</code>는 일치한 신호마다 <strong>겹친 단어</strong>를 보여 준다. 사용자 증상을 한국어로 바꿔 써도(쿼럼/펜싱/스플릿 브레인 등)<br>
+등록된 한/영 용어 그룹에 있는 말이면 같은 말로 일치시키고 <code>via_term_group</code>으로 표시한다. 의미가 비슷하다는 이유로는 일치시키지<br>
+않는다. <code>label_basis</code>는 일치 n/전체와 '조건부/가능'에 필요한 일치 수를 알려 준다(confidence 0.5 미검증 버킷은 여러 신호 중<br>
+1개만 일치하면 비권고가 정상이다). <code>matched_signals</code>가 빈 후보는 쓰지 않는다.</p>
 <h3 id="3-3">3-3. 분석 종료 시점 — 되먹임 (정확히 하나)</h3>
 <ul>
 <li><strong>완전히 새로운 패턴</strong> → 등록 <strong>직전</strong>에 <code>kb_match_failure_bucket</code>을 한 번 더 호출해 같은 패턴이 이미<br>

@@ -569,33 +569,6 @@ class Feedback(Base):
     )
 
 
-class Insight(Base):
-    __tablename__ = "insights"
-    __table_args__ = (Index("ix_insights_status", "status"),)
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
-    title: Mapped[str] = mapped_column(String(1024), nullable=False)
-    body_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    source_doc_ids: Mapped[list[str]] = mapped_column(
-        ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
-    )
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default="draft"
-    )  # draft | review | approved | rejected
-    author: Mapped[Optional[str]] = mapped_column(String(128))
-    reviewer: Mapped[Optional[str]] = mapped_column(String(128))
-    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    promoted_document_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-
 class Bundle(Base):
     """War-room incident pack definition."""
 
@@ -753,3 +726,116 @@ class DocExpansion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class Decision(Base):
+    """사람이 판정할 질문 한 개. 판정 자체는 DecisionVerdict(추가만 가능)에 있다."""
+
+    __tablename__ = "decisions"
+    __table_args__ = (
+        Index("ix_decisions_status", "status"),
+        Index("ix_decisions_topic", "topic"),
+        Index("ix_decisions_domain", "domain"),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    question: Mapped[str] = mapped_column(String(300), nullable=False)
+    options: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    topic: Mapped[Optional[str]] = mapped_column(String(256))
+    domain: Mapped[Optional[str]] = mapped_column(String(64))
+    stakes: Mapped[str] = mapped_column(String(8), nullable=False, server_default="mid")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="proposed")
+    status_before_retire: Mapped[Optional[str]] = mapped_column(String(16))
+    ai_recommendation_key: Mapped[Optional[str]] = mapped_column(String(64))
+    current_verdict_id: Mapped[Optional[str]] = mapped_column(String(64))  # FK 없이 순환 방지
+    superseded_by: Mapped[Optional[str]] = mapped_column(ForeignKey("decisions.id", ondelete="SET NULL"))
+    review_interval_days: Mapped[Optional[int]] = mapped_column(Integer, server_default="180")
+    created_by_kind: Mapped[str] = mapped_column(String(16), nullable=False, server_default="mcp")
+    created_by: Mapped[Optional[str]] = mapped_column(String(128))
+    # 스캔이 질문을 도출한 원천의 안정 키(예: fb:<bucket id>). 값이 있으면 유일 — 재실행해도 같은 주제를 두 번 제안하지 않는다.
+    source_key: Mapped[Optional[str]] = mapped_column(String(256))
+    source_ref: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DecisionEvidence(Base):
+    """질문에 붙은 근거. 삭제하지 않고 retracted_at으로 철회한다."""
+
+    __tablename__ = "decision_evidence"
+    __table_args__ = (
+        Index("ix_decision_evidence_decision", "decision_id"),
+        UniqueConstraint(
+            "decision_id", "option_key", "document_id", "pinned_content_hash", "quote_hash",
+            name="uq_decision_evidence_dedup",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id", ondelete="CASCADE"), nullable=False)
+    option_key: Mapped[Optional[str]] = mapped_column(String(64))  # None = 공통
+    document_id: Mapped[Optional[str]] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    pinned_version: Mapped[Optional[int]] = mapped_column(Integer)
+    pinned_content_hash: Mapped[Optional[str]] = mapped_column(String(128))
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    quote_locator: Mapped[Optional[str]] = mapped_column(String(256))
+    source_modified_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    grade_snapshot: Mapped[Optional[str]] = mapped_column(String(16))
+    stance: Mapped[str] = mapped_column(String(16), nullable=False)
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="internal")
+    external_url: Mapped[Optional[str]] = mapped_column(String(2048))
+    external_snapshot: Mapped[Optional[str]] = mapped_column(Text)
+    retrieved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    added_by: Mapped[Optional[str]] = mapped_column(String(128))
+    retracted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DecisionVerdict(Base):
+    """판정 이력. DB 트리거가 UPDATE/DELETE를 막는다(마이그레이션 0021)."""
+
+    __tablename__ = "decision_verdicts"
+    __table_args__ = (Index("ix_decision_verdicts_decision", "decision_id", "decided_at"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id", ondelete="RESTRICT"), nullable=False)
+    option_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    free_text: Mapped[Optional[str]] = mapped_column(Text)
+    rationale: Mapped[Optional[str]] = mapped_column(Text)
+    decided_by: Mapped[str] = mapped_column(String(128), nullable=False)
+    auth_via: Mapped[str] = mapped_column(String(16), nullable=False)
+    decided_via: Mapped[str] = mapped_column(String(16), nullable=False, server_default="ui")
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    ai_recommendation_key: Mapped[Optional[str]] = mapped_column(String(64))
+    time_to_decide_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    evidence_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    supersedes_verdict_id: Mapped[Optional[str]] = mapped_column(String(64))
+    effective_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    external_only_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+
+class DecisionNonce(Base):
+    """UI가 발급하는 단회 nonce (판정 요청을 AI가 임의로 보내지 못하게 하는 보조 장치)."""
+
+    __tablename__ = "decision_nonces"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
+    decision_id: Mapped[str] = mapped_column(ForeignKey("decisions.id", ondelete="CASCADE"), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

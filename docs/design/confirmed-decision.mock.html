@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>사람 확정 — 목업</title>
+<style>
+:root{--bg:#f6f7f9;--fg:#1d2330;--mut:#667085;--card:#fff;--bd:#d6dbe3;--pri:#2457d6;--ok:#157347;--warn:#b45309;--bad:#b42318;--chip:#eef1f6}
+@media (prefers-color-scheme:dark){:root{--bg:#12151c;--fg:#e6e9ef;--mut:#9aa3b2;--card:#1b2029;--bd:#323a48;--pri:#7aa2ff;--ok:#4cc38a;--warn:#f0a050;--bad:#ff7b72;--chip:#252c38}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,"Noto Sans KR",sans-serif}
+header{padding:12px 16px;border-bottom:1px solid var(--bd);background:var(--card);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header b{font-size:16px}.mockbadge{background:var(--warn);color:#fff;border-radius:4px;padding:1px 8px;font-size:12px}
+main{max-width:980px;margin:0 auto;padding:16px}
+.tabs{display:flex;gap:8px;margin-bottom:12px}.tabs button{padding:6px 14px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+.tabs button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+.row{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:10px 14px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;gap:12px;align-items:center}
+.row:hover{border-color:var(--pri)}.why{color:var(--mut);font-size:12.5px}
+.chip{display:inline-block;background:var(--chip);border-radius:10px;padding:1px 8px;font-size:12px;margin-right:4px;white-space:nowrap}
+.chip.bad{color:var(--bad)}.chip.warn{color:var(--warn)}.chip.ok{color:var(--ok)}.chip.pri{color:var(--pri)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px}
+.q{font-size:19px;font-weight:700;margin:0 0 6px}.meta{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+.ai{color:var(--mut);margin:6px 0}
+.opts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0}
+@media (max-width:700px){.opts{grid-template-columns:1fr 1fr}}
+.opt{border:2px solid var(--bd);border-radius:8px;background:var(--card);color:var(--fg);padding:10px;text-align:left;cursor:pointer;min-height:96px;font:inherit}
+.opt:hover,.opt:focus-visible{border-color:var(--pri);outline:none}
+.opt.sel{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,var(--card))}
+.opt kbd{display:inline-block;background:var(--chip);border:1px solid var(--bd);border-radius:4px;padding:0 6px;font-size:12px;margin-right:6px}
+.opt .l{font-weight:700}.opt .s{font-size:12.5px;color:var(--mut);margin-top:4px}
+.ev{border-left:3px solid var(--bd);padding:6px 10px;margin:6px 0;background:var(--chip);border-radius:0 6px 6px 0;font-size:13.5px}
+.ev.sup{border-left-color:var(--ok)}.ev.ref{border-left-color:var(--bad)}
+.ev .src{font-size:12px;color:var(--mut);margin-top:3px}
+a.open{color:var(--pri);text-decoration:none;margin-right:10px}
+.actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.actions button{padding:6px 12px;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:6px;cursor:pointer}
+details summary{cursor:pointer;color:var(--pri);margin:8px 0}
+.warnbox{border:1px solid var(--warn);background:color-mix(in srgb,var(--warn) 10%,var(--card));padding:8px 10px;border-radius:6px;margin:8px 0;font-size:13.5px}
+input.free{width:100%;padding:8px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--fg);margin-top:6px}
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:8px;display:none}
+.hist li{font-size:13px;color:var(--mut)}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header><b>사람 확정</b><span class="mockbadge">목업 · 서버 없음 · 저장 안 됨</span>
+<span class="why">단축키: 1~9 선택 · N 판단 불가 · E 직접 입력 · S 건너뛰기 · Z 되돌리기</span></header>
+<main>
+<div class="tabs"><button id="tq" class="on">큐 (decisions.html)</button><button id="tc">카드 (decision.html?id=…)</button></div>
+
+<section id="queue">
+  <div class="row" data-go="pixel"><div><b>PIXEL(엑셀기반 PISA진단) 제공 종료일은?</b>
+    <div class="why">이 순서인 이유: 충돌 1 + 위험 중 + 지난 확정 이후 변경 1건</div></div>
+    <div><span class="chip bad">⚠ 충돌</span><span class="chip warn">변경됨</span><span class="chip">위험 중</span></div></div>
+  <div class="row" data-go="x"><div><b>Linux 8.x 보안 패치 적용 기준 커널 버전은?</b>
+    <div class="why">이 순서인 이유: 위험 높음 + 마지막 확정 214일 경과(재확인 필요)</div></div>
+    <div><span class="chip warn">재확인 필요</span><span class="chip bad">위험 높음</span></div></div>
+  <div class="row" data-go="x"><div><b>SAN 스토리지 펌웨어 업그레이드는 무중단인가?</b>
+    <div class="why">이 순서인 이유: 근거 외부 1건만 있음</div></div>
+    <div><span class="chip pri">외부·서버 미검증</span><span class="chip">위험 중</span></div></div>
+  <p class="why">선입선출이 아니라 충돌 → 위험 → 낡음 순 (가중치는 설정 파일). 항목을 클릭하면 카드가 열립니다 (PIXEL만 구현된 목업).</p>
+</section>
+
+<section id="cardv" class="hide">
+ <div class="card">
+  <p class="q">PIXEL(엑셀기반 PISA진단) 제공 종료일은?</p>
+  <div class="meta">
+    <span class="chip">위험: 중</span><span class="chip">근거 3 · 출처 2</span>
+    <span class="chip bad" title="서로 다른 선택지를 supports하는 근거가 있음">⚠ 충돌 1건: 출처 간 날짜 상이</span>
+    <span class="chip warn">지난 확정 이후 변경 1건 (고정 v97 → 현재 v98)</span>
+    <span class="chip pri">외부·서버 미검증 1건</span>
+  </div>
+  <div class="ai">AI 추천: <b>2026.11.30</b> (근거 2건) — 추천은 눌려 있지 않습니다. 판단 불가도 같은 크기입니다.</div>
+
+  <div class="opts" id="opts">
+    <button class="opt" data-k="1"><span class="l"><kbd>1</kbd>2026.11.30</span><div class="s">원문 제목 “…2026.11.30 까지 제공”</div></button>
+    <button class="opt" data-k="2"><span class="l"><kbd>2</kbd>연장</span><div class="s">근거: 외부 공지 1건(미검증)</div></button>
+    <button class="opt" data-k="N"><span class="l"><kbd>N</kbd>판단 불가</span><div class="s">근거 부족 · 기준으로 쓰지 않음</div></button>
+    <button class="opt" data-k="E"><span class="l"><kbd>E</kbd>직접 입력</span><div class="s">수정·직접 서술</div></button>
+  </div>
+  <div id="free" class="hide"><input class="free" placeholder="직접 입력 (Enter로 확정, Esc 취소) — 입력 중에는 단축키가 꺼집니다"></div>
+
+  <div id="extwarn" class="warnbox hide">⚠ 선택한 선택지는 <b>외부·서버 미검증 근거</b>만 있습니다. 확정하려면 “외부 근거만 사용”을 확인하세요.
+    <label><input type="checkbox" id="extok"> 외부 근거만 사용함을 확인</label> <button id="extgo">확정</button></div>
+
+  <div class="why" style="margin-top:6px">선택지별 최강 인용 1건</div>
+  <div class="ev sup"><b>[선택지 1 · supports]</b> “PIXEL (엑셀기반 PISA진단)_2026.11.30 까지 제공”
+    <div class="src"><span class="chip">tech_repo</span><span class="chip">A</span><span class="chip">2026-09-28</span><span class="chip warn">고정 v97 / 현재 v98 변경됨</span>
+      <a class="open" href="#">원문 열기 ↗</a><a class="open" href="#">원문 안에서 보기</a></div></div>
+  <div class="ev ref"><b>[선택지 1 · refutes]</b> “…연장 가능성은 PISA Station 개편 일정에 따라 …”
+    <div class="src"><span class="chip">confluence_docs</span><span class="chip">C</span><span class="chip">2026-10-14</span><a class="open" href="#">원문 열기 ↗</a></div></div>
+
+  <details><summary>근거 전체 펼치기 (3)</summary>
+    <div class="ev"><b>[선택지 2 · supports]</b> “(Teams 공지) 제공 기간 연장 검토 중”
+      <div class="src"><span class="chip pri">외부·서버 미검증</span><span class="chip">https://example.invalid/notice (스냅샷 2026-11-03 가져옴)</span></div></div>
+    <div class="ev"><b>[공통 · context]</b> 지원이력 CITECTS-0000 (PISA 진단 도구 문의)
+      <div class="src"><span class="chip">support_history</span><span class="chip">A-</span></div></div>
+  </details>
+  <details><summary>이전 판정 이력 · 대체 링크</summary>
+    <ul class="hist"><li>2026-09-30 · 연장 → <b>2026.11.30</b> (자기 신고: 홍길동, rationale: 원문 제목 변경)</li>
+    <li>이 결정은 DEC-a1b2c3d4 를 대체함 (superseded_by 링크)</li></ul>
+  </details>
+
+  <div class="actions"><button id="skip">S 건너뛰기</button><button id="undo">Z 되돌리기</button><button id="keep" title="같은 선택지로 새 판정 행 추가, 근거 재고정">유지 (1클릭 재확인)</button></div>
+ </div>
+ <p class="why">확정자: 인증 OFF 동안 “확정자(자기 신고)”로 기록·표시됩니다. 판정 요청은 UI가 발급한 단회 nonce를 포함합니다 (MCP/AI에는 판정 도구가 없습니다).</p>
+</section>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+(function(){
+  var last=null, hist=[];
+  function $(s){return document.querySelector(s)}
+  function toast(t){var e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(function(){e.style.display='none'},2200)}
+  function show(v){$('#queue').classList.toggle('hide',v!=='q');$('#cardv').classList.toggle('hide',v!=='c');
+    $('#tq').classList.toggle('on',v==='q');$('#tc').classList.toggle('on',v==='c')}
+  $('#tq').onclick=function(){show('q')};$('#tc').onclick=function(){show('c')};
+  document.querySelectorAll('.row').forEach(function(r){r.onclick=function(){show('c')}});
+  function select(k){
+    document.querySelectorAll('.opt').forEach(function(o){o.classList.toggle('sel',o.dataset.k===k)});
+    $('#free').classList.toggle('hide',k!=='E'); $('#extwarn').classList.toggle('hide',k!=='2');
+    if(k==='E'){$('#free input').focus();return}
+    if(k==='2'){return}                       // 외부 근거만 → 확인 필요
+    hist.push(last);last=k;
+    toast('판정 기록(목업): 선택지 '+k+' · 클릭/키 1회');
+  }
+  document.querySelectorAll('.opt').forEach(function(o){o.onclick=function(){select(o.dataset.k)}});
+  $('#extgo').onclick=function(){ if(!$('#extok').checked){toast('외부 근거만 사용 확인이 필요합니다');return}
+    hist.push(last);last='2';toast('판정 기록(목업): 외부 근거만 사용 확인 후 확정'); $('#extwarn').classList.add('hide')};
+  $('#free input').addEventListener('keydown',function(e){ if(e.key==='Enter'){hist.push(last);last='E';toast('직접 입력 판정(목업)');$('#free').classList.add('hide')} if(e.key==='Escape'){$('#free').classList.add('hide')} });
+  $('#skip').onclick=function(){toast('건너뜀 → 큐의 다음 항목')};
+  $('#undo').onclick=function(){ if(hist.length){last=hist.pop();document.querySelectorAll('.opt').forEach(function(o){o.classList.toggle('sel',o.dataset.k===last)});toast('되돌림(새 행으로 기록됨)')} else toast('되돌릴 판정 없음') };
+  $('#keep').onclick=function(){toast('유지: 같은 선택지로 새 판정 행 추가 · 근거 v98로 재고정')};
+  document.addEventListener('keydown',function(e){
+    if($('#cardv').classList.contains('hide'))return;
+    var t=e.target; if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;   // 입력창 포커스 중에는 단축키 끔
+    var k=e.key.toUpperCase();
+    if(k==='1'||k==='2')select(k); else if(k==='N')select('N'); else if(k==='E'){e.preventDefault();select('E')}
+    else if(k==='S')$('#skip').click(); else if(k==='Z')$('#undo').click();
+  });
+})();
+</script>
+</body>
+</html>

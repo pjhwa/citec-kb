@@ -7,6 +7,17 @@ class KbAskError(RuntimeError):
     """Hard failure: no snippet fallback arrived. MCP should set isError."""
 
 
+def _decision_line(d: dict | None) -> str:
+    """확정 결정 인용에는 확정자·확정일·재확인 여부를 함께 적는다."""
+    if not d:
+        return ""
+    who = f"{d.get('decided_by')}{' (자기 신고)' if d.get('self_reported') else ''}"
+    line = f"\n  사람 확정: 확정자 {who}, 확정일 {str(d.get('decided_at') or '')[:10]}"
+    if d.get("recheck"):
+        line += " — ⚠ 재확인 필요(사실로 단정하지 말고 원문 확인)"
+    return line
+
+
 def fold_ask_events(events: list[dict]) -> str:
     """Return the answer text.
 
@@ -22,6 +33,11 @@ def fold_ask_events(events: list[dict]) -> str:
     llm_error: str | None = None
     gen_status: str | None = None
     seen_paths: set[str] = set()
+    # Every [C#] pointing at the same document, in citation order (A2): the
+    # answer may cite C11 while only the document's first chunk C1 was listed.
+    ids_by_path: dict[str, list[str]] = {}
+    cite_order: list[str] = []
+    entries: dict[str, dict] = {}
 
     for event in events:
         if not isinstance(event, dict):
@@ -49,20 +65,19 @@ def fold_ask_events(events: list[dict]) -> str:
                 path = c.get("path") or (f"{st}/{eid}.md" if eid and st else eid)
                 web = c.get("web_url") or c.get("web_path") or ""
                 body = c.get("body_api") or c.get("body_api_url") or ""
-                # One entry per document: several chunks of the same ticket
-                # used to print the same source 4 times.
+                # One entry per document, but keep every chunk's citation id.
+                cid = str(c.get("id") or "")
+                ids = ids_by_path.setdefault(path, [])
+                if cid and cid not in ids:
+                    ids.append(cid)
                 if path in seen_paths:
                     continue
                 seen_paths.add(path)
                 if path:
                     sources.append(path)
-                cite_lines.append(
-                    f"- {c.get('id') or ''} {c.get('title') or eid}\n"
-                    f"  path: {path}\n"
-                    f"  body_api: {body}\n"
-                    f"  web_url: {web}\n"
-                    f"  mcp: kb_get_document(path={path!r})"
-                )
+                entries[path] = {"title": c.get("title") or eid, "body": body, "web": web,
+                                 "decision": c.get("decision")}
+                cite_order.append(path)
 
     if not saw_done:
         detail = errors[-1] if errors else "답변 스트림이 완료되지 않았습니다."
@@ -78,6 +93,16 @@ def fold_ask_events(events: list[dict]) -> str:
         head = f"[스니펫 요약] ⚠ 생성 실패 — 검색 스니펫 요약입니다 (LLM 답변 아님; generation_status={gen_status or 'failed_snippet_fallback'}, 사유: {reason})"
         # The API already prefixes its own notice; keep the MCP header as line 1 once.
         answer = head + "\n" + answer.replace("⚠ 생성 실패 — 아래는 LLM 답변이 아니라 검색 스니펫 요약입니다.\n", "", 1)
+    for path in cite_order:
+        e = entries[path]
+        cite_lines.append(
+            f"- {', '.join(ids_by_path.get(path) or [])} {e['title']}\n"
+            f"  path: {path}\n"
+            f"  body_api: {e['body']}\n"
+            f"  web_url: {e['web']}\n"
+            f"  mcp: kb_get_document(path={path!r})"
+            + _decision_line(e.get("decision"))
+        )
     if cite_lines:
         answer += "\n\n**출처 (원문 접근)**\n" + "\n".join(cite_lines)
     elif sources:

@@ -30,7 +30,7 @@ KNOWN_SOURCE_TYPES: tuple[str, ...] = (
     "dept_archive",
     "tuning_ai",
     "failure_bucket",
-    "insight",
+    "confirmed_decision",
     "vendor_docs",
 )
 
@@ -39,8 +39,9 @@ SOURCE_TYPE_ALIASES: dict[str, str] = {
     "checkitems": "checkitem",
     "pisa": "checkitem",
     "failure_buckets": "failure_bucket",
-    "insights": "insight",
-    "synthesis": "insight",
+    "decision": "confirmed_decision",
+    "decisions": "confirmed_decision",
+    "confirmed": "confirmed_decision",
     "sql_tuning": "tuning_ai",
     "incident": "incident_reports",
     "incident_report": "incident_reports",

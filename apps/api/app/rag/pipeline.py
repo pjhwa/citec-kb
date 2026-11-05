@@ -27,6 +27,7 @@ _SYSTEM = """당신은 CI-TEC 부서 지식 어시스턴트입니다.
 3. 출처에 답이 없으면 한 문장으로 기권하세요: "제공된 근거로는 확답할 수 없습니다."
 4. 한국어로 간결하게 답하세요. 조치 권고 시 환경을 확인하라고 안내하세요.
 5. 단일 신뢰도 % 숫자는 출력하지 마세요.
+6. "사람 확정" 표시가 있는 출처는 현재 기준이다. 있으면 먼저 인용하고 답변에 확정자·확정일을 적으세요. "재확인 필요"가 붙은 확정은 사실로 단정하지 말고 원문을 확인하라고 안내하세요.
 """
 
 _MODE_DEFAULTS = {
@@ -192,8 +193,12 @@ def _prepare(
                 # verified one.
                 evidence_eligible=h.evidence_eligible,
                 map_synced_at=h.map_synced_at,
+                decision=getattr(h, "decision", None),
             )
         )
+    decision_by_doc = {
+        e.document_id: e.decision for e in enriched if getattr(e, "decision", None)
+    }
     # 2) inject highest-content sibling chunks not already included
     siblings = []
     for cid, blob in full_text.items():
@@ -224,8 +229,15 @@ def _prepare(
                 # selected in the sibling join above.
                 evidence_eligible=(m.source_type != "confluence_map"),
                 map_synced_at=None,
+                decision=decision_by_doc.get(m.document_id),
             )
         )
+    # 현행 확정 결정이 있으면 컨텍스트 맨 앞(C1…)에 둔다. 재확인 필요·대체된 확정은 올리지 않는다.
+    enriched.sort(
+        key=lambda e: 0
+        if (e.decision and e.decision.get("status") == "confirmed" and not e.decision.get("recheck"))
+        else 1
+    )
 
     packed = pack_chunks(enriched, max_context_tokens=max_context_tokens, per_chunk_chars=1600)
     from app.doc_access import attach_document_access
@@ -245,6 +257,7 @@ def _prepare(
                 "evidence_eligible": p.evidence_eligible,
                 "evidence_kind": "excerpt" if p.evidence_eligible else "pointer",
                 "map_synced_at": p.map_synced_at,
+                "decision": p.decision,
             }
         )
         for p in packed
@@ -345,6 +358,11 @@ def _finalize(
         force_abstain=False,
         n_verified_citations_used=n_verified_used,
     )
+    for c in used_cites:
+        d = packed_by_cite[c].decision
+        if d and d.get("recheck"):
+            trust.reasons.append(f"재확인 필요: [{c}] 확정 결정의 근거 문서가 바뀌었거나 확인 주기가 지났습니다")
+            break
     if fallback and trust.level in {"strong", "medium"}:
         trust.level = "weak"
         trust.banner = "생성 실패 — 검색 스니펫 요약입니다. 출처 원문을 직접 확인하세요."
