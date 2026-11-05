@@ -410,23 +410,31 @@ def _build_brief(symptom: str, cases: list[dict[str, Any]]) -> str:
         )
     top = cases[0]
     app = (top.get("applicability") or {}).get("label", "?")
+    # Markdown bullets (one fact per line) so UIs render a structured brief.
     lines = [
-        f"유사 과거 사례 {len(cases)}건을 찾았습니다. 1순위: {top.get('external_id')} — {top.get('title', '')[:80]}",
-        f"적용성(휴리스틱): {app}.",
+        f"유사 과거 사례 **{len(cases)}건**을 찾았습니다.",
+        f"- **1순위**: {top.get('external_id')} — {top.get('title', '')[:80]}",
+        f"- **적용성(휴리스틱)**: {app}",
     ]
     if top.get("cause"):
-        lines.append(f"추정 공통 원인 힌트: {str(top['cause'])[:160]}")
+        lines.append(f"- **추정 공통 원인 힌트**: {_one_line(top['cause'], 160)}")
     if top.get("resolution"):
-        lines.append(f"참고 조치: {str(top['resolution'])[:160]}")
-    lines.append("단정 적용 금지 — 환경 차이와 원문을 확인하세요.")
-    return " ".join(lines)
+        lines.append(f"- **참고 조치**: {_one_line(top['resolution'], 160)}")
+    lines.append("")
+    lines.append("> 단정 적용 금지 — 환경 차이와 원문을 확인하세요.")
+    return "\n".join(lines)
+
+
+def _one_line(v: Any, limit: int) -> str:
+    """Collapse whitespace/newlines so a value stays inside one bullet."""
+    return " ".join(str(v).split())[:limit]
 
 
 def _suggested_actions(cases: list[dict[str, Any]]) -> list[str]:
     actions: list[str] = []
     for c in cases[:2]:
         if c.get("resolution"):
-            actions.append(f"{c.get('external_id')}: {str(c['resolution'])[:200]}")
+            actions.append(f"{c.get('external_id')}: {_one_line(c['resolution'], 200)}")
     if not actions:
         actions.append("유사 사례 원문(지원이력)을 열어 조치 섹션을 확인하세요.")
     actions.append("변경 전 영향 범위·롤백 플랜을 문서화하세요.")

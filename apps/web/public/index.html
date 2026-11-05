@@ -112,6 +112,10 @@
       margin-bottom: 10px;
     }
     .card h3 { margin: 0 0 6px; font-size: 1.02rem; }
+    .action-list { margin: 6px 0 0; padding-left: 22px; }
+    .action-list li { margin: 0 0 8px; line-height: 1.55; }
+    .action-text { display: inline; }
+    .action-text p { display: inline; margin: 0; }
     .meta { color: var(--muted); font-size: 12px; }
     .err {
       background: #fef2f2;
@@ -191,7 +195,8 @@
       <h3 style="margin:0 0 6px">Claude MCP로 연결하기</h3>
       <p class="meta" style="margin:0 0 10px">
         이 서버를 Claude Code / Claude Desktop에 MCP 도구로 등록할 수 있습니다.
-        아래 주소는 현재 접속 중인 서버 기준으로 자동 채워집니다.
+        Claude Code 명령의 주소는 현재 접속 중인 서버 기준으로 자동 채워집니다.
+        Claude Desktop 설정은 Windows + 사내 프록시 환경용 고정 값이며, <code>&lt;사용자ID&gt;</code>는 본인 Windows 계정으로 바꾸세요.
       </p>
       <div class="meta" style="margin-bottom:4px">Claude Code</div>
       <div style="display:flex;gap:8px;align-items:flex-start;margin-bottom:12px">
@@ -362,8 +367,23 @@
     function renderMcpGuide() {
       const url = mcpServerUrl();
       const cli = `claude mcp add --scope user --transport http wiki-mcp ${url}`;
+      // Windows + 사내 프록시 환경용 고정 설정 (mcp-remote). 호스트 자동감지 대상 아님.
       const desktop = JSON.stringify(
-        { mcpServers: { "wiki-mcp": { url, transport: "streamable-http" } } },
+        {
+          mcpServers: {
+            "wiki-mcp": {
+              command: "npx.cmd",
+              args: ["-y", "mcp-remote", "http://70.222.78.8:8577/mcp", "--allow-http", "--transport", "http-only"],
+              env: {
+                HTTPS_PROXY: "http://70.10.15.10:8080/",
+                HTTP_PROXY: "http://70.10.15.10:8080/",
+                NO_PROXY: "localhost,127.0.0.0,127.0.1.1,local.home,70.222.78.8,aipro.sdsdev.co.kr,code.sdsdev.co.kr,sdsdev.co.kr",
+                NODE_EXTRA_CA_CERTS: "C:\\Users\\<사용자ID>\\MWG_Certification.crt",
+                NODE_OPTIONS: "--tls-cipher-list=DEFAULT@SECLEVEL=0 --use-system-ca",
+              },
+            },
+          },
+        },
         null,
         2
       );
@@ -414,12 +434,28 @@
       return html;
     }
 
+    // "CITECTS-1: 조치…" / "[ID] 조치…" / "PISA CODE: 점검…" → [배지] + inline md 본문
+    function renderAction(a) {
+      const text = typeof a === "string" ? a : JSON.stringify(a);
+      const m = /^\[?([A-Za-z][A-Za-z0-9]*-\d+|PISA\s+[\w.-]+)\]?\s*:?\s*(.*)$/s.exec(text);
+      if (!m) return `<li><div class="md-body" data-md="${esc(text)}"></div></li>`;
+      const id = m[1];
+      const isPisa = /^PISA/i.test(id);
+      const href = isPisa
+        ? null
+        : (window.CitecDoc ? CitecDoc.href({ external_id: id, source_type: "support_history" }) : `/doc.html?eid=${encodeURIComponent(id)}&st=support_history`);
+      const badge = href
+        ? `<a class="doc-link-badge" href="${esc(href)}" target="_blank" rel="noopener">${esc(id)}</a>`
+        : `<span class="doc-link-badge">${esc(id)}</span>`;
+      return `<li>${badge} <span class="md-body action-text" data-md="${esc(m[2] || "")}"></span></li>`;
+    }
+
     function renderSI(result) {
       const cases = result?.cases || [];
       let html = "";
       if (result?.brief) {
         const brief = typeof result.brief === "string" ? result.brief : JSON.stringify(result.brief);
-        html += `<div class="note"><strong>브리프</strong><div class="md-body" data-md="${esc(brief.slice(0, 1200))}"></div></div>`;
+        html += `<div class="note"><strong>브리프</strong><div class="md-body" data-md="${esc(brief.slice(0, 2000))}"></div></div>`;
       }
       if (!cases.length) return html + `<p class="meta">유사 사례 없음</p>`;
       html += `<p class="meta">각 사례 「원문 보기」링크 · 「미리보기」인라인</p>`;
@@ -437,7 +473,7 @@
         );
       }
       if (result?.actions?.length) {
-        html += `<div class="card"><h3>권장 조치</h3><ul>${result.actions.slice(0, 8).map((a) => `<li>${esc(typeof a === "string" ? a : JSON.stringify(a))}</li>`).join("")}</ul></div>`;
+        html += `<div class="card"><h3>권장 조치</h3><ol class="action-list">${result.actions.slice(0, 8).map(renderAction).join("")}</ol></div>`;
       }
       return html;
     }
