@@ -62,3 +62,21 @@ def test_garbage_and_llm_failure_fall_back_to_rules():
 def test_parses_fenced_json():
     p, ok = _run("```json\n" + json.dumps(_good(), ensure_ascii=False) + "\n```")
     assert ok
+
+
+def test_preview_has_no_side_effects_and_reports_reason():
+    p = _p()
+    before = (p.question, list(p.options), dict(p.source_ref))
+    ok = refine.preview(p, complete=lambda *a, **k: json.dumps(_good(), ensure_ascii=False))
+    assert ok["adopted"] and ok["llm"]["question"].startswith("PIXEL 제공 기한은") and ok["rule"]["question"] == before[0]
+    bad = _good(); bad["question"] = bad["question"].replace("2026.11.30", "2027.01.01")
+    no = refine.preview(p, complete=lambda *a, **k: json.dumps(bad, ensure_ascii=False))
+    assert not no["adopted"] and "숫자" in no["reason"] and "llm" not in no
+    assert refine.preview(p, complete=lambda *a, **k: "nope")["reason"].startswith("LLM 응답")
+    assert (p.question, p.options, p.source_ref) == before
+
+
+def test_preview_reports_llm_failure():
+    def boom(*a, **k):
+        raise RuntimeError("HTTP 402")
+    assert "402" in refine.preview(_p(), complete=boom)["reason"]
