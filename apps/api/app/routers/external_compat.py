@@ -681,6 +681,7 @@ def api_wiki_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
         document_id=doc.id,
         path=_doc_path(doc),
         title=doc.title,
+        source_uri=doc.source_uri,
     )
     return {
         "path": _doc_path(doc),
@@ -692,6 +693,7 @@ def api_wiki_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
         "document_id": doc.id,
         "access": acc,
         "web_url": acc.get("web_url"),
+        "source_url": acc.get("source_url"),
         "body_api": acc.get("body_api"),
     }
 

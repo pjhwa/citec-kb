@@ -146,6 +146,7 @@ def get_ticket_by_external_id(
                 "title": d.title,
                 "source_type": d.source_type,
                 "body_md": d.body_md or "",
+                "source_uri": d.source_uri,
                 "status": meta.get("Status"),
                 "component": meta.get("Component"),
                 "assignee": meta.get("Assignee"),

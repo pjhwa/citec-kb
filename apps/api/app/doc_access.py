@@ -29,6 +29,11 @@ def document_path(
     return f"{st}/{eid}.md"
 
 
+def _http_url(u: Optional[str]) -> Optional[str]:
+    u = (u or "").strip()
+    return u if u.lower().startswith(("http://", "https://")) else None
+
+
 def document_access(
     *,
     external_id: Optional[str] = None,
@@ -36,9 +41,14 @@ def document_access(
     document_id: Optional[str] = None,
     path: Optional[str] = None,
     title: Optional[str] = None,
+    source_uri: Optional[str] = None,
     absolute: bool = True,
 ) -> dict[str, Any]:
-    """Return relative + absolute URLs to fetch full original body."""
+    """Return relative + absolute URLs to fetch full original body.
+
+    ``source_url`` is the upstream original (e.g. the Confluence page) when
+    ``source_uri`` is an http(s) URL; external apps/MCP clients should link
+    to it rather than to the KB viewer (``web_url``)."""
     settings = get_settings()
     web = (settings.public_web_base or "").rstrip("/")
     api = (settings.public_api_base or "").rstrip("/")
@@ -105,6 +115,7 @@ def document_access(
         "verify_via": verify_via,
         # MCP / agents: which tool to call. For confluence_map this still
         # returns the stored snapshot, not the current page — see body_kind.
+        "source_url": _http_url(source_uri),
         "mcp_tool": "kb_get_checkitem" if st == "checkitem" else "kb_get_document",
         "mcp_args": (
             {"code": eid} if st == "checkitem" and eid else {"path": p}
@@ -139,6 +150,7 @@ def attach_document_access(item: dict[str, Any], *, absolute: bool = True) -> di
         document_id=item.get("document_id"),
         path=item.get("path"),
         title=item.get("title") or item.get("subject"),
+        source_uri=item.get("source_url") or item.get("source_uri"),
         absolute=absolute,
     )
     # Flatten common keys without overwriting richer existing values
@@ -148,5 +160,6 @@ def attach_document_access(item: dict[str, Any], *, absolute: bool = True) -> di
     item["body_api_url"] = acc.get("body_api_url")
     item["web_url"] = acc.get("web_url")
     item["web_path"] = acc.get("web_path")
+    item["source_url"] = acc.get("source_url")
     item["access"] = acc
     return item
