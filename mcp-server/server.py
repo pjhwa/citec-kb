@@ -184,6 +184,12 @@ def _access_lines(d: dict[str, Any], *, indent: str = "  ") -> str:
         bits.append(f"{indent}web_url: {web}")
     if evidence_eligible is False:
         bits.append(f"{indent}⚠ pointer만 있음 — 원문 미확인 (evidence_eligible=false)")
+    dm = d.get("decision")
+    if dm:
+        who = f"{dm.get('decided_by')}{' (자기 신고)' if dm.get('self_reported') else ''}"
+        bits.append(f"{indent}사람 확정: 확정자 {who}, 확정일 {str(dm.get('decided_at') or '')[:10]}, 상태 {dm.get('status')}")
+        if dm.get("recheck"):
+            bits.append(f"{indent}⚠ 재확인 필요 — 사실로 단정하지 말고 원문 확인")
     if map_synced_at:
         bits.append(f"{indent}map_synced_at: {map_synced_at} (원문 실시간 확인 아님)")
     if verify_via and isinstance(verify_via, dict):
@@ -216,10 +222,11 @@ async def kb_search(
     exclude_subtree_ids: Optional[list[str]] = None,
     include_irrelevant_maps: Optional[bool] = None,
     diversify_copies: bool = True,
+    include_superseded: bool = False,
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
-    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|insight
+    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|insight|confirmed_decision
         (checkitems·incident 같은 흔한 별칭은 서버가 정규화하고, 모르는 값은 허용 목록과 함께 거부한다)
     area: domain 필터 (os|dbms|network|cloud|storage|…, 대소문자 무시). 문서에 없는 값이면 결과 머리에 경고가 붙는다
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
@@ -230,6 +237,7 @@ async def kb_search(
     include_irrelevant_maps: 기술 무관 confluence_map 포함 여부. 미지정이면 section=confluence_map
         일 때만 포함(필터 꺼짐). 그 섹션에서도 필터를 유지하려면 false 를 명시
     diversify_copies: confluence_map 의 사본/Copy of/백업 페이지를 최고 점수 1건으로 접는다 (기본 true)
+    include_superseded: 대체된(superseded) 확정 결정도 포함 (기본 false = 현행 기준만)
     multi_query: 동의어·구문 확장 검색 (기본 true)
     use_v1: true면 POST /v1/search (필터 풍부), false면 GET /api/wiki/search
     """
@@ -248,6 +256,7 @@ async def kb_search(
         exclude_subtree_ids=exclude_subtree_ids,
         include_irrelevant_maps=include_irrelevant_maps,
         diversify_copies=diversify_copies,
+        include_superseded=include_superseded,
     )
 
 
@@ -278,6 +287,7 @@ async def _search_impl(
     exclude_subtree_ids: Optional[list[str]] = None,
     include_irrelevant_maps: Optional[bool] = None,
     diversify_copies: bool = True,
+    include_superseded: bool = False,
 ) -> str:
     # P0-A / D11 (docs/CITEC_KB_RELIABILITY_PERFORMANCE_CLAUDE_PROMPT_20260930.md
     # §4 item 5, §5): the legacy GET /api/wiki/search path only forwards
@@ -309,6 +319,7 @@ async def _search_impl(
         or work_type
         or include_irrelevant_maps is not None
         or not diversify_copies
+        or include_superseded
     )
     if not use_v1 and category and _v1_only_filters_requested:
         return (
@@ -342,6 +353,8 @@ async def _search_impl(
                     filters["include_irrelevant_maps"] = include_irrelevant_maps
                 if not diversify_copies:
                     filters["diversify_copies"] = False
+                if include_superseded:
+                    filters["include_superseded"] = True
                 resp = await client.post(
                     "/v1/search",
                     json={

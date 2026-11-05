@@ -7,6 +7,17 @@ class KbAskError(RuntimeError):
     """Hard failure: no snippet fallback arrived. MCP should set isError."""
 
 
+def _decision_line(d: dict | None) -> str:
+    """확정 결정 인용에는 확정자·확정일·재확인 여부를 함께 적는다."""
+    if not d:
+        return ""
+    who = f"{d.get('decided_by')}{' (자기 신고)' if d.get('self_reported') else ''}"
+    line = f"\n  사람 확정: 확정자 {who}, 확정일 {str(d.get('decided_at') or '')[:10]}"
+    if d.get("recheck"):
+        line += " — ⚠ 재확인 필요(사실로 단정하지 말고 원문 확인)"
+    return line
+
+
 def fold_ask_events(events: list[dict]) -> str:
     """Return the answer text.
 
@@ -64,7 +75,8 @@ def fold_ask_events(events: list[dict]) -> str:
                 seen_paths.add(path)
                 if path:
                     sources.append(path)
-                entries[path] = {"title": c.get("title") or eid, "body": body, "web": web}
+                entries[path] = {"title": c.get("title") or eid, "body": body, "web": web,
+                                 "decision": c.get("decision")}
                 cite_order.append(path)
 
     if not saw_done:
@@ -89,6 +101,7 @@ def fold_ask_events(events: list[dict]) -> str:
             f"  body_api: {e['body']}\n"
             f"  web_url: {e['web']}\n"
             f"  mcp: kb_get_document(path={path!r})"
+            + _decision_line(e.get("decision"))
         )
     if cite_lines:
         answer += "\n\n**출처 (원문 접근)**\n" + "\n".join(cite_lines)

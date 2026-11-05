@@ -272,3 +272,74 @@ def test_mirror_status_follows_supersede_and_retire(client):
     assert _mirror_doc(new["id"])["status"] == "archived"
     client.post(f"/v1/decisions/{new['id']}/restore")
     assert _mirror_doc(new["id"])["status"] == "active"
+
+
+# ---- search / rag integration (C1) ---------------------------------------------
+
+def _search(q, **filters):
+    from app.db.session import session_scope
+    from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
+
+    with session_scope() as s:
+        return hybrid_search(s, SearchRequest(q=q, top_k=10, min_top_score=0.0,
+                                              filters=SearchFilters(**filters)))
+
+
+def _confirmed_hit(resp, did):
+    return next((h for h in resp.results if h.external_id == f"DEC-{did[:8]}"), None)
+
+
+def test_search_finds_confirmed_mirror_with_decision_meta_and_factor_is_general(client, monkeypatch):
+    doc = _doc(body=TITLE + "\n제공 종료일 안내")
+    d = _propose(client, doc["document_id"])
+    _verdict(client, d["id"], rationale="원문 제목")
+    q = "PIXEL 제공 종료일 결론 확정"
+    h = _confirmed_hit(_search(q), d["id"])
+    assert h and h.evidence_grade == "H" and h.evidence_eligible is True
+    assert h.decision["status"] == "confirmed" and h.decision["recheck"] is False
+    assert h.decision["decided_by"] == "홍길동" and h.decision["self_reported"] is True
+    base = h.score
+    monkeypatch.setenv("SEARCH_CONFIRMED_FACTOR", "2.0")
+    boosted = _confirmed_hit(_search(q), d["id"]).score
+    assert boosted > base
+    # 근거 문서가 바뀌어 needs_recheck가 되면 같은 요인이 있어도 올리지 않는다
+    _mutate_doc(doc["document_id"], TITLE + " v98")
+    client.post("/v1/decisions/_scan-staleness")
+    h2 = _confirmed_hit(_search(q), d["id"])
+    assert h2.decision["recheck"] is True and h2.score == pytest.approx(base, rel=1e-6)
+    # "유지" 한 번이면 다시 올라간다
+    assert _verdict(client, d["id"], keep=True).status_code == 200
+    h3 = _confirmed_hit(_search(q), d["id"])
+    assert h3.decision["recheck"] is False and h3.score > base
+
+
+def test_superseded_excluded_by_default_and_visible_with_flag(client):
+    doc = _doc()
+    old = _propose(client, doc["document_id"])
+    _verdict(client, old["id"])
+    new = _propose(client, doc["document_id"])
+    _verdict(client, new["id"])
+    client.post(f"/v1/decisions/{old['id']}/supersede", json={"new_decision_id": new["id"]})
+    q = "PIXEL 제공 종료일 확정"
+    assert _confirmed_hit(_search(q, source_type="confirmed_decision"), old["id"]) is None
+    inc = _search(q, source_type="confirmed_decision", include_superseded=True)
+    hit = _confirmed_hit(inc, old["id"])
+    assert hit and hit.decision["status"] == "superseded"
+    assert _confirmed_hit(_search(q, source_type="confirmed_decision"), new["id"])
+
+
+def test_source_type_filter_aliases(client):
+    from app.retrieval.filter_args import normalize_source_type
+
+    for alias in ("decision", "decisions", "confirmed", "confirmed_decision"):
+        assert normalize_source_type(alias, field="section") == "confirmed_decision"
+    with pytest.raises(ValueError):
+        normalize_source_type("nonsense", field="section")
+
+
+def test_search_code_has_no_hardcoded_answers():
+    import pathlib
+
+    src = pathlib.Path("app/retrieval/search.py").read_text() + pathlib.Path("app/decisions/mirror.py").read_text()
+    for needle in ("PIXEL", "80022224", "PISA Station"):
+        assert needle not in src

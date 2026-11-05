@@ -355,6 +355,8 @@ class SearchFilters:
     work_type: Optional[str] = None
     path_l2: Optional[str] = None
     status: str = "active"
+    # 대체(superseded)된 확정 결정까지 보려면 true. 기본은 현행(active)만.
+    include_superseded: bool = False
     # Equality filters stay singular. Exclusions are separate lists so a
     # caller can drop known answer pages or a source without changing
     # source_type's type (that change was reverted once already).
@@ -423,6 +425,8 @@ class SearchHit:
     # Number of same-titled confluence_map copies folded into this hit by
     # diversify_copies. 0 when nothing was folded.
     duplicate_count: int = 0
+    # confirmed_decision 히트만: {status, recheck, decided_by, decided_at, self_reported, superseded_by}
+    decision: Optional[dict] = None
 
 
 @dataclass
@@ -448,6 +452,27 @@ def _pointer_factor() -> float:
         return min(1.0, max(0.0, float(os.environ.get("SEARCH_POINTER_FACTOR", "0.85"))))
     except ValueError:
         return 0.85
+
+
+def _confirmed_factor() -> float:
+    """현행(재확인 불필요) 확정 결정 점수 배수. 1.0 = 끔. 값은 평가 게이트로 정한다."""
+    import os
+
+    try:
+        return max(1.0, float(os.environ.get("SEARCH_CONFIRMED_FACTOR", "1.0")))
+    except ValueError:
+        return 1.0
+
+
+def _decision_meta(r) -> dict:
+    return {
+        "status": r.decision_status or "confirmed",
+        "recheck": (r.decision_recheck or "").lower() == "true",
+        "decided_by": r.decision_by,
+        "decided_at": r.decision_at,
+        "self_reported": (r.decision_self or "").lower() == "true",
+        "superseded_by": r.decision_superseded_by,
+    }
 
 
 def _include_irrelevant_maps(filters: SearchFilters) -> bool:
@@ -505,7 +530,11 @@ def collapse_map_copies(items: list, key_of, folded_of=lambda _i: 0) -> tuple[li
 
 
 def _apply_doc_filters(stmt: Select, filters: SearchFilters) -> Select:
-    stmt = stmt.where(Document.status == (filters.status or "active"))
+    status = filters.status or "active"
+    if filters.include_superseded and status == "active":
+        stmt = stmt.where(Document.status.in_(("active", "superseded")))
+    else:
+        stmt = stmt.where(Document.status == status)
     if filters.source_type:
         stmt = stmt.where(Document.source_type == filters.source_type)
     if filters.domain:
@@ -901,6 +930,13 @@ def hybrid_search(
                 Document.path_l2,
                 Document.source_uri,
                 Document.updated_at,
+                # confirmed_decision 미러의 상태 플래그(해시 밖 메타). 다른 source_type은 NULL.
+                Document.metadata_["decision_status"].astext.label("decision_status"),
+                Document.metadata_["recheck"].astext.label("decision_recheck"),
+                Document.metadata_["decided_by"].astext.label("decision_by"),
+                Document.metadata_["decided_at"].astext.label("decision_at"),
+                Document.metadata_["self_reported"].astext.label("decision_self"),
+                Document.metadata_["superseded_by"].astext.label("decision_superseded_by"),
             )
             .join(Document, Document.id == Chunk.document_id)
             .where(Chunk.id.in_(all_ids))
@@ -920,6 +956,7 @@ def hybrid_search(
                 "path_l2": r.path_l2,
                 "source_uri": r.source_uri,
                 "updated_at": r.updated_at,
+                "decision": _decision_meta(r) if r.source_type == "confirmed_decision" else None,
             }
             text_by_id[r.id] = f"{r.header_context}\n{r.title}\n{r.external_id}\n{r.text}"
 
@@ -978,6 +1015,15 @@ def hybrid_search(
             for cid, ptr in is_ptr.items():
                 if ptr:
                     fused[cid] = fused[cid] * factor
+
+    # 사람이 확정한 현행 기준은 일반 규칙(source_type + 상태)으로만 올린다. needs_recheck는
+    # 올리지 않는다(표시만). 질문 문구·문서 ID에는 의존하지 않는다.
+    cfactor = _confirmed_factor()
+    if cfactor > 1.0:
+        for cid in fused:
+            dm = (meta_by_id.get(cid) or {}).get("decision")
+            if dm and dm["status"] == "confirmed" and not dm["recheck"]:
+                fused[cid] = fused[cid] * cfactor
 
     before_boost = dict(fused)
     fused = apply_exact_boost(
@@ -1050,6 +1096,7 @@ def hybrid_search(
                     else None
                 ),
                 duplicate_count=folded.get(id(h), 0),
+                decision=m.get("decision"),
             )
         )
     if results and not any(
