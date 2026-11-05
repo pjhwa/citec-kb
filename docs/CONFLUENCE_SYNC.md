@@ -202,8 +202,8 @@ root(사실상 그 함수 호출 전체)가 죽었다** — 개별 페이지 실
 ```bash
 scripts/docs_inventory.sh --dry-run            # 결과 JSON: fetch_by_reason, would_archive, listing_errors, skipped_no_ancestors
 scripts/docs_inventory.sh                      # 실제 반영 (종료코드 1 = 목록/페이지 오류 있음)
-# cron (일일 sync와 같은 flock 파일 → 서로 겹치지 않음), 주 1회 일요일 03:00:
-# 0 3 * * 0 /usr/bin/flock -n /tmp/citec-kb-confluence-sync.lock /path/to/citec-kb/scripts/docs_inventory.sh >> /path/to/citec-kb/logs/cron_docs_inventory.log 2>&1
+# cron (일일 sync와 같은 flock 파일 → 서로 겹치지 않음), 주 1회 토요일 18:00 (map_inventory 가 20:00 에 시작하므로 겹치지 않게; 운영 공용 lock 이름은 citec-kb-confluence-shared.lock):
+# 0 18 * * 6 /usr/bin/flock -n /tmp/citec-kb-confluence-shared.lock /path/to/citec-kb/scripts/docs_inventory.sh >> /path/to/citec-kb/logs/cron_docs_inventory.log 2>&1
 ```
 옵션: `--sources confluence_docs,tech_repo`(기본 둘 다), `--no-archive`, `--max-archive-ratio R`, `--allow-full-fetch`.
 코드: `apps/api/app/confluence/docs_inventory.py`(`plan_reconcile`은 순수 함수), 테스트 `tests/test_confluence_docs_inventory.py`,

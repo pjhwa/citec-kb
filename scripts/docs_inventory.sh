@@ -11,8 +11,10 @@
 #   scripts/docs_inventory.sh --dry-run
 #   scripts/docs_inventory.sh               # 실제 반영
 #
-# cron: 일일 sync 와 같은 flock 파일을 써서 서로 겹치지 않게 한다 (주 1회, 일요일 새벽):
-#   0 3 * * 0 /usr/bin/flock -n /tmp/citec-kb-confluence-sync.lock \
+# cron: 일일 sync 와 같은 flock 파일을 써서 서로 겹치지 않게 한다 (주 1회, 토요일 18시 — 20시에 시작하는
+# map_inventory 와 Confluence 호출이 겹치지 않게, 이 작업은 보통 수십 분이면 끝난다).
+# 운영 crontab 의 일일 sync/map_sync 가 쓰는 공용 lock 이름은 citec-kb-confluence-shared.lock:
+#   0 18 * * 6 /usr/bin/flock -n /tmp/citec-kb-confluence-shared.lock \
 #     /path/to/citec-kb/scripts/docs_inventory.sh >> /path/to/citec-kb/logs/cron_docs_inventory.log 2>&1
 #
 # Usage: scripts/docs_inventory.sh [--dry-run] [--sources confluence_docs,tech_repo]
