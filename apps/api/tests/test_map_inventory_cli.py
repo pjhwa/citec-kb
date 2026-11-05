@@ -122,3 +122,46 @@ def test_main_counts_errors_for_exit_code(tmp_path: Path, monkeypatch):
     )
     rc = main(["--raw-dir", str(tmp_path), "--count", "1"])
     assert rc == 1
+
+
+def test_state_advances_per_source_so_a_killed_run_keeps_finished_sources(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "app.confluence.map_sync.get_source_defs",
+        lambda active_only=True: {f"confluence_map_{c}": {} for c in "abcd"},
+    )
+    seen: list[str] = []
+
+    def fake_inventory(source_id, raw_dir_arg, dry_run=False):
+        if source_id == "confluence_map_b":
+            raise KeyboardInterrupt  # stands in for the process being killed
+        seen.append(source_id)
+        return {"source_id": source_id, "errors": []}
+
+    monkeypatch.setattr("app.confluence.map_sync.run_map_inventory", fake_inventory)
+    try:
+        main(["--raw-dir", str(tmp_path), "--count", "3"])
+    except KeyboardInterrupt:
+        pass
+    state = json.loads((tmp_path / "confluence_map" / ".inventory_rotation_state.json").read_text())
+    assert seen == ["confluence_map_a"]
+    assert state["index"] == 1  # next run resumes at b, not at a
+    assert state["last_picked"] == ["confluence_map_a"]
+
+
+def test_skipped_source_stops_the_advance(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(
+        "app.confluence.map_sync.get_source_defs",
+        lambda active_only=True: {f"confluence_map_{c}": {} for c in "abc"},
+    )
+
+    def fake_inventory(source_id, raw_dir_arg, dry_run=False):
+        if source_id == "confluence_map_b":
+            return {"source_id": source_id, "skipped": True, "reason": "already_running", "errors": []}
+        return {"source_id": source_id, "errors": []}
+
+    monkeypatch.setattr("app.confluence.map_sync.run_map_inventory", fake_inventory)
+    main(["--raw-dir", str(tmp_path), "--count", "3"])
+    state = json.loads((tmp_path / "confluence_map" / ".inventory_rotation_state.json").read_text())
+    # a ran; b was skipped (lock held) so the index stays on b even though c ran
+    assert state["index"] == 1
+    assert state["last_picked"] == ["confluence_map_a"]

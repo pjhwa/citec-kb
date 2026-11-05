@@ -41,6 +41,7 @@ NO_ROLLBACK=false
 ATTACH_GIT=false
 ATTACH_REMOTE_URL=""
 RESTART_ONLY=false
+FORCE_RESTART=false
 
 # 이미지 재빌드가 필요한 변경으로 간주하는 파일 패턴 (grep -E, git diff 경로 기준)
 IMAGE_SENSITIVE_PATTERN='(^|/)Dockerfile$|requirements.*\.txt$|pyproject\.toml$|package(-lock)?\.json$|^docker-compose\.ya?ml$'
@@ -174,6 +175,8 @@ USAGE
   --attach-git           최초 1회: 기존 디렉토리에 git 연결 (diff 확인 후 진행,
                         재시작 없음) — --remote-url 필수, 위 "사전 준비" 3) 참고
   --remote-url URL      --attach-git 과 함께 사용할 원격 저장소 URL
+  --force-restart       api 안에서 장시간 배치(map/docs inventory, ingest/embed 등)가 돌고 있어도
+                        재시작 (기본은 중단하고 안내 — 2026-11-02 18시간짜리 inventory 가 배포 재시작에 죽음)
   --restart-only         git pull 은 하지 않고 재시작 + 헬스체크만 실행. git 상태와
                         무관하게 동작(git 저장소가 아니어도 됨) — 예: --attach-git
                         직후처럼 "파일은 이미 최신인데 컨테이너만 못 띄운" 상황.
@@ -377,6 +380,29 @@ warn_if_graph_sync_running() {
   fi
 }
 
+# api 컨테이너 안에서 `docker compose exec` 로 도는 장시간 배치(map/docs inventory,
+# ingest/embed, 동의어 마이닝 …)는 api 재시작과 함께 죽는다. 2026-11-02 14:32 배포
+# 재시작이 18.5시간째 돌던 map inventory 를 죽였다(출력도 로테이션 상태도 못 남김).
+# 그래서 -y 여도 경고만 하지 않고 중단한다 — --force-restart 로만 넘어간다.
+# 감지는 scripts/api_busy_check.sh (야간 자동 재시작과 같은 로직).
+abort_if_api_batch_running() {
+  local where="$1" reason rc
+  $FORCE_RESTART && return 0
+  [[ " ${SERVICES[*]} " == *" api "* ]] || return 0
+  set +e
+  reason="$(COMPOSE_CMD="sudo docker compose" "${PROJECT_DIR}/scripts/api_busy_check.sh")"
+  rc=$?
+  set -e
+  if [[ $rc -eq 0 ]]; then
+    err "api 컨테이너에서 장시간 배치가 진행 중입니다: ${reason}"
+    err "  지금 재시작하면 이 작업이 죽습니다. 끝난 뒤 다시 실행하세요 (${where})."
+    err "  그래도 재시작하려면: --force-restart"
+    die "재시작 중단"
+  elif [[ $rc -eq 2 ]]; then
+    warn "배치 진행 여부를 확인하지 못했습니다: ${reason}"
+  fi
+}
+
 # restart_only_flow: git pull 을 전혀 하지 않고 재시작 + 헬스체크만 한다.
 # --attach-git 직후("파일은 최신, 컨테이너만 구버전")처럼 git SHA 비교로는
 # 감지되지 않는 "재시작만 밀린" 상태를 위한 것 — 롤백 대상 커밋 개념이 없으므로
@@ -392,6 +418,7 @@ restart_only_flow() {
     [[ "${CONFIRM}" =~ ^[Yy]$ ]] || { warn "취소"; exit 0; }
   fi
 
+  abort_if_api_batch_running "코드는 이미 최신입니다 — 배치 종료 후 --restart-only 로 재시작"
   warn_if_graph_sync_running
   restart_services
   if wait_health; then
@@ -423,6 +450,7 @@ while [[ $# -gt 0 ]]; do
     --attach-git) ATTACH_GIT=true; shift ;;
     --remote-url) ATTACH_REMOTE_URL="${2:?}"; shift 2 ;;
     --restart-only) RESTART_ONLY=true; shift ;;
+    --force-restart) FORCE_RESTART=true; shift ;;
     --yes|-y) YES=true; shift ;;
     --dry-run|-n) DRY_RUN=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -539,6 +567,9 @@ if $DRY_RUN; then
   $STASHED_GITIGNORE && git stash pop
   exit 0
 fi
+
+# pull 전에 먼저 확인: 중단해도 아무것도 바뀌지 않는다.
+$NO_RESTART || abort_if_api_batch_running "아직 pull 하지 않았습니다 — 배치 종료 후 다시 실행"
 
 if ! $YES; then
   echo -e "${RED}${BOLD}${#SERVICES[@]}개 서비스(${SERVICES[*]})를 재시작합니다. 계속할까요? [y/N]${RESET} "
@@ -667,6 +698,8 @@ if d.get('api_build_sha') not in (None, 'unknown', '${APPLIED_SHA:0:12}'):
   fi
 }
 
+# pull 이후에 시작된 배치까지 한 번 더 확인 (코드는 이미 반영된 상태)
+abort_if_api_batch_running "코드는 반영됨 — 배치 종료 후 scripts/git_pull_deploy.sh --restart-only"
 warn_if_graph_sync_running
 restart_services
 

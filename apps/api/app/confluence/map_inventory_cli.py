@@ -24,7 +24,10 @@ few spaces' worth of time.
 
 State: data/raw/confluence_map/.inventory_rotation_state.json tracks the
 index into the (sorted) active-source-id list to resume from next run.
-Only advanced on a real (non-dry-run, non --source-ids) run.
+Only advanced on a real (non-dry-run, non --source-ids) run, and advanced
+**per source as each one finishes** (a run can last 15+ hours and has been
+killed mid-way by a deploy restart; finished sources must not be redone).
+Each finished source also logs one compact ``source_done {...}`` line.
 
 Deliberately does not touch last_sync_at/checkpoint — see
 run_map_inventory()'s own docstring; that's the daily incremental sync's
@@ -47,6 +50,19 @@ from pathlib import Path
 from typing import Any
 
 _STATE_NAME = ".inventory_rotation_state.json"
+_SUMMARY_KEYS = ("previous_count", "current_count", "written", "would_archive", "archived", "archive_skipped_due_to_errors", "errors")
+
+
+def _summary(source_id: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Compact one-line view of a source's result: lists become counts so a
+    large would_archive/errors list does not flood the log."""
+    out: dict[str, Any] = {"source_id": source_id}
+    for k in _SUMMARY_KEYS:
+        v = row.get(k)
+        out[k] = len(v) if isinstance(v, list) else v
+    if row.get("skipped"):
+        out["skipped"] = row.get("reason")
+    return out
 
 
 def _state_path(raw_dir: str) -> Path:
@@ -125,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     all_ids = sorted(active_defs.keys())
 
     state: dict[str, Any] | None = None
-    next_index: int | None = None
+    start_index = 0
 
     if explicit_ids:
         unknown = [s for s in explicit_ids if s not in active_defs]
@@ -135,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
         picked = explicit_ids
     else:
         state = _load_state(args.raw_dir)
-        picked, next_index = _pick_rotation(all_ids, int(state.get("index") or 0), args.count)
+        start_index = int(state.get("index") or 0)
+        picked, _ = _pick_rotation(all_ids, start_index, args.count)
 
     logging.info(
         "map inventory rotation picked=%s (of %d active sources, dry_run=%s)",
@@ -144,21 +161,32 @@ def main(argv: list[str] | None = None) -> int:
 
     report: dict[str, Any] = {"dry_run": args.dry_run, "active_sources_total": len(all_ids), "sources": {}}
     total_errors = 0
-    for sid in picked:
+    # A single source can take many hours (LOOKIN-size spaces), and the whole
+    # run was observed dying mid-way (2026-11-02: a deploy restarted the api
+    # container 18.5h in, losing all three sources and leaving the rotation
+    # stuck on them). So progress is recorded per source: one compact
+    # "source_done" log line each, and the rotation state moves forward as
+    # soon as a source finishes. Only a contiguous finished prefix counts: a
+    # source skipped because the lock was held stops the advance there.
+    advancing = state is not None and not args.dry_run
+    done: list[str] = []
+    for i, sid in enumerate(picked):
         row = run_map_inventory(sid, args.raw_dir, dry_run=args.dry_run)
         report["sources"][sid] = row
+        logging.info("source_done %s", json.dumps(_summary(sid, row), ensure_ascii=False, default=str))
         if row.get("skipped"):
             logging.warning("inventory skipped %s: %s", sid, row.get("reason"))
+            advancing = False
             continue
         total_errors += len(row.get("errors") or [])
+        if advancing and state is not None:
+            done.append(sid)
+            state["index"] = (start_index + i + 1) % len(all_ids) if all_ids else 0
+            state["last_picked"] = list(done)
+            state["last_run_at"] = datetime.now(timezone.utc).isoformat()
+            _save_state(args.raw_dir, state)
 
     print(json.dumps(report, ensure_ascii=False, indent=2, default=str))
-
-    if state is not None and not args.dry_run:
-        state["index"] = next_index
-        state["last_picked"] = picked
-        state["last_run_at"] = datetime.now(timezone.utc).isoformat()
-        _save_state(args.raw_dir, state)
 
     return 0 if total_errors == 0 else 1
 

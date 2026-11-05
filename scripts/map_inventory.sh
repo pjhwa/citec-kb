@@ -21,9 +21,12 @@
 #   scripts/map_inventory.sh --count 1          # 실제 반영, 결과 JSON 확인
 #
 # 문제없으면 크론에 등록 (목표: 주 1회, 다른 크론과 안 겹치는 한가한 시간대 —
-# daily 크론들(02/04/11/12시)과 안 겹치게, 예: 일요일 20시):
-#   0 20 * * 0 /usr/bin/flock -n /tmp/citec-kb-map-inventory.lock \
+# daily 크론들(02/04/11/12시)과 안 겹치게, 예: 토요일 20시):
+#   0 20 * * 6 /usr/bin/flock -n /tmp/citec-kb-map-inventory.lock \
 #     /path/to/citec-kb/scripts/map_inventory.sh >> /path/to/citec-kb/logs/cron_map_inventory.log 2>&1
+#
+# 토요일 밤을 권장: 한 번에 15~19시간+ 걸려 일요일 낮에 끝난다. 일요일 밤에 시작하면
+# 월요일 업무시간(배포·map 증분 sync 06/12/15:30)과 겹친다 (2026-11-02 사고).
 #
 # map_sync.sh/map_backfill.sh와 같은 lock(_sync_run_lock, DB advisory lock)을
 # 공유하므로 둘 중 뭔가 돌고 있으면 이 스크립트는 그 소스를 "already_running"

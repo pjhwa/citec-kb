@@ -10,7 +10,8 @@
 # within seconds.
 #
 # BUT: `python -m app.ingest.cli` / `python -m app.embed.cli` / the Confluence
-# sync CLIs (`app.confluence.sync_cli`, `app.confluence.map_sync_cli`) are
+# sync CLIs (`app.confluence.sync_cli`, `app.confluence.map_sync_cli`, and the
+# multi-hour `map_inventory_cli` / `docs_inventory_cli` / `map_backfill_cli`) are
 # sometimes run inside this same container via `docker compose exec` (see
 # scripts/ingest_and_embed.sh, scripts/confluence_sync.sh, scripts/map_sync.sh)
 # and can run for hours. Restarting mid-batch would kill that job (idempotent,
@@ -43,30 +44,17 @@ cd "$PROJECT_DIR"
 
 echo "[$(date -Iseconds)] restart_api_if_idle 시작"
 
-if [[ -z "$(docker compose ps -q --status running api 2>/dev/null)" ]]; then
-  echo "[$(date -Iseconds)] api 컨테이너가 running 상태가 아님 — 건너뜀"
+# 감지 로직은 scripts/api_busy_check.sh 한 곳에 있다 (배포 스크립트와 공유).
+set +e
+REASON="$("${SCRIPT_DIR}/api_busy_check.sh")"
+RC=$?
+set -e
+if [[ $RC -eq 0 ]]; then
+  echo "[$(date -Iseconds)] ${REASON} — 재시작 건너뜀, 다음 스케줄에 재확인"
   exit 0
 fi
-
-BUSY_PIDS="$(docker compose exec -T api sh -c '
-  for p in /proc/[0-9]*; do
-    [ -r "$p/cmdline" ] || continue
-    tr "\0" " " < "$p/cmdline" 2>/dev/null | grep -Eq "app\.(embed|ingest)\.cli|app\.synonyms\.cli|app\.confluence\.(map_sync_cli|sync_cli)" && basename "$p"
-  done
-' 2>/dev/null || true)"
-
-if [[ -n "$BUSY_PIDS" ]]; then
-  echo "[$(date -Iseconds)] ingest/embed 배치 진행 중 (pid: $(echo "$BUSY_PIDS" | tr '\n' ' ')) — 재시작 건너뜀, 다음 스케줄에 재확인"
-  exit 0
-fi
-
-MAP_SYNC_RUNNING="$(docker compose exec -T api python3 -c '
-from app.confluence.map_sync import is_sync_running
-print("yes" if is_sync_running() else "no")
-' 2>/dev/null || echo "no")"
-
-if [[ "$MAP_SYNC_RUNNING" == "yes" ]]; then
-  echo "[$(date -Iseconds)] confluence_map_sync 진행 중 (advisory lock held, 아마 admin 페이지에서 트리거됨) — 재시작 건너뜀, 다음 스케줄에 재확인"
+if [[ $RC -eq 1 && "$REASON" == *"running 상태가 아님"* ]]; then
+  echo "[$(date -Iseconds)] ${REASON} — 건너뜀"
   exit 0
 fi
 
