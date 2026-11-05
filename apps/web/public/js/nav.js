@@ -42,6 +42,7 @@
     html += "</div></details>";
 
     html += linkHtml("bundles", "번들", "/bundles.html", current);
+    html += linkHtml("decisions", "사람 확정", "/decisions.html", current);
     html += linkHtml("insights", "Insight", "/insights.html", current);
     html += linkHtml("doc", "문서", "/docs/", current);
     html += '<a href="/api/docs" target="_blank" rel="noopener">API</a>';
