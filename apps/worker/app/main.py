@@ -93,6 +93,8 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("insight_reindex requires payload.insight_id")
         # embed can take a while (model load)
         return _http_json("POST", f"/v1/insights/{iid}/reindex", timeout=600)
+    if job_type == "decision_staleness_scan":
+        return _http_json("POST", "/v1/decisions/_scan-staleness", timeout=600)
     if job_type == "confluence_map_sync":
         # Can legitimately run for many hours (LOOKIN alone has run 8+ hours
         # in prod) — this blocks _process_one/the worker's main loop for the

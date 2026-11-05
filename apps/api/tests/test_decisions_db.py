@@ -1,0 +1,210 @@
+"""Decisions against a scratch Postgres (scripts/scratch_db_test.sh)."""
+
+from __future__ import annotations
+
+import os
+import unicodedata
+import uuid
+
+import pytest
+
+_DSN = os.environ.get("CONFLUENCE_SYNC_TEST_DATABASE_URL")
+if _DSN:
+    os.environ["DATABASE_URL"] = _DSN
+
+pytestmark = pytest.mark.skipif(not _DSN, reason="needs scratch DB")
+
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+
+from app.settings import get_settings  # noqa: E402
+
+TITLE = "PIXEL (엑셀기반 PISA진단)_2026.11.30 까지 제공"
+OPTS = [{"key": "a", "label": "2026.11.30"}, {"key": "b", "label": "연장"}]
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "off")
+    get_settings.cache_clear()
+    from app.main import app
+    yield TestClient(app)
+    get_settings.cache_clear()
+
+
+def _doc(body: str = TITLE, eid: str | None = None) -> dict:
+    from app.ingest.adapters import DocumentDraft
+    from app.ingest.pipeline import upsert_document_from_draft
+
+    eid = eid or f"T-{uuid.uuid4().hex[:8]}"
+    d = DocumentDraft(source_type="tech_repo", external_id=eid, title=TITLE, body_md=body,
+                      evidence_grade="A", source_uri=f"test://{eid}").finalize()
+    return upsert_document_from_draft(d)
+
+
+def _mutate_doc(doc_id: str, body: str) -> None:
+    from app.db.session import session_scope
+
+    with session_scope() as s:
+        s.execute(text("UPDATE documents SET body_md=:b, content_hash=:h, version=version+1 WHERE id=:i"),
+                  {"b": body, "h": uuid.uuid4().hex, "i": doc_id})
+
+
+def _propose(client, doc_id=None, quote="2026.11.30 까지 제공", **kw):
+    ev = [{"quote": quote, "stance": "supports", "option_key": "a", "document_id": doc_id}] if doc_id else []
+    r = client.post("/v1/decisions", json={"question": "PIXEL 제공 종료일은?", "options": OPTS,
+                                          "ai_recommendation_key": "a", "evidence": ev, **kw})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def _verdict(client, did, **kw):
+    n = client.get(f"/v1/decisions/{did}/nonce").json()["nonce"]
+    body = {"option_key": "a", "decided_by": "홍길동", "nonce": n, **kw}
+    return client.post(f"/v1/decisions/{did}/verdict", json=body)
+
+
+def test_evidence_gate_rejects_missing_quote_missing_doc_and_accepts_nfd(client):
+    doc = _doc()
+    d = _propose(client)
+    did = d["id"]
+    ok = lambda q, **kw: client.post(f"/v1/decisions/{did}/evidence", json={  # noqa: E731
+        "quote": q, "stance": "supports", "option_key": "a", "document_id": kw.get("doc", doc["document_id"])})
+    assert ok("존재하지 않는 문장").status_code == 400
+    assert ok("2026.11.30", doc="no-such-doc").status_code == 400
+    assert ok(unicodedata.normalize("NFD", "엑셀기반 PISA진단)_2026.11.30  까지 제공")).status_code == 200
+    assert ok("엑셀기반 PISA진단)_2026.11.30 까지 제공").status_code == 409  # duplicate after normalisation
+
+
+def test_verdict_needs_evidence_nonce_and_is_single_use(client):
+    d = _propose(client)
+    assert _verdict(client, d["id"]).status_code == 400  # no evidence
+    doc = _doc()
+    d = _propose(client, doc["document_id"])
+    r = _verdict(client, d["id"])
+    assert r.status_code == 200 and r.json()["status"] == "confirmed"
+    n = client.get(f"/v1/decisions/{d['id']}/nonce").json()["nonce"]
+    body = {"option_key": "a", "decided_by": "x", "nonce": n}
+    assert client.post(f"/v1/decisions/{d['id']}/verdict", json=body).status_code == 200
+    assert client.post(f"/v1/decisions/{d['id']}/verdict", json=body).status_code == 403  # reused
+    assert client.post(f"/v1/decisions/{d['id']}/verdict", json={**body, "nonce": "bogus"}).status_code == 403
+
+
+def test_nei_does_not_confirm_and_other_needs_text(client):
+    d = _propose(client, _doc()["document_id"])
+    r = _verdict(client, d["id"], option_key="NEI")
+    assert r.status_code == 200 and r.json()["status"] == "proposed"
+    assert _verdict(client, d["id"], option_key="OTHER").status_code == 400
+    assert _verdict(client, d["id"], option_key="OTHER", free_text="12/31까지").status_code == 200
+
+
+def test_external_only_needs_explicit_confirmation(client):
+    d = client.post("/v1/decisions", json={"question": "연장 여부?", "options": OPTS, "evidence": [{
+        "quote": "연장 검토", "stance": "supports", "option_key": "b",
+        "external_url": "https://example.invalid/n", "external_snapshot": "연장 검토 중",
+        "retrieved_at": "2026-11-03T00:00:00Z"}]}).json()
+    assert d["external_only"] is True
+    assert _verdict(client, d["id"], option_key="b").status_code == 400
+    r = _verdict(client, d["id"], option_key="b", external_only_confirm=True)
+    assert r.status_code == 200
+    bad = client.post(f"/v1/decisions/{d['id']}/evidence", json={
+        "quote": "x", "stance": "context", "external_url": "ftp://x", "external_snapshot": "s",
+        "retrieved_at": "2026-11-03T00:00:00Z"})
+    assert bad.status_code == 400
+
+
+def test_verdict_rows_are_append_only_at_db_level(client):
+    d = _propose(client, _doc()["document_id"])
+    assert _verdict(client, d["id"]).status_code == 200
+    from app.db.session import session_scope
+
+    for sql in ("UPDATE decision_verdicts SET rationale='x'", "DELETE FROM decision_verdicts"):
+        with pytest.raises(Exception, match="append-only"):
+            with session_scope() as s:
+                s.execute(text(sql))
+    assert _verdict(client, d["id"], rationale="재확인").status_code == 200
+    assert len(client.get(f"/v1/decisions/{d['id']}").json()["history"]) == 2
+
+
+def test_changed_evidence_needs_recheck_then_keep_restores(client):
+    doc = _doc()
+    d = _propose(client, doc["document_id"])
+    _verdict(client, d["id"])
+    _mutate_doc(doc["document_id"], TITLE + " (v98)")
+    card = client.get(f"/v1/decisions/{d['id']}").json()
+    assert card["status"] == "confirmed" and card["effective_status"] == "needs_recheck"
+    assert card["changed_pins"] == 1
+    scan = client.post("/v1/decisions/_scan-staleness").json()
+    assert d["id"] in scan["marked_needs_recheck"]
+    assert client.get(f"/v1/decisions/{d['id']}").json()["status"] == "needs_recheck"
+    assert _verdict(client, d["id"], keep=True).status_code == 200  # 한 번의 유지
+    card = client.get(f"/v1/decisions/{d['id']}").json()
+    assert card["status"] == "confirmed" and card["effective_status"] == "confirmed"
+    assert card["changed_pins"] == 0
+
+
+def test_keep_fails_loudly_when_quote_vanished(client):
+    doc = _doc()
+    d = _propose(client, doc["document_id"])
+    _verdict(client, d["id"])
+    _mutate_doc(doc["document_id"], "완전히 다른 본문")
+    assert _verdict(client, d["id"], keep=True).status_code == 409
+
+
+def test_supersede_hides_old_by_default_and_retire_restore(client):
+    doc = _doc()
+    old = _propose(client, doc["document_id"])
+    _verdict(client, old["id"])
+    new = _propose(client, doc["document_id"])
+    assert client.post(f"/v1/decisions/{old['id']}/supersede", json={"new_decision_id": new["id"]}).status_code == 200
+    ids = lambda **kw: {i["id"] for i in client.get("/v1/decisions", params=kw).json()["items"]}  # noqa: E731
+    assert old["id"] not in ids() and old["id"] in ids(include_superseded=True)
+    assert client.get(f"/v1/decisions/{new['id']}").json()["supersedes"] == [old["id"]]
+    assert _verdict(client, old["id"]).status_code == 409
+    assert client.post(f"/v1/decisions/{new['id']}/retire").status_code == 200
+    assert new["id"] not in ids()
+    assert client.post(f"/v1/decisions/{new['id']}/restore").json()["status"] == "proposed"
+
+
+def test_option_lint_rejects_reserved_keys_via_api(client):
+    r = client.post("/v1/decisions", json={"question": "q?", "options": [
+        {"key": "NEI", "label": "x"}, {"key": "b", "label": "y"}]})
+    assert r.status_code == 400
+
+
+# ---- auth transition (acceptance #11) ------------------------------------------
+
+def _auth_client(monkeypatch, mode="apikey"):
+    import app.auth.principal as pr
+
+    monkeypatch.setenv("AUTH_MODE", mode)
+    monkeypatch.setenv("AUTH_TOKENS_JSON", '{"sen": {"sub":"s","name":"real-senior","roles":["senior"]},'
+                       '"vw": {"sub":"v","name":"viewer1","roles":["viewer"]}}')
+    get_settings.cache_clear()
+    monkeypatch.setattr(pr, "_token_cache", None)
+    from app.main import app
+    return TestClient(app)
+
+
+def test_auth_on_gates_and_ignores_forged_decided_by(monkeypatch, client):
+    d = _propose(client, _doc()["document_id"])  # AUTH off: created anonymously
+    c = _auth_client(monkeypatch)
+    H = lambda t: {"X-API-Key": t}  # noqa: E731
+    assert c.get(f"/v1/decisions/{d['id']}/nonce").status_code == 401
+    assert c.get(f"/v1/decisions/{d['id']}/nonce", headers=H("vw")).status_code == 403
+    n = c.get(f"/v1/decisions/{d['id']}/nonce", headers=H("sen")).json()["nonce"]
+    r = c.post(f"/v1/decisions/{d['id']}/verdict", headers=H("sen"),
+               json={"option_key": "a", "decided_by": "FORGED", "nonce": n})
+    assert r.status_code == 200 and r.json()["verdict"]["decided_by"] == "real-senior"
+    assert r.json()["verdict"]["auth_via"] == "apikey" and not r.json()["verdict"]["self_reported"]
+    assert c.get("/v1/decisions").status_code == 200  # reads stay public
+    assert c.post("/v1/decisions", json={"question": "q?", "options": OPTS}).status_code == 401
+
+
+def test_auth_off_again_accepts_self_reported_name(monkeypatch, client):
+    d = _propose(client, _doc()["document_id"])
+    r = _verdict(client, d["id"], decided_by="자기신고")
+    v = r.json()["verdict"]
+    assert v["decided_by"] == "자기신고" and v["auth_via"] == "anonymous" and v["self_reported"]
+    n = client.get(f"/v1/decisions/{d['id']}/nonce").json()["nonce"]
+    assert client.post(f"/v1/decisions/{d['id']}/verdict", json={"option_key": "a", "nonce": n}).status_code == 400
