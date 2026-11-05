@@ -52,7 +52,7 @@ async def main() -> int:
     check("wiki_search alias", not alias.startswith("오류:"), alias)
 
     listing = await server.kb_list_insights(limit=3)
-    check("kb_list_insights", not listing.startswith("오류:"), listing)
+    check("kb_list_insights(retired stub)", listing.startswith("폐기됨") and "kb_list_decisions" in listing, listing)
 
     t = await server.kb_ticket("CITECTS-2502")
     check("kb_ticket", not t.startswith("오류:") or "찾을 수 없" in t, t[:120])

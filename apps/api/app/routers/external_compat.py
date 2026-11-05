@@ -26,13 +26,13 @@ from fastapi import (
     Query,
     UploadFile,
 )
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
 from app import __version__
 from app.audit.log import list_recent_queries, log_query_answer
-from app.db.models import Document, Feedback, IngestJob, Insight
+from app.db.models import Document, Feedback, IngestJob
 from app.db.session import session_scope
 from app.doc_access import attach_document_access, document_access
 from app.ingest.adapters import (
@@ -74,9 +74,9 @@ _SECTION_MAP: dict[str, Optional[str]] = {
     "confluence_docs": "confluence_docs",
     "failure_bucket": "failure_bucket",
     "failure_buckets": "failure_bucket",
-    "synthesis": "insight",
-    "insight": "insight",
-    "insights": "insight",
+    "decision": "confirmed_decision",
+    "decisions": "confirmed_decision",
+    "confirmed_decision": "confirmed_decision",
     "dept_archive": "dept_archive",
     "dept-archive": "dept_archive",
 }
@@ -90,7 +90,7 @@ _TEMPLATE_LABELS = {
     "tech_repo": "테크리포",
     "tuning_ai": "DBMS튜닝",
     "failure_bucket": "실패 패턴 라이브러리",
-    "synthesis": "Insight/합성지식",
+    "confirmed_decision": "사람 확정 결정",
     "dept_archive": "부서 공유드라이브 아카이브",
 }
 
@@ -354,10 +354,19 @@ def api_upload_multiple(
     return {"jobs": jobs}
 
 
+_RETIRED_SECTIONS = frozenset({"synthesis", "insight", "insights"})
+_RETIRED_SECTIONS_MSG = (
+    "폐기된 section/template입니다(synthesis·insight·insights) — 사람 확정 결정은 "
+    "section=confirmed_decision 으로 검색하세요."
+)
+
+
 def _map_section(section: str | None) -> Optional[str]:
     if not section:
         return None
     key = section.strip().lower()
+    if key in _RETIRED_SECTIONS:
+        raise HTTPException(status_code=400, detail=_RETIRED_SECTIONS_MSG)
     if key in _SECTION_MAP:
         return _SECTION_MAP[key]
     # passthrough known source_type values
@@ -447,8 +456,8 @@ def _search_results(
 _PATH_SOURCE_ALIASES = {
     "checkitems": "checkitem",
     "incident": "incident_reports",
-    "synthesis": "insight",
-    "insights": "insight",
+    "decision": "confirmed_decision",
+    "decisions": "confirmed_decision",
     "dept-archive": "dept_archive",
 }
 
@@ -554,9 +563,6 @@ def api_wiki_stats() -> dict[str, Any]:
         total = int(session.scalar(
             select(func.count()).select_from(Document).where(Document.status == "active")
         ) or 0)
-        insights = int(
-            session.scalar(select(func.count()).select_from(Insight)) or 0
-        )
     from app.db.models import Decision
 
     with session_scope() as session:
@@ -579,8 +585,6 @@ def api_wiki_stats() -> dict[str, Any]:
         "total": total,
         "by_source_type": by_type,
         "sections": sections,
-        "synthesis": insights,
-        "insights": insights,
         "decisions": decisions,
         "backend": "citec-kb",
     }
@@ -850,67 +854,17 @@ def _sse(obj: dict[str, Any]) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
-# ── Synthesis ≈ Insights ───────────────────────────────────────────
+# ── Synthesis (RETIRED 2026-11-05) ─────────────────────────────────
+# One-release retirement stubs: callers get guidance instead of an opaque 404.
+# Remove in the release after the one that introduces them.
 
 
 @router.get("/api/synthesis")
-def api_list_synthesis(
-    limit: int = 20,
-    offset: int = 0,
-    status: str = "approved",
-) -> dict[str, Any]:
-    """wiki-qa synthesis list → citec-kb insights.
-
-    Default status is approved. The live table is full of review/draft
-    smoke rows (mock-idp-e2e, auth-off smoke). Pass status=all to see them.
-    The admin list is GET /v1/insights, which still returns every status.
-    """
-    limit = max(1, min(int(limit), 100))
-    offset = max(0, int(offset))
-    with session_scope() as session:
-        stmt = select(Insight).order_by(Insight.updated_at.desc())
-        if status and status != "all":
-            stmt = stmt.where(Insight.status == status)
-        total = int(session.scalar(select(func.count()).select_from(stmt.subquery())) or 0)
-        rows = list(session.scalars(stmt.offset(offset).limit(limit)).all())
-        items = [
-            {
-                "slug": r.id,
-                "id": r.id,
-                "query": r.title,
-                "title": r.title,
-                "quality": r.status,
-                "status": r.status,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
-                "source_count": len(r.source_doc_ids or []),
-                "author": r.author,
-            }
-            for r in rows
-        ]
-    return {"total": total, "items": items, "backend": "citec-kb-insights"}
-
-
 @router.get("/api/synthesis/{slug}")
-def api_get_synthesis(slug: str) -> dict[str, Any]:
-    with session_scope() as session:
-        row = session.get(Insight, slug)
-        if not row:
-            raise HTTPException(status_code=404, detail="합성 답변을 찾을 수 없습니다.")
-        return {
-            "slug": row.id,
-            "id": row.id,
-            "query": row.title,
-            "answer": row.body_md or "",
-            "quality": row.status,
-            "status": row.status,
-            "created_at": row.created_at.isoformat() if row.created_at else None,
-            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-            "sources": list(row.source_doc_ids or []),
-            "author": row.author,
-            "reviewer": row.reviewer,
-            "promoted_document_id": row.promoted_document_id,
-        }
+def api_synthesis_retired(slug: str = "") -> JSONResponse:
+    from app.routers.insights import retired_response
+
+    return retired_response()
 
 
 # ── Feedback ───────────────────────────────────────────────────────
@@ -955,10 +909,8 @@ def api_feedback(req: WikiFeedbackReq) -> dict[str, Any]:
         )
     target_type = req.target_type or "answer"
     target_id = req.target_id or req.synthesis_slug or req.query_id or "unknown"
-    if target_type not in {"answer", "insight", "search", "synthesis", "query"}:
+    if target_type not in {"answer", "search", "query", "decision"}:
         target_type = "answer"
-    if target_type == "synthesis":
-        target_type = "insight"
     comment = req.comment or req.note
     if req.verdict and comment:
         comment = f"[{req.verdict}] {comment}"
@@ -1026,8 +978,7 @@ def v1_ext_catalog() -> dict[str, Any]:
             "GET /api/wiki/search": "hybrid search (q, section, area, limit) + body_api/web_url",
             "GET /api/wiki/file": "document body by path/external_id (+ access)",
             "POST /api/query": "SSE Q&A (query, template) — MCP wiki_ask",
-            "GET /api/synthesis": "insight list (wiki synthesis stand-in)",
-            "GET /api/synthesis/{slug}": "insight detail",
+            "GET /api/synthesis[/{slug}]": "RETIRED (410) — use /v1/decisions",
             "POST /api/feedback": "rating/verdict feedback",
             "GET /api/recent-questions": "recent audited queries",
             "POST /api/upload": (

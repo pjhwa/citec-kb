@@ -88,8 +88,8 @@ def test_full_login_callback_rs256_flow(monkeypatch):
     assert "senior" in body["principal"]["roles"]
 
     r = c.post(
-        "/v1/insights",
-        json={"title": "mock-idp-e2e", "body_md": "from mock idp"},
+        "/v1/decisions",
+        json={"question": "mock-idp-e2e?", "options": [{"key": "a", "label": "x"}, {"key": "b", "label": "y"}]},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 200, r.text

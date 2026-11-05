@@ -59,9 +59,6 @@ def auth_status() -> dict[str, Any]:
             "dev_token": "/v1/auth/dev/token",
         },
         "protected_when_enforced": [
-            "POST /v1/insights (author+)",
-            "POST /v1/insights/*/submit (author+)",
-            "POST /v1/insights/*/approve|reject|reopen|reindex (senior+)",
             "POST /v1/decisions, /v1/decisions/*/evidence (author+)",
             "GET /v1/decisions/*/nonce, POST /v1/decisions/*/verdict|supersede|retire|restore (senior+)",
             "POST /v1/jobs (admin)",

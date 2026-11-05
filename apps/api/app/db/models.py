@@ -569,33 +569,6 @@ class Feedback(Base):
     )
 
 
-class Insight(Base):
-    __tablename__ = "insights"
-    __table_args__ = (Index("ix_insights_status", "status"),)
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=_uuid)
-    title: Mapped[str] = mapped_column(String(1024), nullable=False)
-    body_md: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
-    source_doc_ids: Mapped[list[str]] = mapped_column(
-        ARRAY(String), nullable=False, server_default=text("'{}'::text[]")
-    )
-    status: Mapped[str] = mapped_column(
-        String(32), nullable=False, server_default="draft"
-    )  # draft | review | approved | rejected
-    author: Mapped[Optional[str]] = mapped_column(String(128))
-    reviewer: Mapped[Optional[str]] = mapped_column(String(128))
-    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    promoted_document_id: Mapped[Optional[str]] = mapped_column(
-        ForeignKey("documents.id", ondelete="SET NULL")
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-
 class Bundle(Base):
     """War-room incident pack definition."""
 

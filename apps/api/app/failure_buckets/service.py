@@ -244,7 +244,7 @@ def classify_registrant(created_by: Optional[str]) -> tuple[str, Optional[str]]:
 # existing legacy:pre-migration rows would be a breaking change, and because
 # new prefixes will legitimately appear as new plugins register buckets).
 _EVIDENCE_REF_PREFIXES = (
-    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "agent-room:",
+    "capture:", "confluence:", "citects-", "evtx:", "log:", "swim:", "legacy:", "insight:", "decision:", "agent-room:",
 )
 # Accepted without a warning, but a human may not be able to open them later
 # (insight: needs an insight-ops login; agent-room: vanishes with the room).

@@ -211,10 +211,10 @@ def human_checklist() -> list[dict[str, Any]]:
         },
         {
             "id": "H5",
-            "title": "Insight 승인 플로우 시니어 리뷰 1회",
+            "title": "사람 확정(Confirmed Decision) 판정 플로우 시니어 리뷰 1회",
             "owner": "시니어",
             "status": "pending_human",
-            "evidence": "API+UI+async reindex available",
+            "evidence": "API+UI(/decisions.html)+mirror reindex available",
         },
         {
             "id": "H6",

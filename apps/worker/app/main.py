@@ -87,12 +87,6 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         return _http_json("POST", f"/v1/entities/seed?link={'true' if link else 'false'}")
     if job_type == "capacity_seed":
         return _http_json("POST", "/v1/capacity/seed")
-    if job_type == "insight_reindex":
-        iid = payload.get("insight_id")
-        if not iid:
-            raise ValueError("insight_reindex requires payload.insight_id")
-        # embed can take a while (model load)
-        return _http_json("POST", f"/v1/insights/{iid}/reindex", timeout=600)
     if job_type == "decision_staleness_scan":
         return _http_json("POST", "/v1/decisions/_scan-staleness", timeout=600)
     if job_type == "confluence_map_sync":
@@ -105,15 +99,9 @@ def _handle(job_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         # generous ceiling, not an expected duration.
         return _http_json("POST", "/v1/confluence-map/_run-sync", body=payload, timeout=24 * 3600)
     if job_type == "embed_document":
-        # Prefer insight_reindex when possible; this path hits a thin API via reindex of
-        # a promoted insight is preferred. For raw document_id, call internal-style
-        # reindex is not exposed — fall back to insight_id if provided.
-        iid = payload.get("insight_id")
-        if iid:
-            return _http_json("POST", f"/v1/insights/{iid}/reindex", timeout=600)
         doc_id = payload.get("document_id")
         if not doc_id:
-            raise ValueError("embed_document requires document_id or insight_id")
+            raise ValueError("embed_document requires document_id")
         return _http_json(
             "POST",
             f"/v1/embed/document?document_id={quote(str(doc_id), safe='')}",

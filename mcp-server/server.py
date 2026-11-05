@@ -226,7 +226,7 @@ async def kb_search(
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
-    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|insight|confirmed_decision
+    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|confirmed_decision
         (checkitems·incident 같은 흔한 별칭은 서버가 정규화하고, 모르는 값은 허용 목록과 함께 거부한다)
     area: domain 필터 (os|dbms|network|cloud|storage|…, 대소문자 무시). 문서에 없는 값이면 결과 머리에 경고가 붙는다
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
@@ -472,39 +472,23 @@ async def _get_document_impl(path: str) -> str:
     return meta_line + content
 
 
+# ── RETIRED 2026-11-05: Insight → 사람 확정 결정. 한 릴리스 동안 폐기 안내 스텁으로 둔다(다음 릴리스에서 제거).
+_INSIGHT_RETIRED = (
+    "폐기됨: Insight/합성지식은 사람 확정 결정(Confirmed Decision)으로 대체됐습니다. "
+    "kb_list_decisions / kb_get_decision 을 사용하세요."
+)
+
+
 @mcp.tool()
 async def kb_list_insights(limit: int = 20, status: str = "approved") -> str:
-    """승인된 Insight 목록. status=review|draft|rejected|all 로만 그 외를 본다."""
-    return await _list_synthesis_impl(limit, status)
+    """[폐기됨] kb_list_decisions 를 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
 async def wiki_list_synthesis(limit: int = 20) -> str:
-    """(wiki-qa 호환) kb_list_insights 와 동일 — synthesis≈insights."""
-    return await _list_synthesis_impl(limit)
-
-
-async def _list_synthesis_impl(limit: int, status: str = "approved") -> str:
-    try:
-        async with _client() as client:
-            resp = await client.get("/api/synthesis", params={"limit": limit, "status": status or "approved"})
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPError as e:
-        return _err(e)
-
-    items = data.get("items") or []
-    if not items:
-        return "저장된 Insight/합성 답변이 없습니다."
-
-    lines = [f"Insight {len(items)}건 (전체 {data.get('total', 0)}건):"]
-    for it in items:
-        lines.append(
-            f"- {it.get('slug', '')} [{it.get('quality') or it.get('status', '')}] "
-            f"{it.get('query') or it.get('title', '')} "
-            f"(수정: {it.get('updated_at', '')})"
-        )
-    return "\n".join(lines)
+    """[폐기됨] kb_list_decisions 를 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 # ── 사람 확정 결정 (Confirmed Decision) ─────────────────────────────
@@ -633,34 +617,14 @@ async def kb_add_decision_evidence(decision_id: str, quote: str, stance: str, op
 
 @mcp.tool()
 async def kb_get_insight(slug: str) -> str:
-    """Insight 본문을 조회한다. slug는 kb_list_insights 결과의 id/slug."""
-    return await _get_synthesis_impl(slug)
+    """[폐기됨] kb_get_decision 을 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
 async def wiki_get_synthesis(slug: str) -> str:
-    """(wiki-qa 호환) kb_get_insight 와 동일."""
-    return await _get_synthesis_impl(slug)
-
-
-async def _get_synthesis_impl(slug: str) -> str:
-    try:
-        async with _client() as client:
-            resp = await client.get(f"/api/synthesis/{slug}")
-            if resp.status_code == 404:
-                return f"오류: Insight/합성 답변을 찾을 수 없습니다: {slug}"
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPError as e:
-        return _err(e)
-
-    sources = data.get("sources") or []
-    src = ", ".join(str(s) for s in sources) if sources else "없음"
-    return (
-        f"질문/제목: {data.get('query') or data.get('title', '')}\n"
-        f"상태: {data.get('quality') or data.get('status', '')}\n\n"
-        f"{data.get('answer', '')}\n\n출처: {src}"
-    )
+    """[폐기됨] kb_get_decision 을 사용한다."""
+    return _INSIGHT_RETIRED
 
 
 @mcp.tool()
@@ -1764,7 +1728,7 @@ async def kb_tools_help() -> str:
 
 [티켓 · Insight · 상태]
   kb_ticket(external_id=)
-  kb_list_insights / kb_get_insight
+  (kb_list_insights / kb_get_insight / wiki_*_synthesis: 폐기됨 — 안내 스텁, 결정 도구 사용)
   kb_list_decisions / kb_get_decision   사람이 확정한 현재 기준(읽기)
   kb_propose_decision / kb_add_decision_evidence   질문·근거 제안(AI는 판정 못 함, 판정은 웹에서 사람이)
   kb_ask / wiki_ask   RAG 답변
@@ -2353,7 +2317,7 @@ async def kb_stats() -> str:
         return _err(e)
 
     lines = [
-        f"as_of={data.get('as_of')} total_documents={data.get('total')} insights={data.get('insights')}",
+        f"as_of={data.get('as_of')} total_documents={data.get('total')}",
         "by_source_type:",
     ]
     for k, v in sorted((data.get("by_source_type") or {}).items(), key=lambda x: -int(x[1] or 0)):

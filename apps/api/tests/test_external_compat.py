@@ -21,7 +21,9 @@ def test_section_map_checkitems():
     assert _map_section("checkitems") == "checkitem"
     assert _map_section("support_history") == "support_history"
     assert _map_section("incident_reports") == "incident_reports"
-    assert _map_section("synthesis") == "insight"
+    assert _map_section("decisions") == "confirmed_decision"
+    with pytest.raises(HTTPException):
+        _map_section("synthesis")  # retired
     assert _map_section("general") is None
     assert _map_section("") is None
 
@@ -68,7 +70,7 @@ def test_section_map_keys_cover_mcp_templates():
         "vendor_docs",
         "tech_repo",
         "tuning_ai",
-        "synthesis",
+        "confirmed_decision",
     ):
         assert t in _SECTION_MAP
 
