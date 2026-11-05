@@ -42,6 +42,8 @@ DEFAULTS = {"max_new_per_run": 20, "max_open_server_proposals": 60, "detectors":
 _DEADLINE_RE = re.compile(
     r"((?:19|20)\d{2})[.\-/]\s?0?(\d{1,2})[.\-/]\s?0?(\d{1,2})\s*(?:일)?\s*(까지|이후|종료|제공|사용|지원|만료)")
 _FB_TEST_SUFFIX = re.compile(r"-test(\b|$)", re.I)
+# 스모크/시험으로 등록된 버킷은 사람이 확정할 주제가 아니다.
+_FB_FIXTURE_NAME = re.compile(r"^(SMOKE|TEST|E2E)[-_ ]", re.I)
 
 
 @dataclass
@@ -85,7 +87,7 @@ def detect_fb_confirm(session) -> list[Proposal]:
         FailureBucket.status == "active", FailureBucket.confidence < FB_CONFIRMED_CONFIDENCE,
         FailureBucket.document_id.is_not(None)).order_by(FailureBucket.created_at)).all()
     for b in rows:
-        if _FB_TEST_SUFFIX.search(b.created_by or ""):
+        if _FB_TEST_SUFFIX.search(b.created_by or "") or _FB_FIXTURE_NAME.search(b.bucket_name or ""):
             continue
         doc = session.get(Document, b.document_id)
         if doc is None:

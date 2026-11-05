@@ -663,6 +663,17 @@ append-only human verdicts. Confirmed decisions are searchable as <code>source_t
 <li><code>GET /v1/decisions[?status=&amp;sort=priority|recent&amp;include_superseded=]</code>, <code>GET /v1/decisions/{id}</code>,<br>
 <code>GET /v1/decisions/metrics</code> are public reads.</li>
 </ul>
+<p><strong>Auto-proposed topics (periodic scan).</strong> A server job (<code>decision_topic_scan</code>, <code>POST /v1/decisions/_scan-topics[?dry_run=true]</code>)<br>
+derives questions from stored data with fixed rules (no LLM) and registers them as <code>proposed</code> decisions<br>
+(<code>created_by_kind=server_job</code>, <code>created_by=decision-scan@&lt;detector&gt;</code>, UI badge "자동 제안"): <code>fb_confirm</code> (active failure buckets whose<br>
+confidence is still &lt; 0.7: confirm / revise / retire), <code>deadline</code> (a tech_repo/confluence_docs <em>title</em> states a date deadline),<br>
+<code>bucket_gap</code> (a CI-TEC domain has recurring incidents but zero failure buckets). Each carries a unique <code>source_key</code><br>
+(<code>fb:&lt;bucket id&gt;</code>, <code>deadline:&lt;document id&gt;</code>, <code>gap:&lt;domain&gt;:&lt;fb_domain&gt;</code>) so re-runs never duplicate, and verbatim quotes that pass the same<br>
+evidence gate. Caps: <code>max_new_per_run</code> (20) and <code>max_open_server_proposals</code> (60) — config/decision_scan.json. A server proposal is never a verdict.</p>
+<p><strong>Failure buckets and decisions.</strong> A bucket's <code>confidence</code> is machine-computed (Laplace over support/counter counts, grade <code>machine</code>).<br>
+Human confirmation is a separate signal: <code>kb_get_failure_bucket</code> / <code>kb_match_failure_bucket</code> / list responses carry <code>confirmation</code><br>
+(<code>decision_id</code>, <code>effective_status</code>, <code>verdict</code>, <code>decided_by</code>) when the scan proposed that bucket. A verdict does <strong>not</strong> change the bucket<br>
+(confidence/status stay); retire/refine remain explicit bucket operations.</p>
 <p><strong>When you cite a <code>confirmed_decision</code></strong>: cite it first, and state <em>who confirmed it and when</em><br>
 (<code>decision.decided_by</code>, <code>decided_at</code>; "(자기 신고)" means the name was self-reported while auth is off).<br>
 If <code>decision.recheck=true</code> (<code>needs_recheck</code>: a pinned source document changed, or the review interval passed),<br>

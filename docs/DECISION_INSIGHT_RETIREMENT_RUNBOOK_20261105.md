@@ -29,6 +29,11 @@
 - **인증 켜기:** 시범 이후. `AUTH_MODE`와 토큰만 바꾸면 판정 라우트가 `senior|admin`을 요구하고 `decided_by`는 `principal.name`이 된다(시험 `test_auth_on_gates_and_ignores_forged_decided_by`). 켜기 전까지 확정자는 자기 신고다.
 - **`SEARCH_CONFIRMED_FACTOR`**(기본 1.5): 결정이 늘면 같은 방법(`scripts/verify/eval_retrieval_gate.py` + 대표 질의 순위표)으로 다시 잰다. 1.0 = 끔(롤백 스위치).
 
+- **주제 스캔 예약:** `scripts/decision_scan_cron.sh`(스캔+낡음 스캔 작업을 큐에 넣음). 호스트 crontab에 직접 추가한다(자동 설치 안 함):
+  `30 6 * * * /home/citec/dev/citec-kb/scripts/decision_scan_cron.sh >> /home/citec/dev/citec-kb/logs/cron_decision_scan.log 2>&1`.
+  인증을 켠 뒤에는 `API_TOKEN`(admin)이 필요하다. 상한·탐지기는 `config/decision_scan.json`(예시 파일 참고). 먼저 `POST /v1/decisions/_scan-topics?dry_run=true`로 무엇이 올라올지 본다.
+- 마이그레이션 `0023`(`decisions.source_key/source_ref`, 부분 유일 인덱스)은 0021·0022와 같은 절차로 적용한다. `downgrade`는 두 컬럼과 인덱스만 제거한다.
+
 ## 4. 롤백
 
 - 즉시 완화: `SEARCH_CONFIRMED_FACTOR=1.0`(확정 문서 승격 끔). 판정 UI는 `nav.js`/라우터를 되돌리지 않고도 사용하지 않으면 영향 없음.

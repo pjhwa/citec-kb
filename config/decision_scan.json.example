@@ -1,0 +1,8 @@
+{
+  "max_new_per_run": 20,
+  "max_open_server_proposals": 60,
+  "detectors": ["fb_confirm", "deadline", "bucket_gap"],
+  "gap_since_days": 365,
+  "gap_min_count": 3,
+  "deadline_soon_days": 60
+}

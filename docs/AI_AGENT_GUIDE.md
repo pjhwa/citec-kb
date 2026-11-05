@@ -322,6 +322,19 @@ append-only human verdicts. Confirmed decisions are searchable as `source_type=c
 - `GET /v1/decisions[?status=&sort=priority|recent&include_superseded=]`, `GET /v1/decisions/{id}`,
   `GET /v1/decisions/metrics` are public reads.
 
+**Auto-proposed topics (periodic scan).** A server job (`decision_topic_scan`, `POST /v1/decisions/_scan-topics[?dry_run=true]`)
+derives questions from stored data with fixed rules (no LLM) and registers them as `proposed` decisions
+(`created_by_kind=server_job`, `created_by=decision-scan@<detector>`, UI badge "자동 제안"): `fb_confirm` (active failure buckets whose
+confidence is still < 0.7: confirm / revise / retire), `deadline` (a tech_repo/confluence_docs *title* states a date deadline),
+`bucket_gap` (a CI-TEC domain has recurring incidents but zero failure buckets). Each carries a unique `source_key`
+(`fb:<bucket id>`, `deadline:<document id>`, `gap:<domain>:<fb_domain>`) so re-runs never duplicate, and verbatim quotes that pass the same
+evidence gate. Caps: `max_new_per_run` (20) and `max_open_server_proposals` (60) — config/decision_scan.json. A server proposal is never a verdict.
+
+**Failure buckets and decisions.** A bucket's `confidence` is machine-computed (Laplace over support/counter counts, grade `machine`).
+Human confirmation is a separate signal: `kb_get_failure_bucket` / `kb_match_failure_bucket` / list responses carry `confirmation`
+(`decision_id`, `effective_status`, `verdict`, `decided_by`) when the scan proposed that bucket. A verdict does **not** change the bucket
+(confidence/status stay); retire/refine remain explicit bucket operations.
+
 **When you cite a `confirmed_decision`**: cite it first, and state *who confirmed it and when*
 (`decision.decided_by`, `decided_at`; "(자기 신고)" means the name was self-reported while auth is off).
 If `decision.recheck=true` (`needs_recheck`: a pinned source document changed, or the review interval passed),

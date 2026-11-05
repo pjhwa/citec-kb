@@ -33,6 +33,20 @@
 | 10 | G 스모크·마이그레이션 왕복 통과. 스킬 패치 제안은 아래 |
 | 11 | 인증 전환(apikey): 익명 401, viewer 403, senior 통과, `decided_by` 위조 무시, off 복귀 시 자기 신고(시험) |
 
+## 추가 작업 (2026-11-05 후속): 주제 자동 도출 + 실패 버킷 연계 + 매칭 개선
+
+| 항목 | 내용 | 확인 |
+|---|---|---|
+| 주제 스캔 | `decisions/scan.py`·`POST /v1/decisions/_scan-topics`·작업 `decision_topic_scan`(worker). 규칙 기반(LLM 없음) 탐지기 3종 `fb_confirm`/`deadline`/`bucket_gap`, `source_key`로 멱등, 상한 2종, dry-run | DB 시험 5건. dev 실행: 탐지 fb 7(SMOKE·시험 버킷 제외)·기한 1(PIXEL, 위험 높음)·공백 7 → 15건 등록, 재실행 0건 신규, 작업 큐 경유 실행 확인 |
+| 실패 버킷 연계 | `confirmation`(결정 id·상태·판정·확정자)을 버킷 상세·목록·match 응답에 붙임. **판정이 버킷을 바꾸지 않음**(확정 층과 기계 신뢰도 분리). 질문은 확정/보완/폐기 3택 | DB 시험(verdict 후 버킷 confidence·status 불변) |
+| 매칭 (가) | `failure_buckets/terms.py` 한/영 용어 그룹(쿼럼=quorum, 펜싱=fencing, 스플릿 브레인=split-brain 등 + 승인된 검색 동의어). 조사(을/를/에서…)와 하이픈·공백 표기 흡수. 의미 유사 일치 없음 | 단위 시험 7건(없는 용어는 일치 안 함 포함) |
+| 매칭 (나) | `match_evidence`(신호별 겹친 단어, `via_term_group`·`observed_as`↔`signal_as`), `contradicted_evidence`, MCP 출력에 "겹친 단어" 줄 | 시험 |
+| 매칭 (다) | `label_basis`(일치 n/전체, 분모, confidence, 조건부·가능에 필요한 일치 수, 미확인 신호)와 `label_rules`. **임계값은 바꾸지 않았다**: confidence 0.5 미검증 버킷은 '가능'에 계산 대상 신호 전부 일치가 필요, 4개 중 1개는 비권고(0.35)가 의도된 보수성 | 시험 |
+| 요청서 해석 정정 | 요청서 관찰 3("증상 글은 영향 없음")은 코드와 다르다 — 증상 토큰은 처음부터 일치에 쓰였고, 한국어 표기 때문에 일치하지 않았을 뿐이다 | 코드 확인 |
+| 한계(실측) | dev의 실제 버킷 B(`6ea28d59`)는 저장 신호가 요청서 표와 다르다(예: "Signaling sbd to panic … 새 커널 부팅"). 그래서 "양 노드 자기 펜싱 후 재부팅"은 **여전히 일치하지 않는다** — 목록에 없는 말(panic·sbd)은 같은 말로 보지 않는다. `쿼럼`만 단독으로는 6개 단어 신호 중 1개라 일치하지 않는다(절반 규칙 유지) | dev match 실호출 |
+
+용어를 더 늘리려면 `FB_TERM_GROUPS`에 사람이 합의한 쌍만 추가하거나 기존 동의어 마이닝(`app.synonyms`) 승인 경로를 쓴다(자동 반영됨).
+
 ## 승인이 필요한 운영 작업 (별도 목록)
 
 1. 운영 DB `0021`, `0022` 적용 — `docs/DECISION_INSIGHT_RETIREMENT_RUNBOOK_20261105.md` (백업·순서·롤백 포함).
@@ -40,6 +54,7 @@
 3. 인증 켜기(시범 이후): `AUTH_MODE`+토큰.
 4. 새 `confirmed_decision` 문서의 운영 임베딩(판정 시 자동, 모델 가용 필요).
 5. 다음 릴리스에서 폐기 스텁 제거.
+6. 운영 `0023` 적용과 `scripts/decision_scan_cron.sh` crontab 등록(dev crontab에도 설치하지 않았다).
 
 ## 스킬 `citec-mcp-workbench` 패치 제안 (스킬 파일은 수정하지 않았다)
 
