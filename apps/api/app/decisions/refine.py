@@ -82,14 +82,40 @@ def validate(p, data: dict[str, Any]) -> Optional[tuple[str, list[dict]]]:
     return check(p, data)[0]
 
 
-def _ask(p, complete) -> tuple[Optional[tuple[str, list[dict]]], str]:
+class Run:
+    """Per-scan state: after the first HTTP 401 the remaining LLM calls of this run are skipped.
+
+    Only 401 stops the run (credentials are rejected for every call); any other error or a rejected
+    answer affects that proposal only, and a successful call keeps the run going.
+    """
+
+    def __init__(self) -> None:
+        self.auth_failed = False
+        self.skipped = 0
+
+
+AUTH_SKIP_REASON = "LLM 인증 실패(401)로 이 실행의 나머지 호출을 건너뜀"
+
+
+def _is_401(exc: Exception) -> bool:
+    return bool(re.search(r"HTTP 401\b", str(exc)))
+
+
+def _ask(p, complete, run: Optional[Run] = None) -> tuple[Optional[tuple[str, list[dict]]], str]:
+    if run is not None and run.auth_failed:
+        run.skipped += 1
+        return None, AUTH_SKIP_REASON
     if complete is None:
         from app.llm_chat import chat_complete as complete
     try:
         raw = complete([{"role": "system", "content": _SYSTEM}, {"role": "user", "content": _prompt(p)}],
                        max_tokens=700, temperature=0.2, timeout=60.0)
     except Exception as exc:  # noqa: BLE001 — LLM 장애는 규칙 문구로 대체
-        logger.warning("decision refine skipped (%s): %s", p.source_key, exc)
+        if run is not None and _is_401(exc):
+            run.auth_failed = True
+            logger.warning("decision refine: LLM 401, skipping the remaining calls of this run (%s)", exc)
+        else:
+            logger.warning("decision refine skipped (%s): %s", p.source_key, exc)
         return None, f"LLM 호출 실패: {str(exc)[:160]}"
     data = _parse(raw)
     if data is None:
@@ -97,9 +123,9 @@ def _ask(p, complete) -> tuple[Optional[tuple[str, list[dict]]], str]:
     return check(p, data)
 
 
-def refine(p, *, complete=None) -> bool:
+def refine(p, *, complete=None, run: Optional[Run] = None) -> bool:
     """Reword proposal `p` in place. Returns True when the LLM text was adopted."""
-    ok, reason = _ask(p, complete)
+    ok, reason = _ask(p, complete, run)
     if ok is None:
         logger.info("decision refine rejected (%s): %s", p.source_key, reason)
         return False
@@ -109,9 +135,9 @@ def refine(p, *, complete=None) -> bool:
     return True
 
 
-def preview(p, *, complete=None) -> dict[str, Any]:
+def preview(p, *, complete=None, run: Optional[Run] = None) -> dict[str, Any]:
     """Side-effect free: what refine() would do to `p`, with the rejection reason when it would not."""
-    ok, reason = _ask(p, complete)
+    ok, reason = _ask(p, complete, run)
     out: dict[str, Any] = {"source_key": p.source_key, "detector": p.detector, "adopted": ok is not None,
                            "rule": {"question": p.question, "options": p.options}}
     if ok is not None:
