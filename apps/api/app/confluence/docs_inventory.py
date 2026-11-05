@@ -366,6 +366,15 @@ def run_docs_inventory(
                 "archive_skipped": archive_skipped,
                 "raw_moved_aside": moved_raw,
             }
+            # Per-source progress line: the final report only prints at the
+            # very end, and a killed run would otherwise leave nothing.
+            logger.info(
+                "source_done %s",
+                {
+                    k: (len(v) if isinstance(v, (list, dict)) else v)
+                    for k, v in {"source_type": st, **report["sources"][st]}.items()
+                },
+            )
 
         if not dry_run and ingest:
             from app.embed.job import embed_pending_chunks

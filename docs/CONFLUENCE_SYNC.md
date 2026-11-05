@@ -211,3 +211,19 @@ scripts/docs_inventory.sh                      # 실제 반영 (종료코드 1 =
 
 **알려진 별개 문제(이번에 고치지 않음)**: `confluence_map`의 `run_map_inventory`와 일일 `sync`는 archived 처리 후에도 원본
 raw 파일을 그대로 두므로, 다음 `run_ingest`가 archived 문서를 되살릴 수 있다. 위와 같은 방식(파일 옮기기)이 필요한지 확인할 것.
+
+### 장시간 인벤토리 운영 규칙 (2026-11-05, 11/2 사고 후속)
+
+- 사고: 2026-11-01 20:00 KST에 시작한 `map_inventory`(3개 공간, 한 번에 15~19시간)가 11/2 14:32 KST 배포의
+  `docker compose restart api`에 죽었다. 결과 JSON은 마지막에만 출력되고 로테이션 상태도 끝에서만 전진해서 아무것도
+  남지 않았고, 다음 주에 같은 3개 공간을 처음부터 다시 돌게 되어 있었다. (04:00 자동 재시작은 잠금을 보고 정상적으로 건너뜀.)
+- **소스별 진행:** `map_inventory_cli`는 소스 하나가 끝날 때마다 `source_done {...}` 한 줄을 로그(stderr)에 남기고
+  로테이션 상태(`.inventory_rotation_state.json`)를 즉시 전진시킨다. 중간에 죽어도 끝난 소스는 다시 하지 않는다.
+  잠금 때문에 건너뛴 소스가 있으면 그 지점에서 전진을 멈춘다. `docs_inventory`도 소스별 `source_done` 줄을 남긴다.
+  진행 확인: `grep source_done logs/cron_map_inventory.log | tail`.
+- **배포 보호:** `scripts/git_pull_deploy.sh`는 api를 재시작하기 전에 `scripts/api_busy_check.sh`로 장시간 배치
+  (`map/docs inventory`, `map_backfill`, ingest/embed, 동의어 마이닝, 관리자 map sync 잠금)를 확인하고, 있으면 `-y`여도
+  **중단**한다(pull 전에 먼저 확인하므로 중단 시 아무것도 바뀌지 않음). 강제로 하려면 `--force-restart`. 코드만 먼저
+  반영하고 배치 종료 후 재시작하려면 `--no-restart` 후 `--restart-only`.
+- 야간 `restart_api_if_idle.sh`도 같은 `api_busy_check.sh`를 쓴다(감지 목록 한 곳). 새 장시간 CLI를 추가하면
+  `api_busy_check.sh`의 패턴에 넣을 것.
