@@ -1,0 +1,7 @@
+trust strong
+1 tech_repo 531734869 A 0.0221 | 08-01-03. 주요 RDB Managed Service 비교/분석 2022 통합
+2 checkitem PISAOLNX_03.01.04 A 0.0189 | [PISAOLNX_03.01.04] 사용자 정보
+3 tech_repo 1365725609 A 0.0189 | Survey 작성 (한글/영문)
+4 checkitem PISAOLNX_06.01.07#EN A 0.0185 | [PISAOLNX_06.01.07] Event Message
+5 dept_archive file_159766 B 0.0185 | LINUX-재분류
+6 confluence_map 1930835440 C 0.0185 | 25년용 09. Backup

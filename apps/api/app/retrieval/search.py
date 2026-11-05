@@ -455,11 +455,15 @@ def _pointer_factor() -> float:
 
 
 def _confirmed_factor() -> float:
-    """현행(재확인 불필요) 확정 결정 점수 배수. 1.0 = 끔. 값은 평가 게이트로 정한다."""
+    """현행(재확인 불필요) 확정 결정 점수 배수. 1.0 = 끔.
+
+    기본값 1.5는 2026-11-05 dev 시범 1건에서 쟀다(artifacts/citec-kb-decision-20261105/):
+    1.0→32위, 1.25→2위, 1.5→1위, 2.0→1위. 무관한 질의 3건에서는 확정 문서가 상위에 끼지 않았다.
+    결정이 늘면 같은 방식으로 다시 재서 조정한다(근거 1건짜리 값이므로 잠정)."""
     import os
 
     try:
-        return max(1.0, float(os.environ.get("SEARCH_CONFIRMED_FACTOR", "1.0")))
+        return max(1.0, float(os.environ.get("SEARCH_CONFIRMED_FACTOR", "1.5")))
     except ValueError:
         return 1.0
 

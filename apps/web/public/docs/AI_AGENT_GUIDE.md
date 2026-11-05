@@ -868,5 +868,5 @@ If a tool name is missing in the live server, call `kb_tools_help` or fall back 
 - New layer `confirmed_decision` (grade `H`), MCP `kb_list_decisions` / `kb_get_decision` / `kb_propose_decision` / `kb_add_decision_evidence`, web `/decisions.html` + `/decision.html?id=`. See §4.12b and §6.1.
 - `kb_ask` source list now prints **every** `[C#]` for a document on one line (`- C1, C11, C15 <title>`); previously only the first chunk's number was shown, so `[C11]` in the answer looked missing (A2).
 - Confirmed decisions are put first in the answer context; the source entry shows `사람 확정: 확정자 …, 확정일 …` and `⚠ 재확인 필요` when applicable.
-- `kb_search(include_superseded=true)` also returns superseded confirmed decisions (default false). `SEARCH_CONFIRMED_FACTOR` (default 1.0 = off) multiplies the score of current confirmed decisions; needs_recheck is never boosted.
+- `kb_search(include_superseded=true)` also returns superseded confirmed decisions (default false). `SEARCH_CONFIRMED_FACTOR` (default 1.5, `1.0` = off; measured on one dev pilot) multiplies the score of current confirmed decisions; needs_recheck is never boosted.
 - `kb_stats` has a `decisions` block with named counts and its own definition (`by_status` = rows in `decisions`; `searchable_active_documents` = searchable mirror documents).

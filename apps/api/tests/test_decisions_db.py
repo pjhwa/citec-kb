@@ -281,7 +281,7 @@ def _search(q, **filters):
     from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 
     with session_scope() as s:
-        return hybrid_search(s, SearchRequest(q=q, top_k=10, min_top_score=0.0,
+        return hybrid_search(s, SearchRequest(q=q, top_k=100, min_top_score=0.0,
                                               filters=SearchFilters(**filters)))
 
 
@@ -294,6 +294,7 @@ def test_search_finds_confirmed_mirror_with_decision_meta_and_factor_is_general(
     d = _propose(client, doc["document_id"])
     _verdict(client, d["id"], rationale="원문 제목")
     q = "PIXEL 제공 종료일 결론 확정"
+    monkeypatch.setenv("SEARCH_CONFIRMED_FACTOR", "1.0")
     h = _confirmed_hit(_search(q), d["id"])
     assert h and h.evidence_grade == "H" and h.evidence_eligible is True
     assert h.decision["status"] == "confirmed" and h.decision["recheck"] is False

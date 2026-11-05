@@ -86,7 +86,7 @@
       <p class="lead">Claude / MCP / REST 도구 선택 가이드</p>
       <div class="meta-grid">
         <div class="meta-card"><div class="label">원본</div><div class="value">docs/AI_AGENT_GUIDE.md</div></div>
-        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-04</div></div>
+        <div class="meta-card"><div class="label">최종 갱신</div><div class="value">2026-11-05</div></div>
       </div>
     </header>
     <section>
@@ -1287,7 +1287,7 @@ If a tool name is missing in the live server, call <code>kb_tools_help</code> or
 <li>New layer <code>confirmed_decision</code> (grade <code>H</code>), MCP <code>kb_list_decisions</code> / <code>kb_get_decision</code> / <code>kb_propose_decision</code> / <code>kb_add_decision_evidence</code>, web <code>/decisions.html</code> + <code>/decision.html?id=</code>. See §4.12b and §6.1.</li>
 <li><code>kb_ask</code> source list now prints <strong>every</strong> <code>[C#]</code> for a document on one line (<code>- C1, C11, C15 &lt;title&gt;</code>); previously only the first chunk's number was shown, so <code>[C11]</code> in the answer looked missing (A2).</li>
 <li>Confirmed decisions are put first in the answer context; the source entry shows <code>사람 확정: 확정자 …, 확정일 …</code> and <code>⚠ 재확인 필요</code> when applicable.</li>
-<li><code>kb_search(include_superseded=true)</code> also returns superseded confirmed decisions (default false). <code>SEARCH_CONFIRMED_FACTOR</code> (default 1.0 = off) multiplies the score of current confirmed decisions; needs_recheck is never boosted.</li>
+<li><code>kb_search(include_superseded=true)</code> also returns superseded confirmed decisions (default false). <code>SEARCH_CONFIRMED_FACTOR</code> (default 1.5, <code>1.0</code> = off; measured on one dev pilot) multiplies the score of current confirmed decisions; needs_recheck is never boosted.</li>
 <li><code>kb_stats</code> has a <code>decisions</code> block with named counts and its own definition (<code>by_status</code> = rows in <code>decisions</code>; <code>searchable_active_documents</code> = searchable mirror documents).</li>
 </ul>
       </div>
