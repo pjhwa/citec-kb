@@ -59,7 +59,8 @@ function srcLink(r) {
 }
 
 function incLines(i) {
-  const l = [["상황", i.situation], ["원인", i.cause], ["조치", i.action]].filter(x => x[1]);
+  const l = [["상황", i.situation], [i.cause_src && i.cause_src !== "장애원인" ? `원인(${i.cause_src})` : "원인", i.cause],
+    ["직접원인", i.direct], ["조치", i.action]].filter(x => x[1]);
   return l.length ? `<div class="meta" style="margin-left:22px">${l.map(x => `<b>${x[0]}</b> ${esc(x[1])}`).join("<br>")}</div>` : "";
 }
 function ctxHtml(c) {
@@ -71,7 +72,7 @@ function ctxHtml(c) {
   const items = (c.items || []).map(i => `<li style="list-style:none;margin:8px 0">
     ${sel && i.document_id ? `<input type="checkbox" class="pick" value="${esc(i.document_id)}" ${picked.has(i.document_id) ? "checked" : ""} aria-label="같은 원인"/> ` : ""}
     ${i.href ? `<a href="${esc(i.href)}" target="_blank" rel="noopener">${esc(i.id)}</a>` : esc(i.id)}
-    <span class="meta">${esc(i.date || "")}</span> <b>${esc(i.title)}</b>${(i.also_in || []).length ? ` <span class="chip" title="${esc(i.also_in.join(" / "))}">다른 제안에도 있음</span>` : ""}${incLines(i)}</li>`).join("");
+    <span class="meta">${esc(i.date || "")}</span> <b>${esc(i.title)}</b>${i.status ? ` <span class="chip">${esc(i.status)}</span>` : ""}${(i.also_in || []).length ? ` <span class="chip" title="${esc(i.also_in.join(" / "))}">다른 제안에도 있음</span>` : ""}${incLines(i)}</li>`).join("");
   const links = (c.links || []).map(l => `<a class="chip" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join("");
   const bar = sel ? `<div style="margin:10px 0"><button type="button" id="bPick" disabled>같은 원인 건을 체크하세요</button></div>` : "";
   return `<details class="ev" open><summary><b>판단에 필요한 맥락</b> — ${esc(c.heading || "")}</summary>
