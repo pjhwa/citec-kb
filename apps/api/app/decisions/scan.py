@@ -82,8 +82,10 @@ def _one_line(v, limit: int = 140) -> str:
     return t if len(t) <= limit else t[: limit - 1] + "…"
 
 
-# 장애원인 칸은 최초 보고 때 쓴 문구("원인파악중")가 닫힌 뒤에도 남는다. 확정된 원인은 아래 칸들에 적힌다.
-_CAUSE_FIELDS = ("근본원인", "직접원인", "장애원인 상세내용", "사유", "장애원인")
+# 장애원인 칸은 최초 보고 때 쓴 문구("원인파악중")가 닫힌 뒤에도 남는다. 확정 원인은 다른 칸에 적힌다:
+#   DB 문서: "근본원인(상세)" = "대상: … / 직접원인분류: … / 근본원인분류: …\n확정 근본원인: <문장>"
+#   예전 형식: 근본원인 · 직접원인 · 장애원인 상세내용 · 사유
+_CAUSE_DETAIL = "근본원인(상세)"
 # 원인 분석이 끝난 단계(그 앞 단계: 장애발생·조치중·조치완료·원인분석중)
 _CAUSE_DONE_STATUS = {"원인분석완료", "대책수립중", "대책수립완료", "FRB 준비중", "종료검토", "종료요청", "종료확정"}
 
@@ -96,28 +98,43 @@ def _section(md: dict, body: str, label: str) -> str:
     return str(val or "")
 
 
+def _detail_part(detail: str, label: str) -> str:
+    m = re.search(re.escape(label) + r"\s*[:：]\s*([^/\n]+)" if label != "확정 근본원인" else r"확정 근본원인\s*[:：]\s*(.+)",
+                  detail)
+    return m.group(1).strip() if m else ""
+
+
 def _incident_fields(doc) -> dict:
     """장애 문서의 상황·원인·조치를 한 줄씩 뽑는다.
 
-    원인은 확정 원인 칸(근본원인 → 직접원인 → 장애원인 상세내용 → 사유)을 먼저, 상용구뿐이 아닌 첫 값을 쓰고
-    cause_src에 출처 칸을 남긴다. 모두 비면 장애원인 칸(최초 보고 문구)을 쓴다. 직접원인은 따로 direct로 싣는다.
+    원인은 확정 원인(근본원인(상세)의 '확정 근본원인' → 근본원인 → 직접원인 → 장애원인 상세내용)을 먼저,
+    그다음 장애원인(최초 보고 문구가 '파악 중'이 아닐 때) → 근본원인분류 → 사유 순으로, 미확정 표현이 없는 첫 값을 쓴다.
+    cause_src에 출처를 남기고, direct에는 직접원인(분류)·대상을 싣는다. 모두 실패하면 장애원인을 그대로 둔다(→ 미확정).
     """
     md = (doc.metadata_ or {}) if doc is not None else {}
     body = (doc.body_md or "") if doc is not None else ""
+    detail = _section(md, body, _CAUSE_DETAIL)
+    parts = {k: _detail_part(detail, k) for k in ("확정 근본원인", "근본원인분류", "직접원인분류", "대상")}
+    initial = _section(md, body, "장애원인")
+    cands = [("확정 근본원인", parts["확정 근본원인"]), ("근본원인", _section(md, body, "근본원인")),
+             ("직접원인", _section(md, body, "직접원인")), ("장애원인 상세내용", _section(md, body, "장애원인 상세내용")),
+             ("장애원인", initial), ("근본원인분류", parts["근본원인분류"]), ("사유", _section(md, body, "사유"))]
     out = {"situation": _one_line(_section(md, body, "장애상황")),
            "action": _one_line(_section(md, body, "장애조치")),
            "status": _one_line(md.get("진행상태"), 20), "cause": "", "cause_src": "", "direct": ""}
-    for label in _CAUSE_FIELDS:
-        val = _section(md, body, label)
-        if has_cause({"cause": val}):
+    for label, val in cands:
+        if has_cause({"cause": val}) and not _UNCONFIRMED.search(val):
             out["cause"], out["cause_src"] = _one_line(val, 220), label
             break
     else:
-        out["cause"], out["cause_src"] = _one_line(_section(md, body, "장애원인"), 220), "장애원인"
-    if out["cause_src"] != "직접원인":
-        direct = _section(md, body, "직접원인")
-        if has_cause({"cause": direct}):
-            out["direct"] = _one_line(direct, 140)
+        out["cause"], out["cause_src"] = _one_line(initial, 220), "장애원인"
+    direct = _section(md, body, "직접원인") if out["cause_src"] != "직접원인" else ""
+    bits = ([f"직접원인분류: {parts['직접원인분류']}"] if parts["직접원인분류"] else [])
+    if parts["근본원인분류"] and out["cause_src"] != "근본원인분류":
+        bits.append(f"근본원인분류: {parts['근본원인분류']}")
+    if parts["대상"]:
+        bits.append(f"대상: {parts['대상']}")
+    out["direct"] = _one_line(" / ".join(bits) or (direct if has_cause({"cause": direct}) else ""), 200)
     return out
 
 
@@ -135,7 +152,7 @@ def has_cause(f: dict) -> bool:
     return len(_cause_core(f)) >= 6
 
 
-_UNCONFIRMED = re.compile(r"원인\s*불명|원인\s*미상|확정\s*(이\s*)?어렵|(파악|확인|조사|분석)\s*중")
+_UNCONFIRMED = re.compile(r"원인\s*불명|원인\s*미상|확정\s*(이\s*)?어렵|(파악|확인|조사|분석|추정)\s*중")
 
 
 def cause_confirmed(f: dict) -> bool:
@@ -275,7 +292,7 @@ def _mark_overlaps(session, proposals: list[Proposal]) -> None:
     for p in proposals:
         add(p.source_key, p.source_ref.get("context") or {})
     for d in session.scalars(select(Decision).where(Decision.status != "retired",
-                                                    Decision.source_key.like("gap3:%"))):
+                                                    Decision.source_key.like("gap4:%"))):
         add(d.source_key, (d.source_ref or {}).get("context") or {})
     for p in proposals:
         for it in (p.source_ref.get("context") or {}).get("items") or []:
@@ -352,7 +369,7 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 if g["count"] > len(incidents):
                     notes.append(f"(최대 {max_incidents}건만 표시)")
                 out.append(Proposal(
-                    detector="bucket_gap", source_key=f"gap3:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
+                    detector="bucket_gap", source_key=f"gap4:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
                     question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
                     options=[
                         {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
