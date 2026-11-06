@@ -77,25 +77,47 @@ def _line_with(prefix: str, body: str) -> Optional[str]:
     return None
 
 
-_INCIDENT_SECTIONS = (("situation", "장애상황"), ("cause", "장애원인"), ("action", "장애조치"))
-
-
 def _one_line(v, limit: int = 140) -> str:
     t = " ".join(str(v or "").split())
     return t if len(t) <= limit else t[: limit - 1] + "…"
 
 
+# 장애원인 칸은 최초 보고 때 쓴 문구("원인파악중")가 닫힌 뒤에도 남는다. 확정된 원인은 아래 칸들에 적힌다.
+_CAUSE_FIELDS = ("근본원인", "직접원인", "장애원인 상세내용", "사유", "장애원인")
+# 원인 분석이 끝난 단계(그 앞 단계: 장애발생·조치중·조치완료·원인분석중)
+_CAUSE_DONE_STATUS = {"원인분석완료", "대책수립중", "대책수립완료", "FRB 준비중", "종료검토", "종료요청", "종료확정"}
+
+
+def _section(md: dict, body: str, label: str) -> str:
+    val = md.get(label)
+    if not val:
+        m = re.search(r"^■\s*" + re.escape(label) + r"\s*[:：]\s*(.+?)(?=\n■|\Z)", body, re.S | re.M)
+        val = m.group(1) if m else ""
+    return str(val or "")
+
+
 def _incident_fields(doc) -> dict:
-    """장애 문서의 상황·원인·조치를 한 줄씩 뽑는다(메타데이터 우선, 없으면 본문의 '■ 장애원인:' 줄)."""
+    """장애 문서의 상황·원인·조치를 한 줄씩 뽑는다.
+
+    원인은 확정 원인 칸(근본원인 → 직접원인 → 장애원인 상세내용 → 사유)을 먼저, 상용구뿐이 아닌 첫 값을 쓰고
+    cause_src에 출처 칸을 남긴다. 모두 비면 장애원인 칸(최초 보고 문구)을 쓴다. 직접원인은 따로 direct로 싣는다.
+    """
     md = (doc.metadata_ or {}) if doc is not None else {}
     body = (doc.body_md or "") if doc is not None else ""
-    out = {}
-    for key, label in _INCIDENT_SECTIONS:
-        val = md.get(label)
-        if not val:
-            m = re.search(r"■\s*" + label + r"\s*[:：]\s*(.+?)(?=\n■|\Z)", body, re.S)
-            val = m.group(1) if m else ""
-        out[key] = _one_line(val)
+    out = {"situation": _one_line(_section(md, body, "장애상황")),
+           "action": _one_line(_section(md, body, "장애조치")),
+           "status": _one_line(md.get("진행상태"), 20), "cause": "", "cause_src": "", "direct": ""}
+    for label in _CAUSE_FIELDS:
+        val = _section(md, body, label)
+        if has_cause({"cause": val}):
+            out["cause"], out["cause_src"] = _one_line(val, 220), label
+            break
+    else:
+        out["cause"], out["cause_src"] = _one_line(_section(md, body, "장애원인"), 220), "장애원인"
+    if out["cause_src"] != "직접원인":
+        direct = _section(md, body, "직접원인")
+        if has_cause({"cause": direct}):
+            out["direct"] = _one_line(direct, 140)
     return out
 
 
@@ -111,6 +133,17 @@ def _cause_core(f: dict) -> str:
 
 def has_cause(f: dict) -> bool:
     return len(_cause_core(f)) >= 6
+
+
+_UNCONFIRMED = re.compile(r"원인\s*불명|원인\s*미상|확정\s*(이\s*)?어렵|(파악|확인|조사|분석)\s*중")
+
+
+def cause_confirmed(f: dict) -> bool:
+    """원인이 확정된 장애인가: 원인 분석 단계를 지났고(진행상태를 알 때), 원인 문구가 있고, 미확정 표현이 없다."""
+    st = (f.get("status") or "").strip()
+    if st and st not in _CAUSE_DONE_STATUS:
+        return False
+    return has_cause(f) and not _UNCONFIRMED.search(f.get("cause") or "")
 
 
 def _grams(text: str) -> set[str]:
@@ -242,7 +275,7 @@ def _mark_overlaps(session, proposals: list[Proposal]) -> None:
     for p in proposals:
         add(p.source_key, p.source_ref.get("context") or {})
     for d in session.scalars(select(Decision).where(Decision.status != "retired",
-                                                    Decision.source_key.like("gap2:%"))):
+                                                    Decision.source_key.like("gap3:%"))):
         add(d.source_key, (d.source_ref or {}).get("context") or {})
     for p in proposals:
         for it in (p.source_ref.get("context") or {}).get("items") or []:
@@ -255,7 +288,7 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                       max_incidents: int = 60, max_group_size: int = 8) -> list[Proposal]:
     """실패 버킷이 없는 도메인의 반복 장애를 기존 반복 장애 그룹(도메인 × 고객사) 단위로 제안한다.
 
-    - 원인이 "파악 중"뿐인 장애는 목록에서 뺀다(같은 원인인지 판단할 근거가 없다).
+    - 원인이 확정되지 않은 장애(원인 분석 단계 전, 원인 미기록·"파악 중"·원인불명)는 목록에서 뺀다.
     - 한 그룹이 max_group_size를 넘으면 원인 문구가 비슷한 장애끼리 다시 나눠, 묶음마다 질문 하나를 만든다.
       비슷한 원인이 min_count건 미만인 장애는 반복 패턴이 아니므로 제안하지 않는다.
     - 같은 장애가 다른 제안에도 있으면 항목에 also_in으로 표시한다.
@@ -290,7 +323,7 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 incidents.append({"id": eid, "title": title, "date": (smp.get("occurred_at") or "")[:10],
                                   "href": f"/doc.html?eid={doc.external_id}&st=incident_reports" if doc else None,
                                   "document_id": doc.id if doc else None, **_incident_fields(doc)})
-            kept = [i for i in incidents if has_cause(i)]
+            kept = [i for i in incidents if cause_confirmed(i)]
             no_cause = len(incidents) - len(kept)
             if len(kept) < min_count:
                 continue
@@ -315,11 +348,11 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 if suffix:
                     notes.append(f"그룹 전체 {len(incidents)}건 중 원인 문구가 비슷한 건만 모았습니다.")
                 if no_cause:
-                    notes.append(f"원인이 아직 기록되지 않은 {no_cause}건은 목록에서 뺐습니다.")
+                    notes.append(f"원인이 확정되지 않은 {no_cause}건(원인 분석 중·미기록)은 목록에서 뺐습니다.")
                 if g["count"] > len(incidents):
                     notes.append(f"(최대 {max_incidents}건만 표시)")
                 out.append(Proposal(
-                    detector="bucket_gap", source_key=f"gap2:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
+                    detector="bucket_gap", source_key=f"gap3:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
                     question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
                     options=[
                         {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},

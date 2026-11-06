@@ -505,7 +505,7 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
         props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
     assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
     p = props[0]
-    assert p.source_key == "gap2:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
+    assert p.source_key == "gap3:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
     ctx = p.source_ref["context"]
     assert ctx["kind"] == "incident_group" and len(ctx["items"]) == 5 and ctx["items"][0]["title"] == ttl
     assert p.evidence[0]["quote"] == ttl
@@ -549,7 +549,7 @@ def test_has_cause_ignores_boilerplate_and_cluster_groups_similar_causes():
     from app.decisions.scan import cluster_by_cause, has_cause
 
     assert not has_cause({"cause": "상세원인 파악 중"}) and not has_cause({"cause": ""}) and not has_cause({"cause": "확인중"})
-    assert has_cause({"cause": "상세원인 파악 중 DB 다운 이슈, Cluster fencing 으로 reboot"})
+    assert has_cause({"cause": "상세원인 파악 중 DB 다운 이슈, Cluster fencing 으로 reboot"})  # 내용은 있음(확정 여부는 cause_confirmed)
     mk = lambda c: {"cause": c}
     hba = [mk("HBA카드 하드웨어 오류로 서버 리부팅"), mk("HBA 카드 하드웨어 오류 서버 재부팅"), mk("HBA카드 하드웨어 오류로 DB 서버 리부팅")]
     es = [mk("ElasticSearch 스토리지 용량 부족"), mk("ElasticSearch 스토리지 용량 부족으로 색인 불가")]
@@ -564,7 +564,7 @@ def test_gap_drops_incidents_without_a_recorded_cause(client, scan_env, monkeypa
     assert len(props) == 1
     ctx = props[0].source_ref["context"]
     assert len(ctx["items"]) == 3 and props[0].source_ref["excluded_no_cause"] == 2
-    assert "3건" in props[0].question and "원인이 아직 기록되지 않은 2건" in ctx["note"]
+    assert "3건" in props[0].question and "원인이 확정되지 않은 2건" in ctx["note"]
     # 원인이 있는 장애가 min_count 미만이면 제안하지 않는다
     _gap_env(monkeypatch, {"a": "컨트롤러 펌웨어 오류로 볼륨 단절", "b": "상세원인 파악 중", "c": "파악 중", "d": ""})
     assert _detect(max_group_size=8) == []
@@ -595,7 +595,7 @@ def test_gap_marks_incidents_that_are_also_on_another_open_proposal(client, scan
         "question": first.question, "options": first.options, "created_by_kind": "server_job",
         "evidence": first.evidence}).json()["id"]
     with session_scope() as s:
-        s.get(Decision, did).source_key = "gap2:VMware:virtualization:고객A"
+        s.get(Decision, did).source_key = "gap3:VMware:virtualization:고객A"
         s.get(Decision, did).source_ref = {"type": "domain_gap", "context": {
             "heading": "VMware · 고객A · 최근 365일 장애 3건", "items": first.source_ref["context"]["items"]}}
     again = _detect(max_group_size=8)[0]
@@ -609,8 +609,36 @@ def test_incident_fields_come_from_metadata_or_body_section():
 
     meta = SimpleNamespace(metadata_={"장애원인": "  디스크  풀 "}, body_md="■ 장애상황: 서비스 지연\n■ 장애조치: 로그 삭제\n■ 조치이력요약: x")
     f = _incident_fields(meta)
-    assert f == {"situation": "서비스 지연", "cause": "디스크 풀", "action": "로그 삭제"}
-    assert _incident_fields(None) == {"situation": "", "cause": "", "action": ""}
+    assert (f["situation"], f["cause"], f["cause_src"], f["action"]) == ("서비스 지연", "디스크 풀", "장애원인", "로그 삭제")
+    assert _incident_fields(None)["cause"] == "" and _incident_fields(None)["cause_src"] == "장애원인"
+
+
+def test_incident_cause_prefers_confirmed_fields_over_the_initial_report_text():
+    from types import SimpleNamespace
+
+    from app.decisions.scan import _incident_fields, cause_confirmed
+
+    closed = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중", "근본원인": "[H/W오류] 컨트롤러 전원 모듈 결함",
+                                        "직접원인": "[Reboot] 스토리지 리부팅", "사유": "분류"}, body_md="")
+    f = _incident_fields(closed)
+    assert (f["cause"], f["cause_src"], f["direct"], f["status"]) == (
+        "[H/W오류] 컨트롤러 전원 모듈 결함", "근본원인", "[Reboot] 스토리지 리부팅", "종료확정")
+    assert cause_confirmed(f)
+    # 근본원인이 없으면 사유까지 내려가고, 전부 상용구뿐이면 최초 보고 문구를 그대로 둔다(→ 미확정)
+    only_reason = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중", "사유": "드라이버 버그로 커널 패닉"}, body_md="")
+    assert _incident_fields(only_reason)["cause_src"] == "사유"
+    none = _incident_fields(SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중"}, body_md=""))
+    assert none["cause_src"] == "장애원인" and not cause_confirmed(none)
+
+
+def test_cause_confirmed_needs_analysis_stage_and_no_pending_wording():
+    from app.decisions.scan import cause_confirmed
+
+    ok = {"cause": "NSX Edge LB lbconfig 메모리 leak 버그", "status": "종료확정"}
+    assert cause_confirmed(ok) and cause_confirmed({**ok, "status": ""})  # 진행상태를 모르면 원인 문구만 본다
+    assert not cause_confirmed({**ok, "status": "원인분석중"}) and not cause_confirmed({**ok, "status": "조치완료"})
+    assert not cause_confirmed({**ok, "cause": "[원인불명] Nginx Bug로 추정되나 Core Dump 부재로 원인 확정 어려움"})
+    assert not cause_confirmed({**ok, "cause": "Disk I/O 이슈 발생, 상세 원인 확인중"})
 
 
 def _group_decision(client, n=3):
