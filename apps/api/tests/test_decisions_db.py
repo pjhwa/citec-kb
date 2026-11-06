@@ -500,7 +500,7 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
         {"group": {"domain": "Storage", "customer": "(미상)"}, "count": 9, "samples": samples},
         {"group": {"domain": "Database", "customer": "고객B"}, "count": 8, "samples": samples}]})
     monkeypatch.setattr(scan, "_incident_fields",
-                        lambda doc: {"situation": "", "cause": "컨트롤러 펌웨어 오류로 볼륨 단절", "action": ""})
+                        lambda doc, pick=None: {"situation": "", "cause": "컨트롤러 펌웨어 오류로 볼륨 단절", "action": ""})
     with session_scope() as s:
         props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
     assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
@@ -511,7 +511,7 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
     assert p.evidence[0]["quote"] == ttl
 
 
-def _gap_env(monkeypatch, causes: dict[str, str], customer="고객A"):
+def _gap_env(monkeypatch, causes: dict[str, str], customer="고객A", title_customer=None):
     """원인 문구(causes: 제목 접미사→원인)대로 장애 문서를 만들고 공백 탐지기가 보는 통계를 흉내 낸다."""
     from app.citec_dashboard import service as dash
     from app.db.models import Document
@@ -524,15 +524,16 @@ def _gap_env(monkeypatch, causes: dict[str, str], customer="고객A"):
     for k, cause in causes.items():
         eid = f"INC-{uuid.uuid4().hex[:8]}"
         d = upsert_document_from_draft(DocumentDraft(
-            source_type="incident_reports", external_id=eid, title=f"[{customer}] 장애 {k} {eid}", body_md="x",
+            source_type="incident_reports", external_id=eid, title=f"[{title_customer(k) if title_customer else customer}] 장애 {k} {eid}", body_md="x",
             evidence_grade="A", source_uri=f"test://{eid}").finalize())
         by_ext[eid] = cause if isinstance(cause, tuple) else (cause, "")
-        samples.append({"external_id": eid, "title": f"[{customer}] 장애 {k} {eid}", "url": None, "occurred_at": "2026-09-01"})
+        samples.append({"external_id": eid, "title": f"[{title_customer(k) if title_customer else customer}] 장애 {k} {eid}",
+                        "url": None, "occurred_at": "2026-09-01"})
     monkeypatch.setattr(dash, "failure_bucket_coverage", lambda **kw: {"domains": [
         {"domain": "Storage", "fb_domain": "storage", "status": "gap", "recurring_incident_count": len(samples)}]})
     monkeypatch.setattr(dash, "query_recurring_patterns", lambda **kw: {"groups": [
         {"group": {"domain": "Storage", "customer": customer}, "count": len(samples), "samples": samples}]})
-    monkeypatch.setattr(scan, "_incident_fields", lambda doc: {"situation": "", "action": "", "status": "",
+    monkeypatch.setattr(scan, "_incident_fields", lambda doc, pick=None: {"situation": "", "action": "", "status": "",
                                                               "cause": by_ext.get(doc.external_id, ("", ""))[0] if doc else "",
                                                               "cause_class": by_ext.get(doc.external_id, ("", ""))[1] if doc else ""})
     return samples
@@ -735,3 +736,120 @@ def test_pick_incidents_rejects_empty_unknown_and_rolls_back_evidence(client):
     card = client.get(f"/v1/decisions/{did}").json()
     assert not [e for e in card["evidence_by_option"].get("consolidate", []) if not e.get("retracted_at")]
     assert card["status"] == "proposed"
+
+
+# ------------------------------------------------------------ 정책 · 원인 확정 · 고객 재분류
+
+def _swim_doc(eid: str, *, grade="4등급", cause="", detail="", status="종료확정", customer="고객A", day=None):
+    """SWIM 장애 문서(발생일은 오늘). 본문 머리줄·섹션이 파서와 같은 모양이라 근거 인용이 본문에 그대로 들어 있다."""
+    from datetime import date
+
+    from app.ingest.adapters import DocumentDraft
+    from app.ingest.pipeline import upsert_document_from_draft
+
+    day = day or date.today().isoformat()
+    head = f"발생일시(한국): {day} 09:00 | 고객사: {customer} | 진행상태: {status} | 예상등급_SDS: {grade}"
+    body = f"[{eid}] [{customer}] 시험 장애 {eid}\n{head}\n■ 장애상황: 서비스 지연\n"
+    md = {"발생일시(한국)": f"{day} 09:00", "고객사": customer, "진행상태": status, "예상등급_SDS": grade, "장애상황": "서비스 지연"}
+    if cause:
+        body += f"■ 장애원인: {cause}\n"
+        md["장애원인"] = cause
+    if detail:
+        body += f"■ 근본원인(상세): {detail}\n"
+        md["근본원인(상세)"] = detail
+    d = upsert_document_from_draft(DocumentDraft(
+        source_type="incident_reports", external_id=eid, title=f"[{customer}] 시험 장애 {eid}", body_md=body, metadata=md,
+        evidence_grade="A", source_uri=f"test://{eid}").finalize())
+    return d["document_id"]
+
+
+def _create(p, client):
+    from app.decisions import service as svc
+
+    return svc.create_decision(question=p.question, options=p.options, topic=p.topic, domain=p.domain, stakes=p.stakes,
+                               created_by_kind="server_job", created_by=f"decision-scan@{p.detector}", evidence=p.evidence,
+                               source_key=p.source_key, source_ref=p.source_ref)
+
+
+def test_policy_cards_ask_once_and_only_a_confirmed_exclude_changes_the_gap_detector(client, scan_env, monkeypatch):
+    from app.db.session import session_scope
+    from app.decisions import scan
+
+    suffix = uuid.uuid4().hex[:6]
+    for k in range(3):
+        _swim_doc(f"4{suffix}{k}", grade="FO등급", detail="대상: Infra / 직접원인분류: Reboot / 근본원인분류: 외부원인 > 외부이슈")
+    with session_scope() as s:
+        props = {p.source_key: p for p in scan.detect_policy(s, since_days=30)}
+    assert set(props) == {"policy:gap_exclude_fo", "policy:gap_exclude_external"}
+    fo = props["policy:gap_exclude_fo"]
+    assert [o["key"] for o in fo.options][:2] == ["exclude", "include"] and fo.evidence[0]["quote"] == "예상등급_SDS: FO등급"
+    assert "근본원인분류: 외부원인 > 외부이슈" == props["policy:gap_exclude_external"].evidence[0]["quote"]
+    d = _create(fo, client)  # 근거 인용이 본문에 실제로 있어야 만들어진다
+    assert scan.gap_policy() == set()  # 아직 확정 전 → 지금처럼 모두 포함
+    assert _verdict(client, d["id"], option_key="include").status_code == 200
+    assert scan.gap_policy() == set()  # '포함한다'로 확정해도 바뀌지 않는다
+    assert _verdict(client, d["id"], option_key="exclude").status_code == 200
+    assert scan.gap_policy() == {"fo"}
+
+
+def test_gap_detector_drops_fo_incidents_after_the_policy_is_confirmed(client, scan_env, monkeypatch):
+    from app.decisions import scan
+
+    causes = {f"f{i}": ("컨트롤러 펌웨어 오류", "SW 오류 > Known Bug") for i in range(3)}
+    causes.update({f"n{i}": ("컨트롤러 펌웨어 오류", "SW 오류 > Known Bug") for i in range(3)})
+    _gap_env(monkeypatch, causes)
+    monkeypatch.setattr(scan, "gap_policy", lambda: set())  # 다른 시험이 확정한 정책과 무관하게
+    base = scan._incident_fields
+    patched = lambda doc, pick=None: {**base(doc, pick), "grade": "FO등급" if doc and "장애 f" in doc.title else "4등급"}  # noqa: E731
+    monkeypatch.setattr(scan, "_incident_fields", patched)
+    assert sorted(len(p.source_ref["context"]["items"]) for p in _detect(max_group_size=20)) == [6]
+    monkeypatch.setattr(scan, "gap_policy", lambda: {"fo"})
+    props = _detect(max_group_size=20)
+    assert [len(p.source_ref["context"]["items"]) for p in props] == [3]
+    assert all("장애 n" in i["title"] for i in props[0].source_ref["context"]["items"])
+    assert "정책에 따라 3건" in props[0].source_ref["context"]["note"]
+
+
+def test_gap_regroups_the_catch_all_customer_by_the_bracket_in_the_title(client, scan_env, monkeypatch):
+    causes = {f"a{i}": ("데이터센터 전원 공급 장애로 서버 정전", "외부원인 > 외부이슈") for i in range(3)}
+    causes.update({f"b{i}": ("데이터센터 전원 공급 장애로 서버 정전", "외부원인 > 외부이슈") for i in range(3)})
+    _gap_env(monkeypatch, causes, customer="대외고객사",
+             title_customer=lambda k: "대외고객사 기관A" if k.startswith("a") else "기관B")
+    props = _detect(max_group_size=20)
+    assert sorted(p.source_ref["customer"] for p in props) == ["기관A", "기관B"]
+    assert all(len(p.source_ref["context"]["items"]) == 3 for p in props)
+    assert all("제목의 [고객]으로 나눴습니다" in p.source_ref["context"]["note"] for p in props)
+
+
+def test_cause_conflict_asks_only_when_the_two_accounts_share_no_words_and_the_pick_is_used(client, scan_env, monkeypatch):
+    from app.db.session import session_scope
+    from app.decisions import scan
+
+    suffix = uuid.uuid4().hex[:6]
+    det = "대상: Infra > Storage / 직접원인분류: 장비다운 / 근본원인분류: HW 오류\n확정 근본원인: 스토리지 컨트롤러 전원 모듈 결함"
+    diff = f"5{suffix}1"
+    _swim_doc(diff, cause="네트워크 스위치 포트 불량으로 통신 단절", detail=det)
+    _swim_doc(f"5{suffix}2", cause="스토리지 컨트롤러 전원 모듈 결함으로 리부팅", detail=det)  # 같은 말을 다르게 씀 → 묻지 않음
+    _swim_doc(f"5{suffix}3", cause="상세원인 파악 중", detail=det)  # 최초 보고가 미확정 → 충돌 아님
+    _swim_doc(f"5{suffix}4", cause="네트워크 스위치 포트 불량으로 통신 단절", detail=det, status="조치중")  # 아직 안 닫힘
+    with session_scope() as s:
+        props = [p for p in scan.detect_cause_conflict(s, since_days=30, limit=10) if p.source_key == f"cause:{diff}"]
+        others = [p for p in scan.detect_cause_conflict(s, since_days=30, limit=10) if p.source_key != f"cause:{diff}"
+                  and p.source_key.startswith(f"cause:5{suffix}")]
+    assert len(props) == 1 and others == []
+    p = props[0]
+    assert [o["key"] for o in p.options][:3] == ["initial", "final", "both"]
+    d = _create(p, client)  # 두 인용이 모두 본문에 있어야 만들어진다
+    assert _verdict(client, d["id"], option_key="final").status_code == 200
+
+    from types import SimpleNamespace
+
+    doc = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "네트워크 스위치 포트 불량으로 통신 단절",
+                                     "근본원인(상세)": det}, body_md="")
+    assert scan._incident_fields(doc)["cause_src"] == "확정 근본원인"  # 확정 문장이 있으면 기본으로 그것을 보인다
+    i = scan._incident_fields(doc, "initial")  # 사람이 최초 보고가 맞다고 확정하면 그쪽을 쓴다
+    assert (i["cause"], i["cause_src"]) == ("네트워크 스위치 포트 불량으로 통신 단절", "사람 확정(최초 보고)") and scan.cause_confirmed(i)
+    f = scan._incident_fields(doc, "final")
+    assert (f["cause"], f["cause_src"]) == ("스토리지 컨트롤러 전원 모듈 결함", "사람 확정(확정 근본원인)") and scan.cause_confirmed(f)
+    b = scan._incident_fields(doc, "both")
+    assert b["cause_src"] == "사람 확정(둘 다 맞음)" and b["report"].startswith("네트워크 스위치")

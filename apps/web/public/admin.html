@@ -544,9 +544,11 @@
       <label class="field">LLM 동시 호출 수<input type="number" id="scLlmWorkers" min="1" max="8"/><small>기본 4</small></label>
     </div>
     <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0">
+      <label class="toggle"><input type="checkbox" class="scDet" value="policy"/> 분석 범위 정책</label>
       <label class="toggle"><input type="checkbox" class="scDet" value="fb_confirm"/> 실패 버킷 확정</label>
       <label class="toggle"><input type="checkbox" class="scDet" value="deadline"/> 제목 기한</label>
       <label class="toggle"><input type="checkbox" class="scDet" value="bucket_gap"/> 버킷 공백</label>
+      <label class="toggle"><input type="checkbox" class="scDet" value="cause_conflict"/> 장애 원인 확정</label>
       <label class="toggle"><input type="checkbox" id="scLlm"/> LLM 문구 다듬기 (LLM 호출 비용 발생)</label>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">

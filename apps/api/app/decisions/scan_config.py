@@ -16,10 +16,10 @@ from typing import Any
 from app.settings import get_settings
 
 FILENAME = "decision_scan.json"
-DETECTORS = ("fb_confirm", "deadline", "bucket_gap")
+DETECTORS = ("policy", "fb_confirm", "deadline", "bucket_gap", "cause_conflict")
 _INT_RANGES = {"max_new_per_run": (0, 200), "max_open_server_proposals": (0, 500), "gap_since_days": (1, 3650),
                "gap_min_count": (1, 1000), "deadline_soon_days": (0, 3650), "llm_max_per_run": (0, 100), "llm_workers": (1, 8),
-               "gap_max_groups_per_domain": (1, 20), "gap_max_incidents": (5, 200), "gap_max_group_size": (3, 50)}
+               "gap_max_groups_per_domain": (1, 20), "gap_max_incidents": (5, 200), "gap_max_group_size": (3, 50), "cause_conflict_max": (1, 50)}
 
 
 class ScanConfigError(ValueError):
