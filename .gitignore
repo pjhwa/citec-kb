@@ -43,6 +43,7 @@ data/backup_requests/
 data/synonym_runs/
 data/auth_tokens.json*
 data/system_registrants.json*
+data/decision_scan.json*
 
 
 # load/sla reports (keep latest optionally)
