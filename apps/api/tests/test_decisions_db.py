@@ -618,17 +618,28 @@ def test_incident_cause_prefers_confirmed_fields_over_the_initial_report_text():
 
     from app.decisions.scan import _incident_fields, cause_confirmed
 
-    closed = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중", "근본원인": "[H/W오류] 컨트롤러 전원 모듈 결함",
-                                        "직접원인": "[Reboot] 스토리지 리부팅", "사유": "분류"}, body_md="")
+    detail = ("대상: Infra > Storage > Storage (HPE 3PAR) / 직접원인분류: Reboot / 근본원인분류: HW 오류 > 장비Fault\n"
+              "확정 근본원인: [Reboot] 스토리지 전원 모듈 결함으로 리부팅")
+    closed = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "물류 스토리지 리부팅, 상세원인 파악 중", "근본원인(상세)": detail}, body_md="")
     f = _incident_fields(closed)
-    assert (f["cause"], f["cause_src"], f["direct"], f["status"]) == (
-        "[H/W오류] 컨트롤러 전원 모듈 결함", "근본원인", "[Reboot] 스토리지 리부팅", "종료확정")
+    assert (f["cause"], f["cause_src"], f["status"]) == ("[Reboot] 스토리지 전원 모듈 결함으로 리부팅", "확정 근본원인", "종료확정")
+    assert "직접원인분류: Reboot" in f["direct"] and "근본원인분류: HW 오류" in f["direct"] and "대상: Infra > Storage" in f["direct"]
     assert cause_confirmed(f)
-    # 근본원인이 없으면 사유까지 내려가고, 전부 상용구뿐이면 최초 보고 문구를 그대로 둔다(→ 미확정)
-    only_reason = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중", "사유": "드라이버 버그로 커널 패닉"}, body_md="")
-    assert _incident_fields(only_reason)["cause_src"] == "사유"
+    # 확정 문장이 없고 분류만 있으면, 최초 보고가 '파악 중'일 때 근본원인분류를 원인으로 쓴다
+    cls = SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인 파악 중",
+                                     "근본원인(상세)": "대상: NW / 직접원인분류: Reboot / 근본원인분류: SW 오류 > Known Bug"}, body_md="")
+    g = _incident_fields(cls)
+    assert (g["cause"], g["cause_src"]) == ("SW 오류 > Known Bug", "근본원인분류") and cause_confirmed(g)
+    # 최초 보고 문구가 이미 구체적이면 그대로 쓴다
+    plain = _incident_fields(SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "OCI 인프라 문제로 재부팅"}, body_md=""))
+    assert plain["cause_src"] == "장애원인" and cause_confirmed(plain)
+    # 예전 형식(근본원인 칸), 본문에만 있는 경우
+    old = _incident_fields(SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중"}, body_md="■ 근본원인: 드라이버 버그로 커널 패닉"))
+    assert (old["cause"], old["cause_src"]) == ("드라이버 버그로 커널 패닉", "근본원인")
+    # 전부 상용구/추정 중이면 최초 보고 문구를 그대로 두고 미확정
     none = _incident_fields(SimpleNamespace(metadata_={"진행상태": "종료확정", "장애원인": "원인파악중"}, body_md=""))
     assert none["cause_src"] == "장애원인" and not cause_confirmed(none)
+    assert not cause_confirmed({"cause": "NT서버 메인보드 Fail로 추정중", "status": "종료확정"})
 
 
 def test_cause_confirmed_needs_analysis_stage_and_no_pending_wording():
