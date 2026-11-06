@@ -499,14 +499,107 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
         {"group": {"domain": "Storage", "customer": "고객A"}, "count": 5, "samples": samples},
         {"group": {"domain": "Storage", "customer": "(미상)"}, "count": 9, "samples": samples},
         {"group": {"domain": "Database", "customer": "고객B"}, "count": 8, "samples": samples}]})
+    monkeypatch.setattr(scan, "_incident_fields",
+                        lambda doc: {"situation": "", "cause": "컨트롤러 펌웨어 오류로 볼륨 단절", "action": ""})
     with session_scope() as s:
         props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
     assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
     p = props[0]
-    assert p.source_key == "gap:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
+    assert p.source_key == "gap2:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
     ctx = p.source_ref["context"]
     assert ctx["kind"] == "incident_group" and len(ctx["items"]) == 5 and ctx["items"][0]["title"] == ttl
     assert p.evidence[0]["quote"] == ttl
+
+
+def _gap_env(monkeypatch, causes: dict[str, str], customer="고객A"):
+    """원인 문구(causes: 제목 접미사→원인)대로 장애 문서를 만들고 공백 탐지기가 보는 통계를 흉내 낸다."""
+    from app.citec_dashboard import service as dash
+    from app.db.models import Document
+    from app.db.session import session_scope
+    from app.decisions import scan
+    from app.ingest.adapters import DocumentDraft
+    from app.ingest.pipeline import upsert_document_from_draft
+
+    samples, by_ext = [], {}
+    for k, cause in causes.items():
+        eid = f"INC-{uuid.uuid4().hex[:8]}"
+        d = upsert_document_from_draft(DocumentDraft(
+            source_type="incident_reports", external_id=eid, title=f"[{customer}] 장애 {k} {eid}", body_md="x",
+            evidence_grade="A", source_uri=f"test://{eid}").finalize())
+        by_ext[eid] = cause
+        samples.append({"external_id": eid, "title": f"[{customer}] 장애 {k} {eid}", "url": None, "occurred_at": "2026-09-01"})
+    monkeypatch.setattr(dash, "failure_bucket_coverage", lambda **kw: {"domains": [
+        {"domain": "Storage", "fb_domain": "storage", "status": "gap", "recurring_incident_count": len(samples)}]})
+    monkeypatch.setattr(dash, "query_recurring_patterns", lambda **kw: {"groups": [
+        {"group": {"domain": "Storage", "customer": customer}, "count": len(samples), "samples": samples}]})
+    monkeypatch.setattr(scan, "_incident_fields", lambda doc: {"situation": "", "action": "",
+                                                              "cause": by_ext.get(doc.external_id, "") if doc else ""})
+    return samples
+
+
+def _detect(**kw):
+    from app.db.session import session_scope
+    from app.decisions import scan
+
+    with session_scope() as s:
+        return scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60, **kw)
+
+
+def test_has_cause_ignores_boilerplate_and_cluster_groups_similar_causes():
+    from app.decisions.scan import cluster_by_cause, has_cause
+
+    assert not has_cause({"cause": "상세원인 파악 중"}) and not has_cause({"cause": ""}) and not has_cause({"cause": "확인중"})
+    assert has_cause({"cause": "상세원인 파악 중 DB 다운 이슈, Cluster fencing 으로 reboot"})
+    mk = lambda c: {"cause": c}
+    hba = [mk("HBA카드 하드웨어 오류로 서버 리부팅"), mk("HBA 카드 하드웨어 오류 서버 재부팅"), mk("HBA카드 하드웨어 오류로 DB 서버 리부팅")]
+    es = [mk("ElasticSearch 스토리지 용량 부족"), mk("ElasticSearch 스토리지 용량 부족으로 색인 불가")]
+    out = cluster_by_cause(hba + es + [mk("고객 요청으로 파일스토리지 삭제")])
+    assert [len(c) for c in out] == [3, 2, 1]
+
+
+def test_gap_drops_incidents_without_a_recorded_cause(client, scan_env, monkeypatch):
+    _gap_env(monkeypatch, {"a": "컨트롤러 펌웨어 오류로 볼륨 단절", "b": "컨트롤러 펌웨어 오류로 볼륨 단절",
+                           "c": "컨트롤러 펌웨어 오류로 볼륨 단절", "d": "상세원인 파악 중", "e": ""})
+    props = _detect(max_group_size=8)
+    assert len(props) == 1
+    ctx = props[0].source_ref["context"]
+    assert len(ctx["items"]) == 3 and props[0].source_ref["excluded_no_cause"] == 2
+    assert "3건" in props[0].question and "원인이 아직 기록되지 않은 2건" in ctx["note"]
+    # 원인이 있는 장애가 min_count 미만이면 제안하지 않는다
+    _gap_env(monkeypatch, {"a": "컨트롤러 펌웨어 오류로 볼륨 단절", "b": "상세원인 파악 중", "c": "파악 중", "d": ""})
+    assert _detect(max_group_size=8) == []
+
+
+def test_gap_splits_a_large_group_by_cause_and_skips_one_off_incidents(client, scan_env, monkeypatch):
+    causes = {f"h{i}": f"HBA카드 하드웨어 오류로 서버 리부팅 {i}" for i in range(3)}
+    causes.update({f"e{i}": f"ElasticSearch 스토리지 용량 부족 {i}" for i in range(3)})
+    causes.update({"x1": "고객 요청으로 파일스토리지 삭제", "x2": "오브젝트 스토리지 QoS 문제"})
+    _gap_env(monkeypatch, causes)
+    props = _detect(max_group_size=5)  # 8건 > 5 → 원인별로 나눔
+    assert [p.source_key.rsplit("#", 1)[-1] for p in props] == ["1", "2"]
+    assert all(len(p.source_ref["context"]["items"]) == 3 for p in props)
+    assert all("원인이 비슷한 묶음" in p.source_ref["context"]["heading"] for p in props)
+    titles = {i["title"] for p in props for i in p.source_ref["context"]["items"]}
+    assert not any("x1" in t or "x2" in t for t in titles)  # 한 건짜리 원인은 반복 패턴이 아니다
+    assert len(_detect(max_group_size=8)) == 1  # 상한 이하면 나누지 않는다
+
+
+def test_gap_marks_incidents_that_are_also_on_another_open_proposal(client, scan_env, monkeypatch):
+    from app.db.models import Decision
+    from app.db.session import session_scope
+
+    _gap_env(monkeypatch, {k: "컨트롤러 펌웨어 오류로 볼륨 단절" for k in "abc"})
+    first = _detect(max_group_size=8)[0]
+    assert not any("also_in" in i for i in first.source_ref["context"]["items"])
+    did = client.post("/v1/decisions", json={
+        "question": first.question, "options": first.options, "created_by_kind": "server_job",
+        "evidence": first.evidence}).json()["id"]
+    with session_scope() as s:
+        s.get(Decision, did).source_key = "gap2:VMware:virtualization:고객A"
+        s.get(Decision, did).source_ref = {"type": "domain_gap", "context": {
+            "heading": "VMware · 고객A · 최근 365일 장애 3건", "items": first.source_ref["context"]["items"]}}
+    again = _detect(max_group_size=8)[0]
+    assert all(i["also_in"] == ["VMware · 고객A · 최근 365일 장애 3건"] for i in again.source_ref["context"]["items"])
 
 
 def test_incident_fields_come_from_metadata_or_body_section():

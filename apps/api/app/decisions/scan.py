@@ -39,7 +39,7 @@ FB_CONFIRMED_CONFIDENCE = 0.7
 SCAN_ACTOR = "decision-scan"
 DEFAULTS = {"max_new_per_run": 20, "max_open_server_proposals": 60, "detectors": ["fb_confirm", "deadline", "bucket_gap"],
             "gap_since_days": 365, "gap_min_count": 3, "deadline_soon_days": 60,
-            "gap_max_groups_per_domain": 5, "gap_max_incidents": 60,
+            "gap_max_groups_per_domain": 5, "gap_max_incidents": 60, "gap_max_group_size": 8,
             "llm_refine": False, "llm_max_per_run": 20, "llm_workers": 4}
 
 _DEADLINE_RE = re.compile(
@@ -97,6 +97,46 @@ def _incident_fields(doc) -> dict:
             val = m.group(1) if m else ""
         out[key] = _one_line(val)
     return out
+
+
+# 원인 칸이 "상세원인 파악 중"뿐인 장애는 같은 원인인지 판단할 근거가 없다.
+_CAUSE_BOILER = re.compile(r"상세\s*원인|원인\s*(을\s*)?(파악|확인)\s*중|(파악|확인|조사|분석)\s*중|미상|불명")
+_NONWORD = re.compile(r"[\W_]+")
+
+
+def _cause_core(f: dict) -> str:
+    """원인 문구에서 '파악 중' 같은 상용구와 기호를 뺀 핵심 글자만."""
+    return _NONWORD.sub("", _CAUSE_BOILER.sub("", f.get("cause") or ""))
+
+
+def has_cause(f: dict) -> bool:
+    return len(_cause_core(f)) >= 6
+
+
+def _grams(text: str) -> set[str]:
+    return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+def cluster_by_cause(items: list[dict], *, threshold: float = 0.25) -> list[list[dict]]:
+    """원인 문구가 비슷한(글자 2-gram Jaccard ≥ threshold, 기본 0.25) 장애끼리 묶는다(연결 요소). 큰 순서로 반환."""
+    g = [_grams(_cause_core(i)) for i in items]
+    parent = list(range(len(items)))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a in range(len(items)):
+        for b in range(a + 1, len(items)):
+            u = len(g[a] | g[b])
+            if u and len(g[a] & g[b]) / u >= threshold:
+                parent[find(a)] = find(b)
+    groups: dict[int, list[dict]] = {}
+    for idx, it in enumerate(items):
+        groups.setdefault(find(idx), []).append(it)
+    return sorted(groups.values(), key=len, reverse=True)
 
 
 def _fmt_list(v) -> str:
@@ -190,11 +230,35 @@ def detect_deadline(session, *, today: Optional[date] = None, soon_days: int = 6
     return out
 
 
+def _mark_overlaps(session, proposals: list[Proposal]) -> None:
+    """같은 장애가 다른 공백 제안(이번 실행분 + 이미 열린 것)에도 걸려 있으면 항목에 also_in으로 표시한다."""
+    seen: dict[str, list[tuple[str, str]]] = {}
+
+    def add(key: str, ctx: dict) -> None:
+        for it in ctx.get("items") or []:
+            if it.get("document_id"):
+                seen.setdefault(it["document_id"], []).append((key, ctx.get("heading") or key))
+
+    for p in proposals:
+        add(p.source_key, p.source_ref.get("context") or {})
+    for d in session.scalars(select(Decision).where(Decision.status != "retired",
+                                                    Decision.source_key.like("gap2:%"))):
+        add(d.source_key, (d.source_ref or {}).get("context") or {})
+    for p in proposals:
+        for it in (p.source_ref.get("context") or {}).get("items") or []:
+            others = sorted({h for k, h in seen.get(it.get("document_id"), []) if k != p.source_key})
+            if others:
+                it["also_in"] = others[:3]
+
+
 def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max_groups: int = 5,
-                      max_incidents: int = 60) -> list[Proposal]:
+                      max_incidents: int = 60, max_group_size: int = 8) -> list[Proposal]:
     """실패 버킷이 없는 도메인의 반복 장애를 기존 반복 장애 그룹(도메인 × 고객사) 단위로 제안한다.
 
-    그룹마다 질문 하나, 그 그룹의 장애 목록 전체(최대 max_incidents)를 판정 맥락으로 싣는다.
+    - 원인이 "파악 중"뿐인 장애는 목록에서 뺀다(같은 원인인지 판단할 근거가 없다).
+    - 한 그룹이 max_group_size를 넘으면 원인 문구가 비슷한 장애끼리 다시 나눠, 묶음마다 질문 하나를 만든다.
+      비슷한 원인이 min_count건 미만인 장애는 반복 패턴이 아니므로 제안하지 않는다.
+    - 같은 장애가 다른 제안에도 있으면 항목에 also_in으로 표시한다.
     """
     from app.citec_dashboard.service import failure_bucket_coverage, query_recurring_patterns
 
@@ -218,7 +282,7 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
             docs = {d.external_id: d for d in session.scalars(select(Document).where(
                 Document.source_type == "incident_reports",
                 Document.external_id.in_(eids + [f"swim_{e}" for e in eids])))}
-            incidents, evidence = [], []
+            incidents = []
             for smp in g["samples"]:
                 eid = str(smp.get("external_id") or "")
                 doc = docs.get(eid) or docs.get(f"swim_{eid}")
@@ -226,30 +290,49 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 incidents.append({"id": eid, "title": title, "date": (smp.get("occurred_at") or "")[:10],
                                   "href": f"/doc.html?eid={doc.external_id}&st=incident_reports" if doc else None,
                                   "document_id": doc.id if doc else None, **_incident_fields(doc)})
-                if doc and title and len(evidence) < 3:
-                    evidence.append({"quote": title, "stance": "context", "document_id": doc.id})
-            if not evidence:
+            kept = [i for i in incidents if has_cause(i)]
+            no_cause = len(incidents) - len(kept)
+            if len(kept) < min_count:
                 continue
-            n = g["count"]
-            made += 1
-            out.append(Proposal(
-                detector="bucket_gap", source_key=f"gap:{row['domain']}:{row['fb_domain']}:{customer}",
-                question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
-                options=[
-                    {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
-                    {"key": "individual", "label": "개별 사건", "summary": "같은 원인으로 묶을 장애가 없음"},
-                ],
-                evidence=evidence, stakes="mid", topic="failure_bucket 공백", domain=None,
-                source_ref={"type": "domain_gap", "domain": row["domain"], "fb_domain": row["fb_domain"],
-                            "customer": customer, "recurring_incident_count": n,
-                            "context": {
-                                "kind": "incident_group",
-                                "heading": f"{row['domain']} · {customer} · 최근 {since_days}일 장애 {n}건",
-                                "selectable": True,
-                                "note": "묶음 기준은 도메인×고객사입니다. 같은 원인인 장애를 체크하세요. 체크한 건이 있으면 그 건들을 근거로 '정리 필요'로 확정됩니다(없으면 '개별 사건')."
-                                        + (f" (최대 {max_incidents}건만 표시)" if n > len(incidents) else ""),
-                                "items": incidents}},
-            ))
+            if len(kept) > max_group_size:
+                parts = [(f"#{k}", c) for k, c in enumerate(
+                    (c for c in cluster_by_cause(kept) if len(c) >= min_count), 1)]
+            else:
+                parts = [("", kept)]
+            for suffix, members in parts:
+                if made >= max_groups:
+                    break
+                evidence = [{"quote": i["title"], "stance": "context", "document_id": i["document_id"]}
+                            for i in members if i["document_id"] and i["title"]][:3]
+                if not evidence:
+                    continue
+                n = len(members)
+                made += 1
+                head = f"{row['domain']} · {customer} · 최근 {since_days}일 장애 {n}건"
+                if suffix:
+                    head += f" (원인이 비슷한 묶음 {suffix[1:]})"
+                notes = ["묶음 기준은 도메인×고객사입니다. 같은 원인인 장애를 체크하세요. 체크한 건이 있으면 그 건들을 근거로 '정리 필요'로 확정됩니다(없으면 '개별 사건')."]
+                if suffix:
+                    notes.append(f"그룹 전체 {len(incidents)}건 중 원인 문구가 비슷한 건만 모았습니다.")
+                if no_cause:
+                    notes.append(f"원인이 아직 기록되지 않은 {no_cause}건은 목록에서 뺐습니다.")
+                if g["count"] > len(incidents):
+                    notes.append(f"(최대 {max_incidents}건만 표시)")
+                out.append(Proposal(
+                    detector="bucket_gap", source_key=f"gap2:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
+                    question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
+                    options=[
+                        {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
+                        {"key": "individual", "label": "개별 사건", "summary": "같은 원인으로 묶을 장애가 없음"},
+                    ],
+                    evidence=evidence, stakes="mid", topic="failure_bucket 공백", domain=None,
+                    source_ref={"type": "domain_gap", "domain": row["domain"], "fb_domain": row["fb_domain"],
+                                "customer": customer, "recurring_incident_count": n,
+                                "excluded_no_cause": no_cause,
+                                "context": {"kind": "incident_group", "heading": head, "selectable": True,
+                                            "note": " ".join(notes), "items": members}},
+                ))
+    _mark_overlaps(session, out)
     return out
 
 
@@ -279,7 +362,8 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
             ("bucket_gap", lambda: detect_bucket_gap(s, since_days=int(cfg["gap_since_days"]),
                                                     min_count=int(cfg["gap_min_count"]),
                                                     max_groups=int(cfg["gap_max_groups_per_domain"]),
-                                                    max_incidents=int(cfg["gap_max_incidents"]))),
+                                                    max_incidents=int(cfg["gap_max_incidents"]),
+                                                    max_group_size=int(cfg["gap_max_group_size"]))),
         ):
             if name not in det:
                 continue
