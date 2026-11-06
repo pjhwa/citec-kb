@@ -1411,7 +1411,8 @@ function scCtx(c) {
   if (!c) return "";
   const fields = (c.fields || []).map((f) => '<div><span class="meta">' + esc(f.label) + '</span> <span style="white-space:pre-wrap">' + esc(f.value) + '</span></div>').join("");
   const items = (c.items || []).map((i) => '<li>' + (i.href ? '<a href="' + esc(i.href) + '" target="_blank" rel="noopener">' + esc(i.id) + '</a>' : esc(i.id)) +
-    ' <span class="meta">' + esc(i.date || "") + '</span> ' + esc(i.title) + '</li>').join("");
+    ' <span class="meta">' + esc(i.date || "") + '</span> ' + esc(i.title) +
+    [["상황", i.situation], ["원인", i.cause], ["조치", i.action]].filter((x) => x[1]).map((x) => '<div class="meta" style="margin-left:4px"><b>' + x[0] + '</b> ' + esc(x[1]) + '</div>').join("") + '</li>').join("");
   return '<details style="margin-top:6px"><summary class="meta">판정 맥락 보기 — ' + esc(c.heading || "") + '</summary>' +
     (c.note ? '<div class="meta">' + esc(c.note) + '</div>' : "") + fields + (items ? '<ul style="margin:4px 0 0 18px;padding:0">' + items + '</ul>' : "") + '</details>';
 }

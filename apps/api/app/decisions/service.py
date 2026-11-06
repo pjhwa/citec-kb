@@ -410,6 +410,53 @@ def add_verdict(
     return result
 
 
+def pick_incidents(
+    decision_id: str, *, document_ids: list[str], decided_by: str, auth_via: str, nonce: str,
+    rationale: Optional[str] = None, time_to_decide_ms: Optional[int] = None,
+) -> dict[str, Any]:
+    """공백 제안(incident_group)에서 사람이 '같은 원인'으로 고른 장애를 지지 근거로 기록하고 '정리 필요'로 확정한다.
+
+    선택한 장애는 제안에 실린 목록 안에 있어야 하며(임의 문서 불가), 각 장애의 제목을 근거 인용으로 쓴다.
+    확정이 실패하면 방금 추가한 근거를 철회해 반쯤 기록된 상태를 남기지 않는다.
+    """
+    wanted = list(dict.fromkeys(document_ids or []))
+    if not wanted:
+        raise ValueError("document_ids is required: pick at least one incident (otherwise choose '개별 사건')")
+    with session_scope() as s:
+        dec = s.get(Decision, decision_id)
+        if not dec:
+            raise DecisionNotFound(decision_id)
+        ctx = (dec.source_ref or {}).get("context") or {}
+        if ctx.get("kind") != "incident_group":
+            raise ValueError("this decision has no incident list to pick from")
+        items = {i.get("document_id"): i for i in ctx.get("items", []) if i.get("document_id")}
+        unknown = [d for d in wanted if d not in items]
+        if unknown:
+            raise ValueError(f"not in this decision's incident list: {unknown[:3]}")
+        if "consolidate" not in {o["key"] for o in dec.options}:
+            raise ValueError("decision has no 'consolidate' option")
+    added: list[str] = []
+    try:
+        for did in wanted:
+            title = rules.norm_text(items[did].get("title"))
+            try:
+                ev = add_evidence(decision_id, quote=title, stance="supports", option_key="consolidate",
+                                  document_id=did, added_by=decided_by)
+                added.append(ev["id"])
+            except DecisionConflict as exc:
+                if "duplicate evidence" not in str(exc):
+                    raise
+        note = f"같은 원인으로 선택한 장애 {len(wanted)}건" + (f" — {rationale}" if rationale else "")
+        res = add_verdict(decision_id, option_key="consolidate", decided_by=decided_by, auth_via=auth_via,
+                          nonce=nonce, rationale=note, time_to_decide_ms=time_to_decide_ms)
+    except Exception:
+        for eid in added:
+            retract_evidence(decision_id, eid)
+        raise
+    res["picked"] = len(wanted)
+    return res
+
+
 def _repin(s, dec: Decision, evs: list[DecisionEvidence]) -> None:
     """유지: 바뀐 근거를 현재 버전으로 다시 고정한다(옛 행은 철회, 새 행 추가)."""
     for e in evs:

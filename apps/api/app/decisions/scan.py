@@ -77,6 +77,28 @@ def _line_with(prefix: str, body: str) -> Optional[str]:
     return None
 
 
+_INCIDENT_SECTIONS = (("situation", "장애상황"), ("cause", "장애원인"), ("action", "장애조치"))
+
+
+def _one_line(v, limit: int = 140) -> str:
+    t = " ".join(str(v or "").split())
+    return t if len(t) <= limit else t[: limit - 1] + "…"
+
+
+def _incident_fields(doc) -> dict:
+    """장애 문서의 상황·원인·조치를 한 줄씩 뽑는다(메타데이터 우선, 없으면 본문의 '■ 장애원인:' 줄)."""
+    md = (doc.metadata_ or {}) if doc is not None else {}
+    body = (doc.body_md or "") if doc is not None else ""
+    out = {}
+    for key, label in _INCIDENT_SECTIONS:
+        val = md.get(label)
+        if not val:
+            m = re.search(r"■\s*" + label + r"\s*[:：]\s*(.+?)(?=\n■|\Z)", body, re.S)
+            val = m.group(1) if m else ""
+        out[key] = _one_line(val)
+    return out
+
+
 def _fmt_list(v) -> str:
     return "\n".join(f"- {x}" for x in (v or [])) or "(없음)"
 
@@ -202,7 +224,8 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 doc = docs.get(eid) or docs.get(f"swim_{eid}")
                 title = (smp.get("title") or (doc.title if doc else "") or "").strip()
                 incidents.append({"id": eid, "title": title, "date": (smp.get("occurred_at") or "")[:10],
-                                  "href": f"/doc.html?eid={doc.external_id}&st=incident_reports" if doc else None})
+                                  "href": f"/doc.html?eid={doc.external_id}&st=incident_reports" if doc else None,
+                                  "document_id": doc.id if doc else None, **_incident_fields(doc)})
                 if doc and title and len(evidence) < 3:
                     evidence.append({"quote": title, "stance": "context", "document_id": doc.id})
             if not evidence:
@@ -211,10 +234,10 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
             made += 1
             out.append(Proposal(
                 detector="bucket_gap", source_key=f"gap:{row['domain']}:{row['fb_domain']}:{customer}",
-                question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 반복 장애 {n}건을 하나의 실패 버킷으로 정리해야 합니까?",
+                question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
                 options=[
-                    {"key": "consolidate", "label": "정리 필요", "summary": "이 장애들이 같은 패턴이라 failure bucket으로 등록"},
-                    {"key": "individual", "label": "개별 사건", "summary": "같은 패턴이 아니므로 묶지 않음"},
+                    {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
+                    {"key": "individual", "label": "개별 사건", "summary": "같은 원인으로 묶을 장애가 없음"},
                 ],
                 evidence=evidence, stakes="mid", topic="failure_bucket 공백", domain=None,
                 source_ref={"type": "domain_gap", "domain": row["domain"], "fb_domain": row["fb_domain"],
@@ -222,7 +245,8 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                             "context": {
                                 "kind": "incident_group",
                                 "heading": f"{row['domain']} · {customer} · 최근 {since_days}일 장애 {n}건",
-                                "note": "묶음 기준은 도메인×고객사입니다. 같은 원인인지는 아래 장애 제목·원문을 보고 판단하세요."
+                                "selectable": True,
+                                "note": "묶음 기준은 도메인×고객사입니다. 같은 원인인 장애를 체크하세요. 체크한 건이 있으면 그 건들을 근거로 '정리 필요'로 확정됩니다(없으면 '개별 사건')."
                                         + (f" (최대 {max_incidents}건만 표시)" if n > len(incidents) else ""),
                                 "items": incidents}},
             ))
