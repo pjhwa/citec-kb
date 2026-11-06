@@ -356,7 +356,18 @@ def test_failed_evidence_does_not_leave_orphan_proposal(client):
 
 # ---- periodic topic scan + failure bucket linkage ------------------------------------
 
-def _bucket(name="scan-test 링크 플래핑", conf_support=0):
+def _bucket(name="scan-test 링크 플래핑", conf_support=2):
+    from app.db.models import FailureBucket
+    from app.db.session import session_scope
+    from app.failure_buckets import service as fb
+
+    out = _bucket_raw(name)
+    with session_scope() as s:  # 지지 사례 수는 refine/등록 경로가 올리는 값 — 시험에서는 직접 지정
+        s.get(FailureBucket, out["id"]).support_count = conf_support
+    return out
+
+
+def _bucket_raw(name):
     from app.failure_buckets import service as fb
 
     return fb.create_bucket(
@@ -452,3 +463,47 @@ def test_scan_evidence_failure_does_not_leave_orphans_and_is_reported(client, sc
     r = _scan(client)
     assert "deadline:bad" in r["errors"]
     assert not [i for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == "deadline:bad"]
+
+
+def test_scan_skips_bucket_without_support_and_shows_bucket_context(client, scan_env):
+    none = _bucket("scan-test 지지 없음 링크", conf_support=0)
+    some = _bucket("scan-test 지지 있음 링크", conf_support=2)
+    keys = {w["source_key"]: w for w in _scan(client, dry_run="true")["would_create"]}
+    assert f"fb:{none['id']}" not in keys
+    ctx = keys[f"fb:{some['id']}"]["context"]
+    labels = {f["label"]: f["value"] for f in ctx["fields"]}
+    assert ctx["kind"] == "failure_bucket" and "ens1f1np1" in labels["판별 신호"] and "SFP" in labels["근본원인"]
+    assert "지지 2건" in labels["지지/반증 사례"]
+    _scan(client)
+    card = next(i for i in client.get("/v1/decisions").json()["items"] if i["source_key"] == f"fb:{some['id']}")
+    assert card["source_ref"]["context"]["kind"] == "failure_bucket"
+
+
+def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env, monkeypatch):
+    from app.citec_dashboard import service as dash
+    from app.decisions import scan
+
+    from app.db.models import Document
+    from app.db.session import session_scope
+
+    doc = _doc()
+    with session_scope() as s:
+        d = s.get(Document, doc["document_id"])
+        ext, ttl = d.external_id, d.title
+        d.source_type = "incident_reports"
+    monkeypatch.setattr(dash, "failure_bucket_coverage", lambda **kw: {"domains": [
+        {"domain": "Storage", "fb_domain": "storage", "status": "gap", "recurring_incident_count": 5}]})
+    samples = [{"external_id": ext, "title": ttl, "url": None, "occurred_at": "2026-10-01"}] + [
+        {"external_id": f"x{i}", "title": f"기타 사건 {i}", "url": None, "occurred_at": "2026-09-0%d" % (i + 1)} for i in range(4)]
+    monkeypatch.setattr(dash, "query_recurring_patterns", lambda **kw: {"groups": [
+        {"group": {"domain": "Storage", "customer": "고객A"}, "count": 5, "samples": samples},
+        {"group": {"domain": "Storage", "customer": "(미상)"}, "count": 9, "samples": samples},
+        {"group": {"domain": "Database", "customer": "고객B"}, "count": 8, "samples": samples}]})
+    with session_scope() as s:
+        props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
+    assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
+    p = props[0]
+    assert p.source_key == "gap:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
+    ctx = p.source_ref["context"]
+    assert ctx["kind"] == "incident_group" and len(ctx["items"]) == 5 and ctx["items"][0]["title"] == ttl
+    assert p.evidence[0]["quote"] == ttl
