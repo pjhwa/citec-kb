@@ -505,7 +505,7 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
         props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
     assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
     p = props[0]
-    assert p.source_key == "gap3:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
+    assert p.source_key == "gap4:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
     ctx = p.source_ref["context"]
     assert ctx["kind"] == "incident_group" and len(ctx["items"]) == 5 and ctx["items"][0]["title"] == ttl
     assert p.evidence[0]["quote"] == ttl
@@ -595,7 +595,7 @@ def test_gap_marks_incidents_that_are_also_on_another_open_proposal(client, scan
         "question": first.question, "options": first.options, "created_by_kind": "server_job",
         "evidence": first.evidence}).json()["id"]
     with session_scope() as s:
-        s.get(Decision, did).source_key = "gap3:VMware:virtualization:고객A"
+        s.get(Decision, did).source_key = "gap4:VMware:virtualization:고객A"
         s.get(Decision, did).source_ref = {"type": "domain_gap", "context": {
             "heading": "VMware · 고객A · 최근 365일 장애 3건", "items": first.source_ref["context"]["items"]}}
     again = _detect(max_group_size=8)[0]

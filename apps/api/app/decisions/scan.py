@@ -292,7 +292,7 @@ def _mark_overlaps(session, proposals: list[Proposal]) -> None:
     for p in proposals:
         add(p.source_key, p.source_ref.get("context") or {})
     for d in session.scalars(select(Decision).where(Decision.status != "retired",
-                                                    Decision.source_key.like("gap3:%"))):
+                                                    Decision.source_key.like("gap4:%"))):
         add(d.source_key, (d.source_ref or {}).get("context") or {})
     for p in proposals:
         for it in (p.source_ref.get("context") or {}).get("items") or []:
@@ -369,7 +369,7 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 if g["count"] > len(incidents):
                     notes.append(f"(최대 {max_incidents}건만 표시)")
                 out.append(Proposal(
-                    detector="bucket_gap", source_key=f"gap3:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
+                    detector="bucket_gap", source_key=f"gap4:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
                     question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
                     options=[
                         {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
