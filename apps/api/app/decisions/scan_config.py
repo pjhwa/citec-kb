@@ -18,7 +18,7 @@ from app.settings import get_settings
 FILENAME = "decision_scan.json"
 DETECTORS = ("fb_confirm", "deadline", "bucket_gap")
 _INT_RANGES = {"max_new_per_run": (0, 200), "max_open_server_proposals": (0, 500), "gap_since_days": (1, 3650),
-               "gap_min_count": (1, 1000), "deadline_soon_days": (0, 3650), "llm_max_per_run": (0, 100)}
+               "gap_min_count": (1, 1000), "deadline_soon_days": (0, 3650), "llm_max_per_run": (0, 100), "llm_workers": (1, 8)}
 
 
 class ScanConfigError(ValueError):

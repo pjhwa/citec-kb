@@ -39,7 +39,7 @@ FB_CONFIRMED_CONFIDENCE = 0.7
 SCAN_ACTOR = "decision-scan"
 DEFAULTS = {"max_new_per_run": 20, "max_open_server_proposals": 60, "detectors": ["fb_confirm", "deadline", "bucket_gap"],
             "gap_since_days": 365, "gap_min_count": 3, "deadline_soon_days": 60,
-            "llm_refine": False, "llm_max_per_run": 20}
+            "llm_refine": False, "llm_max_per_run": 20, "llm_workers": 4}
 
 _DEADLINE_RE = re.compile(
     r"((?:19|20)\d{2})[.\-/]\s?0?(\d{1,2})[.\-/]\s?0?(\d{1,2})\s*(?:일)?\s*(까지|이후|종료|제공|사용|지원|만료)")
@@ -227,8 +227,8 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
             from app.decisions import refine
 
             llm_run = refine.Run()
-            for p in todo[: int(cfg["llm_max_per_run"])]:
-                refined += int(refine.refine(p, run=llm_run))
+            refined = refine.refine_all(todo[: int(cfg["llm_max_per_run"])], run=llm_run,
+                                        workers=int(cfg["llm_workers"]))
         for p in todo:
             try:
                 d = svc.create_decision(
@@ -245,7 +245,8 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
         from app.decisions import refine
 
         llm_run = refine.Run()
-        previews = [refine.preview(p, run=llm_run) for p in todo[: int(cfg["llm_max_per_run"])]]
+        previews = refine.preview_all(todo[: int(cfg["llm_max_per_run"])], run=llm_run,
+                                      workers=int(cfg["llm_workers"]))
     by_det: dict[str, int] = {}
     for p in found:
         by_det[p.detector] = by_det.get(p.detector, 0) + 1

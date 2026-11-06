@@ -120,3 +120,29 @@ def test_401_flag_not_shared_between_runs():
     refine.refine(_p(), complete=boom, run=r1)
     r2 = refine.Run()
     assert refine.refine(_p(), complete=lambda *a, **k: json.dumps(_good(), ensure_ascii=False), run=r2) is True
+
+
+def test_parallel_preserves_order_and_adopts_all():
+    import threading
+    items = []
+    for i in range(6):
+        p = _p(); p.source_key = f"deadline:{i}"; items.append(p)
+    seen = set()
+
+    def ok(*a, **k):
+        seen.add(threading.get_ident())
+        return json.dumps(_good(), ensure_ascii=False)
+    out = refine.preview_all(items, run=refine.Run(), workers=4, complete=ok)
+    assert [o["source_key"] for o in out] == [p.source_key for p in items] and all(o["adopted"] for o in out)
+    assert refine.refine_all(items, run=refine.Run(), workers=4, complete=ok) == 6
+
+
+def test_parallel_401_flags_run_and_skips_later_calls():
+    items = [_p() for _ in range(12)]
+    run = refine.Run()
+
+    def always_401(*a, **k):
+        raise RuntimeError("Fabrix HTTP 401: Unauthorized")
+    out = refine.preview_all(items, run=run, workers=3, complete=always_401)
+    assert run.auth_failed and not any(o["adopted"] for o in out)
+    assert run.skipped >= 12 - 3 - 1  # at most the in-flight calls reach the server

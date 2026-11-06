@@ -540,6 +540,7 @@
       <label class="field">공백 최소 건수<input type="number" id="scGapMin" min="1" max="1000"/></label>
       <label class="field">기한 임박 기준(일)<input type="number" id="scSoon" min="0" max="3650"/></label>
       <label class="field">LLM 1회 최대 건수<input type="number" id="scLlmMax" min="0" max="100"/></label>
+      <label class="field">LLM 동시 호출 수<input type="number" id="scLlmWorkers" min="1" max="8"/><small>기본 4</small></label>
     </div>
     <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0">
       <label class="toggle"><input type="checkbox" class="scDet" value="fb_confirm"/> 실패 버킷 확정</label>
@@ -1371,7 +1372,7 @@ $("regCard").addEventListener("click", async (ev) => {
 const SCAN_API = "/v1/decisions/_scan-topics";
 const SCAN_CFG = "/v1/decisions/_scan-config";
 const SC_NUM = { max_new_per_run: "scMaxNew", max_open_server_proposals: "scMaxOpen", gap_since_days: "scGapDays",
-  gap_min_count: "scGapMin", deadline_soon_days: "scSoon", llm_max_per_run: "scLlmMax" };
+  gap_min_count: "scGapMin", deadline_soon_days: "scSoon", llm_max_per_run: "scLlmMax", llm_workers: "scLlmWorkers" };
 function scDenied(r) {
   if (r.status === 401 || r.status === 403) { $("scMsg").textContent = "권한 필요 (로그인 후 senior/admin 역할 필요)"; return true; }
   return false;

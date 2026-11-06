@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Optional
 
 from app.decisions import rules
@@ -92,6 +94,7 @@ class Run:
     def __init__(self) -> None:
         self.auth_failed = False
         self.skipped = 0
+        self.lock = threading.Lock()  # shared by the worker threads of one run
 
 
 AUTH_SKIP_REASON = "LLM 인증 실패(401)로 이 실행의 나머지 호출을 건너뜀"
@@ -103,7 +106,8 @@ def _is_401(exc: Exception) -> bool:
 
 def _ask(p, complete, run: Optional[Run] = None) -> tuple[Optional[tuple[str, list[dict]]], str]:
     if run is not None and run.auth_failed:
-        run.skipped += 1
+        with run.lock:
+            run.skipped += 1
         return None, AUTH_SKIP_REASON
     if complete is None:
         from app.llm_chat import chat_complete as complete
@@ -112,7 +116,8 @@ def _ask(p, complete, run: Optional[Run] = None) -> tuple[Optional[tuple[str, li
                        max_tokens=700, temperature=0.2, timeout=60.0)
     except Exception as exc:  # noqa: BLE001 — LLM 장애는 규칙 문구로 대체
         if run is not None and _is_401(exc):
-            run.auth_failed = True
+            with run.lock:
+                run.auth_failed = True
             logger.warning("decision refine: LLM 401, skipping the remaining calls of this run (%s)", exc)
         else:
             logger.warning("decision refine skipped (%s): %s", p.source_key, exc)
@@ -145,3 +150,20 @@ def preview(p, *, complete=None, run: Optional[Run] = None) -> dict[str, Any]:
     else:
         out["reason"] = reason
     return out
+
+
+def _map(fn, items: list, workers: int) -> list:
+    """Order-preserving map; calls overlap so a slow (reasoning) model does not serialise the run."""
+    if workers <= 1 or len(items) <= 1:
+        return [fn(i) for i in items]
+    with ThreadPoolExecutor(max_workers=min(workers, len(items))) as ex:
+        return list(ex.map(fn, items))
+
+
+def refine_all(items: list, *, run: Run, workers: int = 4, complete=None) -> int:
+    """refine() every proposal in parallel; returns how many were adopted."""
+    return sum(_map(lambda p: int(refine(p, complete=complete, run=run)), items, workers))
+
+
+def preview_all(items: list, *, run: Run, workers: int = 4, complete=None) -> list[dict[str, Any]]:
+    return _map(lambda p: preview(p, complete=complete, run=run), items, workers)
