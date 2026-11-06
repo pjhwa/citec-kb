@@ -505,7 +505,7 @@ def test_bucket_gap_proposes_per_group_with_full_incident_list(client, scan_env,
         props = scan.detect_bucket_gap(s, since_days=365, min_count=3, max_groups=5, max_incidents=60)
     assert len(props) == 1  # (미상) 묶음과 다른 도메인(태그 중복) 묶음은 제외
     p = props[0]
-    assert p.source_key == "gap4:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
+    assert p.source_key == "gap5:Storage:storage:고객A" and "고객A" in p.question and "5건" in p.question
     ctx = p.source_ref["context"]
     assert ctx["kind"] == "incident_group" and len(ctx["items"]) == 5 and ctx["items"][0]["title"] == ttl
     assert p.evidence[0]["quote"] == ttl
@@ -526,14 +526,15 @@ def _gap_env(monkeypatch, causes: dict[str, str], customer="고객A"):
         d = upsert_document_from_draft(DocumentDraft(
             source_type="incident_reports", external_id=eid, title=f"[{customer}] 장애 {k} {eid}", body_md="x",
             evidence_grade="A", source_uri=f"test://{eid}").finalize())
-        by_ext[eid] = cause
+        by_ext[eid] = cause if isinstance(cause, tuple) else (cause, "")
         samples.append({"external_id": eid, "title": f"[{customer}] 장애 {k} {eid}", "url": None, "occurred_at": "2026-09-01"})
     monkeypatch.setattr(dash, "failure_bucket_coverage", lambda **kw: {"domains": [
         {"domain": "Storage", "fb_domain": "storage", "status": "gap", "recurring_incident_count": len(samples)}]})
     monkeypatch.setattr(dash, "query_recurring_patterns", lambda **kw: {"groups": [
         {"group": {"domain": "Storage", "customer": customer}, "count": len(samples), "samples": samples}]})
-    monkeypatch.setattr(scan, "_incident_fields", lambda doc: {"situation": "", "action": "",
-                                                              "cause": by_ext.get(doc.external_id, "") if doc else ""})
+    monkeypatch.setattr(scan, "_incident_fields", lambda doc: {"situation": "", "action": "", "status": "",
+                                                              "cause": by_ext.get(doc.external_id, ("", ""))[0] if doc else "",
+                                                              "cause_class": by_ext.get(doc.external_id, ("", ""))[1] if doc else ""})
     return samples
 
 
@@ -576,12 +577,32 @@ def test_gap_splits_a_large_group_by_cause_and_skips_one_off_incidents(client, s
     causes.update({"x1": "고객 요청으로 파일스토리지 삭제", "x2": "오브젝트 스토리지 QoS 문제"})
     _gap_env(monkeypatch, causes)
     props = _detect(max_group_size=5)  # 8건 > 5 → 원인별로 나눔
-    assert [p.source_key.rsplit("#", 1)[-1] for p in props] == ["1", "2"]
+    assert [p.source_key.rsplit("#", 1)[-1] for p in props] == ["t1", "t2"]
     assert all(len(p.source_ref["context"]["items"]) == 3 for p in props)
-    assert all("원인이 비슷한 묶음" in p.source_ref["context"]["heading"] for p in props)
+    assert all("원인 문구가 비슷한 묶음" in p.source_ref["context"]["heading"] for p in props)
     titles = {i["title"] for p in props for i in p.source_ref["context"]["items"]}
     assert not any("x1" in t or "x2" in t for t in titles)  # 한 건짜리 원인은 반복 패턴이 아니다
     assert len(_detect(max_group_size=8)) == 1  # 상한 이하면 나누지 않는다
+
+
+def test_gap_groups_by_root_cause_class_and_drops_one_off_classes(client, scan_env, monkeypatch):
+    causes = {f"a{i}": ("컨트롤러 펌웨어 오류로 볼륨 단절", "SW 오류 > Known Bug") for i in range(3)}
+    causes.update({f"b{i}": ("메모리 DIMM 불량", "HW 오류 > 장비Fault > Memory") for i in range(4)})
+    causes.update({"c1": ("전원 모듈 결함", "HW 오류 > 장비Fault > PowerSupply"), "u1": ("원인 미분류 건", "")})
+    _gap_env(monkeypatch, causes)
+    props = _detect(max_group_size=8)
+    assert sorted(len(p.source_ref["context"]["items"]) for p in props) == [3, 4]  # 1건짜리 분류·미분류 1건은 제외
+    for p in props:
+        classes = {i["cause_class"] for i in p.source_ref["context"]["items"]}
+        assert len(classes) == 1 and f"근본원인분류 {classes.pop()}" in p.source_ref["context"]["heading"]
+    assert len({p.source_key for p in props}) == 2 and all("#c" in p.source_key for p in props)
+
+
+def test_cause_class_unknown_is_unconfirmed():
+    from app.decisions.scan import cause_confirmed
+
+    ok = {"cause": "OCI 인프라 문제로 재부팅", "status": "종료확정", "cause_class": "외부원인 > 외부이슈"}
+    assert cause_confirmed(ok) and not cause_confirmed({**ok, "cause_class": "원인불명 > 원인불명"})
 
 
 def test_gap_marks_incidents_that_are_also_on_another_open_proposal(client, scan_env, monkeypatch):
@@ -595,7 +616,7 @@ def test_gap_marks_incidents_that_are_also_on_another_open_proposal(client, scan
         "question": first.question, "options": first.options, "created_by_kind": "server_job",
         "evidence": first.evidence}).json()["id"]
     with session_scope() as s:
-        s.get(Decision, did).source_key = "gap4:VMware:virtualization:고객A"
+        s.get(Decision, did).source_key = "gap5:VMware:virtualization:고객A"
         s.get(Decision, did).source_ref = {"type": "domain_gap", "context": {
             "heading": "VMware · 고객A · 최근 365일 장애 3건", "items": first.source_ref["context"]["items"]}}
     again = _detect(max_group_size=8)[0]

@@ -4,8 +4,8 @@
 대상 (모두 created_by_kind=server_job, status=proposed, 판정 이력 없음):
   1. 도메인 전체 단위 공백 제안     source_key = gap:<도메인>:<fb도메인>          (새 형식은 …:<고객사>가 붙음)
   2. 지지 사례 0건 버킷 확정 제안   source_key = fb:<버킷 id> 이고 버킷 support_count = 0 (또는 버킷이 없음)
-  3. 예전 방식 공백 제안            source_key = gap:…·gap2:…·gap3:…<도메인>:<fb도메인>:<고객사>  (원인 미확정 장애가 섞이고
-                                    초기 보고 문구를 원인으로 보여 줌. 새 스캔은 gap4:… 키로 다시 제안)
+  3. 예전 방식 공백 제안            source_key = gap:…·gap2:…·gap3:…·gap4:…<도메인>:<fb도메인>:<고객사>  (원인 미확정 장애가 섞이고
+                                    초기 보고 문구를 원인으로 보여 줌. 새 스캔은 gap5:… 키로 다시 제안)
 
 확정(confirmed)된 결정, 사람이 만든 결정, 판정이 있는 결정은 건드리지 않는다. 보류는 복구할 수 있다
 (카드의 '복구' 또는 POST /v1/decisions/{id}/restore). 보류 후 다음 스캔이 새 형식으로 다시 올린다.
@@ -47,8 +47,8 @@ def classify(item: dict, bucket_support) -> str | None:
     key = item.get("source_key") or ""
     if key.startswith("gap:") and len(key.split(":")) == 3:
         return "도메인 전체 단위 공백 제안(예전 형식)"
-    if key.startswith(("gap:", "gap2:", "gap3:")) and len(key.split(":")) == 4:
-        return "예전 방식 공백 제안(초기 보고 원인·원인 미확정 장애 포함 — 스캔이 gap4: 키로 다시 제안)"
+    if key.startswith(("gap:", "gap2:", "gap3:", "gap4:")) and len(key.split(":")) == 4:
+        return "예전 방식 공백 제안(초기 보고 원인·원인 미확정 장애 포함 — 스캔이 gap5: 키로 다시 제안)"
     if key.startswith("fb:"):
         if bucket_support is None:
             return "버킷을 찾을 수 없음"

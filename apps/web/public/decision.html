@@ -60,7 +60,7 @@ function srcLink(r) {
 
 function incLines(i) {
   const l = [["상황", i.situation], [i.cause_src && i.cause_src !== "장애원인" ? `원인(${i.cause_src})` : "원인", i.cause],
-    ["직접원인", i.direct], ["조치", i.action]].filter(x => x[1]);
+    ["분류·대상", i.direct], ["최초 보고 원인", i.report], ["조치", i.action]].filter(x => x[1]);
   return l.length ? `<div class="meta" style="margin-left:22px">${l.map(x => `<b>${x[0]}</b> ${esc(x[1])}`).join("<br>")}</div>` : "";
 }
 function ctxHtml(c) {

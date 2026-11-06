@@ -121,13 +121,16 @@ def _incident_fields(doc) -> dict:
              ("장애원인", initial), ("근본원인분류", parts["근본원인분류"]), ("사유", _section(md, body, "사유"))]
     out = {"situation": _one_line(_section(md, body, "장애상황")),
            "action": _one_line(_section(md, body, "장애조치")),
-           "status": _one_line(md.get("진행상태"), 20), "cause": "", "cause_src": "", "direct": ""}
+           "status": _one_line(md.get("진행상태"), 20), "cause": "", "cause_src": "", "direct": "",
+           "cause_class": _one_line(parts["근본원인분류"], 80), "report": ""}
     for label, val in cands:
         if has_cause({"cause": val}) and not _UNCONFIRMED.search(val):
             out["cause"], out["cause_src"] = _one_line(val, 220), label
             break
     else:
         out["cause"], out["cause_src"] = _one_line(initial, 220), "장애원인"
+    if out["cause_src"] != "장애원인" and initial.strip():
+        out["report"] = _one_line(initial, 200)  # 최초 보고 때 쓴 원인 문구(참고용, 확정 아님)
     direct = _section(md, body, "직접원인") if out["cause_src"] != "직접원인" else ""
     bits = ([f"직접원인분류: {parts['직접원인분류']}"] if parts["직접원인분류"] else [])
     if parts["근본원인분류"] and out["cause_src"] != "근본원인분류":
@@ -160,11 +163,19 @@ def cause_confirmed(f: dict) -> bool:
     st = (f.get("status") or "").strip()
     if st and st not in _CAUSE_DONE_STATUS:
         return False
-    return has_cause(f) and not _UNCONFIRMED.search(f.get("cause") or "")
+    return (has_cause(f) and not _UNCONFIRMED.search(f.get("cause") or "")
+            and not _UNCONFIRMED.search(f.get("cause_class") or ""))  # 근본원인분류가 '원인불명'이면 SWIM도 미확정
 
 
 def _grams(text: str) -> set[str]:
     return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+def class_key(cls: str) -> str:
+    """근본원인분류 문자열 → 카드 키에 쓰는 짧은 해시."""
+    import hashlib
+
+    return "c" + hashlib.sha1(_NONWORD.sub("", cls).lower().encode()).hexdigest()[:8]
 
 
 def cluster_by_cause(items: list[dict], *, threshold: float = 0.25) -> list[list[dict]]:
@@ -292,7 +303,7 @@ def _mark_overlaps(session, proposals: list[Proposal]) -> None:
     for p in proposals:
         add(p.source_key, p.source_ref.get("context") or {})
     for d in session.scalars(select(Decision).where(Decision.status != "retired",
-                                                    Decision.source_key.like("gap4:%"))):
+                                                    Decision.source_key.like("gap5:%"))):
         add(d.source_key, (d.source_ref or {}).get("context") or {})
     for p in proposals:
         for it in (p.source_ref.get("context") or {}).get("items") or []:
@@ -344,12 +355,21 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
             no_cause = len(incidents) - len(kept)
             if len(kept) < min_count:
                 continue
-            if len(kept) > max_group_size:
-                parts = [(f"#{k}", c) for k, c in enumerate(
-                    (c for c in cluster_by_cause(kept) if len(c) >= min_count), 1)]
-            else:
-                parts = [("", kept)]
-            for suffix, members in parts:
+            # 같은 근본원인분류(SWIM이 확정한 분류)끼리 묶는다. 분류가 min_count건 미만인 장애는 반복 패턴이 아니라 제외.
+            # 분류가 없는 장애(근본원인(상세) 없음)는 원인 문구 유사도로 묶고, 상한을 넘으면 나눈다.
+            by_class: dict[str, list[dict]] = {}
+            unclassified = []
+            for i in kept:
+                (by_class.setdefault(i["cause_class"], []) if i.get("cause_class") else unclassified).append(i)
+            parts = [(f"#{class_key(c)}", ms, f"근본원인분류 {c}") for c, ms in
+                     sorted(by_class.items(), key=lambda kv: -len(kv[1])) if len(ms) >= min_count]
+            if len(unclassified) >= min_count:
+                if len(unclassified) > max_group_size:
+                    parts += [(f"#t{k}", c, "원인 문구가 비슷한 묶음") for k, c in enumerate(
+                        (c for c in cluster_by_cause(unclassified) if len(c) >= min_count), 1)]
+                else:
+                    parts.append(("", unclassified, ""))
+            for suffix, members, label in parts:
                 if made >= max_groups:
                     break
                 evidence = [{"quote": i["title"], "stance": "context", "document_id": i["document_id"]}
@@ -359,17 +379,17 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max
                 n = len(members)
                 made += 1
                 head = f"{row['domain']} · {customer} · 최근 {since_days}일 장애 {n}건"
-                if suffix:
-                    head += f" (원인이 비슷한 묶음 {suffix[1:]})"
+                if label:
+                    head += f" · {label}"
                 notes = ["묶음 기준은 도메인×고객사입니다. 같은 원인인 장애를 체크하세요. 체크한 건이 있으면 그 건들을 근거로 '정리 필요'로 확정됩니다(없으면 '개별 사건')."]
-                if suffix:
-                    notes.append(f"그룹 전체 {len(incidents)}건 중 원인 문구가 비슷한 건만 모았습니다.")
+                if label:
+                    notes.append(f"이 고객사의 같은 도메인 장애 {len(incidents)}건 중 {label}인 건만 모았습니다.")
                 if no_cause:
                     notes.append(f"원인이 확정되지 않은 {no_cause}건(원인 분석 중·미기록)은 목록에서 뺐습니다.")
                 if g["count"] > len(incidents):
                     notes.append(f"(최대 {max_incidents}건만 표시)")
                 out.append(Proposal(
-                    detector="bucket_gap", source_key=f"gap4:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
+                    detector="bucket_gap", source_key=f"gap5:{row['domain']}:{row['fb_domain']}:{customer}{suffix}",
                     question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
                     options=[
                         {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
