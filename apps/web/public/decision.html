@@ -58,6 +58,54 @@ function srcLink(r) {
   return "";
 }
 
+function incLines(i) {
+  const l = [["상황", i.situation], ["원인", i.cause], ["조치", i.action]].filter(x => x[1]);
+  return l.length ? `<div class="meta" style="margin-left:22px">${l.map(x => `<b>${x[0]}</b> ${esc(x[1])}`).join("<br>")}</div>` : "";
+}
+function ctxHtml(c) {
+  if (!c) return "";
+  const open = D.status !== "retired" && D.status !== "superseded";
+  const sel = !!c.selectable && open;
+  const picked = new Set(((D.evidence_by_option || {}).consolidate || []).filter(e => !e.retracted_at && e.stance === "supports").map(e => e.document_id));
+  const fields = (c.fields || []).map(f => `<div style="margin:6px 0"><div class="meta">${esc(f.label)}</div><div style="white-space:pre-wrap">${esc(f.value)}</div></div>`).join("");
+  const items = (c.items || []).map(i => `<li style="list-style:none;margin:8px 0">
+    ${sel && i.document_id ? `<input type="checkbox" class="pick" value="${esc(i.document_id)}" ${picked.has(i.document_id) ? "checked" : ""} aria-label="같은 원인"/> ` : ""}
+    ${i.href ? `<a href="${esc(i.href)}" target="_blank" rel="noopener">${esc(i.id)}</a>` : esc(i.id)}
+    <span class="meta">${esc(i.date || "")}</span> <b>${esc(i.title)}</b>${incLines(i)}</li>`).join("");
+  const links = (c.links || []).map(l => `<a class="chip" href="${esc(l.href)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join("");
+  const bar = sel ? `<div style="margin:10px 0"><button type="button" id="bPick" disabled>같은 원인 건을 체크하세요</button></div>` : "";
+  return `<details class="ev" open><summary><b>판단에 필요한 맥락</b> — ${esc(c.heading || "")}</summary>
+    ${c.note ? `<div class="why">${esc(c.note)}</div>` : ""}${fields}${items ? `<ul style="margin:6px 0 0;padding:0">${items}</ul>` : ""}${bar}${links}</details>`;
+}
+function pickedIds() { return Array.from(document.querySelectorAll(".pick:checked")).map(x => x.value); }
+function syncPick() {
+  const b = $("bPick"); if (!b) return;
+  const n = pickedIds().length;
+  b.disabled = n === 0;
+  b.textContent = n ? `선택한 ${n}건을 같은 원인으로 '정리 필요' 확정` : "같은 원인 건을 체크하세요";
+}
+async function submitPick() {
+  if (busy) return;
+  const ids = pickedIds();
+  if (!ids.length) { showErr("같은 원인인 장애를 하나 이상 체크하세요. 없으면 '개별 사건'을 선택하세요."); return; }
+  const by = ($("by").value || "").trim();
+  if (by) lsSet("citec_decider", by);
+  busy = true;
+  try {
+    const nr = await api(`/v1/decisions/${encodeURIComponent(id)}/nonce`);
+    const nd = await nr.json();
+    if (!nr.ok) throw new Error(nd.detail || "nonce 발급 실패");
+    const r = await api(`/v1/decisions/${encodeURIComponent(id)}/pick-incidents`, { method: "POST", body: {
+      document_ids: ids, decided_by: by || null, nonce: nd.nonce, rationale: ($("why").value || "").trim() || null,
+      time_to_decide_ms: Date.now() - t0 } });
+    const d = await r.json();
+    if (!r.ok) { const m = typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail); if (/decided_by/.test(m)) $("by").focus(); throw new Error(m); }
+    toast(`선택한 ${d.picked}건을 근거로 '정리 필요'를 기록했습니다`);
+    if (d.mirror_error) toast("판정은 저장됐지만 검색 반영 오류: " + d.mirror_error);
+    await load();
+  } catch (e) { showErr(e.message); } finally { busy = false; }
+}
+
 function render() {
   const cur = D.current_verdict, ai = D.ai_recommendation_key;
   const bestFor = (k) => (D.evidence_by_option[k] || []).filter(e => !e.retracted_at).sort((a, b) => (b.stance === "supports") - (a.stance === "supports"))[0];
@@ -88,6 +136,7 @@ function render() {
     </div>
     <div class="why">AI 추천: ${aiLabel ? `<b>${esc(aiLabel)}</b> (근거 ${supports[ai] || 0}건) — 눌려 있지 않습니다` : "없음"} · 이 순서인 이유: ${esc(D.queue_reason)}</div>
     ${cur ? `<div class="warnbox" style="border-color:var(--d-ok)">현재 기준: <b>${esc((D.options.find(o=>o.key===cur.option_key)||{}).label)}</b>${cur.free_text ? " — " + esc(cur.free_text) : ""} · ${esc(cur.decided_by)}${cur.self_reported ? " (자기 신고)" : ""} · ${esc(cur.decided_at.slice(0,10))}${D.recheck_reasons.length ? " · ⚠ 재확인: " + esc(D.recheck_reasons.join(", ")) : ""}</div>` : ""}
+    ${ctxHtml((D.source_ref || {}).context)}
     <div class="opts">${optHtml}</div>
     <div id="otherBox" class="hidden"><input class="txt wide" id="otherTxt" placeholder="직접 입력 후 Enter (Esc 취소)"/></div>
     <div id="extBox" class="warnbox hidden">⚠ 이 결정의 근거는 <b>외부·서버 미검증 자료</b>뿐입니다. 확정하려면 확인하세요:
@@ -110,6 +159,8 @@ function render() {
     </div>
     <div id="err"></div></div>`;
   document.querySelectorAll(".opt").forEach(b => b.onclick = () => choose(b.dataset.opt));
+  document.querySelectorAll(".pick").forEach(x => x.onchange = syncPick);
+  if ($("bPick")) { $("bPick").onclick = submitPick; syncPick(); }
   $("bSkip").onclick = skip; $("bUndo").onclick = undo;
   if ($("bKeep")) $("bKeep").onclick = () => submit({ keep: true });
   if ($("bRetire")) $("bRetire").onclick = () => lifecycle("retire");
@@ -124,6 +175,7 @@ function showErr(m) { $("err").innerHTML = `<div class="errbox">${esc(m)}</div>`
 
 function choose(k) {
   if (busy || !D || D.status === "retired" || D.status === "superseded") return;
+  if (k === "consolidate" && $("bPick")) { submitPick(); return; }  // 목록에서 고른 건이 있어야 근거와 함께 확정
   if (k === "OTHER") { $("otherBox").classList.remove("hidden"); $("otherTxt").focus(); return; }
   submit({ option_key: k });
 }

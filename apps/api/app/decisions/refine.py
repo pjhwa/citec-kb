@@ -40,7 +40,8 @@ def _prompt(p) -> str:
     quotes = "\n".join(f"- {e['quote']}" for e in p.evidence[:5])
     opts = "\n".join(f"- key={o['key']} | {o['label']} | {o['summary']}" for o in p.options)
     return (f"[탐지 유형] {p.detector}\n[초안 질문] {p.question}\n[초안 선택지]\n{opts}\n"
-            f"[근거 인용(원문)]\n{quotes}\n[메모] {json.dumps(p.source_ref, ensure_ascii=False)[:400]}")
+            f"[근거 인용(원문)]\n{quotes}\n[메모] "
+            f"{json.dumps({k: v for k, v in p.source_ref.items() if k != 'context'}, ensure_ascii=False)[:400]}")
 
 
 def _parse(raw: str) -> Optional[dict[str, Any]]:
@@ -144,7 +145,8 @@ def preview(p, *, complete=None, run: Optional[Run] = None) -> dict[str, Any]:
     """Side-effect free: what refine() would do to `p`, with the rejection reason when it would not."""
     ok, reason = _ask(p, complete, run)
     out: dict[str, Any] = {"source_key": p.source_key, "detector": p.detector, "adopted": ok is not None,
-                           "rule": {"question": p.question, "options": p.options}}
+                           "rule": {"question": p.question, "options": p.options},
+                           "context": p.source_ref.get("context")}
     if ok is not None:
         out["llm"] = {"question": ok[0], "options": ok[1]}
     else:

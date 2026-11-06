@@ -55,6 +55,14 @@ class VerdictIn(BaseModel):
     time_to_decide_ms: Optional[int] = Field(default=None, ge=0)
 
 
+class PickIncidentsIn(BaseModel):
+    document_ids: list[str] = Field(min_length=1, max_length=200)
+    rationale: Optional[str] = None
+    decided_by: Optional[str] = Field(default=None, max_length=128)
+    nonce: str
+    time_to_decide_ms: Optional[int] = Field(default=None, ge=0)
+
+
 class SupersedeIn(BaseModel):
     new_decision_id: str
 
@@ -177,6 +185,17 @@ def post_verdict(decision_id: str, body: VerdictIn, principal: Principal = Depen
             rationale=body.rationale, free_text=body.free_text, keep=body.keep,
             external_only_confirm=body.external_only_confirm, time_to_decide_ms=body.time_to_decide_ms,
         )
+    except (ValueError, svc.DecisionConflict, svc.DecisionNotFound, PermissionError) as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/decisions/{decision_id}/pick-incidents")
+def post_pick_incidents(decision_id: str, body: PickIncidentsIn, principal: Principal = Depends(_SENIOR)) -> dict[str, Any]:
+    try:
+        by, via = svc.resolve_actor(principal, body.decided_by)
+        return svc.pick_incidents(
+            decision_id, document_ids=body.document_ids, decided_by=by, auth_via=via, nonce=body.nonce,
+            rationale=body.rationale, time_to_decide_ms=body.time_to_decide_ms)
     except (ValueError, svc.DecisionConflict, svc.DecisionNotFound, PermissionError) as exc:
         raise _http(exc) from exc
 

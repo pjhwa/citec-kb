@@ -39,6 +39,7 @@ FB_CONFIRMED_CONFIDENCE = 0.7
 SCAN_ACTOR = "decision-scan"
 DEFAULTS = {"max_new_per_run": 20, "max_open_server_proposals": 60, "detectors": ["fb_confirm", "deadline", "bucket_gap"],
             "gap_since_days": 365, "gap_min_count": 3, "deadline_soon_days": 60,
+            "gap_max_groups_per_domain": 5, "gap_max_incidents": 60,
             "llm_refine": False, "llm_max_per_run": 20, "llm_workers": 4}
 
 _DEADLINE_RE = re.compile(
@@ -76,13 +77,57 @@ def _line_with(prefix: str, body: str) -> Optional[str]:
     return None
 
 
+_INCIDENT_SECTIONS = (("situation", "장애상황"), ("cause", "장애원인"), ("action", "장애조치"))
+
+
+def _one_line(v, limit: int = 140) -> str:
+    t = " ".join(str(v or "").split())
+    return t if len(t) <= limit else t[: limit - 1] + "…"
+
+
+def _incident_fields(doc) -> dict:
+    """장애 문서의 상황·원인·조치를 한 줄씩 뽑는다(메타데이터 우선, 없으면 본문의 '■ 장애원인:' 줄)."""
+    md = (doc.metadata_ or {}) if doc is not None else {}
+    body = (doc.body_md or "") if doc is not None else ""
+    out = {}
+    for key, label in _INCIDENT_SECTIONS:
+        val = md.get(label)
+        if not val:
+            m = re.search(r"■\s*" + label + r"\s*[:：]\s*(.+?)(?=\n■|\Z)", body, re.S)
+            val = m.group(1) if m else ""
+        out[key] = _one_line(val)
+    return out
+
+
+def _fmt_list(v) -> str:
+    return "\n".join(f"- {x}" for x in (v or [])) or "(없음)"
+
+
+def _bucket_context(b: FailureBucket) -> dict:
+    """판정자가 버킷 본문을 따로 열지 않고도 판단할 수 있게 핵심 필드를 그대로 싣는다."""
+    return {
+        "kind": "failure_bucket", "heading": f"실패 버킷 '{(b.bucket_name or '')[:120]}' 상세",
+        "fields": [
+            {"label": "증상", "value": b.symptom or "(없음)"},
+            {"label": "판별 신호", "value": _fmt_list(b.discriminating_signals)},
+            {"label": "반증 신호", "value": _fmt_list(b.counter_signals)},
+            {"label": "근본원인", "value": b.root_cause or "(없음)"},
+            {"label": "권고 조치", "value": b.recommended_action or "(없음)"},
+            {"label": "지지/반증 사례", "value": f"지지 {b.support_count}건 · 반증 {b.counter_count}건 · 기계 신뢰도 {b.confidence}"},
+            {"label": "근거 포인터", "value": b.evidence_ref or "(없음)"},
+        ],
+        "links": [{"label": "버킷 원문 문서", "href": f"/doc.html?id={b.document_id}"}] if b.document_id else [],
+    }
+
+
 def detect_fb_confirm(session) -> list[Proposal]:
     from app.taxonomy import _FB_DOMAIN_TO_CORPUS_DOMAIN
 
     out: list[Proposal] = []
     rows = session.scalars(select(FailureBucket).where(
         FailureBucket.status == "active", FailureBucket.confidence < FB_CONFIRMED_CONFIDENCE,
-        FailureBucket.document_id.is_not(None)).order_by(FailureBucket.created_at)).all()
+        # 지지 사례가 하나도 없는 버킷은 사람이 확정할 근거가 없으므로 올리지 않는다(근거가 쌓이면 대상이 된다).
+        FailureBucket.support_count > 0, FailureBucket.document_id.is_not(None)).order_by(FailureBucket.created_at)).all()
     for b in rows:
         if _FB_TEST_SUFFIX.search(b.created_by or "") or _FB_FIXTURE_NAME.search(b.bucket_name or ""):
             continue
@@ -106,7 +151,7 @@ def detect_fb_confirm(session) -> list[Proposal]:
             stakes="mid", topic="failure_bucket", domain=_FB_DOMAIN_TO_CORPUS_DOMAIN.get(b.fb_domain),
             source_ref={"type": "failure_bucket", "id": b.id, "fb_domain": b.fb_domain,
                         "confidence": b.confidence, "support_count": b.support_count,
-                        "counter_count": b.counter_count},
+                        "counter_count": b.counter_count, "context": _bucket_context(b)},
         ))
     return out
 
@@ -145,7 +190,12 @@ def detect_deadline(session, *, today: Optional[date] = None, soon_days: int = 6
     return out
 
 
-def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3) -> list[Proposal]:
+def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3, max_groups: int = 5,
+                      max_incidents: int = 60) -> list[Proposal]:
+    """실패 버킷이 없는 도메인의 반복 장애를 기존 반복 장애 그룹(도메인 × 고객사) 단위로 제안한다.
+
+    그룹마다 질문 하나, 그 그룹의 장애 목록 전체(최대 max_incidents)를 판정 맥락으로 싣는다.
+    """
     from app.citec_dashboard.service import failure_bucket_coverage, query_recurring_patterns
 
     out: list[Proposal] = []
@@ -153,29 +203,53 @@ def detect_bucket_gap(session, *, since_days: int = 365, min_count: int = 3) -> 
     for row in cov["domains"]:
         if row["status"] != "gap":
             continue
-        pat = query_recurring_patterns(group_by=["domain"], domains=[row["domain"]], since_days=since_days,
-                                       min_count=min_count, limit=1, samples_per_group=3)
-        samples = (pat["groups"][0]["samples"] if pat["groups"] else [])
-        evidence = []
-        for smp in samples:
-            eid = str(smp.get("external_id") or "")
-            doc = session.scalar(select(Document).where(
-                Document.source_type == "incident_reports", Document.external_id.in_((eid, f"swim_{eid}"))))
-            if doc and (doc.title or "").strip():
-                evidence.append({"quote": doc.title.strip(), "stance": "context", "document_id": doc.id})
-        if not evidence:
-            continue
-        out.append(Proposal(
-            detector="bucket_gap", source_key=f"gap:{row['domain']}:{row['fb_domain']}",
-            question=f"{row['domain']} 도메인의 반복 장애 {row['recurring_incident_count']}건(최근 {since_days}일)을 실패 버킷으로 정리해야 합니까?",
-            options=[
-                {"key": "consolidate", "label": "정리 필요", "summary": "반복 패턴을 failure bucket으로 등록"},
-                {"key": "individual", "label": "개별 사건", "summary": "패턴으로 묶을 필요 없음"},
-            ],
-            evidence=evidence, stakes="mid", topic="failure_bucket 공백", domain=None,
-            source_ref={"type": "domain_gap", "domain": row["domain"], "fb_domain": row["fb_domain"],
-                        "recurring_incident_count": row["recurring_incident_count"]},
-        ))
+        pat = query_recurring_patterns(group_by=["domain", "customer"], domains=[row["domain"]], since_days=since_days,
+                                       min_count=min_count, limit=200, samples_per_group=max_incidents)
+        made = 0
+        for g in pat["groups"]:
+            customer = str(g["group"].get("customer") or "")
+            if g["group"].get("domain") != row["domain"]:
+                continue  # 장애 하나가 여러 도메인 태그를 가질 수 있어 다른 도메인 묶음이 섞여 나온다
+            if made >= max_groups:
+                break
+            if not customer or customer == "(미상)":
+                continue  # 고객사를 모르는 묶음은 '같은 패턴'이라 볼 근거가 없다
+            eids = [str(smp.get("external_id") or "") for smp in g["samples"]]
+            docs = {d.external_id: d for d in session.scalars(select(Document).where(
+                Document.source_type == "incident_reports",
+                Document.external_id.in_(eids + [f"swim_{e}" for e in eids])))}
+            incidents, evidence = [], []
+            for smp in g["samples"]:
+                eid = str(smp.get("external_id") or "")
+                doc = docs.get(eid) or docs.get(f"swim_{eid}")
+                title = (smp.get("title") or (doc.title if doc else "") or "").strip()
+                incidents.append({"id": eid, "title": title, "date": (smp.get("occurred_at") or "")[:10],
+                                  "href": f"/doc.html?eid={doc.external_id}&st=incident_reports" if doc else None,
+                                  "document_id": doc.id if doc else None, **_incident_fields(doc)})
+                if doc and title and len(evidence) < 3:
+                    evidence.append({"quote": title, "stance": "context", "document_id": doc.id})
+            if not evidence:
+                continue
+            n = g["count"]
+            made += 1
+            out.append(Proposal(
+                detector="bucket_gap", source_key=f"gap:{row['domain']}:{row['fb_domain']}:{customer}",
+                question=f"{row['domain']} 도메인 '{customer}'의 최근 {since_days}일 장애 {n}건 중, 같은 원인으로 실패 버킷에 정리할 건이 있습니까?",
+                options=[
+                    {"key": "consolidate", "label": "정리 필요", "summary": "아래 목록에서 같은 원인인 장애를 체크하면 그 건들을 근거로 확정"},
+                    {"key": "individual", "label": "개별 사건", "summary": "같은 원인으로 묶을 장애가 없음"},
+                ],
+                evidence=evidence, stakes="mid", topic="failure_bucket 공백", domain=None,
+                source_ref={"type": "domain_gap", "domain": row["domain"], "fb_domain": row["fb_domain"],
+                            "customer": customer, "recurring_incident_count": n,
+                            "context": {
+                                "kind": "incident_group",
+                                "heading": f"{row['domain']} · {customer} · 최근 {since_days}일 장애 {n}건",
+                                "selectable": True,
+                                "note": "묶음 기준은 도메인×고객사입니다. 같은 원인인 장애를 체크하세요. 체크한 건이 있으면 그 건들을 근거로 '정리 필요'로 확정됩니다(없으면 '개별 사건')."
+                                        + (f" (최대 {max_incidents}건만 표시)" if n > len(incidents) else ""),
+                                "items": incidents}},
+            ))
     return out
 
 
@@ -203,7 +277,9 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
             ("fb_confirm", lambda: detect_fb_confirm(s)),
             ("deadline", lambda: detect_deadline(s, soon_days=int(cfg["deadline_soon_days"]))),
             ("bucket_gap", lambda: detect_bucket_gap(s, since_days=int(cfg["gap_since_days"]),
-                                                    min_count=int(cfg["gap_min_count"]))),
+                                                    min_count=int(cfg["gap_min_count"]),
+                                                    max_groups=int(cfg["gap_max_groups_per_domain"]),
+                                                    max_incidents=int(cfg["gap_max_incidents"]))),
         ):
             if name not in det:
                 continue
@@ -252,7 +328,8 @@ def scan_topics(*, dry_run: bool = False, max_new: Optional[int] = None, llm_pre
         by_det[p.detector] = by_det.get(p.detector, 0) + 1
     return {
         "dry_run": dry_run, "detected": by_det, "already_known": len(found) - len(new),
-        "would_create": [{"detector": p.detector, "source_key": p.source_key, "question": p.question, "stakes": p.stakes}
+        "would_create": [{"detector": p.detector, "source_key": p.source_key, "question": p.question, "stakes": p.stakes,
+                          "context": p.source_ref.get("context")}
                          for p in todo] if dry_run else None,
         "created": created, "created_count": len(created), "llm_refined": refined, "llm_preview": previews,
         "llm_auth_failed": bool(llm_run and llm_run.auth_failed), "llm_skipped": llm_run.skipped if llm_run else 0,
