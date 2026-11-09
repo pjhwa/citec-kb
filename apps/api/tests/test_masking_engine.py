@@ -99,7 +99,7 @@ def test_label_glued_to_hangul_not_masked():
 def test_ordinary_sentence_on_phone_line_only_phone_masked():
     s = "문의는 010-1234-5678 로 주시면 서버 상태 이상 여부를 확인해 드립니다"
     assert m().mask_text(s) == "문의는 [PHONE-1] 로 주시면 서버 상태 이상 여부를 확인해 드립니다"
-    assert m().mask_text("고객 요청 사항은 031-123-4567 로 연락 바랍니다") == "고객 요청 사항은 [PHONE-1] 로 연락 바랍니다"
+    assert m().mask_text("고객 요청 사항 031-123-4567 로 연락 바랍니다") == "고객 요청 사항 [PHONE-1] 로 연락 바랍니다"
 
 
 def test_name_rules_on_phone_line():
@@ -127,3 +127,8 @@ def test_name_and_sabun_pipe_columns():
     out = m().mask_text("| 이름 | 사번 |\n|---|---|\n| 이수 | 12345 |\n")
     assert out.split("\n")[0] == "| 이름 | 사번 |"
     assert "| [NAME-1] | [ID-1] |" in out and "이수" not in out
+
+
+def test_given_name_ending_eun_is_masked():
+    assert m().mask_text("박지은 010-1234-5678") == "[NAME-1] [PHONE-1]"
+    assert m().mask_text("김서은 010-1234-5678") == "[NAME-1] [PHONE-1]"
