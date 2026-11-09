@@ -40,3 +40,10 @@ def test_label_sabun_and_label_name():
     assert not P.LABEL_SABUN.search("사번: 123456")          # 6자리는 대상 아님
     m = P.LABEL_NAME.search("신청인 : 홍길동 프로")
     assert m and m.group(2) == "홍길동"
+
+
+def test_label_name_allows_spaces_between_letters():
+    for s in ["□ 신 청 인 : 홍길동 프로", "성 명 : 홍길동", "이 름: 홍길동", "수 령 인 : 홍길동", "받는 분 : 홍길동"]:
+        m = P.LABEL_NAME.search(s)
+        assert m and m.group(2) == "홍길동", s
+    assert P.LABEL_NAME.search("신청인이 : 홍길동") is None

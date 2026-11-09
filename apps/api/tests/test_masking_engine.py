@@ -86,3 +86,7 @@ def test_mask_json_walks_values_not_keys():
     obj = {"10.0.0.1": ["a 10.0.0.1", {"x": "031-123-4567"}], "n": 3, "ok": True, "none": None}
     out = mask_json(obj, mk)
     assert out == {"10.0.0.1": ["a [IP-1]", {"x": "[PHONE-1]"}], "n": 3, "ok": True, "none": None}
+
+
+def test_spaced_label_name_masked():
+    assert m().mask_text("□ 신 청 인 : 홍길동 프로") == "□ 신 청 인 : [NAME-1] 프로"
