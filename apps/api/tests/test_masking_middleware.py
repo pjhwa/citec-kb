@@ -20,8 +20,8 @@ def _p(*roles):
 KEYS = {"viewer": _p("viewer"), "author": _p("author"), "senior": _p("senior"), "admin": _p("admin")}
 
 
-@pytest.fixture
-def env(monkeypatch):
+def harness(monkeypatch):
+    """Mini app behind MaskingMiddleware. Other masking test modules import this."""
     audit: list = []
     state = {"mode": "apikey", "audit_fail": False}
 
@@ -46,6 +46,12 @@ def env(monkeypatch):
 
     app = FastAPI()
     app.add_middleware(MW.MaskingMiddleware)
+    return app, audit, state
+
+
+@pytest.fixture
+def env(monkeypatch):
+    app, audit, state = harness(monkeypatch)
 
     @app.get("/v1/doc")
     def doc():
@@ -57,6 +63,14 @@ def env(monkeypatch):
 
     @app.get("/v1/health")
     def health():
+        return {"note": BODY}
+
+    @app.get("/v1/health/llm")
+    def health_llm():
+        return {"note": BODY}
+
+    @app.get("/v1/healthcheck-x")
+    def healthcheck_x():
         return {"note": BODY}
 
     @app.get("/other")
@@ -144,3 +158,24 @@ def test_http_error_json_is_masked_and_keeps_status(env):
     assert r.status_code == 404
     assert "031-123-4567" not in r.text and "10.0.0.1" not in r.text
     assert "[PHONE-1]" in r.json()["detail"]
+
+
+def test_skip_list_matches_whole_segments_only(env):
+    c, _, _ = env
+    assert c.get("/v1/health").json()["note"] == BODY
+    assert c.get("/v1/health/llm").json()["note"] == BODY
+    r = c.get("/v1/healthcheck-x", headers={"X-API-Key": "viewer"})
+    assert "031-123-4567" not in r.text and "[PHONE-1]" in r.json()["note"]
+
+
+@pytest.mark.parametrize(
+    "path,expected",
+    [
+        ("/v1/health", False), ("/v1/health/llm", False), ("/v1/healthcheck-x", True),
+        ("/v1/ops/mcp", False), ("/v1/opsx", True), ("/v1/auth/me", False), ("/v1/auth", False),
+        ("/v1/authz", True), ("/api/docs", False), ("/api/docs/x", False), ("/api/docsearch", True),
+        ("/api/openapi", False), ("/api/openapix", True), ("/v1/documents", True), ("/other", False),
+    ],
+)
+def test_in_scope_prefix_matching(path, expected):
+    assert MW.in_scope(path) is expected

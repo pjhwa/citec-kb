@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import logging
 from typing import Any, Awaitable, Callable
@@ -22,12 +23,43 @@ from app.settings import get_settings
 logger = logging.getLogger("citec.masking")
 
 IN_SCOPE = ("/v1/", "/api/")
-SKIP_PREFIXES = ("/v1/health", "/v1/ops/", "/v1/auth/", "/api/docs", "/api/openapi")
+# Skipped subtrees: the path itself or anything below it ("/v1/health" skips "/v1/health/llm" but not
+# "/v1/healthcheck-x"). An entry ending in "/" only matches below it.
+SKIP_PREFIXES = ("/v1/health", "/v1/ops/", "/v1/auth", "/api/docs", "/api/openapi")
 _REF_KEYS = ("document_id", "external_id")
+# Bodies we cannot mask but that cannot carry text PII either. Everything else unknown fails closed.
+_PASSTHROUGH_TYPES = ("image/", "font/")
+_XML_TYPES = ("application/xml",)
+
+JSON, SSE, TEXT, PASS, REJECT = "json", "sse", "text", "pass", "reject"
+
+
+def _skipped(path: str) -> bool:
+    for x in SKIP_PREFIXES:
+        if x.endswith("/"):
+            if path.startswith(x):
+                return True
+        elif path == x or path.startswith(x + "/"):
+            return True
+    return False
 
 
 def in_scope(path: str) -> bool:
-    return path.startswith(IN_SCOPE) and not path.startswith(SKIP_PREFIXES)
+    return path.startswith(IN_SCOPE) and not _skipped(path)
+
+
+def classify(content_type: str) -> str:
+    """Media type → how the body is masked. Parameters (charset…) and case are ignored."""
+    mt = (content_type or "").split(";", 1)[0].strip().lower()
+    if mt == "application/json" or mt.endswith("+json"):
+        return JSON
+    if mt == "text/event-stream":
+        return SSE
+    if mt.startswith("text/") or mt in _XML_TYPES or mt.endswith("+xml"):
+        return TEXT
+    if mt.startswith(_PASSTHROUGH_TYPES):
+        return PASS
+    return REJECT
 
 
 def _unmask_requested(request: Request) -> bool:
@@ -49,52 +81,147 @@ def _doc_refs(obj: Any, out: list, depth: int = 0) -> None:
             _doc_refs(x, out, depth + 1)
 
 
+_SSE_KEEP = ("event:", "id:", "retry:")
+
+
+def _mask_sse(raw: bytes, masker: Masker, refs: list) -> bytes:
+    """Mask a whole buffered SSE stream with one Masker.
+
+    Events are split on a blank line (CRLF/CR normalised to LF); each event's ``data:`` lines are joined
+    with LF. All ``token`` events (``{"type":"token","text":…}``) are coalesced into one at the first
+    token's position so a value split across fragments is still caught; every other JSON payload goes
+    through ``mask_json``, non-JSON payloads through ``mask_text``. ``event:``/``id:``/``retry:`` lines
+    are kept as-is; other lines (comments, unknown fields) are masked as text. Output: one
+    ``data: <json>`` line per JSON event, LF framing.
+    """
+    text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    events = []
+    for block in text.split("\n\n"):
+        if not block.strip():
+            continue
+        head: list = []
+        data: list = []
+        slot = None
+        for ln in block.split("\n"):
+            if ln.startswith("data:"):
+                v = ln[5:]
+                data.append(v[1:] if v.startswith(" ") else v)
+                if slot is None:
+                    slot = len(head)
+                    head.append(None)
+            else:
+                head.append(ln)
+        payload = "\n".join(data) if slot is not None else None
+        obj, is_json = None, False
+        if payload is not None:
+            try:
+                obj, is_json = json.loads(payload), True
+            except ValueError:
+                pass
+        events.append({"head": head, "slot": slot, "payload": payload, "json": is_json, "obj": obj})
+
+    tokens = [e for e in events if e["json"] and isinstance(e["obj"], dict)
+              and e["obj"].get("type") == "token" and isinstance(e["obj"].get("text"), str)]
+    if tokens:
+        tokens[0]["obj"] = {**tokens[0]["obj"], "text": "".join(t["obj"]["text"] for t in tokens)}
+        drop = {id(t) for t in tokens[1:]}
+        events = [e for e in events if id(e) not in drop]
+
+    out: list = []
+    for e in events:
+        if e["json"]:
+            _doc_refs(e["obj"], refs)
+            data_lines = [json.dumps(mask_json(e["obj"], masker), ensure_ascii=False)]
+        elif e["payload"] is not None:
+            data_lines = masker.mask_text(e["payload"]).split("\n")
+        else:
+            data_lines = []
+        lines: list = []
+        for i, ln in enumerate(e["head"]):
+            if i == e["slot"]:
+                lines.extend("data: " + d for d in data_lines)
+            elif ln.startswith(_SSE_KEEP):
+                lines.append(ln)
+            else:
+                lines.append(masker.mask_text(ln))
+        out.append("\n".join(lines) + "\n\n")
+    return "".join(out).encode("utf-8")
+
+
+def _charset(content_type: str) -> str:
+    for part in (content_type or "").split(";")[1:]:
+        k, _, v = part.partition("=")
+        if k.strip().lower() == "charset" and v.strip():
+            try:
+                return codecs.lookup(v.strip().strip('"')).name
+            except LookupError:
+                break
+    return "utf-8"
+
+
 class MaskingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         if not in_scope(request.url.path):
             return await call_next(request)
         response = await call_next(request)
-        if "application/json" not in response.headers.get("content-type", ""):
+        if request.method == "HEAD" or response.status_code in (204, 304):
+            return response
+        ctype = response.headers.get("content-type", "")
+        kind = classify(ctype)
+        if kind == PASS:
             return response
         raw = b"".join([chunk async for chunk in response.body_iterator])
+        if not raw:  # redirects, empty 200s: nothing to mask
+            return self._rebuild(response, raw, {})
+        encoding = response.headers.get("content-encoding", "").strip().lower()
+        if kind == REJECT or encoding not in ("", "identity"):
+            logger.warning("unmaskable response blocked: %s %s content-type=%r content-encoding=%r",
+                           request.method, request.url.path, ctype, encoding)
+            return JSONResponse({"detail": "unmaskable content type"}, status_code=500)
         try:
-            return await run_in_threadpool(self._process, request, response, raw)
+            return await run_in_threadpool(self._process, request, response, raw, kind)
         except Exception:  # noqa: BLE001 — fail closed
             logger.exception("masking failed for %s %s", request.method, request.url.path)
             return JSONResponse({"detail": "masking failed"}, status_code=500)
 
-    def _process(self, request: Request, response: Response, raw: bytes) -> Response:
-        if not raw:
-            return self._rebuild(response, raw, {})
+    def _process(self, request: Request, response: Response, raw: bytes, kind: str = JSON) -> Response:
+        """One decision path for every body kind: decide → mask → audit → choose body."""
         principal = resolve_principal(
             authorization=request.headers.get("authorization"), api_key=request.headers.get("x-api-key")
         )
         d = decide(principal, get_settings().auth_mode, _unmask_requested(request))
-        data = json.loads(raw)
 
         # When an original is granted we still run pii/net masking: it counts what would be revealed
         # (for the audit row) and is the fallback body if the audit write fails.
         groups = frozenset({"pii", "net"}) if d.unmask_granted else d.groups
         masker = Masker(groups, get_dictionary())
-        masked = mask_json(data, masker)
-        counts = {k: v for k, v in masker.counts.items() if v}
         refs: list = []
-        _doc_refs(data, refs)
+        data: Any = None
+        if kind == JSON:
+            data = json.loads(raw)
+            masked: Any = mask_json(data, masker)
+            _doc_refs(data, refs)
+        elif kind == SSE:
+            masked = _mask_sse(raw, masker, refs)
+        else:
+            cs = _charset(response.headers.get("content-type", ""))
+            masked = masker.mask_text(raw.decode(cs, errors="replace")).encode(cs, errors="replace")
+        counts = {k: v for k, v in masker.counts.items() if v}
+
         ip = client_ip(request.headers, request.client.host if request.client else None)
         audit_kw = dict(principal=principal, level=d.level, method=request.method, path=request.url.path,
                         doc_refs=refs, counts=counts, client_ip=ip)
-
-        body_obj, meta = masked, {}
+        original, meta = False, {}
         if d.unmask_granted:
             if counts:
                 try:
                     write_unmask_audit(outcome="granted", **audit_kw)
-                    body_obj, meta = data, {"unmask_granted": True, "revealed": counts}
+                    original, meta = True, {"unmask_granted": True, "revealed": counts}
                 except Exception:  # noqa: BLE001 — no audit row → no original
                     logger.exception("unmask audit write failed; serving masked")
                     meta = {"audit_failed": True}
             else:
-                body_obj = data
+                original = True
         elif d.unmask_denied:
             meta = {"unmask_denied": True}
             try:
@@ -102,12 +229,16 @@ class MaskingMiddleware(BaseHTTPMiddleware):
             except Exception:  # noqa: BLE001
                 logger.exception("denied-unmask audit write failed")
 
-        if (counts and body_obj is masked) or meta:
-            info = {"applied": body_obj is masked, "level": d.level, "counts": counts, **meta}
+        info = {"applied": not original, "level": d.level, "counts": counts, **meta}
+        if kind != JSON:
+            return self._rebuild(response, raw if original else masked, info)
+        body_obj = data if original else masked
+        if (counts and not original) or meta:
             if isinstance(body_obj, dict):
                 body_obj = {**body_obj, "masking": info}
-            return self._rebuild(response, json.dumps(body_obj, ensure_ascii=False).encode(), info)
-        return self._rebuild(response, json.dumps(body_obj, ensure_ascii=False).encode(), {})
+        else:
+            info = {}
+        return self._rebuild(response, json.dumps(body_obj, ensure_ascii=False).encode(), info)
 
     @staticmethod
     def _rebuild(response: Response, body: bytes, info: dict) -> Response:
@@ -117,4 +248,8 @@ class MaskingMiddleware(BaseHTTPMiddleware):
         counts = info.get("counts") or {}
         if info.get("applied") and counts:
             out.headers["X-Citec-Masking"] = ",".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        for flag, value in (("unmask_granted", "granted"), ("unmask_denied", "denied"),
+                            ("audit_failed", "audit_failed")):
+            if info.get(flag):
+                out.headers["X-Citec-Unmask"] = value
         return out
