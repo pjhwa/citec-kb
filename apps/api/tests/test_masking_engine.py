@@ -94,3 +94,36 @@ def test_spaced_label_name_masked():
 
 def test_label_glued_to_hangul_not_masked():
     assert m().mask_text("파일이름: 보고서 작성") == "파일이름: 보고서 작성"
+
+
+def test_ordinary_sentence_on_phone_line_only_phone_masked():
+    s = "문의는 010-1234-5678 로 주시면 서버 상태 이상 여부를 확인해 드립니다"
+    assert m().mask_text(s) == "문의는 [PHONE-1] 로 주시면 서버 상태 이상 여부를 확인해 드립니다"
+    assert m().mask_text("고객 요청 사항은 031-123-4567 로 연락 바랍니다") == "고객 요청 사항은 [PHONE-1] 로 연락 바랍니다"
+
+
+def test_name_rules_on_phone_line():
+    assert m().mask_text("담당 이수 프로 010-1234-5678") == "담당 [NAME-1] 프로 [PHONE-1]"
+    assert m().mask_text("남궁민수 010-1234-5678") == "[NAME-1] [PHONE-1]"
+    assert m().mask_text("홍길동 010-1234-5678") == "[NAME-1] [PHONE-1]"
+
+
+def test_name_column_whitespace_table():
+    text = "\n".join([
+        "No 이름 사번 비고",
+        " 1 이수 12345 x",
+        " 2 박온 12346 y",
+        "",
+        " 3 최우 12347 z",
+    ])
+    out = m().mask_text(text).split("\n")
+    assert out[0] == "No 이름 사번 비고"
+    assert out[1].split()[1] == "[NAME-1]" and out[1].split()[2] == "[ID-1]"
+    assert out[2].split()[1] == "[NAME-2]" and out[2].split()[2] == "[ID-2]"
+    assert out[4] == " 3 최우 12347 z"
+
+
+def test_name_and_sabun_pipe_columns():
+    out = m().mask_text("| 이름 | 사번 |\n|---|---|\n| 이수 | 12345 |\n")
+    assert out.split("\n")[0] == "| 이름 | 사번 |"
+    assert "| [NAME-1] | [ID-1] |" in out and "이수" not in out

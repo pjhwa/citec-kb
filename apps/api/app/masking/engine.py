@@ -16,7 +16,7 @@ from app.masking.dictionary import Dictionary
 GROUP = {"phone": "pii", "addr": "pii", "sabun": "pii", "name": "pii", "ip": "net", "cust": "biz", "host": "biz"}
 TAG = {"phone": "PHONE", "addr": "ADDR", "sabun": "ID", "name": "NAME", "ip": "IP", "cust": "CUST", "host": "HOST"}
 _TOKEN = re.compile(r"\S+")
-_SABUN_CELL = re.compile(r"\d{5}")
+_COLS = {"sabun": re.compile(r"\d{5}"), "name": re.compile(r"[가-힣]{2,4}")}
 
 
 class Masker:
@@ -40,7 +40,7 @@ class Masker:
     def mask_text(self, text: str) -> str:
         if not text or not self.groups:
             return text
-        state = {"col": None, "miss": 0}
+        state: dict = {}
         return "\n".join(self._mask_line(line, state) for line in text.split("\n"))
 
     # -- internals -----------------------------------------------------------------------------
@@ -73,11 +73,14 @@ class Masker:
         labelled = bool(P.LABEL_SABUN.search(line))
         line = P.LABEL_SABUN.sub(lambda m: m.group(1) + self._sub("sabun", m.group(2)), line)
         line = P.LABEL_NAME.sub(lambda m: m.group(1) + self._sub("name", m.group(2)), line)
-        line = self._sabun_column(line, state, labelled)
+        line = self._columns(line, state, labelled)
         if self.counts["pii"] > before:           # 이 줄에 개인정보가 있으면 같은 줄의 이름 후보도 가린다
-            line = P.NAME_TOKEN.sub(
-                lambda m: m.group(0) if m.group(1) in P.NAME_STOPWORDS else self._sub("name", m.group(1)), line
-            )
+            for rx in P.NAME_RULES:
+                line = rx.sub(
+                    lambda m: m.group(0) if m.group(1) in P.NAME_STOPWORDS
+                    else m.group(0).replace(m.group(1), self._sub("name", m.group(1)), 1),
+                    line,
+                )
         return line
 
     @staticmethod
@@ -87,38 +90,50 @@ class Masker:
             return parts[1:] if line.lstrip().startswith("|") else parts
         return line.split()
 
-    def _sabun_column(self, line: str, state: dict, labelled: bool) -> str:
+    def _columns(self, line: str, state: dict, labelled: bool) -> str:
+        """사번 열·이름 열: 헤더 줄에서 열 위치를 기억하고 뒤따르는 행의 해당 셀을 가린다. 헤더 줄은 바꾸지 않는다."""
         if not line.strip():
-            state["col"], state["miss"] = None, 0
+            for k in _COLS:
+                state[k + "_col"], state[k + "_miss"] = None, 0
             return line
         if not labelled:
             cells = self._cells(line)
-            if "사번" in cells:                      # 헤더 줄: 열 위치 기억
-                state["col"], state["miss"] = cells.index("사번"), 0
+            header = False
+            if "사번" in cells:
+                state["sabun_col"], state["sabun_miss"] = cells.index("사번"), 0
+                header = True
+            for h in P.NAME_HEADERS:
+                if h in cells:
+                    state["name_col"], state["name_miss"] = cells.index(h), 0
+                    header = True
+                    break
+            if header:
                 return line
-        if state["col"] is None:
-            return line
-        new, hit = self._replace_cell(line, state["col"])
-        if hit:
-            state["miss"] = 0
-        else:
-            state["miss"] += 1
-            if state["miss"] >= 2:
-                state["col"], state["miss"] = None, 0
-        return new
+        for k, rx in _COLS.items():
+            col = state.get(k + "_col")
+            if col is None:
+                continue
+            line, hit = self._replace_cell(line, col, rx, k)
+            if hit:
+                state[k + "_miss"] = 0
+            else:
+                state[k + "_miss"] = state.get(k + "_miss", 0) + 1
+                if state[k + "_miss"] >= 2:
+                    state[k + "_col"], state[k + "_miss"] = None, 0
+        return line
 
-    def _replace_cell(self, line: str, col: int) -> tuple:
+    def _replace_cell(self, line: str, col: int, rx: "re.Pattern", kind: str) -> tuple:
         if "|" in line:
             parts = line.split("|")
             i = col + (1 if line.lstrip().startswith("|") else 0)
-            if i < len(parts) and re.fullmatch(r"\s*\d{5}\s*", parts[i]):
-                parts[i] = _SABUN_CELL.sub(lambda m: self._sub("sabun", m.group(0)), parts[i])
+            if i < len(parts) and rx.fullmatch(parts[i].strip()):
+                parts[i] = re.sub(rx.pattern, lambda m: self._sub(kind, m.group(0)), parts[i], count=1)
                 return "|".join(parts), True
             return line, False
         toks = list(_TOKEN.finditer(line))
-        if col < len(toks) and _SABUN_CELL.fullmatch(toks[col].group(0)):
+        if col < len(toks) and rx.fullmatch(toks[col].group(0)):
             t = toks[col]
-            return line[: t.start()] + self._sub("sabun", t.group(0)) + line[t.end():], True
+            return line[: t.start()] + self._sub(kind, t.group(0)) + line[t.end():], True
         return line, False
 
 
