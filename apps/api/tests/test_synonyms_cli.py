@@ -384,3 +384,20 @@ def test_stop_after_empty_skips_remaining_batches(tmp_path):
     (tmp_path / "b").mkdir()
     res = cli.run_mine(**_kw(tmp_path / "b", chat, ts, batch_size=10, empty_retries=0))
     assert len(calls) == 4 and "stopped_early" not in res
+
+
+def test_probe_finds_the_blocking_ticket_and_counts_calls():
+    from app.synonyms import probe
+
+    ts = [T(i) for i in range(20)]
+    ts[7] = mine.Ticket("T-7", "BADMARK", "", "x")
+
+    def chat(messages, **kw):
+        return "" if "BADMARK" in messages[0]["content"] else '{"groups": []}'
+
+    r = probe.run_probe(ts, chat=chat, chunk=5, sizes=(5,), samples=3, prompt_trials=2, max_calls=200)
+    assert r["prompt"] == {"trials": 2, "blocked": 0}
+    assert r["scan"]["blocked_chunks"] == 1 and r["scan"]["singles_blocked"] == ["T-7"] and r["scan"]["singles_passed"] == 4
+    assert r["calls"] <= 200 and r["errors"] == 0
+    r2 = probe.run_probe(ts, chat=chat, chunk=5, sizes=(5,), samples=3, prompt_trials=2, max_calls=3)
+    assert r2["calls"] == 3 and r2.get("stopped_by_max_calls")

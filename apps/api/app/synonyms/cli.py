@@ -226,11 +226,26 @@ def main(argv: list[str] | None = None) -> int:
                    help="stop after N consecutive batches that stay empty after retries (0 = never)")
     m.add_argument("--allow-partial", action="store_true", help="with --commit, commit even if some batches failed")
 
+    q = sub.add_parser("probe", help="measure the Fabrix content-filter block rate (billable; prints ticket IDs only)")
+    q.add_argument("--since-years", type=float, default=2.0)
+    q.add_argument("--chunk", type=int, default=5)
+    q.add_argument("--samples", type=int, default=10, help="random chunks per size in the size sweep")
+    q.add_argument("--max-calls", type=int, default=400)
+
     i = sub.add_parser("import")
     i.add_argument("--file", required=True)
 
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO)
+
+    if args.cmd == "probe":
+        from app.llm_chat import chat_complete
+        from app.synonyms import probe
+
+        res = probe.run_probe(mine.load_tickets(since_years=args.since_years), chat=chat_complete, chunk=max(1, args.chunk),
+                              samples=max(1, args.samples), max_calls=max(1, args.max_calls))
+        print(json.dumps(res, ensure_ascii=False))
+        return 0
 
     if args.cmd == "import":
         from app.synonyms import store
