@@ -239,6 +239,7 @@
     </details>
   </div>
 
+  <script src="/js/auth.js" onerror="console.warn('auth.js load failed; using inline CitecAuth fallback')"></script>
   <script src="/js/nav.js"></script>
   <script src="/js/markdown.js?v=20261021"></script>
   <script src="/js/doclink.js"></script>
@@ -268,7 +269,6 @@
       },
     };
   </script>
-  <script src="/js/auth.js" onerror="console.warn('auth.js load failed; using inline CitecAuth fallback')"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({

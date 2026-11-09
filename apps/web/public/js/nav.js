@@ -50,9 +50,38 @@
     container.innerHTML = html;
   }
 
+  function mountUnmask(container) {
+    var A = global.CitecAuth;
+    if (!A || !A.me || !A.setUnmask) return;
+    A.me().then(function (res) {
+      var roles = ((res.data && res.data.principal) || {}).roles || [];
+      var allowed = roles.indexOf("senior") >= 0 || roles.indexOf("admin") >= 0;
+      if (!allowed) {
+        A.setUnmask(false);
+        return;
+      }
+      var label = document.createElement("label");
+      label.className = "unmask-toggle";
+      label.innerHTML = '<input type="checkbox"> 원본 보기';
+      var box = label.querySelector("input");
+      box.checked = A.unmaskOn();
+      box.addEventListener("change", function () {
+        A.setUnmask(box.checked);
+        location.reload();
+      });
+      container.appendChild(label);
+      if (A.unmaskOn()) {
+        var bar = document.createElement("div");
+        bar.className = "unmask-banner";
+        bar.textContent = "원본 표시 중 · 열람이 기록됩니다";
+        document.body.insertBefore(bar, document.body.firstChild);
+      }
+    }).catch(function () {});
+  }
+
   function init() {
     var nodes = document.querySelectorAll("#topNav[data-page]");
-    for (var i = 0; i < nodes.length; i++) render(nodes[i]);
+    for (var i = 0; i < nodes.length; i++) { render(nodes[i]); mountUnmask(nodes[i]); }
   }
 
   if (document.readyState === "loading") {
