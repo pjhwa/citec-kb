@@ -170,3 +170,39 @@ def test_more_stopwords():
 
 def test_netmask_not_masked():
     assert _idem("mask 255.255.255.0 gw 10.0.0.1") == "mask 255.255.255.0 gw [IP-1]"
+
+
+def test_ip_adjacent_to_hangul():
+    cases = {
+        "서버 10.1.2.3에서 접속": "서버 [IP-1]에서 접속", "10.1.2.3로 접속": "[IP-1]로 접속",
+        "IP:10.0.0.1에": "IP:[IP-1]에", "서버10.0.0.1": "서버[IP-1]",
+        "2001:db8::1에서": "[IP-1]에서", "fe80::1로": "[IP-1]로",
+    }
+    for src, exp in cases.items():
+        assert _idem(src) == exp, src
+    for s in ["v1.2.3.4", "256.1.1.1", "1.2.3", "10.1.1.1.5", "12:30:45", "aa:bb:cc:dd:ee:ff"]:
+        assert _idem(s) == s, s
+
+
+def test_phone_variants():
+    for p in ["010 1234 5678", "010.1234.5678", "(010)1234-5678", "+821012345678",
+              "０１０-１２３４-５６７８", "010‑1234‑5678", "010​-1234-5678", "02 123 4567"]:
+        assert _idem(f"전화 {p} 끝") == "전화 [PHONE-1] 끝", p
+    for s in ["문서 2021 04 08", "금액 12 345 678원", "v1.2.3", "1234 5678", "10.1.2.3"]:
+        out = _idem(s)
+        assert "PHONE" not in out, s
+
+
+def test_sabun_label_variants():
+    assert _idem("사번(12345)") == "사번([ID-1])"
+    assert _idem("사번: 12345") == "사번: [ID-1]"
+    assert _idem("사원번호: 12345") == "사원번호: [ID-1]"
+    assert _idem("사원 번호 12345") == "사원 번호 [ID-1]"
+    assert _idem("사번: 123456") == "사번: 123456"
+
+
+def test_spaced_name_value():
+    assert _idem("이름 : 홍 길 동") == "이름 : [NAME-1]"
+    assert _idem("이름 : 홍길동") == "이름 : [NAME-1]"
+    assert _idem("신청인 : 홍길동 프로") == "신청인 : [NAME-1] 프로"
+    assert _idem("파일이름: 보고서") == "파일이름: 보고서"
