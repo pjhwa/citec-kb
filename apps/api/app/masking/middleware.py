@@ -5,6 +5,9 @@ from __future__ import annotations
 import codecs
 import json
 import logging
+import threading
+import time
+from collections import OrderedDict
 from typing import Any, Awaitable, Callable
 
 from starlette.concurrency import run_in_threadpool
@@ -12,7 +15,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-from app.audit.api_access import client_ip
 from app.auth.principal import resolve_principal
 from app.masking.audit import write_unmask_audit
 from app.masking.dictionary import get_dictionary
@@ -60,6 +62,53 @@ def classify(content_type: str) -> str:
     if mt.startswith(_PASSTHROUGH_TYPES):
         return PASS
     return REJECT
+
+
+# Denied-unmask audit rows: only when something would have been revealed, at most one per (sub, path)
+# per _DENIED_TTL seconds per process. Bounded so a flood of distinct paths cannot grow memory.
+_DENIED_TTL = 60.0
+_DENIED_CAP = 2000
+_DENIED_SEEN: "OrderedDict[tuple, float]" = OrderedDict()
+_DENIED_LOCK = threading.Lock()
+
+
+def _now() -> float:
+    return time.monotonic()
+
+
+def reset_denied_cache() -> None:
+    with _DENIED_LOCK:
+        _DENIED_SEEN.clear()
+
+
+def _claim_denied(sub: str, path: str, now: float) -> bool:
+    """True if a denied row for (sub, path) may be written now (and records it)."""
+    key = (sub, path)
+    with _DENIED_LOCK:
+        while _DENIED_SEEN:                       # oldest first: drop expired entries
+            ts = next(iter(_DENIED_SEEN.values()))
+            if now - ts < _DENIED_TTL:
+                break
+            _DENIED_SEEN.popitem(last=False)
+        if key in _DENIED_SEEN:
+            return False
+        _DENIED_SEEN[key] = now
+        while len(_DENIED_SEEN) > _DENIED_CAP:
+            _DENIED_SEEN.popitem(last=False)
+        return True
+
+
+def _release_denied(sub: str, path: str) -> None:
+    with _DENIED_LOCK:
+        _DENIED_SEEN.pop((sub, path), None)
+
+
+def audit_client_ip(request: Request) -> str:
+    """TCP peer always; a proxy header (spoofable — port 8573 is published) only as an extra hint."""
+    peer = request.client.host if request.client and request.client.host else "unknown"
+    hint = (request.headers.get("x-real-ip") or "").split(",")[0].strip() \
+        or (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return (f"{peer} xri={hint}" if hint else peer)[:64]
 
 
 def _unmask_requested(request: Request) -> bool:
@@ -208,7 +257,7 @@ class MaskingMiddleware(BaseHTTPMiddleware):
             masked = masker.mask_text(raw.decode(cs, errors="replace")).encode(cs, errors="replace")
         counts = {k: v for k, v in masker.counts.items() if v}
 
-        ip = client_ip(request.headers, request.client.host if request.client else None)
+        ip = audit_client_ip(request)
         audit_kw = dict(principal=principal, level=d.level, method=request.method, path=request.url.path,
                         doc_refs=refs, counts=counts, client_ip=ip)
         original, meta = False, {}
@@ -224,10 +273,13 @@ class MaskingMiddleware(BaseHTTPMiddleware):
                 original = True
         elif d.unmask_denied:
             meta = {"unmask_denied": True}
-            try:
-                write_unmask_audit(outcome="denied", **{**audit_kw, "counts": {}})
-            except Exception:  # noqa: BLE001
-                logger.exception("denied-unmask audit write failed")
+            would_reveal = counts.get("pii", 0) + counts.get("net", 0) > 0
+            if would_reveal and _claim_denied(principal.sub, request.url.path, _now()):
+                try:
+                    write_unmask_audit(outcome="denied", **{**audit_kw, "counts": {}})
+                except Exception:  # noqa: BLE001
+                    _release_denied(principal.sub, request.url.path)
+                    logger.exception("denied-unmask audit write failed")
 
         info = {"applied": not original, "level": d.level, "counts": counts, **meta}
         if kind != JSON:

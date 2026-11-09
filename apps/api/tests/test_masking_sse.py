@@ -10,7 +10,7 @@ import pytest
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
-from test_masking_middleware import harness
+from test_masking_middleware import _fresh_denied_cache, harness  # noqa: F401 (autouse fixture)
 
 # Shaped like POST /api/query (external_compat.api_query.event_gen).
 API_QUERY_EVENTS = [
@@ -150,3 +150,13 @@ def test_mcp_client_folds_masked_stream(sse):
     assert "call [PHONE-1] at [IP-1] ok" in out and "jira/T-1.md" in out
     for v in LEAKS:
         assert v not in out
+
+
+def test_sse_denied_header_and_single_row(sse):
+    c, audit, _ = sse
+    for _ in range(3):
+        r = c.post("/api/query?unmask=1", headers={"X-API-Key": "viewer"}, json={})
+        assert r.headers["x-citec-unmask"] == "denied"
+        for v in LEAKS:
+            assert v not in r.text
+    assert [a["outcome"] for a in audit] == ["denied"]

@@ -20,6 +20,13 @@ def _p(*roles):
 KEYS = {"viewer": _p("viewer"), "author": _p("author"), "senior": _p("senior"), "admin": _p("admin")}
 
 
+@pytest.fixture(autouse=True)
+def _fresh_denied_cache():
+    MW.reset_denied_cache()
+    yield
+    MW.reset_denied_cache()
+
+
 def harness(monkeypatch):
     """Mini app behind MaskingMiddleware. Other masking test modules import this."""
     audit: list = []
@@ -72,6 +79,14 @@ def env(monkeypatch):
     @app.get("/v1/healthcheck-x")
     def healthcheck_x():
         return {"note": BODY}
+
+    @app.get("/v1/clean")
+    def clean():
+        return {"note": "nothing personal here"}
+
+    @app.get("/v1/ip")
+    def ip():
+        return {"note": "ok"}
 
     @app.get("/other")
     def other():
@@ -179,3 +194,63 @@ def test_skip_list_matches_whole_segments_only(env):
 )
 def test_in_scope_prefix_matching(path, expected):
     assert MW.in_scope(path) is expected
+
+
+def test_denied_row_only_when_something_would_be_revealed(env):
+    c, audit, _ = env
+    r = c.get("/v1/clean?unmask=1", headers={"X-API-Key": "author"})
+    assert r.json()["masking"]["unmask_denied"] is True
+    assert r.headers["x-citec-unmask"] == "denied"
+    assert not audit
+
+
+def test_denied_rows_deduped_per_sub_and_path_for_60s(env, monkeypatch):
+    c, audit, _ = env
+    now = [1000.0]
+    monkeypatch.setattr(MW, "_now", lambda: now[0])
+    for _ in range(5):
+        r = c.get("/v1/doc?unmask=1", headers={"X-API-Key": "author"})
+        assert r.json()["masking"]["unmask_denied"] is True
+    assert [a["outcome"] for a in audit] == ["denied"]
+    c.get("/v1/list?unmask=1", headers={"X-API-Key": "author"})        # other path → own row
+    assert len(audit) == 2
+    now[0] += 59
+    c.get("/v1/doc?unmask=1", headers={"X-API-Key": "author"})
+    assert len(audit) == 2
+    now[0] += 2
+    c.get("/v1/doc?unmask=1", headers={"X-API-Key": "author"})
+    assert len(audit) == 3
+
+
+def test_denied_dedupe_retries_after_failed_write(env):
+    c, audit, state = env
+    state["audit_fail"] = True
+    c.get("/v1/doc?unmask=1", headers={"X-API-Key": "author"})
+    state["audit_fail"] = False
+    c.get("/v1/doc?unmask=1", headers={"X-API-Key": "author"})
+    assert [a["outcome"] for a in audit] == ["denied"]
+
+
+def test_denied_cache_is_bounded():
+    for i in range(MW._DENIED_CAP + 500):
+        assert MW._claim_denied("u", f"/v1/p{i}", now=1.0) is True
+    assert len(MW._DENIED_SEEN) <= MW._DENIED_CAP
+    assert MW._claim_denied("u", f"/v1/p{MW._DENIED_CAP + 499}", now=2.0) is False
+    # expired entries are evicted and may be claimed again
+    assert MW._claim_denied("u", f"/v1/p{MW._DENIED_CAP + 499}", now=70.0) is True
+
+
+@pytest.mark.parametrize(
+    "headers,expected",
+    [
+        ({}, "testclient"),
+        ({"X-Real-IP": "192.0.2.7"}, "testclient xri=192.0.2.7"),
+        ({"X-Forwarded-For": "198.51.100.1, 203.0.113.9"}, "testclient xri=198.51.100.1"),
+        ({"X-Real-IP": "192.0.2.7, 192.0.2.8", "X-Forwarded-For": "198.51.100.1"}, "testclient xri=192.0.2.7"),
+        ({"X-Real-IP": "x" * 200}, ("testclient xri=" + "x" * 200)[:64]),
+    ],
+)
+def test_audit_client_ip_is_tcp_peer_plus_header_hint(env, headers, expected):
+    c, audit, _ = env
+    c.get("/v1/doc", headers={"X-API-Key": "admin", "X-Citec-Unmask": "1", **headers})
+    assert audit[0]["client_ip"] == expected

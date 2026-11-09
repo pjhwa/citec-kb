@@ -11,7 +11,7 @@ import pytest
 from fastapi.responses import RedirectResponse, Response
 from fastapi.testclient import TestClient
 
-from test_masking_middleware import BODY, harness
+from test_masking_middleware import BODY, _fresh_denied_cache, harness  # noqa: F401 (autouse fixture)
 
 PII = ("031-123-4567", "10.0.0.1")
 
