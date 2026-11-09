@@ -368,3 +368,19 @@ def test_main_passes_empty_retries_flag(env, capsys, monkeypatch):
     env.chat = lambda m, **kw: ""
     cli.main(["mine", "--out", env.out + "b", "--batch-size", "5"])
     assert seen[-1] == 3
+
+
+def test_stop_after_empty_skips_remaining_batches(tmp_path):
+    ts = [T(i) for i in range(40)]
+    calls = []
+
+    def chat(messages, **kw):
+        calls.append(1)
+        return ""  # every batch blocked
+
+    res = cli.run_mine(**_kw(tmp_path, chat, ts, batch_size=10, empty_retries=0, stop_after_empty=2))
+    assert len(calls) == 2 and res["stopped_early"] is True and res["stats"]["empty_response"] == 2
+    calls.clear()
+    (tmp_path / "b").mkdir()
+    res = cli.run_mine(**_kw(tmp_path / "b", chat, ts, batch_size=10, empty_retries=0))
+    assert len(calls) == 4 and "stopped_early" not in res

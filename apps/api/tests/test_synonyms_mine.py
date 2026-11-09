@@ -304,3 +304,18 @@ def test_cli_mine_help_exits_zero(capsys):
         cli.main(["mine", "--help"])
     assert e.value.code == 0
     assert "--commit" in capsys.readouterr().out
+
+
+def test_evidence_records_cooccurrence_and_min1_accepts_separate_tickets():
+    ts = [mine.Ticket("S-1", "inode2x 발생", "", "클러스터 inode2x 발생"),
+          mine.Ticket("S-2", "아이노드 지연", "", "DB 아이노드 지연"),
+          mine.Ticket("S-3", "inode2x 와 아이노드", "", "inode2x 아이노드 둘 다 언급")]
+    g = [{"terms": ["inode2x", "아이노드"], "tickets": ["S-1", "S-2"], "reason": "r"}]
+    df = FakeDF({"inode2x": 70, "아이노드": 20})
+    items, stats = mine.process_groups(g, ts, term_df=df, params=_params(min_terms_per_ticket=2))
+    assert items == [] and stats["rej_evidence"] == 1  # never together -> strict rule rejects a true synonym pair
+    items, _ = mine.process_groups(g, ts, term_df=df, params=_params(min_terms_per_ticket=1))
+    assert items[0]["evidence"]["cooccur_tickets"] == 0
+    g[0]["tickets"] = ["S-1", "S-2", "S-3"]
+    items, _ = mine.process_groups(g, ts, term_df=df, params=_params(min_terms_per_ticket=1))
+    assert items[0]["evidence"]["cooccur_tickets"] == 1

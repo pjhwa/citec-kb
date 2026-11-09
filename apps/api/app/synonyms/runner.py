@@ -183,13 +183,16 @@ def _clamp(v: float | int | None, lo: float, hi: float, name: str):
     return v
 
 
-def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_size: int = 100,
+def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_size: int = 30,
           max_batches: int | None = None, commit: bool = False, split_on_empty: bool = False,
-          started_by: str = "?", run_id: str | None = None) -> dict[str, Any]:
+          min_terms_per_ticket: int = 1, stop_after_empty: int = 3, started_by: str = "?", run_id: str | None = None) -> dict[str, Any]:
     since_years = _clamp(since_years, 0.1, 10, "since_years")
     limit_tickets = _clamp(limit_tickets, 1, 100000, "limit_tickets")
     batch_size = _clamp(batch_size, 10, 500, "batch_size")
     max_batches = _clamp(max_batches, 1, 10000, "max_batches")
+    if min_terms_per_ticket not in (1, 2):
+        raise RunError(422, "min_terms_per_ticket은 1 또는 2여야 합니다.")
+    stop_after_empty = int(_clamp(stop_after_empty, 0, 50, "stop_after_empty") or 0)
     d = runs_dir()
     d.mkdir(parents=True, exist_ok=True)
     with open(d / ".start.lock", "a") as lock:
@@ -205,7 +208,8 @@ def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_s
             rid = f"{base}-{n}"
         out_path = _p(rid, ".json")
         argv = [sys.executable, "-m", CLI_MODULE, "mine", "--since-years", str(since_years),
-                "--batch-size", str(batch_size), "--run-id", rid, "--out", str(out_path)]
+                "--batch-size", str(batch_size), "--run-id", rid, "--out", str(out_path),
+                "--min-terms-per-ticket", str(min_terms_per_ticket), "--stop-after-empty", str(stop_after_empty)]
         if limit_tickets:
             argv += ["--limit-tickets", str(int(limit_tickets))]
         if max_batches:
@@ -226,7 +230,8 @@ def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_s
         log_f.close()
         meta = {"run_id": rid, "pid": proc.pid, "started_at": now.isoformat(timespec="seconds"), "started_by": started_by,
                 "args": {"since_years": since_years, "limit_tickets": limit_tickets, "batch_size": batch_size,
-                         "max_batches": max_batches, "commit": commit, "split_on_empty": split_on_empty}}
+                         "max_batches": max_batches, "commit": commit, "split_on_empty": split_on_empty,
+                         "min_terms_per_ticket": min_terms_per_ticket, "stop_after_empty": stop_after_empty}}
         _p(rid, ".meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     threading.Thread(target=proc.wait, daemon=True).start()  # reap so a finished run isn't a zombie
     return describe(rid)
