@@ -75,3 +75,5 @@ apps/api/app/.build_sha
 
 # per-environment API tokens (issued by scripts/issue_system_token.py); see config/auth.json.example
 config/auth.json
+# 고객사 목록은 민감하다 — 형식 예시는 config/masking_dictionary.json.example
+config/masking_dictionary.json

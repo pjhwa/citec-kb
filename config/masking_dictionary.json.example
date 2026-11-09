@@ -1,0 +1,5 @@
+{
+  "customers": ["예시고객사A", "ExampleCorp"],
+  "hostname_patterns": ["\\b[a-z]{3}\\d{2}(?:web|was|db)\\d{2}\\b"],
+  "allowlist": ["8.8.8.8", "1.1.1.1"]
+}
