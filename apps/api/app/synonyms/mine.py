@@ -81,6 +81,26 @@ def _clean_id(x: Any) -> str:
     return str(x).strip().strip("[]").strip()
 
 
+def _salvage_groups(text: str) -> list[dict[str, Any]]:
+    """Complete ``{"terms": [...], ...}`` objects from a JSON text that does not parse as a whole."""
+    dec = json.JSONDecoder()
+    out: list[dict[str, Any]] = []
+    i = text.find("[", max(0, text.find('"groups"')))
+    while 0 <= i < len(text):
+        i = text.find("{", i)
+        if i < 0:
+            break
+        try:
+            obj, end = dec.raw_decode(text, i)
+        except ValueError:
+            i += 1
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("terms"), list):
+            out.append(obj)
+        i = end
+    return out
+
+
 def _parse(raw: str) -> list[dict[str, Any]] | None:
     """Parsed groups, or None when the text is unparseable / has the wrong shape."""
     text = (raw or "").strip() if isinstance(raw, str) else ""
@@ -97,7 +117,10 @@ def _parse(raw: str) -> list[dict[str, Any]] | None:
     try:
         data = json.loads(text)
     except ValueError:
-        return None
+        groups = _salvage_groups(text)  # cut-off / slightly malformed output: keep the complete groups
+        if not groups:
+            return None
+        data = {"groups": groups}
     groups = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(groups, list):
         return None
@@ -331,7 +354,7 @@ def load_tickets(*, since_years: float, limit: int | None = None) -> list[Ticket
 
 
 def make_term_df() -> Callable[[str], int]:
-    """Active-chunk FTS document frequency (capped), same query as search._token_df."""
+    """Active-chunk FTS document frequency of a term or phrase (capped)."""
     from sqlalchemy import func, select
 
     from app.db.models import Chunk
@@ -346,10 +369,12 @@ def make_term_df() -> Callable[[str], int]:
         with session_scope() as session:
             # Capped at DF_COUNT_CAP: a count equal to the cap means "at least that many",
             # which is always > Params.df_max (enforced < cap by the CLI) -> rejected as too common.
+            # phraseto_tsquery: a multi-word term counts chunks where the words are adjacent. plainto_tsquery
+            # ANDs the words anywhere in the chunk ("디스크 부족" 274 vs 7, "접속 지연" 2008 vs 927 in dev).
             capped = (
                 select(Chunk.id)
                 .where(Chunk.is_active.is_(True))
-                .where(Chunk.tsv.op("@@")(func.plainto_tsquery("simple", term)))
+                .where(Chunk.tsv.op("@@")(func.phraseto_tsquery("simple", term)))
                 .limit(DF_COUNT_CAP)
                 .subquery()
             )
