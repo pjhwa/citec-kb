@@ -15,6 +15,7 @@ from typing import Any
 from app.synonyms.rules import (
     MAX_GROUP,
     clean_terms,
+    term_present,
     static_covers,
     terms_key,
     verify_group,
@@ -204,6 +205,11 @@ def process_groups(
                     "df": {t: dfs[t] for t in kept},
                     "reason": g.get("reason", ""),
                     "min_terms_per_ticket": params.min_terms_per_ticket,
+                    # tickets where >=2 of the terms appear together; 0 = each term only seen in separate tickets
+                    "cooccur_tickets": sum(
+                        1 for tid in ticket_ids
+                        if sum(1 for t in kept if term_present(texts.get(tid, ""), t)) >= 2
+                    ),
                 },
             }
         )

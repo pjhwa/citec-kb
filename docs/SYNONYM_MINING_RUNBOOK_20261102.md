@@ -60,6 +60,8 @@ docker compose exec -T api cat /tmp/syn-trial1.json | jq -r '.items[].terms | jo
 
 Fabrix는 **동일한 요청을 확률적으로 차단**할 수 있다 (2026-11-02 관찰: resultCode FR-201, 메시지 없음, 같은 요청이 EMPTY/ok/EMPTY). 그래서 빈 응답은 기본 3회까지(2s/4s/8s + 지터) 자동 재시도한다(`--empty-retries N`, 0이면 끔; `--split-on-empty`는 재시도를 소진한 뒤에만 동작). 결과의 읽는 법: `stats.empty_retried` = 재시도 호출 수, `stats.empty_recovered` = 재시도로 복구된 배치 수, `stats.empty_response` = 재시도 후에도 비어 있는 배치 수(>0이면 종료코드 3), 최상위 `total_llm_calls` = 배치 + 재시도 + 분할 호출의 총합(비용). 차단 비율이 높으면 Fabrix 관리자에게 보고한다: resultCode=FR-201, filterLogId=None, 같은 요청이 ok/EMPTY로 번갈아 나옴.
 
+개발 DB(티켓 726건) 측정 결과 (2026-11-09): 코드에 있는 확정 동의어 6그룹 중 한 티켓에 두 용어가 함께 나오는 건 4그룹뿐이고(failover/페일오버는 1건, deadlock/데드락은 0건), 용어가 따로 나와도 인정하면 5그룹이 통과한다. 그래서 admin 실행의 기본 증거 기준은 `--min-terms-per-ticket 1`로 바꿨고, 후보 근거에 `cooccur_tickets`(두 용어가 같이 나온 티켓 수, 0이면 따로만 확인됨)를 남겨 사람이 판정할 때 본다. 배치 크기 기본값은 30(100은 FR-201 차단이 심함), `--stop-after-empty N`(admin 기본 3)은 연속 N배치가 재시도 후에도 비면 남은 배치를 건너뛰어 과금을 막는다. 순서를 바꿔 비슷한 티켓을 한 배치에 모으는 방법은 같은 지표(용어 쌍이 한 배치에 보이는 배치 수)로 재 보니 개선이 없어 적용하지 않았다.
+
 주요 옵션 (`mine --help`): `--since-years`(기본 2), `--limit-tickets`, `--batch-size`(기본 100), `--max-batches`, `--run-id`, `--min-terms-per-ticket {1,2}`, `--df-min`(기본 3), `--df-max`(기본 1500, **2000 미만**이어야 함 — DF는 2000에서 잘려 센다), `--out`(필수), `--commit`, `--allow-partial`, `--empty-retries`(기본 3), `--split-on-empty`.
 
 ## 2. 전체 실행 (운영)

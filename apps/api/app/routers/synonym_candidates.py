@@ -42,10 +42,12 @@ class ImportBody(BaseModel):
 class MineStart(BaseModel):
     since_years: float = Field(default=2.0, ge=0.1, le=10)
     limit_tickets: Optional[int] = Field(default=None, ge=1, le=100000)
-    batch_size: int = Field(default=100, ge=10, le=500)
+    batch_size: int = Field(default=30, ge=10, le=500)
     max_batches: Optional[int] = Field(default=None, ge=1, le=10000)
     commit: bool = False  # True: accepted candidates go straight in as 'proposed'
     split_on_empty: bool = False  # extra (billable) calls to isolate filter-blocked tickets
+    min_terms_per_ticket: int = Field(default=1, ge=1, le=2)  # 1: terms may appear in separate tickets
+    stop_after_empty: int = Field(default=3, ge=0, le=50)  # stop after N consecutive blocked batches (0 = never)
 
 
 def _run(fn, *a, **kw):

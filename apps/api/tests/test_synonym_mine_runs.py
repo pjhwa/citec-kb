@@ -21,6 +21,7 @@ import argparse, json, sys, time
 p = argparse.ArgumentParser(); p.add_argument("cmd")
 for a in ("--since-years","--batch-size","--run-id","--out","--limit-tickets","--max-batches"): p.add_argument(a)
 p.add_argument("--commit", action="store_true"); p.add_argument("--split-on-empty", action="store_true")
+p.add_argument("--min-terms-per-ticket", type=int, default=2); p.add_argument("--stop-after-empty", type=int, default=0)
 a = p.parse_args()
 print(f"run_id={a.run_id} tickets: 250 backend=fake model=m", file=sys.stderr)
 mode = open(a.out + ".mode").read() if __import__("os").path.exists(a.out + ".mode") else "ok"

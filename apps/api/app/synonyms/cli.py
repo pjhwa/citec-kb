@@ -80,6 +80,7 @@ def run_mine(
     split_on_empty: bool = False,
     empty_retries: int = 3,
     sleep: Callable[[float], None] | None = None,
+    stop_after_empty: int = 0,
 ) -> dict[str, Any]:
     progress_path = out_path + ".progress.jsonl"
     saved: dict[int, dict[str, Any]] = {}  # later line wins
@@ -101,6 +102,8 @@ def run_mine(
     if sleep is not None:
         mine_kw["sleep"] = sleep
     n_batches_run = 0
+    empty_streak = 0  # consecutive batches that stayed empty after all retries
+    stopped_early = False
     partial_used: set[int] = set()
     failed: dict[str, int] = {}  # this run only; failed batches are not checkpointed -> retried on resume
     for idx, batch in mine.iter_batches(tickets, batch_size):
@@ -113,6 +116,11 @@ def run_mine(
                 used[idx] = rec
                 continue
             print(f"batch {idx}: ticket set changed since checkpoint; redoing", file=sys.stderr)
+        if stop_after_empty and empty_streak >= stop_after_empty:
+            stopped_early = True
+            print(f"batch {idx}: stopping — the last {empty_streak} batches stayed empty (content filter?); "
+                  "remaining batches are skipped to avoid billable calls", file=sys.stderr)
+            break
         if split_on_empty:
             items, stats = _mine_split(
                 batch, depth=0, chat=chat, term_df=term_df, params=params,
@@ -125,6 +133,7 @@ def run_mine(
             calls[0] += 1
             calls[1] += int(stats.get("empty_retried", 0))
         n_batches_run += 1
+        empty_streak = empty_streak + 1 if stats.get("empty_response") else 0
         k = int(stats.get("empty_retried", 0))
         if k:
             print(
@@ -170,6 +179,8 @@ def run_mine(
     if stats_total.get("empty_response"):
         result["empty_samples"] = notes[:5]
     result["total_llm_calls"] = calls[0] + calls[1]
+    if stopped_early:
+        result["stopped_early"] = True
     if split_on_empty:
         result["blocked_chunks"] = blocked
         extra = calls[0] - n_batches_run
@@ -211,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="retries (2s/4s/8s backoff) when the LLM returns empty content; 0 disables")
     m.add_argument("--split-on-empty", action="store_true",
                    help="retry empty (content-filtered?) batches as halves down to >=5 tickets; extra billable calls")
+    m.add_argument("--stop-after-empty", type=int, default=0,
+                   help="stop after N consecutive batches that stay empty after retries (0 = never)")
     m.add_argument("--allow-partial", action="store_true", help="with --commit, commit even if some batches failed")
 
     i = sub.add_parser("import")
@@ -268,6 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id, model=model,
         out_path=args.out, max_batches=args.max_batches,
         split_on_empty=args.split_on_empty, empty_retries=max(0, args.empty_retries),
+        stop_after_empty=max(0, args.stop_after_empty),
     )
     stats = result["stats"]
     n_batches = -(-len(tickets) // args.batch_size)
@@ -294,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             commit = store.upsert_candidates(result["items"], run_id=result["run_id"], model=model)
     out = {"run_id": run_id, "stats": stats, "commit": commit}
-    for k in ("empty_samples", "blocked_chunks", "extra_calls", "total_llm_calls"):
+    for k in ("empty_samples", "blocked_chunks", "extra_calls", "total_llm_calls", "stopped_early"):
         if k in result:
             out[k] = result[k]
     print(json.dumps(out, ensure_ascii=False))
