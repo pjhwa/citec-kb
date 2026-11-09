@@ -37,6 +37,12 @@ MACROS = {
     "@weekly": "0 0 * * 0", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@hourly": "0 * * * *",
 }
 ERROR_RE = re.compile(r"❌|Traceback|\bERROR\b|\bFATAL\b|실패|비정상 종료", re.IGNORECASE)
+# JSON 응답의 정상 필드(`"error":null`)는 오류 표식이 아니다 (job 큐 응답이 로그에 그대로 남는다).
+_JSON_NULL_ERR = re.compile(r'"(?:error|errors)"\s*:\s*(?:null|\[\]|0)', re.IGNORECASE)
+
+
+def has_error(line: str) -> bool:
+    return bool(ERROR_RE.search(_JSON_NULL_ERR.sub("", line)))
 HISTORY_N = 5
 MISSED_GRACE = timedelta(minutes=10)
 
@@ -192,7 +198,7 @@ def history_for(script: Path | None, logs_dir: Path) -> list[dict]:
         out.append({
             "file": p.name, "mtime": iso(st.st_mtime), "size": st.st_size,
             "last_line": tail[-1][:300] if tail else "",
-            "error": any(ERROR_RE.search(ln) for ln in tail),
+            "error": any(has_error(ln) for ln in tail),
         })
     return out
 
@@ -217,7 +223,7 @@ def build(crontab_text: str, logs_dir: Path, now: datetime) -> dict:
             entry["log_mtime"], entry["log_size"] = iso(st.st_mtime), st.st_size
             tail = tail_lines(log)
             entry["last_lines"] = [ln[:300] for ln in tail[-3:]]
-            error = any(ERROR_RE.search(ln) for ln in tail)
+            error = any(has_error(ln) for ln in tail)
             mtime = datetime.fromtimestamp(st.st_mtime).astimezone()
         else:
             mtime = None
