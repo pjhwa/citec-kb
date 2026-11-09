@@ -401,3 +401,26 @@ def test_probe_finds_the_blocking_ticket_and_counts_calls():
     assert r["calls"] <= 200 and r["errors"] == 0
     r2 = probe.run_probe(ts, chat=chat, chunk=5, sizes=(5,), samples=3, prompt_trials=2, max_calls=3)
     assert r2["calls"] == 3 and r2.get("stopped_by_max_calls")
+
+
+def test_probe_singles_separates_stable_from_flaky_blocks():
+    from app.synonyms import probe
+
+    ts = [T(i) for i in range(12)]
+    ts[3] = mine.Ticket("T-3", "ALWAYS", "", "x")
+    ts[8] = mine.Ticket("T-8", "SOMETIMES", "", "x")
+    seen = {"n": 0}
+
+    def chat(messages, **kw):
+        c = messages[0]["content"]
+        if "ALWAYS" in c:
+            return ""
+        if "SOMETIMES" in c:
+            seen["n"] += 1
+            return "" if seen["n"] == 1 else '{"groups": []}'
+        return '{"groups": []}'
+
+    msgs = []
+    r = probe.run_probe(ts, chat=chat, singles=True, repeat=2, max_calls=100, progress=msgs.append)["singles"]
+    assert r["tested"] == 12 and r["blocked_first"] == 2
+    assert r["stable_blocked"] == ["T-3"] and r["flaky"] == {"T-8": 0} and len(msgs) == 2

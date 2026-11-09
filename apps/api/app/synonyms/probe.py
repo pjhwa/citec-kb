@@ -38,6 +38,8 @@ def blocked(chat: Callable[..., str], tickets: list[mine.Ticket], counter: list[
 def run_probe(
     tickets: list[mine.Ticket], *, chat: Callable[..., str], chunk: int = 5, sizes: tuple[int, ...] = (5, 15, 30),
     samples: int = 10, prompt_trials: int = 6, max_calls: int = 400, seed: int = 7,
+    skip_sizes: bool = False, singles: bool = False, repeat: int = 2,
+    progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     rnd = random.Random(seed)
     counter = [0, 0]  # calls, errors
@@ -46,10 +48,15 @@ def run_probe(
     def room() -> bool:
         return counter[0] < max_calls
 
+    if singles:  # every ticket alone, then re-test the blocked ones: is a block stable per ticket or random?
+        out["singles"] = _singles(tickets, chat, counter, max_calls, repeat, progress)
+        out["calls"], out["errors"] = counter
+        return out
+
     out["prompt"] = {"trials": prompt_trials, "blocked": sum(blocked(chat, HARMLESS, counter) for _ in range(prompt_trials) if room())}
 
     by_size: dict[str, dict[str, int]] = {}
-    for n in sizes:
+    for n in () if skip_sizes else sizes:
         done = hit = 0
         for _ in range(samples):
             if not room() or len(tickets) < n:
@@ -81,3 +88,31 @@ def run_probe(
     out["scan"] = {"chunk": chunk, "blocked_chunks": len(bad_chunks), "singles_blocked": bad_single, "singles_passed": ok_single}
     out["calls"], out["errors"] = counter
     return out
+
+
+def _singles(tickets, chat, counter, max_calls, repeat, progress) -> dict[str, Any]:
+    first_blocked: list[str] = []
+    tested = 0
+    for t in tickets:
+        if counter[0] >= max_calls:
+            break
+        tested += 1
+        if blocked(chat, [t], counter):
+            first_blocked.append(t.external_id)
+            if progress:
+                progress(f"blocked {t.external_id} ({len(first_blocked)}/{tested})")
+    by_id = {t.external_id: t for t in tickets}
+    stable: list[str] = []
+    flaky: dict[str, int] = {}  # id -> blocks among the re-tests
+    for tid in first_blocked:
+        hits = 0
+        for _ in range(max(0, repeat)):
+            if counter[0] >= max_calls:
+                break
+            hits += blocked(chat, [by_id[tid]], counter)
+        if hits == max(0, repeat):
+            stable.append(tid)
+        else:
+            flaky[tid] = hits
+    return {"tested": tested, "blocked_first": len(first_blocked), "repeat": repeat,
+            "stable_blocked": stable, "flaky": flaky, "stopped_by_max_calls": counter[0] >= max_calls}
