@@ -47,3 +47,11 @@ def test_label_name_allows_spaces_between_letters():
         m = P.LABEL_NAME.search(s)
         assert m and m.group(2) == "홍길동", s
     assert P.LABEL_NAME.search("신청인이 : 홍길동") is None
+
+
+def test_label_name_not_glued_to_hangul():
+    assert P.LABEL_NAME.search("파일이름: 보고서") is None
+    assert P.LABEL_NAME.search("호스트이름 : 서버설정") is None
+    assert P.LABEL_NAME.search("사용자 이름: 홍길동").group(2) == "홍길동"
+    assert P.LABEL_NAME.search("□ 신 청 인 : 홍길동").group(2) == "홍길동"
+    assert P.LABEL_NAME.search("성명: 김철수").group(2) == "김철수"

@@ -40,7 +40,7 @@ LABEL_SABUN = re.compile(r"(사번\s*[:：=]?\s*)(\d{5})(?!\d)")
 _NAME_LABELS = ("이름", "성명", "신청인", "수령인", "받는분")
 # 라벨 글자 사이에 공백이 있어도 잡는다(예: "신 청 인 :").
 LABEL_NAME = re.compile(
-    r"((?:" + "|".join(r"\s*".join(lb) for lb in _NAME_LABELS) + r")\s*[:：=]\s*)([가-힣]{2,4})"
+    r"((?<![가-힣])(?:" + "|".join(r"\s*".join(lb) for lb in _NAME_LABELS) + r")\s*[:：=]\s*)([가-힣]{2,4})"
 )
 
 # 개인정보가 걸린 줄에서만 쓰는 이름 후보: 성씨로 시작하는 2~4자 한글 토큰.

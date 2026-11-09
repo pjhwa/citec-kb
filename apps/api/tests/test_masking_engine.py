@@ -90,3 +90,7 @@ def test_mask_json_walks_values_not_keys():
 
 def test_spaced_label_name_masked():
     assert m().mask_text("□ 신 청 인 : 홍길동 프로") == "□ 신 청 인 : [NAME-1] 프로"
+
+
+def test_label_glued_to_hangul_not_masked():
+    assert m().mask_text("파일이름: 보고서 작성") == "파일이름: 보고서 작성"
