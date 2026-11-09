@@ -319,3 +319,12 @@ def test_evidence_records_cooccurrence_and_min1_accepts_separate_tickets():
     g[0]["tickets"] = ["S-1", "S-2", "S-3"]
     items, _ = mine.process_groups(g, ts, term_df=df, params=_params(min_terms_per_ticket=1))
     assert items[0]["evidence"]["cooccur_tickets"] == 1
+
+
+def test_parse_salvages_complete_groups_from_cut_off_json():
+    raw = ('```json\n{\n "groups": [\n  {"terms": ["접속 지연", "접속지연"], "tickets": ["T-1", "T-2"], "reason": "r"},\n'
+           '  {"terms": ["메모리 부족", "OO')
+    got = mine._parse(raw)
+    assert got and got[0]["terms"] == ["접속 지연", "접속지연"] and got[0]["tickets"] == ["T-1", "T-2"]
+    assert len(got) == 1
+    assert mine._parse('```json\n{"groups": [ {"terms": ["a') is None
