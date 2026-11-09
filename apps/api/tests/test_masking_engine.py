@@ -206,3 +206,12 @@ def test_spaced_name_value():
     assert _idem("이름 : 홍길동") == "이름 : [NAME-1]"
     assert _idem("신청인 : 홍길동 프로") == "신청인 : [NAME-1] 프로"
     assert _idem("파일이름: 보고서") == "파일이름: 보고서"
+
+
+def test_ipv4_inside_identifiers():
+    cases = {"ON=M1_192.168.1.20_00001": "ON=M1_[IP-1]_00001", "node_10.20.30.40_8080": "node_[IP-1]_8080",
+             "host-10.0.0.5": "host-[IP-1]", "ip10.1.2.3x": "ip[IP-1]x"}
+    for src, exp in cases.items():
+        assert _idem(src) == exp, src
+    for s in ["v1.2.3.4", "V10.0.0.1", "256.1.1.1", "10.1.1.1.5", "1.2.3", "192.168.001.010", "mask 255.255.255.0"]:
+        assert _idem(s) == s, s
