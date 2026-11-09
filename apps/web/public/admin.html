@@ -1388,7 +1388,7 @@ function renderScanCfg(d) {
   Object.entries(SC_NUM).forEach(([k, id]) => { $(id).value = c[k]; });
   document.querySelectorAll(".scDet").forEach((el) => { el.checked = (c.detectors || []).includes(el.value); });
   $("scLlm").checked = !!c.llm_refine;
-  badge($("scSource"), d.source === "override" ? true : null, d.source === "override" ? "data/ 오버라이드" : "config 기본값");
+  badge($("scanSource"), d.source === "override" ? true : null, d.source === "override" ? "data/ 오버라이드" : "config 기본값");
   $("scMsg").textContent = d.updated_by ? "마지막 변경: " + d.updated_by + " · " + fmtTs(d.updated_at) : "";
 }
 async function refreshScanCfg() {

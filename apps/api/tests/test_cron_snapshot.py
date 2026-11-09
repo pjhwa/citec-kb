@@ -47,3 +47,12 @@ def test_status_ok_failed_missed_unknown(tmp_path):
     assert _job(tmp_path, "* * * * * /bin/echo", log_age_min=None)["status"] == "unknown"  # no redirect
     assert cs.parse_crontab("@reboot /bin/true")[0]["sched"] is None
     assert cs.parse_crontab("MAILTO=a@b\n# c\n") == []
+
+
+def test_json_null_error_field_is_not_an_error():
+    ok = '{"id":"e1","type":"decision_topic_scan","status":"queued","result":null,"error":null}'
+    assert not cs.has_error(ok)
+    assert not cs.has_error('{"error": null, "errors": 0}')
+    assert cs.has_error('{"status":"failed","error":"boom"}')
+    assert cs.has_error("ERROR: curl failed")
+    assert cs.has_error("Traceback (most recent call last):")
