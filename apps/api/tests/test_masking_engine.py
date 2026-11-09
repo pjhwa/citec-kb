@@ -132,3 +132,41 @@ def test_name_and_sabun_pipe_columns():
 def test_given_name_ending_eun_is_masked():
     assert m().mask_text("박지은 010-1234-5678") == "[NAME-1] [PHONE-1]"
     assert m().mask_text("김서은 010-1234-5678") == "[NAME-1] [PHONE-1]"
+
+
+def _idem(s):
+    out = m().mask_text(s)
+    assert m().mask_text(out) == out
+    return out
+
+
+def test_intl_phone_formats():
+    for p in ["+82-10-1234-5678", "+82-2-123-4567", "+82 10 1234 5678", "+82-31-123-4567"]:
+        assert _idem(f"연락처 {p} 입니다") == "연락처 [PHONE-1] 입니다", p
+    assert _idem("version +82-10 released") == "version +82-10 released"
+
+
+def test_address_split_across_newline_and_beonji():
+    out = _idem("서울시 마포구 서교동 \n123-4번지 가나빌딩 9층")
+    assert out == "[ADDR-1]"
+    out = _idem("경기도 성남시 분당구 정자동 12-3번지 가나빌딩 9층")
+    assert out == "[ADDR-1]"
+    mk = m()
+    mk.mask_text("서울시 마포구 서교동 \n123-4번지 가나빌딩 9층")
+    assert mk.counts["pii"] == 1
+
+
+def test_more_titles():
+    assert _idem("홍길동 그룹장(공통네트워크그룹) 010-1111-2222") == "[NAME-1] 그룹장(공통네트워크그룹) [PHONE-1]"
+    assert _idem("김철수 상무(통합인프라팀) 010-3333-4444") == "[NAME-1] 상무(통합인프라팀) [PHONE-1]"
+    assert _idem("이수 상무(통합인프라팀) 010-1111-2222") == "[NAME-1] 상무(통합인프라팀) [PHONE-1]"
+
+
+def test_more_stopwords():
+    assert _idem("운영부서(금융) : 홍길동 그룹장(통합인프라팀) 010-1111-2222") == \
+        "운영부서(금융) : [NAME-1] 그룹장(통합인프라팀) [PHONE-1]"
+    assert _idem("서비스 인프라 담당 홍길동 010-1111-2222") == "서비스 인프라 담당 [NAME-1] [PHONE-1]"
+
+
+def test_netmask_not_masked():
+    assert _idem("mask 255.255.255.0 gw 10.0.0.1") == "mask 255.255.255.0 gw [IP-1]"

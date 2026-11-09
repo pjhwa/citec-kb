@@ -41,6 +41,8 @@ class Masker:
         if not text or not self.groups:
             return text
         state: dict = {}
+        if "pii" in self.groups:       # 줄바꿈에 걸친 주소는 줄 단위 처리로 못 잡으므로 먼저 통째로 가린다
+            text = P.ADDR.sub(lambda m: self._sub("addr", m.group(0)) if "\n" in m.group(0) else m.group(0), text)
         return "\n".join(self._mask_line(line, state) for line in text.split("\n"))
 
     # -- internals -----------------------------------------------------------------------------
@@ -55,7 +57,9 @@ class Masker:
 
     def _mask_ip(self, line: str) -> str:
         def sub(m: re.Match) -> str:
-            return m.group(0) if m.group(0) in self.dic.allow else self._sub("ip", m.group(0))
+            if m.group(0) in self.dic.allow or m.group(0).startswith("255."):   # 넷마스크는 민감정보 아님
+                return m.group(0)
+            return self._sub("ip", m.group(0))
 
         return P.IPV6.sub(sub, P.IPV4.sub(sub, line))
 
