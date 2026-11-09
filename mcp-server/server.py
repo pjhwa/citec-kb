@@ -73,6 +73,15 @@ def _client(timeout: float = 30.0) -> httpx.AsyncClient:
     )
 
 
+def _masking_note(resp: httpx.Response) -> str:
+    """API가 pii/net을 마스킹했으면(X-Citec-Masking 헤더) 응답 머리에 붙일 한 줄. 없으면 빈 문자열."""
+    raw = (resp.headers.get("x-citec-masking") or "").strip()
+    if not raw:
+        return ""
+    parts = ", ".join(p.replace("=", " ") for p in raw.split(","))
+    return f"마스킹 적용: {parts} (토큰 [PHONE-1] 등은 마스킹된 값이며 복원하지 말 것)\n"
+
+
 def _api_error_detail(resp: httpx.Response) -> str:
     """citec-kb API의 오류 응답에서 detail 메시지를 추출한다.
     resp.raise_for_status()만 쓰면 이 detail이 사라지고 일반 HTTP 문구만 남는다."""
@@ -390,7 +399,8 @@ async def _search_impl(
         return "검색 결과가 없습니다."
 
     lines = [
-        f"검색 결과 {len(results)}건"
+        _masking_note(resp)
+        + f"검색 결과 {len(results)}건"
         + (f" total={data.get('total')}" if data.get("total") is not None else "")
         + (
             f" total_candidates={data.get('total_candidates')}"
@@ -467,9 +477,10 @@ async def _get_document_impl(path: str) -> str:
     if acc.get("body_api") or data.get("body_api"):
         header_bits.append(f"body_api={acc.get('body_api') or data.get('body_api')}")
     meta_line = (" | ".join(header_bits) + "\n\n") if header_bits else ""
+    note = _masking_note(resp)
     if title:
-        return f"# {title}\n{meta_line}{content}"
-    return meta_line + content
+        return note + f"# {title}\n{meta_line}{content}"
+    return note + meta_line + content
 
 
 # ── RETIRED 2026-11-05: Insight → 사람 확정 결정. 한 릴리스 동안 폐기 안내 스텁으로 둔다(다음 릴리스에서 제거).
@@ -1748,6 +1759,10 @@ async def kb_tools_help() -> str:
   후순위), 본문이 짧고 경로만 있는 모양이면 2026-10-01 이전 데이터라 아직 전체본문
   백필 전이니 실제 페이지를 열어 확인할 것. 자세한 소스타입별 등급표/근거 모델은
   docs/AI_AGENT_GUIDE.md §6 참고.
+
+[마스킹]
+  응답의 [PHONE-1] [ADDR-1] [ID-1] [NAME-1] [IP-1] 은 개인정보/IP가 마스킹된 값이다. 복원·추측하지 말고
+  토큰 그대로 인용한다. 같은 응답 안에서 같은 번호는 같은 값이다. 고객사명·호스트명은 author 권한에서 원본이다.
 """
 
 
@@ -2241,7 +2256,7 @@ async def kb_ticket(external_id: str, source_type: str = "support_history") -> s
     except httpx.HTTPError as e:
         return _err(e)
 
-    note = (
+    note = _masking_note(resp) + (
         f"(입력 {data['normalized_from']!r} → {data.get('external_id')} 로 해석)\n"
         if data.get("normalized_from")
         else ""
