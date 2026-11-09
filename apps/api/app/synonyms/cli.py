@@ -231,6 +231,10 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--chunk", type=int, default=5)
     q.add_argument("--samples", type=int, default=10, help="random chunks per size in the size sweep")
     q.add_argument("--max-calls", type=int, default=400)
+    q.add_argument("--singles", action="store_true",
+                   help="test every ticket alone, then re-test the blocked ones (use with a large --max-calls)")
+    q.add_argument("--repeat", type=int, default=2, help="re-tests per blocked ticket with --singles")
+    q.add_argument("--skip-sizes", action="store_true")
 
     i = sub.add_parser("import")
     i.add_argument("--file", required=True)
@@ -243,7 +247,9 @@ def main(argv: list[str] | None = None) -> int:
         from app.synonyms import probe
 
         res = probe.run_probe(mine.load_tickets(since_years=args.since_years), chat=chat_complete, chunk=max(1, args.chunk),
-                              samples=max(1, args.samples), max_calls=max(1, args.max_calls))
+                              samples=max(1, args.samples), max_calls=max(1, args.max_calls),
+                              singles=args.singles, repeat=max(0, args.repeat), skip_sizes=args.skip_sizes,
+                              progress=lambda m: print(m, file=sys.stderr, flush=True))
         print(json.dumps(res, ensure_ascii=False))
         return 0
 
