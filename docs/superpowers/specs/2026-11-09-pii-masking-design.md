@@ -48,27 +48,38 @@ KB 데이터에 섞인 개인정보(사번, 주소, 전화번호, 이름)와 고
 
 ## 4. 미들웨어 — `MaskingMiddleware`
 
-- `ApiAccessLogMiddleware` 옆에 추가. `/v1`, `/api` 아래 `application/json` 응답의 모든 문자열 값을 `mask_text`에 통과시킨다. 라우터는 수정하지 않는다.
-- 제외: `/v1/health`, `/v1/ops/`, `/v1/auth/`, 스트리밍 응답.
+- `ApiAccessLogMiddleware` 옆에 추가. `/v1`, `/api` 아래 응답 본문을 콘텐츠 타입별로 마스킹한다. 라우터는 수정하지 않는다.
+- 제외: `/v1/health`, `/v1/ops/`, `/v1/auth`, `/api/docs`, `/api/openapi` — 경로 그 자체이거나 그 하위(`/…/`)만. `/v1/healthcheck-x`, `/api/docsearch` 같은 이름이 비슷한 경로는 마스킹한다.
+- 콘텐츠 타입 분류(대소문자·`; charset=` 무시). JSON·SSE·텍스트는 같은 판정 경로(판정 → 마스킹 → 감사 → 본문 선택)를 쓰고 파싱·직렬화만 다르다.
+  - `application/json`, `*+json`(예: `application/problem+json`): 모든 문자열 값을 `mask_text`에 통과.
+  - `text/event-stream`(SSE — `POST /api/query`, `POST /v1/chat` stream=true, `/api/ingest-status`): **스트림 전체를 버퍼링**한 뒤 빈 줄(`\n\n`, `\r\n\r\n`)로 이벤트를 나누고 `data:` 줄을 이어 붙여 파싱한다. 모든 `token` 이벤트의 `text`를 첫 token 위치의 이벤트 하나로 합쳐(조각에 걸친 전화번호 등 탐지) 마스킹하고, 나머지 이벤트(status/sources/meta/error/done)는 JSON 값 단위로 마스킹한다. 응답당 Masker 하나라 같은 값은 이벤트가 달라도 같은 번호다. `event:`/`id:`/`retry:` 줄은 그대로, 그 외 줄(주석 등)과 JSON이 아닌 `data:`는 텍스트로 마스킹한다. 재직렬화는 이벤트마다 `data: <json>\n\n`. 마스킹 대상 사용자는 실시간 토큰 표시를 잃는다(응답이 끝나야 한 번에 도착).
+  - 그 밖의 `text/*`, `application/xml`, `*+xml`(예: draw.io 다이어그램 `text/xml`): 본문 전체를 텍스트로 마스킹. 치환자는 `[IP-1]` 같은 평문이므로 XML은 well-formed로 남는다.
+  - 빈 본문, 204/304, HEAD, 리다이렉트(3xx 빈 본문): 그대로 통과.
+  - `image/`, `font/`: 그대로 통과(텍스트 개인정보를 담지 않는 형식만 허용).
+  - 그 외(바이너리·타입 없음·`content-encoding`이 identity가 아님): **fail-closed** — 500 `{"detail":"unmaskable content type"}`, 경로·콘텐츠 타입만 경고 로그(본문은 남기지 않음).
 - **Fail-closed**: 마스킹 중 예외 시 원본을 내보내지 않고 500. 응답 크기를 이유로 건너뛰지 않는다.
-- 응답에 `masking` 필드 추가: `{"applied": true, "level": "...", "counts": {"pii": 3, "net": 1}, "unmask_denied": false}`.
+- JSON 응답(객체)에는 `masking` 필드 추가: `{"applied": true, "level": "...", "counts": {"pii": 3, "net": 1}, "unmask_denied": false}`. 모든 종류에 `X-Citec-Masking: net=1,pii=3` 헤더(마스킹 적용 시), 원본 요청이 있었으면 `X-Citec-Unmask: granted|denied|audit_failed` 헤더. SSE·텍스트는 본문을 바꾸지 않고 헤더로만 알린다.
+- 원본 허용 시 SSE·텍스트는 원래 바이트를 그대로 보낸다.
 - 내부 호출(워커 등)에도 예외 경로를 두지 않는다. 워커의 API 호출은 시드·작업 트리거(POST)뿐이다.
 
 ## 5. 원본 보기 토글
 
 - 요청: `?unmask=1` 또는 `X-Citec-Unmask: 1`.
-- `senior`/`admin`만 유효. 그 외가 요청하면 **403이 아니라 마스킹된 채로 응답**하고 `masking.unmask_denied: true`를 붙인다(UI 깨짐 방지). 이 요청도 감사 로그에 남긴다.
+- `senior`/`admin`만 유효. 그 외가 요청하면 **403이 아니라 마스킹된 채로 응답**하고 `masking.unmask_denied: true`(JSON) / `X-Citec-Unmask: denied`(그 외)를 붙인다(UI 깨짐 방지). 감사 로그 기록 규칙은 6절.
 - 원본 응답은 감사 로그 기록이 성공해야만 내보낸다. 기록 실패 시 마스킹된 채로 응답한다.
 
 ## 6. 감사 로그 — `unmask_audit_log`
 
-- 새 테이블(alembic 마이그레이션). 기존 `api_access_log`·`mcp_access_log`는 비동기 배치지만, 이 로그는 **원본 응답 전에 동기로 INSERT**한다(5절의 "기록 성공 후에만 원본" 보장을 위해). 원본 열람 요청에만 발생하므로 부하는 작다.
+- 새 테이블(alembic 마이그레이션). 기존 `api_access_log`·`mcp_access_log`는 비동기 배치지만, 이 로그는 **원본 응답 전에 동기로 INSERT**한다(5절의 "기록 성공 후에만 원본" 보장을 위해).
+- 허용(granted) 행: 원본으로 실제로 드러나는 값(pii/net 건수 > 0)이 있을 때마다 기록(없으면 원본을 그대로 주고 행은 쓰지 않는다).
+- 거부(denied) 행: 원본이었다면 **pii 또는 net이 드러났을 때만** 기록하고, 같은 (sub, 경로)는 프로세스당 **60초에 한 번**만 쓴다(최대 2000개 항목, 만료·오래된 순 제거). 익명·viewer가 `?unmask=1`을 반복해 테이블을 채우는 것을 막는다. 행을 쓰지 않아도 응답의 거부 표시는 그대로다. 기록이 실패하면 다음 요청에서 다시 시도한다.
 - 항목: 시각, 사용자 sub/name, 롤, 경로, 문서 ID, 마스킹 해제된 분류별 건수, 클라이언트 IP, 허용/거부.
+- `client_ip`는 항상 **TCP peer**(`request.client.host`, 없으면 `unknown`). `X-Real-IP`(없으면 `X-Forwarded-For` 첫 값)가 있으면 `"<peer> xri=<값>"`으로 참고 정보로만 덧붙인다(64자 절단). API 포트가 직접 공개되어 헤더는 위조 가능하므로 다른 판단에는 쓰지 않는다.
 - **값 자체는 저장하지 않는다. 보관 기간 정리 대상에서 제외(영구 보관).**
 
 ## 7. 웹 UI
 
-- `auth.js`의 롤 정보로 `senior`/`admin`에게만 상단바(`nav.js`)에 "원본 보기" 토글을 표시한다.
+- 인증이 켜져 있고(`/v1/auth/status`의 `auth_mode`가 off/""/disabled/none/false/0이 아님) `auth.js`의 롤이 `senior`/`admin`일 때만 상단바(`nav.js`)에 "원본 보기" 토글을 표시한다. `AUTH_MODE=off`에서는 숨기고 저장된 토글 상태를 지운다.
 - 상태는 `sessionStorage`. 탭을 닫으면 꺼진다. 켜면 모든 API 호출에 `X-Citec-Unmask: 1`을 붙인다.
 - 켜진 동안 상단에 붉은 띠("원본 표시 중 · 열람이 기록됩니다").
 - `[PHONE-1]` 같은 토큰은 회색 배지로 렌더링한다.
@@ -84,7 +95,7 @@ KB 데이터에 섞인 개인정보(사번, 주소, 전화번호, 이름)와 고
 ## 9. 테스트
 
 - **단위**: 탐지기별로 실제 형식을 합성한 가짜 값으로 검증. 일반 5자리 숫자, 금액, 버전 문자열이 마스킹되지 않는 오탐 방지 케이스 포함.
-- **미들웨어**: 롤별 가시성 표 전체, `unmask_denied`, 예외 시 fail-closed, 감사 로그 기록·기록 실패 시 마스킹 유지.
+- **미들웨어**: 롤별 가시성 표 전체, `unmask_denied`, 예외 시 fail-closed, 감사 로그 기록·기록 실패 시 마스킹 유지. SSE(조각에 걸친 값, 이벤트 간 번호 일치, 원본 바이트 그대로), text/xml, `+json`, 알 수 없는 타입 500, 빈 본문·204·리다이렉트 통과, 거부 행 중복 제거, client_ip 형식.
 - **회귀 방지**: `/v1`의 모든 GET 라우트를 순회해 JSON 응답이 미들웨어를 거치는지 확인(새 라우터의 우회 방지).
 - **실데이터 점검 스크립트** (`scripts/`): 설문 트리 문서를 `viewer`로 조회해 분류별 건수만 출력한다. 실제 값은 출력하지 않는다.
 
