@@ -328,3 +328,17 @@ def test_parse_salvages_complete_groups_from_cut_off_json():
     assert got and got[0]["terms"] == ["접속 지연", "접속지연"] and got[0]["tickets"] == ["T-1", "T-2"]
     assert len(got) == 1
     assert mine._parse('```json\n{"groups": [ {"terms": ["a') is None
+
+
+def test_process_groups_reports_rejected_groups_with_reason_and_df():
+    df = FakeDF({"inode2x": 9999, "아이노드 고갈": 40})
+    groups = [
+        {"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "same thing"},  # df too high
+        {"terms": ["행", "펜싱"], "tickets": ["T-1", "T-2"], "reason": "x"},                         # invalid terms
+    ]
+    rej: list = []
+    mine.process_groups(groups, TICKETS, term_df=df, params=_params(), rejected=rej)
+    by = {r["reason"]: r for r in rej}
+    assert by["df"]["terms"] == ["inode2x", "아이노드 고갈"] and by["df"]["df"]["inode2x"] == 9999
+    assert by["df"]["llm_reason"] == "same thing"
+    assert by["terms"]["terms"] == ["행", "펜싱"]

@@ -19,7 +19,7 @@ ADMIN = {"Authorization": "Bearer adm"}
 FAKE_CLI = '''
 import argparse, json, sys, time
 p = argparse.ArgumentParser(); p.add_argument("cmd")
-for a in ("--since-years","--batch-size","--run-id","--out","--limit-tickets","--max-batches"): p.add_argument(a)
+for a in ("--since-years","--batch-size","--run-id","--out","--limit-tickets","--max-batches","--concurrency"): p.add_argument(a)
 p.add_argument("--commit", action="store_true"); p.add_argument("--split-on-empty", action="store_true")
 p.add_argument("--min-terms-per-ticket", type=int, default=2); p.add_argument("--stop-after-empty", type=int, default=0)
 a = p.parse_args()
@@ -94,7 +94,7 @@ def test_partial_exit_code_is_reported(env):
     import app.synonyms.runner as rn
     d = rn.start(started_by="t", run_id=rid)
     d = _wait(c, rid, {"done", "partial", "failed"})
-    assert d["status"] == "partial" and d["exit_code"] == 3 and "다시 실행" in d["hint"]
+    assert d["status"] == "partial" and d["exit_code"] == 3 and "이어서 실행" in d["hint"]
 
 
 def test_only_one_run_at_a_time_and_cancel(env):
@@ -133,3 +133,24 @@ def test_stale_pid_of_another_process_is_not_running(env):
     assert c.get(f"/v1/lexicon/synonym-candidates/mine-runs/{rid}", headers=ADMIN).json()["status"] == "interrupted"
     assert c.post(f"/v1/lexicon/synonym-candidates/mine-runs/{rid}/cancel", headers=ADMIN).status_code == 409
     assert runner._active() is None
+
+
+def test_resume_carries_finished_batches_under_the_new_run_id(env):
+    c, tmp = env
+    d = tmp / "data" / "synonym_runs"
+    d.mkdir()
+    old = "adm-20260101-000007"
+    (d / f"{old}.meta.json").write_text(json.dumps({"run_id": old, "pid": 0, "args": {"batch_size": 4, "concurrency": 2}}))
+    rows = [{"run_id": old, "batch": i, "ids_hash": "h", "items": [], "stats": {}, "rejected": [{"terms": ["a", "b"], "reason": "df"}]}
+            for i in range(3)]
+    (d / f"{old}.json.progress.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n{trunc")
+    r = c.post(f"/v1/lexicon/synonym-candidates/mine-runs/{old}/resume", headers=ADMIN)
+    assert r.status_code == 200
+    new = r.json()["run_id"]
+    assert new != old and r.json()["args"]["resume_from"] == old and r.json()["args"]["batch_size"] == 4
+    carried = [json.loads(x) for x in (d / f"{new}.json.progress.jsonl").read_text().splitlines()]
+    assert [x["batch"] for x in carried][:3] == [0, 1, 2] and {x["run_id"] for x in carried[:3]} == {new}
+    detail = c.get(f"/v1/lexicon/synonym-candidates/mine-runs/{old}", headers=ADMIN).json()
+    assert len(detail["rejected"]) == 3 and detail["rejected"][0]["reason"] == "df"
+    assert c.post("/v1/lexicon/synonym-candidates/mine-runs/adm-20260101-999999/resume", headers=ADMIN).status_code == 404
+    _wait(c, new, {"done", "partial", "failed"})

@@ -424,3 +424,40 @@ def test_probe_singles_separates_stable_from_flaky_blocks():
     r = probe.run_probe(ts, chat=chat, singles=True, repeat=2, max_calls=100, progress=msgs.append)["singles"]
     assert r["tested"] == 12 and r["blocked_first"] == 2
     assert r["stable_blocked"] == ["T-3"] and r["flaky"] == {"T-8": 0} and len(msgs) == 2
+
+
+def _grouping_chat(messages, **kw):
+    txt = messages[0]["content"]
+    ids = [f"T-{i}" for i in range(40) if f"[T-{i}]" in txt]
+    return json.dumps({"groups": [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ids[:2], "reason": "r"}]})
+
+
+def test_concurrency_gives_same_result_as_sequential(tmp_path):
+    ts = [T(i) for i in range(24)]
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    seq = cli.run_mine(**_kw(tmp_path / "a", _grouping_chat, ts, batch_size=4, concurrency=1))
+    par = cli.run_mine(**_kw(tmp_path / "b", _grouping_chat, ts, batch_size=4, concurrency=3))
+    assert par["stats"] == seq["stats"] and par["items"] == seq["items"]
+    assert par["total_llm_calls"] == seq["total_llm_calls"] == 6
+
+
+def test_result_and_checkpoint_keep_rejected_groups(tmp_path):
+    ts = [T(i) for i in range(4)]
+    res = cli.run_mine(**_kw(tmp_path, _grouping_chat, ts, batch_size=4, term_df=lambda t: 9999))
+    assert res["items"] == [] and [r["reason"] for r in res["rejected"]] == ["df"]
+    lines = (tmp_path / "res.json.progress.jsonl").read_text().splitlines()
+    assert json.loads(lines[0])["rejected"][0]["df"]["inode2x"] == 9999
+
+
+def test_stop_after_empty_works_per_window_with_concurrency(tmp_path):
+    ts = [T(i) for i in range(40)]
+    calls = []
+
+    def blocked_chat(messages, **kw):
+        calls.append(1)
+        return ""
+
+    res = cli.run_mine(**_kw(tmp_path, blocked_chat, ts, batch_size=2, concurrency=2, stop_after_empty=2,
+                             empty_retries=0))
+    assert res.get("stopped_early") is True and len(calls) == 2

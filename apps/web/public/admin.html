@@ -492,6 +492,7 @@
             <label class="field">티켓 수 제한<input type="number" id="mineLimit" placeholder="전체" min="1"/><small>시험: 300</small></label>
             <label class="field">배치 크기<input type="number" id="mineBatch" value="4" min="1" max="500"/></label>
             <label class="field">최대 배치 수<input type="number" id="mineMaxB" placeholder="제한 없음" min="1"/></label>
+            <label class="field">동시 호출<input type="number" id="mineConc" value="3" min="1" max="8"/><small>1이면 순차</small></label>
           </div>
           <div style="display:flex;gap:18px;flex-wrap:wrap;margin:12px 0">
             <label class="toggle"><input type="checkbox" id="mineCommit"/> 끝나면 후보로 자동 저장 (제안 상태)</label>
@@ -2009,7 +2010,7 @@ let mineTimer = null;
 window._mine = null;
 function mineArgsText(a) {
   a = a || {};
-  return [a.since_years + "년", a.limit_tickets ? "티켓 " + a.limit_tickets : "티켓 전체", "배치 " + a.batch_size,
+  return [a.since_years + "년", a.limit_tickets ? "티켓 " + a.limit_tickets : "티켓 전체", "배치 " + a.batch_size, a.concurrency > 1 ? "동시 " + a.concurrency : "", a.resume_from ? "이어서(" + a.resume_from + ")" : "",
     a.max_batches ? "최대 " + a.max_batches + "배치" : "", a.commit ? "자동 저장" : "", a.split_on_empty ? "분할 재시도" : ""].filter(Boolean).join(" · ");
 }
 function renderRun(r) {
@@ -2034,6 +2035,7 @@ function renderRun(r) {
     '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">' + btn("log", "로그") +
     (imported ? btn("review", "후보 보기", "") : "") +
     (!imported && (r.items_found || 0) > 0 && r.status !== "running" ? btn("import", "후보로 가져오기", "") : "") +
+    (["interrupted", "partial", "cancelled", "failed"].includes(r.status) ? btn("resume", "이어서 실행", "") : "") +
     (r.status === "running" ? btn("cancel", "중단", "danger ghost") : "") + "</div></div>";
 }
 async function refreshMining() {
@@ -2061,7 +2063,7 @@ function numOrNull(id) { const v = $(id).value.trim(); return v === "" ? null : 
 $("mineStart").onclick = async () => {
   const body = { since_years: Number($("mineYears").value) || 2, limit_tickets: numOrNull("mineLimit"), batch_size: Number($("mineBatch").value) || 4,
     max_batches: numOrNull("mineMaxB"), commit: $("mineCommit").checked, split_on_empty: $("mineSplit").checked,
-    min_terms_per_ticket: Number($("mineMinTerms").value) || 1 };
+    min_terms_per_ticket: Number($("mineMinTerms").value) || 1, concurrency: Number($("mineConc").value) || 3 };
   if (!confirm("마이닝을 시작합니다.\n" + mineArgsText(body) + "\n\nLLM(Fabrix) 호출 비용이 발생합니다. 계속할까요?")) return;
   $("mineStart").disabled = true;
   $("mineMsg").textContent = "시작 중…";
@@ -2083,18 +2085,21 @@ $("mineRuns").addEventListener("click", async (ev) => {
     const d = await readJson(r, MINE_API);
     openDrawer("마이닝 로그 · " + id, '<div class="meta">' + esc(mineArgsText(d.args)) + (d.model ? " · 모델 " + esc(d.model) : "") + "</div><pre>" +
       esc((d.log_tail || []).join("\n") || "(로그 없음)") + "</pre>" +
-      (d.empty_samples && d.empty_samples.length ? '<div class="sect-t">빈 응답 샘플</div><pre>' + esc(JSON.stringify(d.empty_samples, null, 2)) + "</pre>" : ""),
+      (d.empty_samples && d.empty_samples.length ? '<div class="sect-t">빈 응답 샘플</div><pre>' + esc(JSON.stringify(d.empty_samples, null, 2)) + "</pre>" : "") +
+      (d.rejected && d.rejected.length ? '<div class="sect-t">거절된 묶음 ' + d.rejected.length + "건</div><pre>" +
+        esc(d.rejected.map((x) => "[" + x.reason + "] " + (x.terms || []).join(" / ") + (x.df ? "  df=" + JSON.stringify(x.df) : "") + (x.llm_reason ? "  — " + x.llm_reason : "")).join("\n")) + "</pre>" : ""),
       '<span class="sp"></span><button type="button" class="ghost" id="logClose">닫기</button>');
     $("logClose").onclick = closeDrawer;
     return;
   }
-  if (act === "cancel" && !confirm("실행 중인 마이닝을 중단할까요? 끝난 배치는 체크포인트로 남아 같은 설정으로 다시 실행하면 이어서 진행됩니다.")) return;
+  if (act === "cancel" && !confirm("실행 중인 마이닝을 중단할까요? 끝난 배치는 체크포인트로 남아 '이어서 실행'으로 이어갈 수 있습니다.")) return;
+  if (act === "resume" && !confirm("끝난 배치는 건너뛰고 남은 배치부터 같은 설정으로 새 실행을 시작합니다. LLM 호출 비용이 발생합니다. 계속할까요?")) return;
   if (act === "import" && !confirm("이 실행의 결과를 '제안' 후보로 가져옵니다. (승인 전에는 검색에 영향이 없습니다)")) return;
   b.disabled = true;
   const r = await CitecAuth.apiFetch(MINE_API + "/" + encodeURIComponent(id) + "/" + act, { method: "POST" });
   if (!r.ok) { toast(await regDetail(r), "bad"); b.disabled = false; return; }
   const d = await readJson(r, MINE_API);
-  toast(act === "import" ? "후보로 가져왔습니다 (신규 " + (d.inserted ?? 0) + " · 중복 " + (d.skipped ?? 0) + ")" : "중단했습니다.", "ok");
+  toast(act === "import" ? "후보로 가져왔습니다 (신규 " + (d.inserted ?? 0) + " · 중복 " + (d.skipped ?? 0) + ")" : act === "resume" ? "이어서 시작했습니다." : "중단했습니다.", "ok");
   refreshMining();
   if (act === "import") refreshSynCounts();
 });

@@ -48,6 +48,7 @@ class MineStart(BaseModel):
     split_on_empty: bool = True  # extra (billable) calls to isolate filter-blocked tickets
     min_terms_per_ticket: int = Field(default=1, ge=1, le=2)  # 1: terms may appear in separate tickets
     stop_after_empty: int = Field(default=3, ge=0, le=50)  # stop after N consecutive blocked batches (0 = never)
+    concurrency: int = Field(default=3, ge=1, le=8)  # batches in flight at once
 
 
 def _run(fn, *a, **kw):
@@ -71,6 +72,11 @@ def start_mine_run(body: MineStart, principal: Principal = Depends(require_roles
 @router.get("/mine-runs/{run_id}")
 def get_mine_run(run_id: str, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
     return _run(runner.describe, run_id, detail=True)
+
+
+@router.post("/mine-runs/{run_id}/resume")
+def resume_mine_run(run_id: str, principal: Principal = Depends(require_roles("admin"))) -> dict[str, Any]:
+    return _run(runner.resume, run_id, started_by=principal.name)
 
 
 @router.post("/mine-runs/{run_id}/cancel")
