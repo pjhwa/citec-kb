@@ -1,6 +1,6 @@
 """Line-oriented masking engine. Pure: no request, no DB.
 
-Groups: pii (phone/addr/sabun/name), net (ip), biz (customer/host).
+Groups: pii (phone/addr/sabun/name/email), net (ip), biz (customer/host).
 Placeholders are numbered per Masker instance (= per response): same value → same number.
 """
 
@@ -13,8 +13,8 @@ from typing import Any
 from app.masking import patterns as P
 from app.masking.dictionary import Dictionary
 
-GROUP = {"phone": "pii", "addr": "pii", "sabun": "pii", "name": "pii", "ip": "net", "cust": "biz", "host": "biz"}
-TAG = {"phone": "PHONE", "addr": "ADDR", "sabun": "ID", "name": "NAME", "ip": "IP", "cust": "CUST", "host": "HOST"}
+GROUP = {"phone": "pii", "addr": "pii", "sabun": "pii", "name": "pii", "email": "pii", "ip": "net", "cust": "biz", "host": "biz"}
+TAG = {"phone": "PHONE", "addr": "ADDR", "sabun": "ID", "name": "NAME", "email": "EMAIL", "ip": "IP", "cust": "CUST", "host": "HOST"}
 _TOKEN = re.compile(r"\S+")
 _COLS = {"sabun": re.compile(r"\d{5}"), "name": re.compile(r"[가-힣]{2,4}")}
 
@@ -47,6 +47,8 @@ class Masker:
 
     # -- internals -----------------------------------------------------------------------------
     def _mask_line(self, line: str, state: dict) -> str:
+        if "pii" in self.groups:
+            line = P.EMAIL.sub(lambda m: self._sub("email", m.group(0)), line)
         if "net" in self.groups:
             line = self._mask_ip(line)
         if "pii" in self.groups:

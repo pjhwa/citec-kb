@@ -31,6 +31,7 @@ SELECT created_at, sub, roles, path, counts, outcome FROM unmask_audit_log ORDER
 
 ## 알려진 한계
 - 사번은 `사번` 라벨/열 문맥에서만 탐지한다.
+- 이메일(`user@domain.tld`)은 pii로 `[EMAIL-n]`으로 가린다. 같은 줄의 이름 후보 마스킹을 유발하지 않는다. 난독화 표기(`a[at]b.com`)는 탐지하지 않는다.
 - 이름은 개인정보가 걸린 줄에서만 탐지한다.
 - 지번주소 일부는 누락될 수 있다.
 - 임베딩 원문과 Confluence 직접 조회는 범위 밖이다.

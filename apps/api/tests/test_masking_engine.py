@@ -215,3 +215,27 @@ def test_ipv4_inside_identifiers():
         assert _idem(src) == exp, src
     for s in ["v1.2.3.4", "V10.0.0.1", "256.1.1.1", "10.1.1.1.5", "1.2.3", "192.168.001.010", "mask 255.255.255.0"]:
         assert _idem(s) == s, s
+
+
+def test_email_masked_as_pii_only():
+    t = "문의 hong.gd+kb@samsung.com 또는 a_b@sub.example.co.kr 로"
+    out = m(frozenset({"pii"})).mask_text(t)
+    assert out == "문의 [EMAIL-1] 또는 [EMAIL-2] 로"
+    assert m(frozenset({"net", "biz"})).mask_text(t) == t
+
+
+def test_email_same_value_same_number_and_idempotent():
+    mk = m()
+    out = mk.mask_text("A@x.com B@x.com a@X.com")
+    assert out == "[EMAIL-1] [EMAIL-2] [EMAIL-1]"
+    assert m().mask_text(out) == out
+
+
+def test_email_does_not_trigger_name_masking_on_same_line():
+    out = m().mask_text("김치찌개 담당 mail a@x.com")
+    assert out == "김치찌개 담당 mail [EMAIL-1]"
+
+
+def test_email_with_digits_not_taken_as_phone_or_ip():
+    out = m().mask_text("01012345678@x.com 10.1.2.3@y.org")
+    assert "PHONE" not in out and "IP" not in out and out.count("[EMAIL-") == 2

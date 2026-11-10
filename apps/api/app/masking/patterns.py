@@ -74,3 +74,8 @@ NAME_STOPWORDS = frozenset(
 )
 
 BUILTIN_ALLOW = frozenset({"127.0.0.1", "0.0.0.0", "::1"})
+
+
+EMAIL = re.compile(
+    r"(?<![A-Za-z0-9._%+\-])[A-Za-z0-9][A-Za-z0-9._%+\-]*@(?:[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}(?![A-Za-z0-9])"
+)

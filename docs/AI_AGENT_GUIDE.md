@@ -867,7 +867,7 @@ After code deploy: `docker compose restart mcp` (server.py is bind-mounted).
 
 ## 마스킹
 
-- 응답의 `[PHONE-1]` `[ADDR-1]` `[ID-1]` `[NAME-1]` `[IP-1]` 등은 개인정보/IP가 **마스킹된 값**이다. 복원·추측하지 말고 토큰 그대로 인용한다.
+- 응답의 `[PHONE-1]` `[ADDR-1]` `[ID-1]` `[NAME-1]` `[EMAIL-1]` `[IP-1]` 등은 개인정보/IP가 **마스킹된 값**이다. 복원·추측하지 말고 토큰 그대로 인용한다.
 - 같은 응답 안에서 같은 번호는 같은 값이다(`[PHONE-1]`이 두 번 나오면 같은 번호).
 - 고객사명·호스트명은 author 권한 키에서는 원본으로 내려온다.
 - MCP 도구는 마스킹이 적용되면 결과 머리에 `마스킹 적용: pii 3, net 1 ...` 한 줄을 붙인다(API의 `X-Citec-Masking` 헤더 기준).

@@ -1761,7 +1761,7 @@ async def kb_tools_help() -> str:
   docs/AI_AGENT_GUIDE.md §6 참고.
 
 [마스킹]
-  응답의 [PHONE-1] [ADDR-1] [ID-1] [NAME-1] [IP-1] 은 개인정보/IP가 마스킹된 값이다. 복원·추측하지 말고
+  응답의 [PHONE-1] [ADDR-1] [ID-1] [NAME-1] [EMAIL-1] [IP-1] 은 개인정보/IP가 마스킹된 값이다. 복원·추측하지 말고
   토큰 그대로 인용한다. 같은 응답 안에서 같은 번호는 같은 값이다. 고객사명·호스트명은 author 권한에서 원본이다.
 """
 
