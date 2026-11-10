@@ -133,6 +133,21 @@ def _status(run_id: str, meta: dict[str, Any]) -> tuple[str, int | None]:
     return ("cancelled" if meta.get("cancelled") else "interrupted"), None
 
 
+def _rejected_from_progress(run_id: str, cap: int = 500) -> list[dict[str, Any]]:
+    """Groups the code gates dropped, read from the checkpoint file (a run that never finished has no result file)."""
+    out: list[dict[str, Any]] = []
+    try:
+        with open(_p(run_id, ".json.progress.jsonl"), encoding="utf-8") as fh:
+            for ln in fh:
+                try:
+                    out += json.loads(ln).get("rejected") or []
+                except (ValueError, AttributeError):
+                    continue
+    except OSError:
+        pass
+    return out[:cap]
+
+
 def describe(run_id: str, *, detail: bool = False) -> dict[str, Any]:
     meta = _read_json(_p(run_id, ".meta.json"))
     if not isinstance(meta, dict):
@@ -151,7 +166,7 @@ def describe(run_id: str, *, detail: bool = False) -> dict[str, Any]:
     }
     if status in ("partial", "failed", "config_error"):
         out["hint"] = {
-            "partial": "일부 배치가 실패했습니다(LLM 오류/빈 응답). 같은 설정으로 다시 실행하면 실패한 배치만 재시도합니다.",
+            "partial": "일부 배치가 실패했습니다(LLM 오류/빈 응답). '이어서 실행'을 누르면 실패한 배치만 재시도합니다.",
             "config_error": "설정/입출력 오류입니다. LLM 백엔드가 설정돼 있는지, 로그를 확인하세요.",
             "failed": "비정상 종료했습니다. 로그를 확인하세요.",
         }[status]
@@ -160,6 +175,7 @@ def describe(run_id: str, *, detail: bool = False) -> dict[str, Any]:
         if result:
             out["empty_samples"] = result.get("empty_samples")
             out["model"] = result.get("model")
+        out["rejected"] = (result or {}).get("rejected") or _rejected_from_progress(run_id)
     return out
 
 
@@ -194,7 +210,8 @@ def _clamp(v: float | int | None, lo: float, hi: float, name: str):
 
 def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_size: int = 4,
           max_batches: int | None = None, commit: bool = False, split_on_empty: bool = True,
-          min_terms_per_ticket: int = 1, stop_after_empty: int = 3, started_by: str = "?", run_id: str | None = None) -> dict[str, Any]:
+          min_terms_per_ticket: int = 1, stop_after_empty: int = 3, concurrency: int = 3, resume_from: str | None = None,
+          started_by: str = "?", run_id: str | None = None) -> dict[str, Any]:
     since_years = _clamp(since_years, 0.1, 10, "since_years")
     limit_tickets = _clamp(limit_tickets, 1, 100000, "limit_tickets")
     batch_size = _clamp(batch_size, 1, 500, "batch_size")
@@ -202,6 +219,7 @@ def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_s
     if min_terms_per_ticket not in (1, 2):
         raise RunError(422, "min_terms_per_ticket은 1 또는 2여야 합니다.")
     stop_after_empty = int(_clamp(stop_after_empty, 0, 50, "stop_after_empty") or 0)
+    concurrency = int(_clamp(concurrency, 1, 8, "concurrency") or 1)
     d = runs_dir()
     d.mkdir(parents=True, exist_ok=True)
     with open(d / ".start.lock", "a") as lock:
@@ -216,9 +234,12 @@ def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_s
             n += 1
             rid = f"{base}-{n}"
         out_path = _p(rid, ".json")
+        if resume_from:
+            _carry_checkpoints(resume_from, rid)
         argv = [sys.executable, "-m", CLI_MODULE, "mine", "--since-years", str(since_years),
                 "--batch-size", str(batch_size), "--run-id", rid, "--out", str(out_path),
-                "--min-terms-per-ticket", str(min_terms_per_ticket), "--stop-after-empty", str(stop_after_empty)]
+                "--min-terms-per-ticket", str(min_terms_per_ticket), "--stop-after-empty", str(stop_after_empty),
+                "--concurrency", str(concurrency)]
         if limit_tickets:
             argv += ["--limit-tickets", str(int(limit_tickets))]
         if max_batches:
@@ -240,10 +261,47 @@ def start(*, since_years: float = 2.0, limit_tickets: int | None = None, batch_s
         meta = {"run_id": rid, "pid": proc.pid, "started_at": now.isoformat(timespec="seconds"), "started_by": started_by,
                 "args": {"since_years": since_years, "limit_tickets": limit_tickets, "batch_size": batch_size,
                          "max_batches": max_batches, "commit": commit, "split_on_empty": split_on_empty,
-                         "min_terms_per_ticket": min_terms_per_ticket, "stop_after_empty": stop_after_empty}}
+                         "min_terms_per_ticket": min_terms_per_ticket, "stop_after_empty": stop_after_empty,
+                         "concurrency": concurrency, "resume_from": resume_from}}
         _p(rid, ".meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     threading.Thread(target=proc.wait, daemon=True).start()  # reap so a finished run isn't a zombie
     return describe(rid)
+
+
+def _carry_checkpoints(old_id: str, new_id: str) -> None:
+    """Copy the finished batches of an earlier run into the new run's checkpoint file (under the new run_id), so the
+    CLI skips them. A batch whose ticket set changed since is redone by the CLI (ids_hash mismatch)."""
+    old_meta = _read_json(_p(old_id, ".meta.json"))
+    if not isinstance(old_meta, dict):
+        raise RunError(404, "이어갈 실행을 찾을 수 없습니다.")
+    if _status(old_id, old_meta)[0] == "running":
+        raise RunError(409, "아직 실행 중인 마이닝은 이어서 실행할 수 없습니다.")
+    lines: list[str] = []
+    try:
+        with open(_p(old_id, ".json.progress.jsonl"), encoding="utf-8") as fh:
+            for ln in fh:
+                try:
+                    rec = json.loads(ln)
+                    rec["run_id"] = new_id
+                    lines.append(json.dumps(rec, ensure_ascii=False))
+                except (ValueError, TypeError):
+                    continue  # truncated line from a killed run: that batch is redone
+    except OSError:
+        pass
+    _p(new_id, ".json.progress.jsonl").write_text("".join(ln + "\n" for ln in lines), encoding="utf-8")
+
+
+_RESUME_KEYS = ("since_years", "limit_tickets", "batch_size", "max_batches", "commit", "split_on_empty",
+                "min_terms_per_ticket", "stop_after_empty", "concurrency")
+
+
+def resume(run_id: str, *, started_by: str = "?") -> dict[str, Any]:
+    """Start a new run with the same settings that skips the batches run_id already finished."""
+    meta = _read_json(_p(run_id, ".meta.json"))
+    if not isinstance(meta, dict):
+        raise RunError(404, "run not found")
+    args = {k: v for k, v in (meta.get("args") or {}).items() if k in _RESUME_KEYS and v is not None}
+    return start(**args, resume_from=run_id, started_by=started_by)
 
 
 def cancel(run_id: str) -> dict[str, Any]:

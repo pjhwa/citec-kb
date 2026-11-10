@@ -14,6 +14,7 @@ import logging
 import os
 import sys
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from app.synonyms import mine
@@ -35,11 +36,11 @@ SPLIT_MAX_DEPTH = 8
 
 def _mine_split(
     batch: list[mine.Ticket], *, depth: int, chat, term_df, params, notes: list, blocked: list, calls: list,
-    mine_kw: dict[str, Any],
+    mine_kw: dict[str, Any], rejected: list | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """mine_batch; on an empty response retry as two halves (>= SPLIT_MIN_CHUNK, depth <= SPLIT_MAX_DEPTH)."""
     n_before = len(notes)
-    items, stats = mine.mine_batch(batch, chat=chat, term_df=term_df, params=params, notes=notes, **mine_kw)
+    items, stats = mine.mine_batch(batch, chat=chat, term_df=term_df, params=params, notes=notes, rejected=rejected, **mine_kw)
     calls[0] += 1
     calls[1] += int(stats.get("empty_retried", 0))
     if not stats.get("empty_response"):
@@ -55,7 +56,7 @@ def _mine_split(
     for part in (batch[:half], batch[half:]):
         it, st = _mine_split(
             part, depth=depth + 1, chat=chat, term_df=term_df, params=params,
-            notes=notes, blocked=blocked, calls=calls, mine_kw=mine_kw,
+            notes=notes, blocked=blocked, calls=calls, mine_kw=mine_kw, rejected=rejected,
         )
         _merge_stats(total, st)
         for x in it:
@@ -81,6 +82,7 @@ def run_mine(
     empty_retries: int = 3,
     sleep: Callable[[float], None] | None = None,
     stop_after_empty: int = 0,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     progress_path = out_path + ".progress.jsonl"
     saved: dict[int, dict[str, Any]] = {}  # later line wins
@@ -106,6 +108,7 @@ def run_mine(
     stopped_early = False
     partial_used: set[int] = set()
     failed: dict[str, int] = {}  # this run only; failed batches are not checkpointed -> retried on resume
+    pending: list[tuple[int, list[mine.Ticket], str]] = []
     for idx, batch in mine.iter_batches(tickets, batch_size):
         if max_batches is not None and idx >= max_batches:
             break
@@ -116,49 +119,76 @@ def run_mine(
                 used[idx] = rec
                 continue
             print(f"batch {idx}: ticket set changed since checkpoint; redoing", file=sys.stderr)
-        if stop_after_empty and empty_streak >= stop_after_empty:
-            stopped_early = True
-            print(f"batch {idx}: stopping — the last {empty_streak} batches stayed empty (content filter?); "
-                  "remaining batches are skipped to avoid billable calls", file=sys.stderr)
-            break
+        pending.append((idx, batch, h))
+
+    def work(batch: list[mine.Ticket]):
+        """One batch with its own side channels, so worker threads share no mutable state."""
+        n: list[dict[str, Any]] = []
+        bl: list[list[str]] = []
+        ca = [0, 0]
+        rej: list[dict[str, Any]] = []
         if split_on_empty:
             items, stats = _mine_split(
                 batch, depth=0, chat=chat, term_df=term_df, params=params,
-                notes=notes, blocked=blocked, calls=calls, mine_kw=mine_kw,
+                notes=n, blocked=bl, calls=ca, mine_kw=mine_kw, rejected=rej,
             )
         else:
             items, stats = mine.mine_batch(
-                batch, chat=chat, term_df=term_df, params=params, notes=notes, **mine_kw
+                batch, chat=chat, term_df=term_df, params=params, notes=n, rejected=rej, **mine_kw
             )
-            calls[0] += 1
-            calls[1] += int(stats.get("empty_retried", 0))
-        n_batches_run += 1
-        empty_streak = empty_streak + 1 if stats.get("empty_response") else 0
-        k = int(stats.get("empty_retried", 0))
-        if k:
-            print(
-                f"batch {idx}: " + (f"recovered after {k} retries" if not stats.get("empty_response")
-                                     else f"still empty after {k} retries"),
-                file=sys.stderr,
-            )
-        if stats.get("llm_error") or stats.get("proc_error"):
-            _merge_stats(failed, stats)
-            print(f"batch {idx}: FAILED {stats}", file=sys.stderr)
-            continue
-        if stats.get("empty_response"):
-            # not checkpointed -> retried on resume; keep what the split salvaged in this run's result
-            print(f"batch {idx}: EMPTY response(s) {stats}", file=sys.stderr)
-            if split_on_empty:
-                used[idx] = {"items": items, "stats": stats}
-                partial_used.add(idx)
+            ca[0] += 1
+            ca[1] += int(stats.get("empty_retried", 0))
+        return items, stats, n, bl, ca, rej
+
+    width = max(1, int(concurrency))
+    pool = ThreadPoolExecutor(max_workers=width) if width > 1 else None
+    try:
+        for start in range(0, len(pending), width):
+            window = pending[start : start + width]
+            if stop_after_empty and empty_streak >= stop_after_empty:
+                stopped_early = True
+                print(f"batch {window[0][0]}: stopping — the last {empty_streak} batches stayed empty (content filter?); "
+                      "remaining batches are skipped to avoid billable calls", file=sys.stderr)
+                break
+            if pool is None:
+                results = [work(window[0][1])]
             else:
-                _merge_stats(failed, stats)
-            continue
-        rec = {"run_id": run_id, "batch": idx, "ids_hash": h, "items": items, "stats": stats}
-        used[idx] = rec
-        with open(progress_path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        print(f"batch {idx}: {stats}", file=sys.stderr)
+                results = list(pool.map(lambda w: work(w[1]), window))
+            for (idx, batch, h), (items, stats, n, bl, ca, rej) in zip(window, results):
+                notes.extend(n)
+                blocked.extend(bl)
+                calls[0] += ca[0]
+                calls[1] += ca[1]
+                n_batches_run += 1
+                empty_streak = empty_streak + 1 if stats.get("empty_response") else 0
+                k = int(stats.get("empty_retried", 0))
+                if k:
+                    print(
+                        f"batch {idx}: " + (f"recovered after {k} retries" if not stats.get("empty_response")
+                                             else f"still empty after {k} retries"),
+                        file=sys.stderr,
+                    )
+                if stats.get("llm_error") or stats.get("proc_error"):
+                    _merge_stats(failed, stats)
+                    print(f"batch {idx}: FAILED {stats}", file=sys.stderr)
+                    continue
+                if stats.get("empty_response"):
+                    # not checkpointed -> retried on resume; keep what the split salvaged in this run's result
+                    print(f"batch {idx}: EMPTY response(s) {stats}", file=sys.stderr)
+                    if split_on_empty:
+                        used[idx] = {"items": items, "stats": stats, "rejected": rej}
+                        partial_used.add(idx)
+                    else:
+                        _merge_stats(failed, stats)
+                    continue
+                rec = {"run_id": run_id, "batch": idx, "ids_hash": h, "items": items, "stats": stats, "rejected": rej}
+                used[idx] = rec
+                with open(progress_path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                print(f"batch {idx}: {stats}", file=sys.stderr)
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     items_all: list[dict[str, Any]] = []
     keys: dict[str, dict[str, Any]] = {}
@@ -176,6 +206,8 @@ def run_mine(
     _merge_stats(stats_total, failed)
     stats_total["batches_done"] = len(used) - len(partial_used)
     result = {"run_id": run_id, "model": model, "items": items_all, "stats": stats_total}
+    rejected_all = [r for idx in sorted(used) for r in (used[idx].get("rejected") or [])]
+    result["rejected"] = rejected_all[:1000]
     if stats_total.get("empty_response"):
         result["empty_samples"] = notes[:5]
     result["total_llm_calls"] = calls[0] + calls[1]
@@ -224,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="retry empty (content-filtered?) batches as halves down to >=5 tickets; extra billable calls")
     m.add_argument("--stop-after-empty", type=int, default=0,
                    help="stop after N consecutive batches that stay empty after retries (0 = never)")
+    m.add_argument("--concurrency", type=int, default=1, help="batches in flight at once (1 = sequential)")
     m.add_argument("--allow-partial", action="store_true", help="with --commit, commit even if some batches failed")
 
     q = sub.add_parser("probe", help="measure the Fabrix content-filter block rate (billable; prints ticket IDs only)")
@@ -304,7 +337,7 @@ def main(argv: list[str] | None = None) -> int:
         run_id=run_id, model=model,
         out_path=args.out, max_batches=args.max_batches,
         split_on_empty=args.split_on_empty, empty_retries=max(0, args.empty_retries),
-        stop_after_empty=max(0, args.stop_after_empty),
+        stop_after_empty=max(0, args.stop_after_empty), concurrency=max(1, min(8, args.concurrency)),
     )
     stats = result["stats"]
     n_batches = -(-len(tickets) // args.batch_size)

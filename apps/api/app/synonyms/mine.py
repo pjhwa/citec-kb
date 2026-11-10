@@ -167,7 +167,9 @@ def process_groups(
     *,
     term_df: Callable[[str], int],
     params: Params,
+    rejected: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """rejected: optional side channel; receives one {terms, reason, ...} dict per group the gates dropped."""
     stats = _new_stats()
     texts = {t.external_id: t.text for t in tickets}
     items: list[dict[str, Any]] = []
@@ -179,29 +181,39 @@ def process_groups(
             df_cache[term] = term_df(term)
         return df_cache[term]
 
+    def reject(reason: str, g: dict[str, Any], terms: list[str], **extra: Any) -> None:
+        if rejected is not None:
+            raw = [str(x)[:60] for x in (terms or g.get("terms") or [])][:8]
+            rejected.append({"terms": raw, "reason": reason, "llm_reason": str(g.get("reason") or "")[:160], **extra})
+
     for g in groups:
         stats["groups_in"] += 1
         terms = clean_terms(g.get("terms") or [])
         if len(terms) < 2:
             stats["rej_terms"] += 1
+            reject("terms", g, [])
             continue
         verified = verify_group(
             terms, g.get("tickets") or [], texts, min_terms_per_ticket=params.min_terms_per_ticket
         )
         if verified is None:
             stats["rej_evidence"] += 1
+            reject("evidence", g, terms)
             continue
         kept, ticket_ids = verified
         if static_covers(kept):
             stats["rej_static"] += 1
+            reject("static", g, kept)
             continue
         if terms_key(kept) in seen:  # cheap early reject, before any DF query
             stats["rej_existing"] += 1
+            reject("existing", g, kept)
             continue
         dfs = {t: df_of(t) for t in kept}
         trimmed = [t for t in kept if params.df_min <= dfs[t] <= params.df_max]
         if len(trimmed) < 2:
             stats["rej_df"] += 1
+            reject("df", g, kept, df=dfs)
             continue
         if len(trimmed) != len(kept):
             # trimming may have removed the terms that made each ticket count as evidence
@@ -210,14 +222,17 @@ def process_groups(
             )
             if again is None:
                 stats["rej_df"] += 1
+                reject("df", g, kept, df=dfs)
                 continue
             kept, ticket_ids = again
             if static_covers(kept):
                 stats["rej_static"] += 1
+                reject("static", g, kept)
                 continue
         key = terms_key(kept)
         if key in seen:
             stats["rej_existing"] += 1
+            reject("existing", g, kept)
             continue
         seen.add(key)
         items.append(
@@ -248,6 +263,7 @@ def mine_batch(
     params: Params,
     notes: list[dict[str, Any]] | None = None,
     empty_retries: int = 3,
+    rejected: list[dict[str, Any]] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     jitter: Callable[[], float] = lambda: random.uniform(0.0, 1.0),
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
@@ -289,7 +305,7 @@ def mine_batch(
             stats0["parse_fail"] = 1
         return [], stats0
     try:
-        items, st = process_groups(groups, tickets, term_df=term_df, params=params)
+        items, st = process_groups(groups, tickets, term_df=term_df, params=params, rejected=rejected)
         st["empty_retried"] = stats0["empty_retried"]
         st["empty_recovered"] = stats0["empty_recovered"]
         return items, st
