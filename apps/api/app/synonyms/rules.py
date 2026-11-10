@@ -65,6 +65,28 @@ def term_present(text: str, term: str) -> bool:
     return re.search(pat, text or "", re.I) is not None
 
 
+def _fold(term: str) -> str:
+    """Casefolded term without spaces/punctuation: '접속 불가' == '접속불가', 'SCP V2' == 'SCPv2', 'N/W' == 'nw'."""
+    return re.sub(r"[^0-9a-z가-힣]", "", norm_term(term).lower())
+
+
+def is_variant_group(terms: list[str]) -> bool:
+    """True when the terms are surface variants of one word, not different concepts.
+
+    Spacing/case/punctuation variants (all terms fold to the same string) or Korean<->Latin
+    pairs (reboot/재부팅). Such a pair is a safe synonym however common the word is, so the
+    mining DF ceiling does not apply to it.
+    """
+    ts = [t for t in terms if norm_term(t)]
+    if len(ts) < 2:
+        return False
+    if len({_fold(t) for t in ts}) == 1:
+        return True
+    has_hangul = any(_HANGUL.search(t) for t in ts)
+    has_latin = any(not _HANGUL.search(t) for t in ts)
+    return has_hangul and has_latin
+
+
 def static_covers(terms: list[str]) -> bool:
     """True if every term already sits in one code-defined group."""
     want = {n for t in terms if (n := norm_term(t).lower())}
