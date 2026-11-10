@@ -22,9 +22,10 @@ SELECT created_at, sub, roles, path, counts, outcome FROM unmask_audit_log ORDER
 - `--summary-only`는 문서별 줄을 생략, `--residual`은 마스킹된 본문을 원본 패턴으로 재검사한다(0이어야 하며 0 초과는 마스킹 버그).
 
 ## 배포
-1. `docker compose exec api alembic upgrade head`
-2. `docker compose up -d --build api web`
-3. MCP 컨테이너는 `server.py` 변경을 반영하려면 재빌드가 필요하다: `docker compose up -d --build mcp`
+1. 이미지를 먼저 재빌드한다(실행 중인 컨테이너에는 새 마이그레이션 파일이 없어서 순서가 바뀌면 `alembic upgrade head`가 새 리비전을 찾지 못한다): `docker compose up -d --build api mcp`
+2. 마이그레이션을 적용한다: `docker compose exec api alembic upgrade head` (`alembic current`가 `20261109_0024 (head)`인지 확인)
+3. `web`은 `apps/web/public`을 마운트하므로 재빌드가 필요 없다. 새 파일이 서빙되는지만 확인한다.
+4. `/v1/health`의 `checks.masking`이 `ok: true`인지 확인한다. `dictionary: missing`이면 `biz`(고객사명·호스트명)만 꺼진 상태다.
 
 ## 롤백
 미들웨어 등록 줄 한 줄을 되돌리고 api를 재빌드한다. 감사 테이블(`unmask_audit_log`)은 남겨 둔다.
