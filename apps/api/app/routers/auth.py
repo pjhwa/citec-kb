@@ -173,11 +173,24 @@ class DevTokenBody(BaseModel):
 
 
 @router.post("/dev/token")
-def dev_mint_token(body: DevTokenBody) -> dict[str, Any]:
-    """Mint local HS256 JWT when OIDC_JWT_SECRET is set (dev only)."""
+def dev_mint_token(
+    body: DevTokenBody,
+    principal: Principal = Depends(get_principal),
+) -> dict[str, Any]:
+    """Mint local HS256 JWT when OIDC_JWT_SECRET is set (dev only).
+
+    Closed outside dev/local/test, and once AUTH_MODE is enforced only an admin may mint
+    (otherwise anyone could mint any role, including the unmask-capable senior/admin).
+    """
     settings = get_settings()
-    if settings.app_env not in ("dev", "local", "test") and not settings.oidc_jwt_secret:
+    if settings.app_env not in ("dev", "local", "test"):
         raise HTTPException(status_code=403, detail="dev token only in dev/local")
+    mode = (settings.auth_mode or "off").lower().strip()
+    if mode not in ("", "off", "disabled", "none"):
+        if principal.auth_via == "anonymous":
+            raise HTTPException(status_code=401, detail="authentication required")
+        if not principal.has_any("admin"):
+            raise HTTPException(status_code=403, detail="admin role required to mint dev tokens")
     if not settings.oidc_jwt_secret:
         raise HTTPException(
             status_code=503,
@@ -192,12 +205,12 @@ def dev_mint_token(body: DevTokenBody) -> dict[str, Any]:
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    principal = validate_bearer_jwt(token)
+    minted = validate_bearer_jwt(token)
     return {
         "access_token": token,
         "token_type": "Bearer",
         "expires_in": body.expires_sec,
-        "principal": principal.to_dict() if principal else None,
+        "principal": minted.to_dict() if minted else None,
     }
 
 

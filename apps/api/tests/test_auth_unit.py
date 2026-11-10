@@ -60,3 +60,19 @@ def test_oidc_stub_token(monkeypatch):
 
 def test_anon_open_constant():
     assert ANON_OPEN.has_any("admin")
+
+
+def test_stub_token_rejected_under_real_oidc(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "oidc")
+    get_settings.cache_clear()
+    p = resolve_principal(authorization="Bearer stub:mallory:admin")
+    assert p.auth_via == "anonymous"
+    assert not p.has_any("senior", "admin")
+
+
+def test_stub_token_rejected_outside_dev_env(monkeypatch):
+    monkeypatch.setenv("AUTH_MODE", "oidc_stub")
+    monkeypatch.setenv("APP_ENV", "prod")
+    get_settings.cache_clear()
+    p = resolve_principal(authorization="Bearer stub:mallory:admin")
+    assert p.auth_via == "anonymous"

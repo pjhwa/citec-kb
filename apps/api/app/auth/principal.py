@@ -260,8 +260,12 @@ def resolve_principal(
     if found is not None:
         return found
 
-    # oidc_stub opaque helper
-    if mode in ("oidc_stub", "oidc") and cred.startswith("stub:"):
+    # oidc_stub opaque helper: test mode only (never under real "oidc", never outside dev envs)
+    if (
+        mode == "oidc_stub"
+        and getattr(settings, "app_env", "dev") in ("dev", "local", "test")
+        and cred.startswith("stub:")
+    ):
         parts = cred.split(":")
         if len(parts) >= 3:
             sub = parts[1] or "oidc-user"
