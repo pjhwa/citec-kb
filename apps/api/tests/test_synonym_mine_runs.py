@@ -116,6 +116,6 @@ def test_auth_and_validation(env):
     url = "/v1/lexicon/synonym-candidates/mine-runs"
     assert c.post(url, json={}).status_code == 401
     assert c.post(url, json={}, headers={"Authorization": "Bearer sen"}).status_code == 403  # senior is not enough
-    assert c.post(url, json={"batch_size": 5}, headers=ADMIN).status_code == 422
+    assert c.post(url, json={"batch_size": 0}, headers=ADMIN).status_code == 422
     assert c.get(url + "/../../etc", headers=ADMIN).status_code in (404, 405)
     assert c.get(url + "/not-a-run", headers=ADMIN).status_code == 404

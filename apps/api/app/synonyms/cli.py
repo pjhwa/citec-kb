@@ -29,8 +29,8 @@ def _ids_hash(batch: list[mine.Ticket]) -> str:
     return hashlib.sha1("\n".join(t.external_id for t in batch).encode("utf-8")).hexdigest()
 
 
-SPLIT_MIN_CHUNK = 5
-SPLIT_MAX_DEPTH = 3
+SPLIT_MIN_CHUNK = 1
+SPLIT_MAX_DEPTH = 8
 
 
 def _mine_split(
