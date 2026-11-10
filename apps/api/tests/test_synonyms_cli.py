@@ -247,7 +247,7 @@ def test_split_on_empty_isolates_bad_ticket(tmp_path):
     res = cli.run_mine(**_kw(tmp_path, _marker_chat(calls), ts, batch_size=40, split_on_empty=True, empty_retries=0))
     assert len(res["blocked_chunks"]) == 1
     chunk = res["blocked_chunks"][0]
-    assert "T-13" in chunk and 5 <= len(chunk) <= 10
+    assert chunk == ["T-13"]  # bisected down to the single bad ticket
     assert all(isinstance(x, str) and x.startswith("T-") for x in chunk)
     assert len(res["items"]) == 1  # other tickets' groups still mined
     assert res["stats"]["empty_response"] == 1 and res["extra_calls"] == len(calls) - 1 >= 4
@@ -267,7 +267,7 @@ def test_main_split_flag_prints_extra_calls(env, capsys):
     mine.load_tickets = lambda **kw: monkey_tickets  # env fixture's monkeypatch restores the original
     assert cli.main(["mine", "--out", env.out, "--batch-size", "12", "--split-on-empty", "--empty-retries", "0"]) == 3
     data, err = _one_json(capsys)
-    assert "extra (billable) LLM calls" in err and data["blocked_chunks"] and data["extra_calls"] == 2
+    assert "extra (billable) LLM calls" in err and len(data["blocked_chunks"]) == 12 and data["extra_calls"] == 22
 
 
 # ---- retry on empty -------------------------------------------------------------
@@ -346,8 +346,8 @@ def test_split_after_retries_counts_calls(tmp_path):
     ts = [T(i) for i in range(12)]
     res = cli.run_mine(**_kw(tmp_path, lambda m, **k: "", ts, batch_size=12, split_on_empty=True,
                              empty_retries=1, sleep=lambda s: None))
-    # whole (2 calls) -> two halves of 6, each 2 calls; halves cannot split further
-    assert res["total_llm_calls"] == 6 and len(res["blocked_chunks"]) == 2
+    # bisects down to 12 singles: 23 batches x (1 call + 1 retry)
+    assert res["total_llm_calls"] == 46 and len(res["blocked_chunks"]) == 12
 
 
 def test_main_passes_empty_retries_flag(env, capsys, monkeypatch):
