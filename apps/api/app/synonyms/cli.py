@@ -235,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="test every ticket alone, then re-test the blocked ones (use with a large --max-calls)")
     q.add_argument("--repeat", type=int, default=2, help="re-tests per blocked ticket with --singles")
     q.add_argument("--skip-sizes", action="store_true")
+    q.add_argument("--sizes", default="5,15,30", help="comma-separated ticket counts for the size sweep, e.g. 2,3,4")
 
     i = sub.add_parser("import")
     i.add_argument("--file", required=True)
@@ -247,6 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         from app.synonyms import probe
 
         res = probe.run_probe(mine.load_tickets(since_years=args.since_years), chat=chat_complete, chunk=max(1, args.chunk),
+                              sizes=tuple(int(x) for x in args.sizes.split(",") if x.strip()),
                               samples=max(1, args.samples), max_calls=max(1, args.max_calls),
                               singles=args.singles, repeat=max(0, args.repeat), skip_sizes=args.skip_sizes,
                               progress=lambda m: print(m, file=sys.stderr, flush=True))
