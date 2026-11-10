@@ -52,7 +52,9 @@ def _p(run_id: str, suffix: str) -> Path:
     return runs_dir() / f"{run_id}{suffix}"
 
 
-def _pid_alive(pid: int | None) -> bool:
+def _pid_alive(pid: int | None, run_id: str | None = None) -> bool:
+    """True when pid is a live process that belongs to run_id (its cmdline names the run). After an api restart
+    the pid namespace restarts, so a stale pid may now be an unrelated process — that must not count as running."""
     if not pid:
         return False
     try:
@@ -62,9 +64,16 @@ def _pid_alive(pid: int | None) -> bool:
     except PermissionError:
         return True
     try:  # a zombie still answers kill(0); treat it as ended
-        return "Z" not in Path(f"/proc/{pid}/status").read_text().split("State:")[1].split()[0]
+        if "Z" in Path(f"/proc/{pid}/status").read_text().split("State:")[1].split()[0]:
+            return False
     except (OSError, IndexError):
         return True
+    if run_id:
+        try:
+            return run_id in Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+        except OSError:
+            return True
+    return True
 
 
 def _read_json(path: Path) -> Any:
@@ -119,7 +128,7 @@ def _status(run_id: str, meta: dict[str, Any]) -> tuple[str, int | None]:
         if meta.get("cancelled"):
             return "cancelled", code
         return {0: "done", 3: "partial", 2: "config_error"}.get(code, "failed"), code
-    if _pid_alive(meta.get("pid")):
+    if _pid_alive(meta.get("pid"), run_id):
         return "running", None
     return ("cancelled" if meta.get("cancelled") else "interrupted"), None
 
@@ -246,7 +255,7 @@ def cancel(run_id: str) -> dict[str, Any]:
         raise RunError(409, f"실행 중이 아닙니다({status}).")
     meta["cancelled"] = True
     _p(run_id, ".meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    try:
+    try:  # _status() just verified the pid belongs to this run, so the group is ours
         os.killpg(os.getpgid(meta["pid"]), signal.SIGTERM)
     except (ProcessLookupError, PermissionError):
         pass

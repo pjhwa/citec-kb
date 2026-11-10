@@ -119,3 +119,17 @@ def test_auth_and_validation(env):
     assert c.post(url, json={"batch_size": 0}, headers=ADMIN).status_code == 422
     assert c.get(url + "/../../etc", headers=ADMIN).status_code in (404, 405)
     assert c.get(url + "/not-a-run", headers=ADMIN).status_code == 404
+
+
+def test_stale_pid_of_another_process_is_not_running(env):
+    import os
+
+    c, tmp = env
+    rid = "adm-20260101-000009"
+    d = tmp / "data" / "synonym_runs"
+    d.mkdir()
+    # a live pid (this test process) that is not the run: what a reused pid looks like after an api restart
+    (d / f"{rid}.meta.json").write_text(json.dumps({"run_id": rid, "pid": os.getpid(), "args": {}}))
+    assert c.get(f"/v1/lexicon/synonym-candidates/mine-runs/{rid}", headers=ADMIN).json()["status"] == "interrupted"
+    assert c.post(f"/v1/lexicon/synonym-candidates/mine-runs/{rid}/cancel", headers=ADMIN).status_code == 409
+    assert runner._active() is None
