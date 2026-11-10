@@ -125,3 +125,15 @@ def test_terms_key_ignores_empty_terms():
 def test_mixed_term_with_only_two_hangul_chars_rejected():
     # "k8s 장애" has just 2 Hangul chars -> rejected by the 1-2 char Korean rule
     assert not is_valid_term("k8s 장애")
+
+
+def test_is_variant_group():
+    from app.synonyms.rules import is_variant_group
+
+    assert is_variant_group(["접속불가", "접속 불가"])
+    assert is_variant_group(["SCPv2", "SCP V2"])
+    assert is_variant_group(["N/W", "네트워크"])
+    assert is_variant_group(["재부팅", "reboot"])
+    assert not is_variant_group(["재시작", "리부팅"])
+    assert not is_variant_group(["CPU 활용도", "CPU 사용률"])
+    assert not is_variant_group(["only one"])

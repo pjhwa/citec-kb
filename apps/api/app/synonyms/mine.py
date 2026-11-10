@@ -19,6 +19,7 @@ from app.synonyms.rules import (
     static_covers,
     terms_key,
     verify_group,
+    is_variant_group,
 )
 
 logger = logging.getLogger("citec.synonyms.mine")
@@ -57,6 +58,7 @@ class Params:
     df_max: int = 1500
     min_terms_per_ticket: int = 2
     existing_keys: set[str] = field(default_factory=set)
+    relax_variant_df: bool = True  # spacing/case and Korean<->Latin variants skip df_max (df_min still applies)
 
 
 def build_messages(tickets: list[Ticket]) -> list[dict[str, str]]:
@@ -184,7 +186,10 @@ def process_groups(
     def reject(reason: str, g: dict[str, Any], terms: list[str], **extra: Any) -> None:
         if rejected is not None:
             raw = [str(x)[:60] for x in (terms or g.get("terms") or [])][:8]
-            rejected.append({"terms": raw, "reason": reason, "llm_reason": str(g.get("reason") or "")[:160], **extra})
+            rejected.append(
+                {"terms": raw, "reason": reason, "llm_reason": str(g.get("reason") or "")[:160],
+                 "tickets": [str(x) for x in (g.get("tickets") or [])][:6], **extra}
+            )
 
     for g in groups:
         stats["groups_in"] += 1
@@ -210,7 +215,9 @@ def process_groups(
             reject("existing", g, kept)
             continue
         dfs = {t: df_of(t) for t in kept}
-        trimmed = [t for t in kept if params.df_min <= dfs[t] <= params.df_max]
+        relaxed = params.relax_variant_df and is_variant_group(kept)
+        df_hi = float("inf") if relaxed else params.df_max
+        trimmed = [t for t in kept if params.df_min <= dfs[t] <= df_hi]
         if len(trimmed) < 2:
             stats["rej_df"] += 1
             reject("df", g, kept, df=dfs)
@@ -241,6 +248,7 @@ def process_groups(
                 "evidence": {
                     "tickets": ticket_ids,
                     "df": {t: dfs[t] for t in kept},
+                    **({"df_relaxed": True} if relaxed and any(dfs[t] > params.df_max for t in kept) else {}),
                     "reason": g.get("reason", ""),
                     "min_terms_per_ticket": params.min_terms_per_ticket,
                     # tickets where >=2 of the terms appear together; 0 = each term only seen in separate tickets

@@ -444,7 +444,8 @@ def test_concurrency_gives_same_result_as_sequential(tmp_path):
 
 def test_result_and_checkpoint_keep_rejected_groups(tmp_path):
     ts = [T(i) for i in range(4)]
-    res = cli.run_mine(**_kw(tmp_path, _grouping_chat, ts, batch_size=4, term_df=lambda t: 9999))
+    res = cli.run_mine(**_kw(tmp_path, _grouping_chat, ts, batch_size=4, term_df=lambda t: 9999,
+                                params=mine.Params(relax_variant_df=False)))
     assert res["items"] == [] and [r["reason"] for r in res["rejected"]] == ["df"]
     lines = (tmp_path / "res.json.progress.jsonl").read_text().splitlines()
     assert json.loads(lines[0])["rejected"][0]["df"]["inode2x"] == 9999
@@ -461,3 +462,28 @@ def test_stop_after_empty_works_per_window_with_concurrency(tmp_path):
     res = cli.run_mine(**_kw(tmp_path, blocked_chat, ts, batch_size=2, concurrency=2, stop_after_empty=2,
                              empty_retries=0))
     assert res.get("stopped_early") is True and len(calls) == 2
+
+
+def test_reeval_accepts_rejected_variant_groups_without_llm(tmp_path, monkeypatch):
+    tix = [mine.Ticket("T-1", "t", "", "접속불가 발생 reboot 수행"),
+           mine.Ticket("T-2", "t", "", "접속 불가 확인 재부팅 수행"),
+           mine.Ticket("T-3", "t", "", "접속불가 재발 재부팅 완료 reboot")]
+    old = {"run_id": "r9", "rejected": [
+        {"terms": ["접속불가", "접속 불가"], "reason": "df", "llm_reason": "공백"},
+        {"terms": ["접속 불가", "접속불가"], "reason": "df", "llm_reason": "공백(중복)"},
+        {"terms": ["재부팅", "reboot"], "reason": "df", "llm_reason": "한영"},
+        {"terms": ["지표(KPI)", "KPI"], "reason": "terms", "llm_reason": "x"},
+    ]}
+    f = tmp_path / "old.json"
+    f.write_text(json.dumps(old), encoding="utf-8")
+    run_id, rec = cli.load_rejected(str(f), {"df"})
+    assert run_id == "r9" and len(rec) == 2  # duplicate term set and non-df reason dropped
+    items, stats, still = cli.run_reeval(
+        rec, tix, term_df=lambda t: 2000, params=mine.Params(min_terms_per_ticket=1)
+    )
+    assert stats["accepted"] == 2 and still == []
+    assert {tuple(i["terms"]) for i in items} == {("접속불가", "접속 불가"), ("재부팅", "reboot")}
+    _, stats, still = cli.run_reeval(
+        rec, tix, term_df=lambda t: 2000, params=mine.Params(min_terms_per_ticket=1, relax_variant_df=False)
+    )
+    assert stats["accepted"] == 0 and len(still) == 2

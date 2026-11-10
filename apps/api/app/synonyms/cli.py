@@ -1,7 +1,8 @@
-"""CLI: python -m app.synonyms.cli {mine|import} …
+"""CLI: python -m app.synonyms.cli {mine|reeval|import} …
 
 mine   -- ask the LLM for synonym candidates, verify in code, write a JSON file
           (dry-run unless --commit). Resumable via <out>.progress.jsonl.
+reeval -- re-run a result's rejected groups through the current gates (no LLM calls).
 import -- load a mined JSON file into search_synonym_candidate as 'proposed'.
 """
 
@@ -18,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from app.synonyms import mine
-from app.synonyms.rules import terms_key
+from app.synonyms.rules import clean_terms, term_present, terms_key
 
 
 def _merge_stats(total: dict[str, int], part: dict[str, int]) -> None:
@@ -223,6 +224,59 @@ def run_mine(
     return result
 
 
+def load_rejected(path: str, reasons: set[str]) -> tuple[str, list[dict[str, Any]]]:
+    """Rejected groups of a mine result (+ its progress file, which is not capped), one per distinct term set."""
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    run_id = str(data.get("run_id") or "run")
+    recs = list(data.get("rejected") or [])
+    progress = path + ".progress.jsonl"
+    if os.path.exists(progress):
+        with open(progress, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict) and rec.get("run_id") == data.get("run_id"):
+                    recs += rec.get("rejected") or []
+    out: dict[str, dict[str, Any]] = {}
+    for r in recs:
+        if r.get("reason") not in reasons:
+            continue
+        k = terms_key(r.get("terms") or [])
+        if k and k not in out:
+            out[k] = r
+    return run_id, list(out.values())
+
+
+def run_reeval(
+    rejected: list[dict[str, Any]],
+    tickets: list[mine.Ticket],
+    *,
+    term_df: Callable[[str], int],
+    params: mine.Params,
+    per_term_tickets: int = 3,
+) -> tuple[list[dict[str, Any]], dict[str, int], list[dict[str, Any]]]:
+    """Run rejected groups through the current gates again. No LLM calls.
+
+    Old records carry no cited tickets, so evidence is rebuilt from the corpus: for each term
+    the first few tickets that contain it. The usual verification then decides.
+    """
+    groups: list[dict[str, Any]] = []
+    for r in rejected:
+        ids = list(r.get("tickets") or [])
+        if not ids:
+            for term in clean_terms(r.get("terms") or []):
+                hits = [t.external_id for t in tickets if term_present(t.text, term)]
+                ids += hits[:per_term_tickets]
+        groups.append({"terms": r.get("terms") or [], "tickets": list(dict.fromkeys(ids)),
+                       "reason": r.get("llm_reason") or ""})
+    still: list[dict[str, Any]] = []
+    items, stats = mine.process_groups(groups, tickets, term_df=term_df, params=params, rejected=still)
+    return items, stats, still
+
+
 def _preflight(out_path: str) -> str | None:
     """Make sure the output location is writable before spending LLM calls."""
     try:
@@ -257,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--stop-after-empty", type=int, default=0,
                    help="stop after N consecutive batches that stay empty after retries (0 = never)")
     m.add_argument("--concurrency", type=int, default=1, help="batches in flight at once (1 = sequential)")
+    m.add_argument("--strict-df", action="store_true",
+                   help="apply --df-max to spacing/case and Korean<->Latin variant groups too")
     m.add_argument("--allow-partial", action="store_true", help="with --commit, commit even if some batches failed")
 
     q = sub.add_parser("probe", help="measure the Fabrix content-filter block rate (billable; prints ticket IDs only)")
@@ -269,6 +325,17 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--repeat", type=int, default=2, help="re-tests per blocked ticket with --singles")
     q.add_argument("--skip-sizes", action="store_true")
     q.add_argument("--sizes", default="5,15,30", help="comma-separated ticket counts for the size sweep, e.g. 2,3,4")
+
+    r = sub.add_parser("reeval", help="re-run the rejected groups of a mine result through the current gates (no LLM)")
+    r.add_argument("--file", required=True, help="mine result JSON (its .progress.jsonl is read too)")
+    r.add_argument("--out", required=True)
+    r.add_argument("--reasons", default="df", help="comma-separated rejection reasons to re-evaluate")
+    r.add_argument("--since-years", type=float, default=2.0)
+    r.add_argument("--min-terms-per-ticket", type=int, default=1, choices=[1, 2])
+    r.add_argument("--df-min", type=int, default=3)
+    r.add_argument("--df-max", type=int, default=1500)
+    r.add_argument("--strict-df", action="store_true")
+    r.add_argument("--commit", action="store_true", help="also insert accepted candidates as 'proposed'")
 
     i = sub.add_parser("import")
     i.add_argument("--file", required=True)
@@ -286,6 +353,33 @@ def main(argv: list[str] | None = None) -> int:
                               singles=args.singles, repeat=max(0, args.repeat), skip_sizes=args.skip_sizes,
                               progress=lambda m: print(m, file=sys.stderr, flush=True))
         print(json.dumps(res, ensure_ascii=False))
+        return 0
+
+    if args.cmd == "reeval":
+        from app.synonyms import store
+
+        if args.df_max >= mine.DF_COUNT_CAP:
+            p.error(f"--df-max must be < {mine.DF_COUNT_CAP}")
+        try:
+            run_id, rejected = load_rejected(args.file, {x.strip() for x in args.reasons.split(",") if x.strip()})
+        except (OSError, ValueError) as exc:
+            print(f"cannot read {args.file}: {exc}", file=sys.stderr)
+            return 2
+        params = mine.Params(
+            df_min=args.df_min, df_max=args.df_max, min_terms_per_ticket=args.min_terms_per_ticket,
+            existing_keys=store.existing_keys(), relax_variant_df=not args.strict_df,
+        )
+        items, stats, still = run_reeval(
+            rejected, mine.load_tickets(since_years=args.since_years),
+            term_df=mine.make_term_df(), params=params,
+        )
+        result = {"run_id": f"{run_id}-reeval", "model": None, "items": items, "stats": stats,
+                  "considered": len(rejected), "rejected": still[:1000]}
+        with open(args.out, "w", encoding="utf-8") as fh:
+            json.dump(result, fh, ensure_ascii=False, indent=2)
+        commit = store.upsert_candidates(items, run_id=result["run_id"], model=None) if args.commit else None
+        print(json.dumps({"run_id": result["run_id"], "considered": len(rejected), "stats": stats, "commit": commit},
+                         ensure_ascii=False))
         return 0
 
     if args.cmd == "import":
@@ -329,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     params = mine.Params(
         df_min=args.df_min, df_max=args.df_max,
         min_terms_per_ticket=args.min_terms_per_ticket,
-        existing_keys=store.existing_keys(),
+        existing_keys=store.existing_keys(), relax_variant_df=not args.strict_df,
     )
     result = run_mine(
         tickets=tickets, batch_size=args.batch_size, chat=chat_complete,

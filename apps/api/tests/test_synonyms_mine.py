@@ -65,7 +65,38 @@ def test_process_groups_rejects_by_reason():
 def test_process_groups_rejects_term_that_is_too_common():
     groups = [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "x"}]
     items, stats = mine.process_groups(
-        groups, TICKETS, term_df=FakeDF({"inode2x": 9999, "아이노드 고갈": 40}), params=_params()
+        groups, TICKETS, term_df=FakeDF({"inode2x": 9999, "아이노드 고갈": 40}), params=_params(relax_variant_df=False)
+    )
+    assert items == [] and stats["rej_df"] == 1
+
+
+def test_korean_latin_variant_group_skips_df_max_but_not_df_min():
+    groups = [{"terms": ["inode2x", "아이노드 고갈"], "tickets": ["T-1", "T-2"], "reason": "x"}]
+    items, stats = mine.process_groups(
+        groups, TICKETS, term_df=FakeDF({"inode2x": 2000, "아이노드 고갈": 1800}), params=_params()
+    )
+    assert stats["accepted"] == 1 and items[0]["evidence"]["df_relaxed"] is True
+    items, stats = mine.process_groups(
+        groups, TICKETS, term_df=FakeDF({"inode2x": 2000, "아이노드 고갈": 1}), params=_params()
+    )
+    assert items == [] and stats["rej_df"] == 1  # df_min still drops a term that is too rare
+
+
+def test_spacing_variant_group_skips_df_max():
+    tix = [_t("T-1", "접속불가 발생"), _t("T-2", "접속 불가 확인")]
+    g = [{"terms": ["접속불가", "접속 불가"], "tickets": ["T-1", "T-2"], "reason": "x"}]
+    df = FakeDF({"접속불가": 1132, "접속 불가": 2000})
+    items, stats = mine.process_groups(g, tix, term_df=df, params=_params(min_terms_per_ticket=1))
+    assert stats["accepted"] == 1
+    items, stats = mine.process_groups(g, tix, term_df=df, params=_params(min_terms_per_ticket=1, relax_variant_df=False))
+    assert items == [] and stats["rej_df"] == 1
+
+
+def test_different_concept_korean_pair_still_obeys_df_max():
+    tix = [_t("T-1", "재시작 수행"), _t("T-2", "리부팅 수행")]
+    g = [{"terms": ["재시작", "리부팅"], "tickets": ["T-1", "T-2"], "reason": "x"}]
+    items, stats = mine.process_groups(
+        g, tix, term_df=FakeDF({"재시작": 2000, "리부팅": 2000}), params=_params(min_terms_per_ticket=1)
     )
     assert items == [] and stats["rej_df"] == 1
 
@@ -337,8 +368,9 @@ def test_process_groups_reports_rejected_groups_with_reason_and_df():
         {"terms": ["행", "펜싱"], "tickets": ["T-1", "T-2"], "reason": "x"},                         # invalid terms
     ]
     rej: list = []
-    mine.process_groups(groups, TICKETS, term_df=df, params=_params(), rejected=rej)
+    mine.process_groups(groups, TICKETS, term_df=df, params=_params(relax_variant_df=False), rejected=rej)
     by = {r["reason"]: r for r in rej}
+    assert by["df"]["tickets"] == ["T-1", "T-2"]
     assert by["df"]["terms"] == ["inode2x", "아이노드 고갈"] and by["df"]["df"]["inode2x"] == 9999
     assert by["df"]["llm_reason"] == "same thing"
     assert by["terms"]["terms"] == ["행", "펜싱"]
