@@ -15,8 +15,8 @@
   <p class="why">단축키: 1~9 선택지 · N 판단 불가 · E 직접 입력 · S 건너뛰기 · Z 되돌리기 (입력창에 포커스가 있으면 꺼집니다)</p>
 </div>
 <div class="toast" id="toast"></div>
-<script src="/js/nav.js"></script>
 <script src="/js/auth.js"></script>
+<script src="/js/nav.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

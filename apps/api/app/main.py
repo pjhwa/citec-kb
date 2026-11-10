@@ -16,6 +16,8 @@ from app import __version__
 from app.audit.api_access import ApiAccessLogMiddleware
 from app.audit.mcp_access import McpAccessLogMiddleware
 from app.llm import check_llm
+from app.masking.dictionary import get_dictionary
+from app.masking.middleware import MaskingMiddleware
 from app.settings import get_settings
 
 # routers
@@ -98,6 +100,8 @@ app.add_middleware(
 app.add_middleware(McpAccessLogMiddleware)
 # 2026-11-05 — MCP 외 /v1 호출을 웹/내부 시스템/외부 시스템으로 구분해 api_access_log에 남긴다.
 app.add_middleware(ApiAccessLogMiddleware)
+# 2026-11-09 — pii/net/biz 출력 시점 마스킹 + 원본 보기 토글(docs/superpowers/specs/2026-11-09-pii-masking-design.md).
+app.add_middleware(MaskingMiddleware)
 app.include_router(ingest_router.router)
 app.include_router(search_router.router)
 app.include_router(checkitems_router.router)
@@ -134,6 +138,11 @@ class HealthResponse(BaseModel):
     version: str
     env: str
     checks: dict[str, Any]
+
+
+def _masking_health() -> dict[str, Any]:
+    status = get_dictionary().status
+    return {"ok": status in ("ok", "missing"), "dictionary": status}
 
 
 @app.get("/v1/health", response_model=HealthResponse)
@@ -232,6 +241,7 @@ async def health() -> HealthResponse:
         else None,
         "max_context_tokens": settings.max_context_tokens,
     }
+    checks["masking"] = _masking_health()
 
     critical_ok = checks["redis"].get("ok") and checks["postgres"].get("ok")
     status = "ok" if critical_ok else "degraded"

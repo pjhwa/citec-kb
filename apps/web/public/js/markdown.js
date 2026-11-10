@@ -54,6 +54,10 @@
         return pre + '<a href="' + l + '" target="_blank" rel="noopener noreferrer">' + l + "</a>";
       }
     );
+    // 마스킹 토큰 배지. s는 위에서 이미 escHtml을 거쳤고, 태그(<...>) 안(href 등)은 건드리지 않는다.
+    s = s.replace(/(<[^>]*>)|\[(PHONE|ADDR|ID|NAME|EMAIL|IP|CUST|HOST)-(\d+)\]/g, function (m, tag, kind, n) {
+      return tag ? tag : '<span class="mask-badge">[' + kind + "-" + n + "]</span>";
+    });
     return s;
   }
 

@@ -865,6 +865,16 @@ After code deploy: `docker compose restart mcp` (server.py is bind-mounted).
 
 ---
 
+## 마스킹
+
+- 응답의 `[PHONE-1]` `[ADDR-1]` `[ID-1]` `[NAME-1]` `[EMAIL-1]` `[IP-1]` 등은 개인정보/IP가 **마스킹된 값**이다. 복원·추측하지 말고 토큰 그대로 인용한다.
+- 같은 응답 안에서 같은 번호는 같은 값이다(`[PHONE-1]`이 두 번 나오면 같은 번호).
+- 고객사명·호스트명은 author 권한 키에서는 원본으로 내려온다.
+- MCP 도구는 마스킹이 적용되면 결과 머리에 `마스킹 적용: pii 3, net 1 ...` 한 줄을 붙인다(API의 `X-Citec-Masking` 헤더 기준).
+- 원본 보기는 사람(senior/admin)의 웹 UI 전용이며 MCP로는 열 수 없다.
+
+---
+
 ## 14. Versioning
 
 This guide tracks MCP tools as of **kb_list_tickets / kb_analytics / kb_similar_incident / kb_list_checkitems / kb_capacity_estimate / kb_citec_domain_catalog / kb_citec_recurring_patterns / kb_citec_failure_bucket_coverage / kb_tools_help** and `kb_search` → `/v1/search` (2026-10-07 revision: added §6.1 evidence_grade trust model, §6.2 structured-copy overlap, §6.3 CI-TEC domain tools. **2026-10-08 correction**: §6.1/§6.2 originally said `confluence_map` body_md is pointer-only with no real content — that was only true before the 2026-10-01 full-body capture round; most production `confluence_map` rows now carry the real page text, but `evidence_grade="C"` and the "rank below tech_repo/confluence_docs on the same page_id" rule are unchanged by policy, not by content availability).

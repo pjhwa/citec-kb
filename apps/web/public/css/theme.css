@@ -128,3 +128,9 @@ table, .num { font-variant-numeric: tabular-nums; }   /* aligned digits in table
 .top .nav-dd-menu a { color: #1428A0; padding: 6px 10px; border-radius: 6px; white-space: nowrap; }
 .top .nav-dd-menu a:hover { background: #f1f5f9; }
 .top .nav-admin { margin-left: auto; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, 0.18); }
+
+.unmask-toggle { margin-left: 12px; font-size: 12px; color: #fde68a; cursor: pointer; white-space: nowrap; }
+.unmask-banner { position: sticky; top: 0; z-index: 1000; background: #b91c1c; color: #fff; text-align: center;
+  font-size: 13px; font-weight: 600; padding: 4px 8px; }
+.mask-badge { background: #e5e7eb; color: #4b5563; border-radius: 4px; padding: 0 4px; font-size: 0.9em;
+  font-family: ui-monospace, monospace; }

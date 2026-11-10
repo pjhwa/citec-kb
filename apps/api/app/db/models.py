@@ -531,6 +531,27 @@ class ApiAccessLog(Base):
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
 
 
+class UnmaskAuditLog(Base):
+    """2026-11-09 — who revealed pii/net originals (or tried and was denied). Written synchronously
+    before an original response leaves the API; never pruned. Holds counts and ids, never the values."""
+
+    __tablename__ = "unmask_audit_log"
+    __table_args__ = (Index("ix_unmask_audit_log_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    sub: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(String(128))
+    roles: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    level: Mapped[str] = mapped_column(String(16), nullable=False)
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path: Mapped[str] = mapped_column(String(256), nullable=False)
+    doc_refs: Mapped[Any] = mapped_column(JSONB, nullable=False, default=list)
+    counts: Mapped[Any] = mapped_column(JSONB, nullable=False, default=dict)
+    client_ip: Mapped[Optional[str]] = mapped_column(String(64))
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)  # granted | denied | audit_failed
+
+
 class Answer(Base):
     __tablename__ = "answers"
 

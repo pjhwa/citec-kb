@@ -108,6 +108,51 @@
       .catch(function () {});
   }
 
+  // ---- 원본 보기 토글 (senior/admin 전용 UI). 상태는 탭 단위 sessionStorage. ----
+  // 이 토글은 UI/헤더 힌트일 뿐이며, 원본 허용 여부는 서버가 롤로 결정한다.
+  var UNMASK_KEY = "citec_kb_unmask";
+
+  function unmaskOn() {
+    try {
+      return sessionStorage.getItem(UNMASK_KEY) === "1";
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function setUnmask(on) {
+    try {
+      if (on) sessionStorage.setItem(UNMASK_KEY, "1");
+      else sessionStorage.removeItem(UNMASK_KEY);
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  // 모든 페이지의 fetch(/v1|/api …)에 헤더를 붙인다. 페이지마다 apiFetch를 쓰지 않으므로 전역 래퍼로 처리.
+  if (typeof global.fetch === "function" && !global.fetch.__citecUnmask) {
+    var origFetch = global.fetch.bind(global);
+    var wrapped = function (url, opts) {
+      try {
+        var u = typeof url === "string" ? url : (url && url.url) || "";
+        // 상대 경로(/v1, /api) 또는 현재 origin의 절대 URL에만 붙인다. 외부 호스트·"//host/…"는 제외.
+        var origin = (global.location && global.location.origin) || "";
+        var path = u.indexOf(origin + "/") === 0 && origin ? u.slice(origin.length) : u;
+        if (unmaskOn() && /^\/(v1|api)\//.test(path)) {
+          opts = opts || {};
+          var h = new Headers(opts.headers || {});
+          h.set("X-Citec-Unmask", "1");
+          opts.headers = h;
+        }
+      } catch (e) {
+        /* fall through to the plain call */
+      }
+      return origFetch(url, opts);
+    };
+    wrapped.__citecUnmask = true;
+    global.fetch = wrapped;
+  }
+
   var api = {
     KEY: KEY,
     getToken: getToken,
@@ -118,6 +163,8 @@
     me: me,
     status: status,
     mountChip: mountChip,
+    unmaskOn: unmaskOn,
+    setUnmask: setUnmask,
   };
   global.CitecAuth = api;
 })(typeof window !== "undefined" ? window : this);
