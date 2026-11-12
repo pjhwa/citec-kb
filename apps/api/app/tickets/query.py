@@ -22,10 +22,12 @@ _DATE_RE = re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
 _VALID_DATE_FIELDS: dict[str, frozenset[str]] = {
     "support_history": frozenset({"Created", "Resolved", "Updated"}),
     "incident_reports": frozenset({"발생일시(한국)"}),
+    "dogether_preventive": frozenset({"게시일시"}),
 }
 _DEFAULT_DATE_FIELD: dict[str, str] = {
     "support_history": "Created",
     "incident_reports": "발생일시(한국)",
+    "dogether_preventive": "게시일시",
 }
 
 
@@ -139,7 +141,7 @@ def get_ticket_by_external_id(
         meta = d.metadata_ if isinstance(d.metadata_, dict) else {}
         from app.doc_access import attach_document_access
 
-        return attach_document_access(
+        out = attach_document_access(
             {
                 "document_id": d.id,
                 "external_id": d.external_id,
@@ -156,6 +158,56 @@ def get_ticket_by_external_id(
                 "metadata": meta,
             }
         )
+        if d.source_type == "incident_reports":
+            out["related_prevention_posts"] = related_prevention_posts(d.external_id, session=session)
+        return out
+
+
+def related_prevention_posts(fail_seq: str, *, session: Optional[Session] = None) -> list[dict[str, Any]]:
+    """incident_reports 문서(SWIM 번호 fail_seq)를 가리키는 DOgether 장애예방 게시글.
+
+    metadata.swim_ids 일치는 match="swim_ids", swim_id_candidates 일치는 "candidate"로
+    구분한다(둘 다 있으면 swim_ids). 게시일시 내림차순.
+    """
+    fid = (fail_seq or "").strip()
+    if not fid:
+        return []
+    sql = text(
+        """
+        SELECT external_id, title, work_type, source_uri,
+               metadata->>'게시일시' AS posted_at,
+               (metadata->'swim_ids' ? :fid) AS by_ids
+        FROM documents
+        WHERE source_type = 'dogether_preventive' AND status = 'active'
+          AND (metadata->'swim_ids' ? :fid OR metadata->'swim_id_candidates' ? :fid)
+        ORDER BY metadata->>'게시일시' DESC NULLS LAST, external_id
+        """
+    )
+
+    def _run(sess: Session) -> list[dict[str, Any]]:
+        return [
+            {
+                "external_id": r.external_id,
+                "title": r.title,
+                "게시유형": r.work_type,
+                "게시일시": r.posted_at,
+                "source_uri": r.source_uri,
+                "match": "swim_ids" if r.by_ids else "candidate",
+            }
+            for r in sess.execute(sql, {"fid": fid})
+        ]
+
+    if session is not None:
+        return _run(session)
+    with session_scope() as sess:
+        return _run(sess)
+
+
+def attach_related_prevention_posts(row: dict[str, Any]) -> dict[str, Any]:
+    """incident_reports 응답 dict에 related_prevention_posts를 붙인다(다른 자료종류는 그대로)."""
+    if row.get("source_type") == "incident_reports" and row.get("external_id"):
+        row["related_prevention_posts"] = related_prevention_posts(row["external_id"])
+    return row
 
 
 def list_tickets(

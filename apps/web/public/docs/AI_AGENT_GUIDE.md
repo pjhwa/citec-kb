@@ -182,7 +182,7 @@ Base MCP: FastMCP over **streamable-http** (`http://localhost:8577/mcp`) or **st
 | Arg | Type | Description |
 |-----|------|-------------|
 | `query` | str | Search string |
-| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitem`, `confluence_docs`, `confluence_map`, `dept_archive`, `failure_bucket`, `insight`. Common aliases (`checkitems`, `incident`, `insights`, …) are normalised server-side; an unknown value returns HTTP 400 with the allowed list instead of silently returning 0 hits |
+| `section` | str | → `source_type`: `support_history`, `incident_reports`, `tech_repo`, `tuning_ai`, `checkitem`, `confluence_docs`, `confluence_map`, `dept_archive`, `dogether_preventive`, `failure_bucket`, `insight`. Common aliases (`checkitems`, `incident`, `insights`, …) are normalised server-side; an unknown value returns HTTP 400 with the allowed list instead of silently returning 0 hits |
 | `area` | str | → domain filter (`os`, `dbms`, `network`, `cloud`, `storage`, …); case-insensitive. A value no document has adds a warning line instead of an unexplained empty result |
 | `category` | str | wiki-compat only when `use_v1=false` |
 | `limit` | int | 1–50 (`< 1` is rejected; `> 50` is clamped and the header says so) |
@@ -526,6 +526,7 @@ If `relative` is unrecognized, API returns 400—retry with ISO dates or differe
 | `tuning_ai` | Tuning / SQL notes | `tuning_ai/...` | A- |
 | `checkitem` / section `checkitems` | PISA items | use `kb_get_checkitem` or path form | A |
 | `dept_archive` | CI-TEC 부서 공유드라이브(R드라이브) 원본 파일 아카이브 | `dept_archive/file_<id>.md` | B |
+| `dogether_preventive` | DOgether 장애예방 게시글(장애사례·장애예방가이드·횡전개). section 별칭 `dogether`/`preventive`/`prevention`. SWIM 장애번호가 있으면 `incident_reports`와 양방향 연결 — `kb_get_document`·`kb_similar_incident`가 장애 문서에 "관련 DOgether 장애예방 게시글"을 붙인다 | `dogether_preventive/dogether_<게시ID>.md` | A (기타 B) |
 | `failure_bucket` | 실패 버킷(장애 패턴) — API/MCP로 실시간 등재, `data/raw/` 스캔 대상 아님 | via failure bucket tools | `machine`(자동계산 confidence와 별개 필드) |
 | `confirmed_decision` | 사람이 확정한 현재 기준 (질문·선택지·고정 근거) | `kb_get_decision`, `confirmed_decision/DEC-xxxxxxxx.md` | `H` (human-confirmed) |
 

@@ -230,3 +230,56 @@ def extract_references(doc: dict, *, external_id_index: dict[str, str]) -> list[
         )
         for t in target_ids
     ]
+
+
+def _best_in_index(key: str, index: dict[str, list[dict]], source_type: str) -> str | None:
+    """index[key] 후보 중 source_type이 맞는 active 문서만 남겨 대표 1건의 id를 돌려준다."""
+    from app.graph.identity import best_candidate_id
+
+    cands = [
+        c for c in index.get((key or "").strip().lower(), [])
+        if c.get("source_type") == source_type and c.get("status", "active") == "active"
+    ]
+    return best_candidate_id(cands)
+
+
+def extract_swim_links(
+    doc: dict,
+    *,
+    incident_index: dict[str, list[dict]],
+    dogether_index: dict[str, list[dict]] | None = None,
+) -> list[Edge]:
+    """DOgether 장애예방 게시글(dogether_preventive) -> SWIM 장애(incident_reports) 연결.
+
+    - 번호는 본문 정규식이 아니라 metadata swim_ids / swim_id_candidates에서만 읽는다
+      (11자리 숫자를 본문 전체에서 찾으면 날짜·전화번호가 걸린다).
+    - incident_index는 incident_reports로만 해석한다(다른 자료종류와 external_id가 같아도 무시).
+    - swim_ids는 EXTRACTED, swim_id_candidates는 INFERRED. KB에 없는 번호는 건너뛴다.
+    - related_external_ids는 dogether_index가 있을 때 같은 자료종류 문서로만 잇는다. 자기 자신은 뺀다.
+    - 두 목록에 같은 번호가 있으면 EXTRACTED가 이긴다(호출자의 dedup 정책과 같은 방향).
+    """
+    if doc.get("source_type") != "dogether_preventive":
+        return []
+    meta = doc.get("metadata") or {}
+    self_key = (doc.get("external_id") or "").strip().lower()
+
+    def _as_list(v) -> list[str]:
+        return [str(x).strip() for x in v if str(x).strip()] if isinstance(v, list) else []
+
+    edges: list[Edge] = []
+    seen: set[str] = set()
+    for tag, key in (("EXTRACTED", "swim_ids"), ("INFERRED", "swim_id_candidates")):
+        for num in _as_list(meta.get(key)):
+            target = _best_in_index(num, incident_index, "incident_reports")
+            if not target or target in seen:
+                continue
+            seen.add(target)
+            edges.append(Edge("REFERENCES", "Document", "id", target, tag))
+    if dogether_index:
+        for rel in sorted(set(_as_list(meta.get("related_external_ids")))):
+            if rel.lower() == self_key:
+                continue
+            target = _best_in_index(rel, dogether_index, "dogether_preventive")
+            if target and target != doc.get("id"):
+                edges.append(Edge("REFERENCES", "Document", "id", target, "EXTRACTED"))
+    return edges

@@ -242,3 +242,83 @@ def test_frame_extraction_still_reads_the_original_sections_from_extended_record
     assert "Acronis" in (frame.get("root_cause") or "")
     assert "재기동" in (frame.get("resolution") or "")
     assert "미수립" not in (frame.get("root_cause") or "")
+
+
+_DOGETHER_MD = """---
+문서ID : dogether-19267
+출처 : DOgether > Talk > 장애예방
+게시ID : 19267
+게시유형 : 장애사례
+제목접두어 : 장애사례
+제목 : [장애사례] Undertow 업그레이드 후 쿠키 값 변경에 따른 인증 실패 발생
+분야 : 장애예방
+분야키 : project.tech.preventive
+작성자 : 홍길동
+게시일시 : 2026-11-05 08:35
+SWIM번호 : 26091661376
+관련게시ID : 19292, 19267
+태그 : Undertow, Cookie
+원문URL : https://dogether.sds.samsung.net/#/login?postingId=19267
+---
+
+# [장애사례] Undertow 업그레이드 후 쿠키 값 변경에 따른 인증 실패 발생
+
+본문 No : 26091661376
+"""
+
+
+def test_parse_dogether_preventive_file(tmp_path: Path):
+    from app.ingest.adapters import parse_dogether_preventive_file
+
+    p = tmp_path / "dogether_19267.md"
+    p.write_text(_DOGETHER_MD, encoding="utf-8")
+    d = parse_dogether_preventive_file(p)
+
+    assert d.source_type == "dogether_preventive"
+    assert d.external_id == "dogether-19267"
+    assert d.work_type == "장애사례"
+    assert d.path_l2 == "장애예방"
+    assert d.domain is None  # 상위 키(project.tech.preventive)
+    assert d.evidence_grade == "A"
+    assert d.source_uri.endswith("postingId=19267")
+    assert d.metadata["swim_ids"] == ["26091661376"]
+    assert d.metadata["tags"] == ["Undertow", "Cookie"]
+    assert d.metadata["posting_id"] == "19267"
+    # 자기 자신은 빠지고 접두어가 붙는다
+    assert d.metadata["related_external_ids"] == ["dogether-19292"]
+    # 값이 없는 키는 저장하지 않는다
+    assert "swim_id_candidates" not in d.metadata and "attachments" not in d.metadata
+
+
+def test_parse_dogether_preventive_candidates_domain_and_grade(tmp_path: Path):
+    from app.ingest.adapters import parse_dogether_preventive_file
+
+    p = tmp_path / "dogether_18959.md"
+    p.write_text(
+        "---\n문서ID : dogether-18959\n게시유형 : 기타\n제목 : t\n분야 : Application\n"
+        "분야키 : project.tech.preventive.application\nSWIM번호후보 : 26070361231, 26061661193\n---\n본문\n",
+        encoding="utf-8",
+    )
+    d = parse_dogether_preventive_file(p)
+    assert d.metadata["swim_id_candidates"] == ["26070361231", "26061661193"]
+    assert "swim_ids" not in d.metadata
+    assert d.domain == "middleware"
+    assert d.evidence_grade == "B"
+
+
+def test_dogether_domain_mapping():
+    from app.ingest.adapters import _domain_from_dogether_key as f
+
+    assert f("project.tech.preventive.network") == "network"
+    assert f("project.tech.preventive.webwas") == "middleware"
+    assert f("project.tech.preventive.security") is None
+    assert f("project.tech.preventive.etc") is None
+    assert f(None) is None
+
+
+def test_dogether_reupload_same_content_hash(tmp_path: Path):
+    from app.ingest.adapters import parse_dogether_preventive_file
+
+    p = tmp_path / "dogether_19267.md"
+    p.write_text(_DOGETHER_MD, encoding="utf-8")
+    assert parse_dogether_preventive_file(p).content_hash == parse_dogether_preventive_file(p).content_hash

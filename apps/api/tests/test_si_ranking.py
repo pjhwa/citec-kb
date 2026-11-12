@@ -2,9 +2,17 @@
 
 from contextlib import contextmanager
 
+import pytest
+
 from app.retrieval.search import SearchHit, SearchResponse
 from app.si import retrieve as si_retrieve
 from app.si.retrieve import _query_tokens, _text_match_boost
+
+
+@pytest.fixture(autouse=True)
+def _no_related_posts_db(monkeypatch):
+    """역조회(related_prevention_posts)는 자체 DB 세션을 연다 - 이 파일은 DB 없이 돈다."""
+    monkeypatch.setattr(si_retrieve, "related_prevention_posts", lambda _eid: [])
 
 
 def test_query_tokens_filters_short():
@@ -264,3 +272,18 @@ def test_frame_injection_runs_once_per_source_type(monkeypatch):
     si_retrieve.similar_incidents("Oracle 블럭 손상 접속 불가", top_k=3, source_types=["incident_reports"])
     injections = [s for s in rec.sql if "issue_frames.quality >=" in s and "ILIKE" in s.upper()]
     assert len(injections) == 1 and "'incident_reports'" in injections[0]
+
+
+def test_incident_cases_carry_related_prevention_posts(monkeypatch):
+    post = {"external_id": "dogether-1", "title": "t", "match": "swim_ids"}
+    monkeypatch.setattr(
+        si_retrieve, "related_prevention_posts",
+        lambda eid: [post] if eid == "incident_reports:26090761356" else [],
+    )
+    _patched(monkeypatch, {
+        "support_history": [_hit("support_history:CITECTS-1", "support_history", "지원이력 사례")],
+        "incident_reports": [_hit("incident_reports:26090761356", "incident_reports", "SWIM 사례")],
+    })
+    cases = {c["document_id"]: c for c in si_retrieve.similar_incidents("정전 접속 불가", top_k=5)["cases"]}
+    assert cases["incident_reports:26090761356"]["related_prevention_posts"] == [post]
+    assert "related_prevention_posts" not in cases["support_history:CITECTS-1"]

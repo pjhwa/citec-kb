@@ -37,6 +37,7 @@ from app.db.session import session_scope
 from app.doc_access import attach_document_access, document_access
 from app.ingest.adapters import (
     parse_dept_archive_file,
+    parse_dogether_preventive_file,
     parse_incident_report_file,
     parse_support_history_file,
     parse_tech_repo_file,
@@ -48,6 +49,7 @@ from app.retrieval.filter_args import canonical_domain, normalize_source_type
 from app.retrieval.multi_query import multi_hybrid_search
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
 from app.settings import get_settings
+from app.tickets.query import related_prevention_posts
 
 router = APIRouter(tags=["external-compat (wiki-qa)"])
 logger = logging.getLogger("citec.external_compat")
@@ -79,6 +81,11 @@ _SECTION_MAP: dict[str, Optional[str]] = {
     "confirmed_decision": "confirmed_decision",
     "dept_archive": "dept_archive",
     "dept-archive": "dept_archive",
+    "dogether": "dogether_preventive",
+    "dogether_preventive": "dogether_preventive",
+    "dogether-preventive": "dogether_preventive",
+    "preventive": "dogether_preventive",
+    "prevention": "dogether_preventive",
 }
 
 _TEMPLATE_LABELS = {
@@ -92,6 +99,7 @@ _TEMPLATE_LABELS = {
     "failure_bucket": "실패 패턴 라이브러리",
     "confirmed_decision": "사람 확정 결정",
     "dept_archive": "부서 공유드라이브 아카이브",
+    "dogether_preventive": "DOgether 장애예방",
 }
 
 
@@ -135,6 +143,11 @@ _UPLOAD_ALIASES: dict[str, str] = {
     "tuning-ai": "tuning_ai",
     "dept_archive": "dept_archive",
     "dept-archive": "dept_archive",
+    "dogether_preventive": "dogether_preventive",
+    "dogether-preventive": "dogether_preventive",
+    "dogether": "dogether_preventive",
+    "preventive": "dogether_preventive",
+    "prevention": "dogether_preventive",
 }
 
 # Known wiki-qa values with no native citec-kb parser yet — reject with 501,
@@ -147,6 +160,7 @@ _UPLOAD_PARSERS = {
     "tech_repo": parse_tech_repo_file,
     "tuning_ai": parse_tuning_ai_file,
     "dept_archive": parse_dept_archive_file,
+    "dogether_preventive": parse_dogether_preventive_file,
 }
 
 _UPLOAD_RAW_SUBDIR = {
@@ -155,6 +169,7 @@ _UPLOAD_RAW_SUBDIR = {
     "tech_repo": "tech_repo",
     "tuning_ai": "tuning_ai",
     "dept_archive": "dept_archive",
+    "dogether_preventive": "dogether_preventive",
 }
 
 _UPLOAD_ALLOWED_EXT = {".md", ".txt"}
@@ -701,7 +716,13 @@ def api_wiki_file(path: str = Query(..., min_length=1)) -> dict[str, Any]:
         title=doc.title,
         source_uri=doc.source_uri,
     )
+    related = (
+        related_prevention_posts(doc.external_id)
+        if doc.source_type == "incident_reports" and doc.external_id
+        else None
+    )
     return {
+        **({"related_prevention_posts": related} if related is not None else {}),
         "path": _doc_path(doc),
         "content": doc.body_md or "",
         "meta": meta,

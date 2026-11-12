@@ -84,6 +84,8 @@ def test_resolve_upload_source_type_aliases():
     assert _resolve_upload_source_type("confluence_docs") == "tech_repo"
     assert _resolve_upload_source_type("confluence") == "tech_repo"
     assert _resolve_upload_source_type("techrepo") == "tech_repo"
+    for alias in ("dogether_preventive", "dogether-preventive", "dogether", "preventive", "prevention"):
+        assert _resolve_upload_source_type(alias) == "dogether_preventive"
     assert _resolve_upload_source_type("tech-repo") == "tech_repo"
     assert _resolve_upload_source_type("tuning_ai") == "tuning_ai"
     assert _resolve_upload_source_type("sql_tuning") == "tuning_ai"

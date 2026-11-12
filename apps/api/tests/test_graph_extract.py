@@ -266,3 +266,54 @@ def test_extract_references_still_includes_other_mentions_alongside_self_mention
     index = {"citects-9999": "d1", "citects-1234": "doc-other"}
     edges = extract_references(doc, external_id_index=index)
     assert [e.target_value for e in edges] == ["doc-other"]
+
+
+def _swim_doc(**meta):
+    return {"id": "dogether_preventive:p1", "external_id": "dogether-1", "source_type": "dogether_preventive",
+            "metadata": meta, "body_md": "No : 99999999999"}
+
+
+def _cand(doc_id, st, status="active"):
+    return [{"document_id": doc_id, "source_type": st, "status": status, "evidence_grade": "A"}]
+
+
+def test_extract_swim_links_ids_extracted_candidates_inferred_and_unknown_skipped():
+    from app.graph.extract import extract_swim_links
+
+    idx = {"26091661376": _cand("i1", "incident_reports"), "26070361231": _cand("i2", "incident_reports")}
+    edges = extract_swim_links(
+        _swim_doc(swim_ids=["26091661376", "00000000000"], swim_id_candidates=["26070361231"]),
+        incident_index=idx,
+    )
+    assert edges == [
+        Edge("REFERENCES", "Document", "id", "i1", "EXTRACTED"),
+        Edge("REFERENCES", "Document", "id", "i2", "INFERRED"),
+    ]
+
+
+def test_extract_swim_links_only_resolves_incident_reports_and_dogether_docs():
+    from app.graph.extract import extract_swim_links
+
+    idx = {"26091661376": _cand("s1", "support_history")}
+    assert extract_swim_links(_swim_doc(swim_ids=["26091661376"]), incident_index=idx) == []
+    other = {"id": "x", "source_type": "tech_repo", "metadata": {"swim_ids": ["26091661376"]}}
+    assert extract_swim_links(other, incident_index={"26091661376": _cand("i1", "incident_reports")}) == []
+
+
+def test_extract_swim_links_ignores_body_numbers():
+    from app.graph.extract import extract_swim_links
+
+    idx = {"99999999999": _cand("i9", "incident_reports")}
+    assert extract_swim_links(_swim_doc(), incident_index=idx) == []
+
+
+def test_extract_swim_links_related_posts_skip_self():
+    from app.graph.extract import extract_swim_links
+
+    dg = {"dogether-1": _cand("dogether_preventive:p1", "dogether_preventive"),
+          "dogether-2": _cand("dogether_preventive:p2", "dogether_preventive")}
+    edges = extract_swim_links(
+        _swim_doc(related_external_ids=["dogether-1", "dogether-2", "dogether-404"]),
+        incident_index={}, dogether_index=dg,
+    )
+    assert edges == [Edge("REFERENCES", "Document", "id", "dogether_preventive:p2", "EXTRACTED")]
