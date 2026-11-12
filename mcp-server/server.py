@@ -235,7 +235,7 @@ async def kb_search(
 ) -> str:
     """CI-TEC 지식 하이브리드 검색 (FTS+vector).
 
-    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|failure_bucket|confirmed_decision
+    section/source_type: support_history|checkitem|tech_repo|tuning_ai|confluence_docs|confluence_map|incident_reports|dept_archive|dogether_preventive|failure_bucket|confirmed_decision
         (checkitems·incident 같은 흔한 별칭은 서버가 정규화하고, 모르는 값은 허용 목록과 함께 거부한다)
     area: domain 필터 (os|dbms|network|cloud|storage|…, 대소문자 무시). 문서에 없는 값이면 결과 머리에 경고가 붙는다
     environment: csp|onprem|…  work_type: 기술지원|장애지원|…
@@ -451,6 +451,23 @@ async def wiki_get_document(path: str) -> str:
     return await _get_document_impl(path)
 
 
+def _related_posts_lines(posts: Any, *, heading: bool = True) -> str:
+    """incident_reports 문서에 연결된 DOgether 장애예방 게시글 목록(없으면 빈 문자열)."""
+    if not isinstance(posts, list) or not posts:
+        return ""
+    lines = ["", "## 관련 DOgether 장애예방 게시글"] if heading else ["  관련 DOgether 장애예방 게시글:"]
+    for p in posts:
+        if not isinstance(p, dict):
+            continue
+        mark = "" if p.get("match") == "swim_ids" else " (번호 후보 일치 — 확인 필요)"
+        bits = [b for b in (p.get("게시유형"), p.get("게시일시")) if b]
+        meta = f" [{' / '.join(bits)}]" if bits else ""
+        url = f" {p['source_uri']}" if p.get("source_uri") else ""
+        lines.append(f"- {p.get('external_id')}{meta} {p.get('title') or ''}{mark}{url}".rstrip()
+                     if heading else f"    - {p.get('external_id')}{meta} {p.get('title') or ''}{mark}{url}".rstrip())
+    return "\n".join(lines)
+
+
 async def _get_document_impl(path: str) -> str:
     try:
         async with _client() as client:
@@ -478,9 +495,10 @@ async def _get_document_impl(path: str) -> str:
         header_bits.append(f"body_api={acc.get('body_api') or data.get('body_api')}")
     meta_line = (" | ".join(header_bits) + "\n\n") if header_bits else ""
     note = _masking_note(resp)
+    related = _related_posts_lines(data.get("related_prevention_posts"))
     if title:
-        return note + f"# {title}\n{meta_line}{content}"
-    return note + meta_line + content
+        return note + f"# {title}\n{meta_line}{content}{related}"
+    return note + meta_line + content + related
 
 
 # ── RETIRED 2026-11-05: Insight → 사람 확정 결정. 한 릴리스 동안 폐기 안내 스텁으로 둔다(다음 릴리스에서 제거).
@@ -1257,6 +1275,9 @@ async def kb_similar_incident(
         acc = _access_lines(c)
         if acc:
             lines.append(acc)
+        rel = _related_posts_lines(c.get("related_prevention_posts"), heading=False)
+        if rel:
+            lines.append(rel)
     if len(lines) == 1:
         lines.append("(유사 사례 없음)")
     return "\n".join(lines)

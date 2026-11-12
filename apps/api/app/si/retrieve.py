@@ -15,6 +15,7 @@ from app.db.models import Document, IssueFrame
 from app.db.session import session_scope
 from app.embed.model import embed_query
 from app.retrieval.search import SearchFilters, SearchRequest, hybrid_search
+from app.tickets.query import related_prevention_posts
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9가-힣]{3,}")
 
@@ -368,6 +369,10 @@ def similar_incidents(
                         "note": "issue_frame 없음 — 검색 스니펫만 제공",
                     }
                 )
+
+    for c in cases:
+        if c.get("source_type") == "incident_reports" and c.get("external_id"):
+            c["related_prevention_posts"] = related_prevention_posts(c["external_id"])
 
     brief = _build_brief(symptom, cases)
     actions = _suggested_actions(cases)

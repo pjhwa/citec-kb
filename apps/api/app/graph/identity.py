@@ -21,7 +21,7 @@ GRADE_RANK: dict[str, int] = {"H": -1, "A": 0, "A-": 1, "B": 2, "C": 3, "machine
 # tie-break에 필요한 최소 로직만 복제한다. 정책이 바뀌면 두 곳을 함께 고친다.
 _TIER_1_SOURCE_TYPES = {"tech_repo", "confluence_docs", "checkitem"}
 _TIER_1_CONFLUENCE_MAP_SPACES = {"LOOKIN", "TechRepo"}
-_TIER_2_SOURCE_TYPES = {"incident_reports"}
+_TIER_2_SOURCE_TYPES = {"incident_reports", "dogether_preventive"}
 
 
 def _source_tier(source_type: str | None, space_key: str | None) -> int:

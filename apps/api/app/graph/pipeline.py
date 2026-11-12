@@ -24,6 +24,7 @@ from app.graph.extract import (
     extract_hierarchy,
     extract_lexicon_components,
     extract_references,
+    extract_swim_links,
     extract_structured_components,
 )
 from app.graph.failure_bucket import (
@@ -49,7 +50,7 @@ DEFAULT_GENERATION = "2026-10-12.g1"  # G05 — 환경변수 GRAPH_GENERATION으
 # 스펙 §0.1 — CI-TEC 1차 산출물이 confluence_map의 유일한 두 "승격" 공간이다.
 _TIER_1_SOURCE_TYPES = {"tech_repo", "confluence_docs", "checkitem"}
 _TIER_1_CONFLUENCE_MAP_SPACES = {"LOOKIN", "TechRepo"}
-_TIER_2_SOURCE_TYPES = {"incident_reports"}
+_TIER_2_SOURCE_TYPES = {"incident_reports", "dogether_preventive"}
 
 
 def compute_priority_tier(source_type: str, *, space_key: str | None) -> Literal[1, 2, 3]:
@@ -151,6 +152,23 @@ def _dedup_edges_prefer_extracted(edges: list) -> list:
         if key not in best or (best[key].tag != "EXTRACTED" and e.tag == "EXTRACTED"):
             best[key] = e
     return list(best.values())
+
+
+def _swim_link_edges(doc_dict: dict, page_identity_index: dict[str, list[dict]]):
+    """dogether_preventive 문서만: SWIM번호 -> incident_reports, 관련게시ID -> dogether_preventive."""
+    if doc_dict.get("source_type") != "dogether_preventive":
+        return []
+
+    meta = doc_dict.get("metadata") or {}
+    keys = {
+        str(x).strip().lower()
+        for f in ("swim_ids", "swim_id_candidates", "related_external_ids")
+        for x in (meta.get(f) or [])
+        if isinstance(meta.get(f), list)
+    }
+    # 문서가 참조하는 키만 잘라서 넘긴다(전체 색인을 문서마다 훑지 않는다).
+    sub = {k: page_identity_index[k] for k in keys if k in page_identity_index}
+    return extract_swim_links(doc_dict, incident_index=sub, dogether_index=sub)
 
 
 def sync_document(
@@ -259,6 +277,7 @@ def sync_document(
             + extract_business_entities(doc_dict, document_entities=document_entities)
             + extract_lexicon_components(doc_dict, lexicon_map=lexicon_map)
             + extract_references(doc_dict, external_id_index=reference_index)
+            + _swim_link_edges(doc_dict, page_identity_index or {})
         )
         if counters is not None:
             unresolved = sum(1 for e in edges if e.target_label == "UnresolvedPage")

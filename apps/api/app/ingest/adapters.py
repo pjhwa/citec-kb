@@ -459,6 +459,96 @@ def iter_dept_archive(root: Path) -> Iterator[DocumentDraft]:
         yield parse_dept_archive_file(path)
 
 
+_DOGETHER_LIST_KEYS = {
+    "SWIM번호": "swim_ids",
+    "SWIM번호후보": "swim_id_candidates",
+    "관련게시ID": "related_external_ids",
+    "태그": "tags",
+    "첨부파일": "attachments",
+}
+# 분야키 끝 단어 → domain. taxonomy._SWIM_TYPE_TO_CORPUS_DOMAIN의 Application→middleware와 맞춘다.
+_DOGETHER_DOMAIN = {
+    "storage": "storage",
+    "network": "network",
+    "dbms": "dbms",
+    "os": "os",
+    "cloud": "cloud",
+    "virtualization": "virtualization",
+    "application": "middleware",
+    "webwas": "middleware",
+}
+
+
+def _split_list(value: Any) -> list[str]:
+    return [t.strip() for t in str(value or "").split(",") if t.strip()]
+
+
+def _domain_from_dogether_key(field_key: str | None) -> Optional[str]:
+    tail = (field_key or "").strip().lower().rsplit(".", 1)[-1]
+    return _DOGETHER_DOMAIN.get(tail)
+
+
+def parse_dogether_preventive_file(path: Path) -> DocumentDraft:
+    """DOgether 장애예방 게시판 글(수집기 dogether-kb-sync가 만든 Markdown).
+
+    프론트매터는 dept_archive와 같은 "key : value" 모양이다. external_id는
+    게시ID가 아니라 `문서ID`(dogether-<게시ID>)를 쓴다 - build_page_identity_index가
+    모든 자료종류를 external_id 하나로 색인하기 때문이다. SWIM번호 등 목록 값은
+    metadata에 list로 저장해 JSONB 포함 조회(`metadata->'swim_ids' ? :id`)가 되게 한다.
+    """
+    raw = _read(path)
+    meta: dict[str, Any] = {"filename": path.name}
+    body = raw
+    fm = _FRONT_YAML.match(raw)
+    if fm:
+        for line in fm.group(1).splitlines():
+            parts = re.split(r"[:：]", line, maxsplit=1)
+            if len(parts) == 2 and parts[0].strip():
+                meta[parts[0].strip()] = parts[1].strip()
+        body = raw[fm.end() :]
+    # 값이 없는 키는 저장하지 않는다.
+    meta = {k: v for k, v in meta.items() if v not in ("", None)}
+    for ko, en in _DOGETHER_LIST_KEYS.items():
+        items = _split_list(meta.pop(ko, ""))
+        if items:
+            meta[en] = items
+    for ko, en in (("게시ID", "posting_id"), ("제목접두어", "title_prefix"), ("세부주제", "topic")):
+        if ko in meta:
+            meta[en] = meta.pop(ko)
+    external_id = meta.get("문서ID") or path.stem
+    if "related_external_ids" in meta:
+        rel = [r if r.startswith("dogether-") else f"dogether-{r}" for r in meta["related_external_ids"]]
+        rel = [r for r in dict.fromkeys(rel) if r != external_id]
+        if rel:
+            meta["related_external_ids"] = rel
+        else:
+            del meta["related_external_ids"]
+    title = meta.get("제목") or path.stem
+    work_type = meta.get("게시유형")
+    # 등급: 장애사례·장애예방가이드·횡전개는 BCS그룹이 원인 확정 후 게시(A), 기타·미상은 B.
+    grade = "A" if work_type in ("장애사례", "장애예방가이드", "횡전개") else "B"
+    return DocumentDraft(
+        source_type="dogether_preventive",
+        external_id=external_id,
+        title=_clip(title, 1000),
+        body_md=clean_md(body),
+        metadata=meta,
+        source_uri=meta.get("원문URL") or f"file://dogether_preventive/{path.name}",
+        evidence_grade=grade,
+        work_type=work_type,
+        path_l2=meta.get("분야"),
+        domain=_domain_from_dogether_key(meta.get("분야키")),
+    ).finalize()
+
+
+def iter_dogether_preventive(root: Path) -> Iterator[DocumentDraft]:
+    d = root / "dogether_preventive"
+    if not d.is_dir():
+        return
+    for path in sorted(d.glob("*.md")):
+        yield parse_dogether_preventive_file(path)
+
+
 def parse_tuning_ai_file(path: Path) -> DocumentDraft:
     raw = _read(path)
     meta: dict[str, Any] = {"filename": path.name}
@@ -581,6 +671,7 @@ ADAPTERS = {
     "checkitem": iter_checkitems_json,
     "incident_reports": iter_incident_reports,
     "dept_archive": iter_dept_archive,
+    "dogether_preventive": iter_dogether_preventive,
 }
 
 

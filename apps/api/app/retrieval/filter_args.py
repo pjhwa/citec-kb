@@ -28,6 +28,7 @@ KNOWN_SOURCE_TYPES: tuple[str, ...] = (
     "incident_reports",
     "checkitem",
     "dept_archive",
+    "dogether_preventive",
     "tuning_ai",
     "failure_bucket",
     "confirmed_decision",
@@ -49,6 +50,9 @@ SOURCE_TYPE_ALIASES: dict[str, str] = {
     "support": "support_history",
     "map": "confluence_map",
     "dept_archives": "dept_archive",
+    "dogether": "dogether_preventive",
+    "preventive": "dogether_preventive",
+    "prevention": "dogether_preventive",
 }
 
 _CACHE_TTL = 300.0
