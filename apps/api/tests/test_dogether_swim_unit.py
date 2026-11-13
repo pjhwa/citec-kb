@@ -110,3 +110,24 @@ def test_content_matches_resolve_only_incident_reports_and_skip_unknown():
     assert extract_swim_links(_post(), incident_index=idx,
                               content_matches=[{"external_id": "222", "status": "auto"},
                                                {"external_id": "999", "status": "auto"}]) == []
+
+
+def test_markdown_escaped_and_unicode_hyphen_dates():
+    posted = date(2026, 7, 8)
+    body = "\\- 시간 : 2026\\-04\\-30 19:17 \\~ 2026‑05‑01 01:42 (6시간)\n"
+    assert extract_incident_dates(body, posted) == ([date(2026, 4, 30), date(2026, 5, 1)], "overview")
+    assert extract_incident_dates("  - 시간 : 2026‑05‑26 10:50 \\~ 12:10", date(2026, 6, 23))[0] == [date(2026, 5, 26)]
+
+
+def test_two_digit_year_only_on_overview_lines():
+    posted = date(2026, 5, 13)
+    assert extract_incident_dates("- 시간 : 26/04/14(수) 16:32\\~ 46", posted) == ([date(2026, 4, 14)], "overview")
+    assert extract_incident_dates("- 시간 : 26.6.17(화) 14:51", date(2026, 7, 23))[0] == [date(2026, 6, 17)]
+    # 개요 줄이 아닌 본문의 `26.6.17` 같은 버전 번호는 날짜로 보지 않는다
+    assert extract_incident_dates("커널 버전 26.6.17 적용", posted) == ([], "none")
+
+
+def test_dates_more_than_a_year_before_posting_are_dropped():
+    posted = date(2026, 6, 26)
+    assert extract_incident_dates("- 시간 : 2024-05-28 09:54", posted) == ([], "none")
+    assert extract_incident_dates("- 시간 : 2025-07-01 09:54", posted)[0] == [date(2025, 7, 1)]
