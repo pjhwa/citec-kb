@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -26,15 +25,17 @@ def test_prev_expected_daily_and_step_and_weekday():
     assert cs.parse_schedule("bad") is None
 
 
-def _job(tmp, line, log_age_min=None, log_text="ok\n"):
+def _job(tmp, line, log_age_min=None, log_text="ok\n", now=None):
+    # now를 고정하면 "매시 N분" 같은 스케줄의 missed 유예(10분) 판정이 실행 시각에 흔들리지 않는다.
+    now = now or datetime.now().astimezone()
     logs = tmp / "logs"
     logs.mkdir(exist_ok=True)
     lf = logs / "j.log"
     if log_age_min is not None:
         lf.write_text(log_text)
-        t = time.time() - log_age_min * 60
+        t = now.timestamp() - log_age_min * 60
         os.utime(lf, (t, t))
-    snap = cs.build(line.replace("LOG", str(lf)), logs, datetime.now().astimezone())
+    snap = cs.build(line.replace("LOG", str(lf)), logs, now)
     return snap["jobs"][0]
 
 
@@ -43,7 +44,12 @@ def test_status_ok_failed_missed_unknown(tmp_path):
     assert _job(tmp_path, every_min, log_age_min=0)["status"] == "ok"
     assert _job(tmp_path, every_min, log_age_min=0, log_text="step\n❌ 실패\n")["status"] == "failed"
     daily = "0 * * * * /bin/echo >> LOG 2>&1"  # hourly, log untouched for 3h → missed
-    assert _job(tmp_path, daily, log_age_min=180)["status"] == "missed"
+    # 매시 0분 job: 유예(10분)가 지난 시각(12:30)으로 고정해 실행 시각과 무관하게 판정한다.
+    fixed = datetime(2026, 11, 5, 12, 30).astimezone()
+    assert _job(tmp_path, daily, log_age_min=180, now=fixed)["status"] == "missed"
+    # 예정 시각 직후(12:05, 유예 안)에는 로그가 오래돼도 아직 missed가 아니다.
+    just_after = datetime(2026, 11, 5, 12, 5).astimezone()
+    assert _job(tmp_path, daily, log_age_min=180, now=just_after)["status"] != "missed"
     assert _job(tmp_path, "* * * * * /bin/echo", log_age_min=None)["status"] == "unknown"  # no redirect
     assert cs.parse_crontab("@reboot /bin/true")[0]["sched"] is None
     assert cs.parse_crontab("MAILTO=a@b\n# c\n") == []
