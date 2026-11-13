@@ -860,3 +860,39 @@ class DecisionNonce(Base):
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class DogetherSwimMatch(Base):
+    """번호 없는 DOgether [장애사례] 글 ↔ SWIM 장애 내용 매칭 결과. 게시글 metadata에는 쓰지 않는다
+    (수집기가 같은 글을 다시 올리면 metadata가 새로 만들어져 덮이기 때문)."""
+
+    __tablename__ = "dogether_swim_matches"
+    __table_args__ = (
+        UniqueConstraint("post_document_id", "incident_document_id", name="uq_dogether_swim_matches_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    post_document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    incident_document_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    method: Mapped[str] = mapped_column(String(16), nullable=False)  # content | manual
+    score: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    signals: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # auto | review | confirmed | rejected
+    matcher_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class DogetherSwimMatchRun(Base):
+    """글별 마지막 매칭 실행 기록 — 후보가 0건이어도 남는다(증분 실행 판단용)."""
+
+    __tablename__ = "dogether_swim_match_runs"
+
+    post_document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True
+    )
+    content_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    matcher_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    candidates: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

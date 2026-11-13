@@ -248,6 +248,7 @@ def extract_swim_links(
     *,
     incident_index: dict[str, list[dict]],
     dogether_index: dict[str, list[dict]] | None = None,
+    content_matches: list[dict] | None = None,
 ) -> list[Edge]:
     """DOgether 장애예방 게시글(dogether_preventive) -> SWIM 장애(incident_reports) 연결.
 
@@ -257,6 +258,9 @@ def extract_swim_links(
     - swim_ids는 EXTRACTED, swim_id_candidates는 INFERRED. KB에 없는 번호는 건너뛴다.
     - related_external_ids는 dogether_index가 있을 때 같은 자료종류 문서로만 잇는다. 자기 자신은 뺀다.
     - 두 목록에 같은 번호가 있으면 EXTRACTED가 이긴다(호출자의 dedup 정책과 같은 방향).
+    - content_matches: dogether_swim_matches에서 호출자가 읽어 넘긴 [{"external_id": 장애번호, "status": "auto"|"confirmed"}].
+      번호 연결 뒤에 더하므로 같은 장애에 번호 연결이 있으면 번호 연결이 이긴다. confirmed는 EXTRACTED, auto는 INFERRED.
+      (이 모듈은 DB를 열지 않는다 - 조회는 pipeline.sync_document가 한다.)
     """
     if doc.get("source_type") != "dogether_preventive":
         return []
@@ -275,6 +279,15 @@ def extract_swim_links(
                 continue
             seen.add(target)
             edges.append(Edge("REFERENCES", "Document", "id", target, tag))
+    for m in sorted(content_matches or [], key=lambda x: (x.get("status") != "confirmed", str(x.get("external_id")))):
+        if m.get("status") not in ("auto", "confirmed"):
+            continue
+        target = _best_in_index(str(m.get("external_id") or ""), incident_index, "incident_reports")
+        if not target or target in seen:
+            continue
+        seen.add(target)
+        edges.append(Edge("REFERENCES", "Document", "id", target,
+                          "EXTRACTED" if m["status"] == "confirmed" else "INFERRED"))
     if dogether_index:
         for rel in sorted(set(_as_list(meta.get("related_external_ids")))):
             if rel.lower() == self_key:

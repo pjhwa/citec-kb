@@ -166,36 +166,56 @@ def get_ticket_by_external_id(
 def related_prevention_posts(fail_seq: str, *, session: Optional[Session] = None) -> list[dict[str, Any]]:
     """incident_reports 문서(SWIM 번호 fail_seq)를 가리키는 DOgether 장애예방 게시글.
 
-    metadata.swim_ids 일치는 match="swim_ids", swim_id_candidates 일치는 "candidate"로
-    구분한다(둘 다 있으면 swim_ids). 게시일시 내림차순.
+    match 값: swim_ids(본문에 적힌 번호) > candidate(문맥 없는 번호 후보) > manual(사람 확정 내용 매칭)
+    > content(내용으로 추정한 자동 매칭, score 포함). 한 글이 여러 경로로 걸리면 앞선 값 하나만 남긴다.
+    content/manual은 dogether_swim_matches의 auto/confirmed 행만이며 review·rejected는 나오지 않는다.
+    게시일시 내림차순.
     """
     fid = (fail_seq or "").strip()
     if not fid:
         return []
     sql = text(
         """
-        SELECT external_id, title, work_type, source_uri,
-               metadata->>'게시일시' AS posted_at,
-               (metadata->'swim_ids' ? :fid) AS by_ids
-        FROM documents
-        WHERE source_type = 'dogether_preventive' AND status = 'active'
-          AND (metadata->'swim_ids' ? :fid OR metadata->'swim_id_candidates' ? :fid)
-        ORDER BY metadata->>'게시일시' DESC NULLS LAST, external_id
+        SELECT p.external_id, p.title, p.work_type, p.source_uri,
+               p.metadata->>'게시일시' AS posted_at, 'swim_ids' AS kind, NULL::float AS score
+        FROM documents p
+        WHERE p.source_type = 'dogether_preventive' AND p.status = 'active' AND p.metadata->'swim_ids' ? :fid
+        UNION ALL
+        SELECT p.external_id, p.title, p.work_type, p.source_uri,
+               p.metadata->>'게시일시', 'candidate', NULL::float
+        FROM documents p
+        WHERE p.source_type = 'dogether_preventive' AND p.status = 'active' AND p.metadata->'swim_id_candidates' ? :fid
+        UNION ALL
+        SELECT p.external_id, p.title, p.work_type, p.source_uri,
+               p.metadata->>'게시일시',
+               CASE WHEN m.status = 'confirmed' THEN 'manual' ELSE 'content' END, m.score
+        FROM dogether_swim_matches m
+        JOIN documents p ON p.id = m.post_document_id
+        JOIN documents i ON i.id = m.incident_document_id
+        WHERE m.status IN ('auto', 'confirmed') AND p.source_type = 'dogether_preventive' AND p.status = 'active'
+          AND i.source_type = 'incident_reports' AND i.external_id = :fid
         """
     )
+    precedence = {"swim_ids": 0, "candidate": 1, "manual": 2, "content": 3}
 
     def _run(sess: Session) -> list[dict[str, Any]]:
-        return [
-            {
+        best: dict[str, dict[str, Any]] = {}
+        for r in sess.execute(sql, {"fid": fid}):
+            cur = best.get(r.external_id)
+            if cur is not None and precedence[cur["match"]] <= precedence[r.kind]:
+                continue
+            item = {
                 "external_id": r.external_id,
                 "title": r.title,
                 "게시유형": r.work_type,
                 "게시일시": r.posted_at,
                 "source_uri": r.source_uri,
-                "match": "swim_ids" if r.by_ids else "candidate",
+                "match": r.kind,
             }
-            for r in sess.execute(sql, {"fid": fid})
-        ]
+            if r.score is not None:
+                item["score"] = round(float(r.score), 4)
+            best[r.external_id] = item
+        return sorted(best.values(), key=lambda x: (x["게시일시"] or "", x["external_id"]), reverse=True)
 
     if session is not None:
         return _run(session)

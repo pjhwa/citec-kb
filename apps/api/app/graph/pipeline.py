@@ -154,7 +154,7 @@ def _dedup_edges_prefer_extracted(edges: list) -> list:
     return list(best.values())
 
 
-def _swim_link_edges(doc_dict: dict, page_identity_index: dict[str, list[dict]]):
+def _swim_link_edges(doc_dict: dict, page_identity_index: dict[str, list[dict]], content_matches: list[dict] | None = None):
     """dogether_preventive 문서만: SWIM번호 -> incident_reports, 관련게시ID -> dogether_preventive."""
     if doc_dict.get("source_type") != "dogether_preventive":
         return []
@@ -165,10 +165,24 @@ def _swim_link_edges(doc_dict: dict, page_identity_index: dict[str, list[dict]])
         for f in ("swim_ids", "swim_id_candidates", "related_external_ids")
         for x in (meta.get(f) or [])
         if isinstance(meta.get(f), list)
-    }
+    } | {str(m.get("external_id") or "").strip().lower() for m in (content_matches or [])}
     # 문서가 참조하는 키만 잘라서 넘긴다(전체 색인을 문서마다 훑지 않는다).
     sub = {k: page_identity_index[k] for k in keys if k in page_identity_index}
-    return extract_swim_links(doc_dict, incident_index=sub, dogether_index=sub)
+    return extract_swim_links(doc_dict, incident_index=sub, dogether_index=sub, content_matches=content_matches)
+
+
+def _load_content_matches(session, doc) -> list[dict]:
+    """이 글의 auto·confirmed 내용 매칭(장애 external_id, 상태, 매처 버전). review·rejected는 그래프에 안 낸다."""
+    from sqlalchemy import text
+
+    rows = session.execute(
+        text("SELECT i.external_id AS external_id, m.status AS status, m.matcher_version AS matcher_version "
+             "FROM dogether_swim_matches m JOIN documents i ON i.id = m.incident_document_id "
+             "WHERE m.post_document_id = :p AND m.status IN ('auto','confirmed') "
+             "AND i.source_type = 'incident_reports' AND i.status = 'active'"),
+        {"p": doc.id},
+    ).all()
+    return [{"external_id": r.external_id, "status": r.status, "matcher_version": r.matcher_version} for r in rows]
 
 
 def sync_document(
@@ -238,6 +252,14 @@ def sync_document(
                 "area": checkitem_dict.get("area") if checkitem_dict else None,
                 "document_entities": document_entities,
             }
+            # 내용 매칭(auto·confirmed)이 있는 DOgether 글에만 해시 키를 더한다 - 다른 문서의
+            # input_hash는 그대로여야 전체 재동기화가 일어나지 않는다. 매칭이 바뀌면(추가·삭제·
+            # 상태·매처 버전) 이 글만 다시 동기화된다.
+            content_matches = _load_content_matches(session, doc) if doc.source_type == "dogether_preventive" else []
+            if content_matches:
+                extra_hash_input["swim_matches"] = sorted(
+                    (m["external_id"], m["status"], m["matcher_version"]) for m in content_matches
+                )
             # 알려진 한계(의도적으로 범위 밖): lexicon_map/external_id_index 내용이
             # 바뀌어도 이 해시에는 안 들어간다 — 문서 로컬 상태가 아니라 실행 전체가
             # 공유하는 상태라, 넣으면 사전/코퍼스가 바뀔 때마다 전체 문서가 재동기화돼
@@ -277,7 +299,7 @@ def sync_document(
             + extract_business_entities(doc_dict, document_entities=document_entities)
             + extract_lexicon_components(doc_dict, lexicon_map=lexicon_map)
             + extract_references(doc_dict, external_id_index=reference_index)
-            + _swim_link_edges(doc_dict, page_identity_index or {})
+            + _swim_link_edges(doc_dict, page_identity_index or {}, content_matches)
         )
         if counters is not None:
             unresolved = sum(1 for e in edges if e.target_label == "UnresolvedPage")
