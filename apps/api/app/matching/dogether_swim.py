@@ -59,9 +59,9 @@ GOLD_PAIRS: dict[str, str] = {
 _INC_DATE_KEY = "발생일시(한국)"
 
 
-def load_config() -> dict[str, Any]:
+def load_config(name: str = CONFIG_FILE) -> dict[str, Any]:
     cfg = json.loads(json.dumps(DEFAULTS))
-    p = Path(get_settings().config_dir) / CONFIG_FILE
+    p = Path(get_settings().config_dir) / name
     try:
         raw = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -256,6 +256,24 @@ SWEEP_T1 = [round(0.30 + 0.05 * i, 2) for i in range(0, 13)]   # 0.30 .. 0.90
 SWEEP_M = [0.0, 0.05, 0.10, 0.15, 0.20]
 
 
+def sweep_table(dated_groups: list[tuple[Group, set[str]]]) -> list[dict[str, Any]]:
+    """T1×M 조합마다 auto로 판정될 묶음 수와 그중 정답 비율."""
+    sweep = []
+    for t1 in SWEEP_T1:
+        for m in SWEEP_M:
+            auto = hit = 0
+            for g, t in dated_groups:
+                if not g.ranked:
+                    continue
+                gap = g.ranked[0]["score"] - (g.ranked[1]["score"] if len(g.ranked) > 1 else 0.0)
+                if g.ranked[0]["score"] >= t1 and gap >= m:
+                    auto += 1
+                    hit += 1 if g.ranked[0]["incident_document_id"] in t else 0
+            sweep.append({"T1": t1, "M": m, "auto": auto, "correct": hit,
+                          "precision": round(hit / auto, 4) if auto else None})
+    return sweep
+
+
 def evaluate(session, cfg, lexicon) -> dict[str, Any]:
     """번호 있는 글에서 swim_ids를 숨기고 매처를 돌려 원래 번호를 1위로 찾는지 잰다. 쓰기 없음."""
     posts = load_posts(session, unnumbered_only=False)
@@ -284,19 +302,7 @@ def evaluate(session, cfg, lexicon) -> dict[str, Any]:
     # 한 글이 장애 여러 건을 다룰 수 있으므로 날짜 묶음이 정답 장애를 하나라도 포함할 때만 정확도 계산 대상으로 본다.
     scorable = [(g, t) for g, t in dated_groups if any(c["incident_document_id"] in t for c in g.ranked)]
     top1 = sum(1 for g, t in scorable if g.ranked and g.ranked[0]["incident_document_id"] in t)
-    sweep = []
-    for t1 in SWEEP_T1:
-        for m in SWEEP_M:
-            auto = hit = 0
-            for g, t in dated_groups:
-                if not g.ranked:
-                    continue
-                gap = g.ranked[0]["score"] - (g.ranked[1]["score"] if len(g.ranked) > 1 else 0.0)
-                if g.ranked[0]["score"] >= t1 and gap >= m:
-                    auto += 1
-                    hit += 1 if g.ranked[0]["incident_document_id"] in t else 0
-            sweep.append({"T1": t1, "M": m, "auto": auto, "correct": hit,
-                          "precision": round(hit / auto, 4) if auto else None})
+    sweep = sweep_table(dated_groups)
     gold = {}
     for ext, inc in GOLD_PAIRS.items():
         row = session.execute(text("SELECT id FROM documents WHERE source_type='dogether_preventive' AND external_id=:e"), {"e": ext}).first()
@@ -342,24 +348,26 @@ def _desired_rows(groups: list[Group], cfg: dict[str, Any]) -> dict[str, dict[st
     return out
 
 
-def select_posts(session, *, force: bool, limit: Optional[int]) -> list[Post]:
-    posts = load_posts(session, unnumbered_only=True)
+def select_posts(session, *, force: bool, limit: Optional[int], posts: Optional[list[Post]] = None,
+                 runs_table: str = "dogether_swim_match_runs") -> list[Post]:
+    posts = posts if posts is not None else load_posts(session, unnumbered_only=True)
     if not force:
         runs = {r.post_document_id: (r.content_hash, r.matcher_version)
-                for r in session.execute(text("SELECT post_document_id, content_hash, matcher_version FROM dogether_swim_match_runs"))}
+                for r in session.execute(text(f"SELECT post_document_id, content_hash, matcher_version FROM {runs_table}"))}
         posts = [p for p in posts if runs.get(p.document_id) != (p.content_hash, MATCHER_VERSION)]
     return posts[:limit] if limit else posts
 
 
-def apply_post(session, post: Post, groups: list[Group], cfg: dict[str, Any]) -> dict[str, int]:
+def apply_post(session, post: Post, groups: list[Group], cfg: dict[str, Any], *,
+               matches_table: str = "dogether_swim_matches", runs_table: str = "dogether_swim_match_runs") -> dict[str, int]:
     desired = _desired_rows(groups, cfg)
     existing = {r.incident_document_id: r for r in session.execute(text(
-        "SELECT incident_document_id, method, status FROM dogether_swim_matches WHERE post_document_id=:p"),
+        f"SELECT incident_document_id, method, status FROM {matches_table} WHERE post_document_id=:p"),
         {"p": post.document_id})}
     stats = {"inserted": 0, "updated": 0, "deleted": 0}
     for iid, ex in existing.items():
         if ex.method == "content" and ex.status in ("auto", "review") and iid not in desired:
-            session.execute(text("DELETE FROM dogether_swim_matches WHERE post_document_id=:p AND incident_document_id=:i"),
+            session.execute(text(f"DELETE FROM {matches_table} WHERE post_document_id=:p AND incident_document_id=:i"),
                             {"p": post.document_id, "i": iid})
             stats["deleted"] += 1
     for iid, row in desired.items():
@@ -368,20 +376,46 @@ def apply_post(session, post: Post, groups: list[Group], cfg: dict[str, Any]) ->
                   "sig": json.dumps(row["signals"], ensure_ascii=False), "st": row["status"], "v": MATCHER_VERSION}
         if ex is None:
             session.execute(text(
-                "INSERT INTO dogether_swim_matches (post_document_id, incident_document_id, method, score, rank, signals, status, matcher_version) "
+                f"INSERT INTO {matches_table} (post_document_id, incident_document_id, method, score, rank, signals, status, matcher_version) "
                 "VALUES (:p,:i,'content',:s,:r,CAST(:sig AS jsonb),:st,:v)"), params)
             stats["inserted"] += 1
         elif ex.method == "content" and ex.status in ("auto", "review"):
             session.execute(text(
-                "UPDATE dogether_swim_matches SET score=:s, rank=:r, signals=CAST(:sig AS jsonb), status=:st, matcher_version=:v, updated_at=now() "
+                f"UPDATE {matches_table} SET score=:s, rank=:r, signals=CAST(:sig AS jsonb), status=:st, matcher_version=:v, updated_at=now() "
                 "WHERE post_document_id=:p AND incident_document_id=:i"), params)
             stats["updated"] += 1
         # confirmed / rejected / manual 행은 건드리지 않는다.
     session.execute(text(
-        "INSERT INTO dogether_swim_match_runs (post_document_id, content_hash, matcher_version, candidates) VALUES (:p,:h,:v,:n) "
+        f"INSERT INTO {runs_table} (post_document_id, content_hash, matcher_version, candidates) VALUES (:p,:h,:v,:n) "
         "ON CONFLICT (post_document_id) DO UPDATE SET content_hash=:h, matcher_version=:v, candidates=:n, updated_at=now()"),
         {"p": post.document_id, "h": post.content_hash, "v": MATCHER_VERSION, "n": sum(len(g.ranked) for g in groups)})
     return stats
+
+
+PROBE_T1 = 0.5
+PROBE_M = (0.05, 0.10, 0.15)
+
+
+def probe(groups: list[Group]) -> list[float]:
+    """날짜가 있는 묶음의 (1위 점수, 2위와의 차이) 중 점수가 가장 높은 것. 없으면 빈 목록."""
+    best = None
+    for g in groups:
+        if g.dated and g.ranked:
+            gap = g.ranked[0]["score"] - (g.ranked[1]["score"] if len(g.ranked) > 1 else 0.0)
+            if best is None or g.ranked[0]["score"] > best[0]:
+                best = (g.ranked[0]["score"], gap)
+    return list(best) if best else []
+
+
+def probe_summary(stats: dict[str, dict[str, int]], bucket: str, pr: list[float]) -> None:
+    """기준값을 정하기 전 참고용: 가정한 T1·M에서 auto가 될 글 수를 구간별로 센다(저장하지 않음)."""
+    b = stats.setdefault(bucket, {"posts": 0, "dated": 0, **{f"would_auto_M{m}": 0 for m in PROBE_M}})
+    b["posts"] += 1
+    if pr:
+        b["dated"] += 1
+        for m in PROBE_M:
+            if pr[0] >= PROBE_T1 and pr[1] >= m:
+                b[f"would_auto_M{m}"] += 1
 
 
 def run(*, apply: bool, force: bool, limit: Optional[int]) -> dict[str, Any]:
@@ -391,10 +425,12 @@ def run(*, apply: bool, force: bool, limit: Optional[int]) -> dict[str, Any]:
     lexicon = load_lexicon_map()
     dist = {"posts": 0, "auto": 0, "review": 0, "no_candidate": 0, "no_date": 0}
     totals = {"inserted": 0, "updated": 0, "deleted": 0}
+    by_year: dict[str, dict[str, int]] = {}
     with session_scope() as session:
         for post in select_posts(session, force=force, limit=limit):
             groups = match_post(session, post, cfg, lexicon)
             desired = _desired_rows(groups, cfg)
+            probe_summary(by_year, str(post.posted.year) if post.posted else "unknown", probe(groups))
             dist["posts"] += 1
             if not any(g.dated for g in groups):
                 dist["no_date"] += 1
@@ -408,7 +444,8 @@ def run(*, apply: bool, force: bool, limit: Optional[int]) -> dict[str, Any]:
                 for k, v in apply_post(session, post, groups, cfg).items():
                     totals[k] += v
     return {"mode": "apply" if apply else "dry-run", "auto_enabled": bool(cfg["auto_enabled"]),
-            "matcher_version": MATCHER_VERSION, "distribution": dist, **({"writes": totals} if apply else {})}
+            "matcher_version": MATCHER_VERSION, "distribution": dist,
+            "probe_T1": PROBE_T1, "by_year": dict(sorted(by_year.items())), **({"writes": totals} if apply else {})}
 
 
 # ── 검토 목록 CSV ───────────────────────────────────────────────────
