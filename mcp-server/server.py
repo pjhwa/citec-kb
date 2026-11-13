@@ -459,7 +459,16 @@ def _related_posts_lines(posts: Any, *, heading: bool = True) -> str:
     for p in posts:
         if not isinstance(p, dict):
             continue
-        mark = "" if p.get("match") == "swim_ids" else " (번호 후보 일치 — 확인 필요)"
+        m = p.get("match")
+        if m == "content":
+            sc = f", score {p['score']}" if p.get("score") is not None else ""
+            mark = f" (내용으로 추정한 연결{sc} — 번호 연결 아님, 확인 필요)"
+        elif m == "manual":
+            mark = " (사람이 확정한 연결)"
+        elif m == "candidate":
+            mark = " (번호 후보 일치 — 확인 필요)"
+        else:
+            mark = ""
         bits = [b for b in (p.get("게시유형"), p.get("게시일시")) if b]
         meta = f" [{' / '.join(bits)}]" if bits else ""
         url = f" {p['source_uri']}" if p.get("source_uri") else ""
