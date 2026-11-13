@@ -40,7 +40,7 @@ docker compose exec -T api python -c "from app.routers.external_compat import _r
 
 - [ ] `npm run inspect` — 연결 확인
 - [ ] `npm run dry-run` — 861건 변환 확인
-- [ ] `npm start -- --full` — 전체 업로드 (종료 코드 3이면 2단계로 돌아가 서버 반영 확인)
+- [x] `npm start -- --full` — 전체 업로드 (종료 코드 3이면 2단계로 돌아가 서버 반영 확인)
 - [ ] 한 번 더 실행해 변경 없는 글이 `skipped`로 나온다
 - [ ] `scripts/register-task.ps1` — 매일 11:30 실행 등록
 
@@ -67,8 +67,8 @@ screen -S graph-sync
 scripts/graph_sync.sh                    # -v 금지 (Neo4j 디버그 로그 폭증)
 ```
 
-- [ ] 결과 `failed: 0`
-- [ ] 엣지 확인:
+- [ ] 결과 `failed: 0` (요약 JSON 미확인)
+- [x] 엣지 확인:
 
 ```bash
 docker compose exec -T neo4j cypher-shell -u neo4j -p "<NEO4J_PASSWORD>" \
@@ -83,7 +83,7 @@ curl -s "http://127.0.0.1:8573/v1/tickets/26091661376?source_type=incident_repor
  | python3 -c "import sys,json; print(json.load(sys.stdin)['related_prevention_posts'])"
 ```
 
-- [ ] `related_prevention_posts`가 1건 이상
+- [x] `related_prevention_posts`가 1건 이상
 - [ ] `kb_search(section="dogether", query="Undertow 쿠키")`가 글을 찾는다
 - [ ] `kb_get_document`로 SWIM 장애 문서를 열면 끝에 "관련 DOgether 장애예방 게시글"이 붙는다
 - [ ] `kb_similar_incident` 결과의 `incident_reports` 항목에 목록이 붙는다 (MCP 출력은 개발에서 실행 검증하지 못함)
@@ -93,6 +93,21 @@ curl -s "http://127.0.0.1:8573/v1/tickets/26091661376?source_type=incident_repor
 - [ ] 첫 정기 실행(11:30 이후) 로그 확인
 - [ ] 역조회 쿼리가 100ms를 넘으면 GIN 인덱스 추가 (861건이면 보통 불필요)
 - [ ] 이후 SWIM 장애 문서가 게시글보다 늦게 들어와 엣지가 빠지면 해당 글을 `graph_sync.sh --source-ids <document_id>`로 재동기화 (게시글 내용이 같으면 hash skip될 수 있음)
+
+## 확인 기록 (2026-11-13, 운영)
+
+체크박스는 아래 근거가 있는 항목만 표시했다. 나머지는 확인 기록이 없어 비워 두었다.
+
+| 단계 | 결과 |
+|---|---|
+| 3 수집기 전체 업로드 | 그래프에 `dogether_preventive:` Document 노드 861건 (적재 861건과 일치) |
+| 5 그래프 동기화 | 샘플 `dogether-19267 → incident_reports:26091661376` `EXTRACTED` 확인 |
+| 5 장애 문서 대상 엣지 | `EXTRACTED` 66건(66개 글), `INFERRED` 2건(글 1개) — 고유 번호 68개와 일치 |
+| 5 게시글끼리 연결 | 50건 (지침서의 `postingId=` 링크 55건과 차이 — 본문 링크가 아니라 `관련게시ID` 필드 기준이라 그렇다고 추정, 원인 미확인) |
+| 5 소요 | `graph_sync.sh`는 진행 출력이 없고 전체 문서(11만 건대)를 순회한다. 게시글만 먼저 돌리려면 실행 중인 전체 동기화를 멈추고 `--source-ids`로 게시글 id 목록을 넘긴다(전체 실행과 동시 실행 불가: `lock_held_by_another_run`) |
+| 6 API 역조회 | `/v1/tickets/26091661376?source_type=incident_reports`의 `related_prevention_posts`에 `dogether-19267`(`match: swim_ids`) |
+
+남은 확인: MCP 3종(`kb_search(section="dogether")`, `kb_get_document`, `kb_similar_incident`), PG 적재 건수·등급 분포, 수집기 재실행 `skipped`, 11:30 정기 실행 등록.
 
 ## 롤백
 
