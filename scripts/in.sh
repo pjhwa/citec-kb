@@ -3,7 +3,7 @@
 #
 # 번들을 홈(~)에 둔 뒤 실행:
 #   citec-kb-code-vN.tar.gz
-#   citec-kb-docker-vN.tar.gz            # core5: api worker nginx redis pgvector
+#   citec-kb-docker-vN.tar.gz            # core6: api worker nginx redis pgvector neo4j
 #   citec-kb-docker-mcp-vN.tar.gz
 #   citec-kb-docker-keycloak-vN.tar.gz   # optional
 #   citec-kb-data-dN.tar.gz

@@ -5,7 +5,7 @@
 #
 # 번들 (독립 · 변경분만 재생성):
 #   code           소스/설정 (수~수십 MB) — 일상 배포. 호스트 마운트 → restart 만
-#   docker         core 5 이미지: api worker nginx redis pgvector
+#   docker         core 6 이미지: api worker nginx redis pgvector neo4j
 #   docker-mcp     citec-kb-mcp:latest
 #   docker-keycloak  (선택) Keycloak 26
 #   data           data/raw + seeds (+ 선택 --pg-dump / --pg-only)
@@ -34,7 +34,7 @@ USAGE
 
 포함/제외:
   --code / --no-code
-  --docker / --no-docker          api worker nginx redis pgvector
+  --docker / --no-docker          api worker nginx redis pgvector neo4j
   --docker-mcp / --no-docker-mcp
   --docker-keycloak               Keycloak (compose profile)
   --data / --no-data
@@ -88,8 +88,9 @@ IMG_MCP="citec-kb-mcp:latest"
 IMG_NGINX="nginx:1.30.7-alpine"
 IMG_REDIS="redis:7.4.12-alpine"
 IMG_PG="pgvector/pgvector:pg16"
+IMG_NEO4J="neo4j:5.26-community"
 IMG_KC="quay.io/keycloak/keycloak:26.0"
-CORE_IMAGES=("$IMG_API" "$IMG_WORKER" "$IMG_NGINX" "$IMG_REDIS" "$IMG_PG")
+CORE_IMAGES=("$IMG_API" "$IMG_WORKER" "$IMG_NGINX" "$IMG_REDIS" "$IMG_PG" "$IMG_NEO4J")
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'; DIM='\033[2m'
@@ -313,7 +314,7 @@ if $DO_SOURCE || $DO_DOCKER || $DO_DOCKER_MCP || $DO_DOCKER_KC; then
   fi
   if $DO_DOCKER; then
     _w=false; ($NEED_NEW_CODE || ! $DOCKER_EXISTS || $FORCE_DOCKER) && _w=true
-    _show "docker (core5)" "$_w" "citec-kb-docker-${_cv}.tar.gz"
+    _show "docker (core6)" "$_w" "citec-kb-docker-${_cv}.tar.gz"
   fi
   if $DO_DOCKER_MCP; then
     _w=false; ($NEED_NEW_CODE || ! $DOCKER_MCP_EXISTS || $FORCE_DOCKER_MCP) && _w=true
@@ -462,8 +463,8 @@ _write_image_list() {
 
 build_docker_bundle() {
   local version="$1"
-  banner "docker (core5)  ${version}"
-  info "api worker nginx redis pgvector  (mcp·keycloak 제외)"
+  banner "docker (core6)  ${version}"
+  info "api worker nginx redis pgvector neo4j  (mcp·keycloak 제외)"
   local output_tgz="${OUT_DIR}/citec-kb-docker-${version}.tar.gz"
   local list_file="${OUT_DIR}/citec-kb-docker-${version}.images.txt"
   _ensure_built
@@ -480,6 +481,7 @@ build_docker_bundle() {
   _write_image_list "$list_file" \
     "postgres  $IMG_PG" \
     "redis     $IMG_REDIS" \
+    "neo4j     $IMG_NEO4J" \
     "web       $IMG_NGINX" \
     "api       $IMG_API" \
     "worker    $IMG_WORKER"
