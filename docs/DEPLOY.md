@@ -134,7 +134,7 @@ scripts/prod_pull_apply.sh -y ~/tmp/citec-kb-prod-full-*.tar.gz
 | api | `citec-kb-api:latest` | docker | ✅ |
 | worker | `citec-kb-worker:latest` | docker | ✅ |
 | mcp | `citec-kb-mcp:latest` | docker-mcp | ✅ |
-| keycloak | `quay.io/keycloak/keycloak:26.0` | docker-keycloak | opt-in |
+| keycloak | `quay.io/keycloak/keycloak:26.8.2` | docker-keycloak | opt-in |
 
 ### 호스트 마운트 (code 번들만으로 반영)
 

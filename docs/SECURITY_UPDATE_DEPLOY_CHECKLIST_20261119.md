@@ -1,4 +1,4 @@
-# 보안 패치 운영 배포 체크리스트 (2026-11-19, 번들 v56)
+# 보안 패치 운영 배포 체크리스트 (2026-11-19, 번들 v57)
 
 PR #64 (nginx 1.30.7 외 전 구성요소 갱신) 운영 반영용. 이미지·requirements가 바뀌었으므로
 `git_pull_deploy.sh`로는 **반영 불가** — `out.sh`/`in.sh` 번들 경로를 사용한다.
@@ -14,21 +14,23 @@ PR #64 (nginx 1.30.7 외 전 구성요소 갱신) 운영 반영용. 이미지·r
 | fastapi / starlette | 0.115.12 / 0.46.2 | 0.165.0 / 1.10.0 (**starlette 메이저 상승**) |
 | python-multipart / PyJWT / python-dotenv | 0.0.24 / 2.10.1 / 1.1.0 | 0.0.34 / 2.15.1 / 1.2.4 |
 
-Keycloak 26.0.8은 미갱신(26.0 라인 EOL, 별도 결정 필요).
+| Keycloak (선택, `--profile keycloak`) | 26.0.8 | 26.8.2 (치명적 SAML 서명 우회 포함 CVE 33건 수정) |
 
-## 반입 파일 (dev `~/tmp`, 체크섬은 `citec-kb-v56.sha256`)
+Keycloak은 dev/test용 IdP(`start-dev`, 볼륨 없음). 컨테이너 재생성 시 런타임에 만든 사용자·설정은 사라지고 `realm-citec.json` import 내용만 남는다. 운영에서 Keycloak을 쓰는 경우 별도 `citec-kb-docker-keycloak-v57.tar.gz` 반입·`docker load` 필요(운영이 실제 IdP를 쓰면 이 번들은 불필요).
+
+## 반입 파일 (dev `~/tmp`, 체크섬은 `citec-kb-v57.sha256`)
 
 | 파일 | 용도 |
 |---|---|
-| `citec-kb-code-v56.tar.gz` | 코드·compose·in.sh |
-| `citec-kb-docker-v56.tar.gz` | api worker nginx redis pgvector **neo4j** |
-| `citec-kb-docker-mcp-v56.tar.gz` | mcp |
+| `citec-kb-code-v57.tar.gz` | 코드·compose·in.sh |
+| `citec-kb-docker-v57.tar.gz` | api worker nginx redis pgvector **neo4j** |
+| `citec-kb-docker-mcp-v57.tar.gz` | mcp |
 
 ## 배포 순서
 
-1. **사전 백업 (필수)**: `docker exec <postgres> pg_dump -U citec -Fc citec_knowledge > backup_pre_v56.dump`
+1. **사전 백업 (필수)**: `docker exec <postgres> pg_dump -U citec -Fc citec_knowledge > backup_pre_v57.dump`
    (Neo4j는 patch 상승이라 in-place 호환. 필요 시 정지 후 `neo4j-admin database dump`)
-2. 파일 반입 후 `sha256sum -c citec-kb-v56.sha256`
+2. 파일 반입 후 `sha256sum -c citec-kb-v57.sha256`
 3. `scripts/in.sh` 로 code + docker + docker-mcp 적용 (compose가 새 이미지로 재생성)
 4. **pgvector 확장 갱신 (in.sh가 자동 수행하지 않음)** — 서비스별 DB 전체:
    ```bash

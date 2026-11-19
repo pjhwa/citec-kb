@@ -89,7 +89,7 @@ IMG_NGINX="nginx:1.30.7-alpine"
 IMG_REDIS="redis:7.4.12-alpine"
 IMG_PG="pgvector/pgvector:pg16"
 IMG_NEO4J="neo4j:5.26-community"
-IMG_KC="quay.io/keycloak/keycloak:26.0"
+IMG_KC="quay.io/keycloak/keycloak:26.8.2"
 CORE_IMAGES=("$IMG_API" "$IMG_WORKER" "$IMG_NGINX" "$IMG_REDIS" "$IMG_PG" "$IMG_NEO4J")
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
