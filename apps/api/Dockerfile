@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY apps/api/requirements.txt /app/requirements.txt
 # CPU torch first (smaller than default CUDA wheels), then the rest.
-RUN pip install --upgrade pip \
+RUN pip install --upgrade pip "setuptools>=84.1.0" \
     && pip install torch --index-url https://download.pytorch.org/whl/cpu \
     && pip install -r /app/requirements.txt
 

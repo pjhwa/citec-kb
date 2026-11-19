@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.12-alpine
     ports:
       - "8575:6379"
     healthcheck:
@@ -135,7 +135,7 @@ services:
     restart: unless-stopped
 
   web:
-    image: nginx:1.27-alpine
+    image: nginx:1.30.7-alpine
     ports:
       - "8572:80"
     volumes:
