@@ -128,8 +128,8 @@ scripts/prod_pull_apply.sh -y ~/tmp/citec-kb-prod-full-*.tar.gz
 | Service | Image | 번들 | 기본 |
 |---------|-------|------|------|
 | postgres | `pgvector/pgvector:pg16` | docker | ✅ |
-| redis | `redis:7-alpine` | docker | ✅ |
-| web | `nginx:1.27-alpine` | docker | ✅ |
+| redis | `redis:7.4.12-alpine` | docker | ✅ |
+| web | `nginx:1.30.7-alpine` | docker | ✅ |
 | api | `citec-kb-api:latest` | docker | ✅ |
 | worker | `citec-kb-worker:latest` | docker | ✅ |
 | mcp | `citec-kb-mcp:latest` | docker-mcp | ✅ |
