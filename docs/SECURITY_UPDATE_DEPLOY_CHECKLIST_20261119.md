@@ -1,4 +1,4 @@
-# 보안 패치 운영 배포 체크리스트 (2026-11-19, 번들 v55)
+# 보안 패치 운영 배포 체크리스트 (2026-11-19, 번들 v56)
 
 PR #64 (nginx 1.30.7 외 전 구성요소 갱신) 운영 반영용. 이미지·requirements가 바뀌었으므로
 `git_pull_deploy.sh`로는 **반영 불가** — `out.sh`/`in.sh` 번들 경로를 사용한다.
@@ -16,30 +16,28 @@ PR #64 (nginx 1.30.7 외 전 구성요소 갱신) 운영 반영용. 이미지·r
 
 Keycloak 26.0.8은 미갱신(26.0 라인 EOL, 별도 결정 필요).
 
-## 반입 파일 (dev `~/tmp`, 체크섬은 `citec-kb-v55.sha256`)
+## 반입 파일 (dev `~/tmp`, 체크섬은 `citec-kb-v56.sha256`)
 
 | 파일 | 용도 |
 |---|---|
-| `citec-kb-code-v55.tar.gz` | 코드·compose·in.sh |
-| `citec-kb-docker-v55.tar.gz` | api worker nginx redis pgvector |
-| `citec-kb-docker-mcp-v55.tar.gz` | mcp |
-| `citec-kb-neo4j-image-5.26.33.tar.gz` | neo4j (out.sh 번들에 미포함 — 별도 `docker load`) |
+| `citec-kb-code-v56.tar.gz` | 코드·compose·in.sh |
+| `citec-kb-docker-v56.tar.gz` | api worker nginx redis pgvector **neo4j** |
+| `citec-kb-docker-mcp-v56.tar.gz` | mcp |
 
 ## 배포 순서
 
-1. **사전 백업 (필수)**: `docker exec <postgres> pg_dump -U citec -Fc citec_knowledge > backup_pre_v55.dump`
+1. **사전 백업 (필수)**: `docker exec <postgres> pg_dump -U citec -Fc citec_knowledge > backup_pre_v56.dump`
    (Neo4j는 patch 상승이라 in-place 호환. 필요 시 정지 후 `neo4j-admin database dump`)
-2. 파일 반입 후 `sha256sum -c citec-kb-v55.sha256`
-3. `docker load < citec-kb-neo4j-image-5.26.33.tar.gz` (gunzip 필요 시 `gunzip -c`)
-4. `scripts/in.sh` 로 code + docker + docker-mcp 적용 (compose가 새 이미지로 재생성)
-5. **pgvector 확장 갱신 (in.sh가 자동 수행하지 않음)** — 서비스별 DB 전체:
+2. 파일 반입 후 `sha256sum -c citec-kb-v56.sha256`
+3. `scripts/in.sh` 로 code + docker + docker-mcp 적용 (compose가 새 이미지로 재생성)
+4. **pgvector 확장 갱신 (in.sh가 자동 수행하지 않음)** — 서비스별 DB 전체:
    ```bash
    for d in $(docker exec <postgres> psql -U citec -Atc "select datname from pg_database where not datistemplate and datname<>'postgres'"); do
      docker exec <postgres> psql -U citec -d $d -c "ALTER EXTENSION vector UPDATE;"
    done
    ```
    patch 상승이라 reindex 불필요. 갱신 전까지는 0.8.5로 계속 동작.
-6. 컨테이너 기동 순서: postgres/redis/neo4j healthy → api → worker/web/mcp
+5. 컨테이너 기동 순서: postgres/redis/neo4j healthy → api → worker/web/mcp
 
 ## 검증
 

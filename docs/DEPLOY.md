@@ -129,6 +129,7 @@ scripts/prod_pull_apply.sh -y ~/tmp/citec-kb-prod-full-*.tar.gz
 |---------|-------|------|------|
 | postgres | `pgvector/pgvector:pg16` | docker | ✅ |
 | redis | `redis:7.4.12-alpine` | docker | ✅ |
+| neo4j | `neo4j:5.26-community` | docker | ✅ |
 | web | `nginx:1.30.7-alpine` | docker | ✅ |
 | api | `citec-kb-api:latest` | docker | ✅ |
 | worker | `citec-kb-worker:latest` | docker | ✅ |
