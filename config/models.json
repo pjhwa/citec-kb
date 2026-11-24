@@ -9,5 +9,15 @@
     "openrouter_id": "z-ai/glm-5.2",
     "disable_thinking": true,
     "_comment": "Dev: OpenRouter openrouter_id. Prod: Fabrix GLM-5.2 AWQ 4bit context 130k."
+  },
+  "glm-5.3-flash": {
+    "temperature": 0.4,
+    "top_p": 0.92,
+    "top_k": 30,
+    "repetition_penalty": 1.04,
+    "max_context_tokens": 750000,
+    "max_new_tokens_default": 8000,
+    "disable_thinking": true,
+    "_comment": "Prod: Fabrix GLM-5.3 Flash. 사내 정보페이지: Tools=Function Calling/Knowledge, Context 750K, Speed Fast, Price High. 샘플링 파라미터는 glm-5.2 값을 복사한 임시값(미검증). openrouter_id 미지정 → dev 에서는 z-ai/glm-5.2 로 fallback."
   }
 }
